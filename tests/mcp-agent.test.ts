@@ -32,6 +32,7 @@ import { MODES_TRANSFERT, type ModeTransfert } from '../src/agent/disponibilite-
 import { MODELES_CHOISIS, MODELE_AGENT_CLAUDE_CODE } from '../src/agent/modeles';
 import { saisieDePaiement, type DepsPaiement } from '../src/stripe/paiement';
 import type { ReponseStripe, TransportStripe } from '../src/stripe/client';
+import type { OffreRecharge } from '../src/stripe/offres';
 import type { OutilComplet } from '../src/agent/catalog';
 import type { LigneHistorique } from '../src/reglages/historique';
 import type { ModeRepondeur } from '../src/repondeur/mode';
@@ -135,7 +136,7 @@ class FauxStripe implements TransportStripe {
   async get(url: string): Promise<ReponseStripe> {
     const id = url.slice(url.lastIndexOf('/') + 1);
     const centimes: Record<string, number> = { price_5: 500, price_10: 1_000, price_50: 5_000, price_100: 10_000 };
-    return { status: 200, json: { id, unit_amount: centimes[id] ?? 0, currency: 'eur' } };
+    return { status: 200, json: { id, unit_amount: centimes[id] ?? 0, currency: 'eur', tax_behavior: 'exclusive' } };
   }
 }
 
@@ -158,6 +159,8 @@ interface Options {
   solde?: number;
   creditInsuffisant?: boolean;
   payeurAutorise?: boolean;
+  /** Les offres de recharge sans prix sur l'instance (`STRIPE_PRIX_REFILL_*` vide). */
+  prixVides?: OffreRecharge[];
   /** L'agent de Meta est allumé sur l'espace (lot 5, le répondeur). */
   mbaAllume?: boolean;
   /** L'agent IA déjà répondeur de l'espace. */
@@ -304,10 +307,14 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
     debiter: async (t, montant, note) => { cap.debits.push({ tenant: t, montant, note }); },
   };
 
+  const prixDe = (offre: OffreRecharge, id: string) => (o.prixVides?.includes(offre) ? '' : id);
   const paiement: DepsPaiement = {
     stripe: {
       cle: 'rk_test_fausse', livemode: false,
-      prix: { refill_5: 'price_5', refill_10: 'price_10', refill_50: 'price_50', refill_100: 'price_100' },
+      prix: {
+        refill_5: prixDe('refill_5', 'price_5'), refill_10: prixDe('refill_10', 'price_10'),
+        refill_50: prixDe('refill_50', 'price_50'), refill_100: prixDe('refill_100', 'price_100'),
+      },
       transport: new FauxStripe(),
       pageCredit: 'https://console.exemple/parametres/credit', pageClaude: 'https://console.exemple/paiement-recu',
     },
@@ -454,6 +461,13 @@ async function appeler(server: Serveur, bearer: string, nom: string, args: Recor
   const b = res.json<{ result?: { content?: Array<{ text: string }>; isError?: boolean }; error?: { message: string } }>();
   const texte = b.result?.content?.[0]?.text ?? '';
   return { texte, isError: b.result?.isError === true, erreurRpc: b.error?.message, json: () => JSON.parse(texte) as Record<string, any> };
+}
+
+/** Un outil tel que `tools/list` le décrit à ce jeton. */
+async function decrire(server: Serveur, bearer: string, nom: string) {
+  const res = await server.inject({ method: 'POST', url: '/mcp', headers: entetes(bearer), payload: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
+  type Decrit = { name: string; description: string; inputSchema: { properties: Record<string, { enum?: string[] }> } };
+  return res.json<{ result: { tools: Decrit[] } }>().result.tools.find((t) => t.name === nom)!;
 }
 
 async function lister(server: Serveur, bearer: string): Promise<string[]> {
@@ -941,6 +955,26 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     const r = await appeler(server, JETON.brut, 'buy_credit', { offre: 'refill_5' });
     expect(r.json()).toMatchObject({ offre: 'refill_5', montant_ht_eur: 5 });
     await server.close();
+  });
+
+  it('🔴 buy_credit n’annonce que les offres dont le prix est configuré sur l’instance (relecture du 2026-10-22)', async () => {
+    // Sans prix, l'offre refuse « recharge pas encore disponible » : la proposer ferait essayer un achat impossible.
+    const { server } = monter({ prixVides: ['refill_5'] });
+    const decrit = await decrire(server, JETON.brut, 'buy_credit');
+    expect(decrit.inputSchema.properties.offre!.enum).toEqual(['refill_10', 'refill_50', 'refill_100']);
+    expect(decrit.description).toContain('Offers: refill_10 (€10 excl. VAT), refill_50 (€50 excl. VAT), refill_100 (€100 excl. VAT), credited in full');
+    expect(decrit.description).toMatch(/refill_10 is enough for a trial/);
+    expect(decrit.description).not.toMatch(/refill_5[^0]/);
+    await server.close();
+    // Toutes en vente, ou aucune (l'appel refuse alors comme avant) : la description du catalogue, telle quelle.
+    const catalogue = OUTILS.find((x) => x.nom === 'buy_credit')!;
+    for (const prixVides of [[], ['refill_5', 'refill_10', 'refill_50', 'refill_100']] as OffreRecharge[][]) {
+      const m = monter({ prixVides });
+      const d = await decrire(m.server, JETON.brut, 'buy_credit');
+      expect(d.description).toBe(catalogue.description);
+      expect(d.inputSchema).toEqual(catalogue.entree);
+      await m.server.close();
+    }
   });
 
   it('list_agents et get_agent : les manques comptés et listés, sans plafonds ni texte de mention d’IA', async () => {

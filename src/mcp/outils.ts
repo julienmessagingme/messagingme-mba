@@ -240,6 +240,11 @@ export interface OutilMcp {
   annotations: AnnotationsMcp;
   entree: SchemaEntree;
   /**
+   * Ce que l'instance change à la description et au schéma rendus par `tools/list` (les offres de `buy_credit` dont le
+   * prix est configuré). Absent : l'outil est décrit tel qu'écrit, comme dans la documentation publique et le plugin.
+   */
+  selonInstance?(deps: DepsMcp): Pick<OutilMcp, 'description' | 'entree'>;
+  /**
    * 🔴 L'outil agit au nom d'une personne nommée : il n'est ni listé ni appelable avec une clé d'API (`outilsPour`),
    * seulement avec un jeton OAuth, dont la personne est un admin relu à chaque appel. Une clé `mcp:write` peut être
    * branchée comme connecteur d'un agent qui lit des messages de clients : une injection y pourrait sinon modifier un

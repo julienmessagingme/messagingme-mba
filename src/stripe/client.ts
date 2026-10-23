@@ -141,6 +141,8 @@ const prixSchema = z.object({
   id: z.string().startsWith('price_'),
   unit_amount: z.number().int().nullable(),
   currency: z.string(),
+  /** `exclusive`, `inclusive` ou `unspecified` ; lu tel quel, la recharge exige `exclusive` (`ouvrirPaiement`). */
+  tax_behavior: z.string().nullable().optional(),
   /** Absent ou nul pour un prix ponctuel (la recharge). */
   recurring: z.object({ interval: z.string(), interval_count: z.number().int() }).nullable().optional(),
 });
@@ -149,13 +151,16 @@ export interface PrixStripe {
   /** En centimes, `null` quand le prix n'a pas de montant unitaire fixe. */
   montantCentimes: number | null;
   devise: string;
+  /** Le traitement de la taxe (`tax_behavior`) : `exclusive` = la taxe s'ajoute au montant. `null` si Stripe ne le dit pas. */
+  taxe: string | null;
   /** La récurrence d'un prix d'abonnement (le numéro fourni), `null` pour un prix ponctuel. */
   recurrence: { intervalle: string; nombre: number } | null;
 }
 
 /**
  * Lit un prix chez Stripe (la clé restreinte a les prix en LECTURE). Sert à recouper, AVANT d'ouvrir un paiement, le
- * prix configuré avec l'offre qu'il est censé vendre (`src/http/credit-stripe.ts`). L'identifiant vient de la
+ * prix configuré avec ce qu'il est censé vendre : une recharge (`src/stripe/paiement.ts`, qui seule exige aussi la taxe
+ * en sus), le Pro, le numéro fourni et les sièges. L'identifiant vient de la
  * configuration serveur, jamais du client : il est quand même encodé dans le chemin.
  */
 export async function lirePrixStripe(transport: TransportStripe, o: { cle: string; prix: string }): Promise<PrixStripe> {
@@ -163,6 +168,7 @@ export async function lirePrixStripe(transport: TransportStripe, o: { cle: strin
   return {
     montantCentimes: p.unit_amount,
     devise: p.currency,
+    taxe: p.tax_behavior ?? null,
     recurrence: p.recurring ? { intervalle: p.recurring.interval, nombre: p.recurring.interval_count } : null,
   };
 }

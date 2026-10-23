@@ -25,7 +25,7 @@ class FauxStripe implements TransportStripe {
   }
   async get(url: string): Promise<ReponseStripe> {
     const id = url.slice(url.lastIndexOf('/') + 1);
-    return { status: 200, json: { id, unit_amount: id === 'price_100' ? 10_000 : 5_000, currency: 'eur' } };
+    return { status: 200, json: { id, unit_amount: id === 'price_100' ? 10_000 : 5_000, currency: 'eur', tax_behavior: 'exclusive' } };
   }
 }
 

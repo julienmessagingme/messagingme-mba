@@ -177,6 +177,12 @@ const metadonneesSchema = z.object({
   offre: z.enum(OFFRES_RECHARGE),
 });
 
+/** Nos métadonnées avec une offre quelconque : ce qui distingue une recharge d'une offre inconnue d'une vente étrangère. */
+const notreRechargeSchema = z.object({
+  tenant_id: z.uuid(),
+  offre: z.string().min(1),
+});
+
 export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookRouteDeps): void {
   const maintenant = deps.now ?? (() => Date.now());
   const abonnements = creerTraitementAbonnements(deps);
@@ -234,13 +240,32 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
     }
     const session = lue.data;
     const meta = metadonneesSchema.safeParse(session.metadata ?? {});
-    // Pas une de nos recharges : 200 sans effet, sinon Stripe rejouerait un événement qui ne nous concerne pas.
-    if (session.mode !== 'payment' || !meta.success) return reply.code(200).send({ recu: true });
     // Paiement différé pas encore arrivé : `async_payment_succeeded` viendra. `no_payment_required` est une session
     // réglée à zéro par un code promo à 100 % : elle crédite, comme un paiement.
-    if (session.payment_status !== 'paid' && session.payment_status !== 'no_payment_required') {
+    const reglee = session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
+    const facture = session.invoice === undefined || session.invoice === null
+      ? null
+      : typeof session.invoice === 'string' ? session.invoice : session.invoice.id;
+    const lienFacture = facture === null ? '' : ` ${lienTableauStripe('invoices', facture, evenement.livemode)}`;
+    // Pas une de nos recharges : 200 sans effet, sinon Stripe rejouerait un événement qui ne nous concerne pas.
+    if (session.mode !== 'payment') return reply.code(200).send({ recu: true });
+    if (!meta.success) {
+      // 🔴 NOS métadonnées avec une offre que cette version ne connaît pas (une image revenue en arrière sous une session
+      // ouverte par une plus récente) : de l'argent encaissé sans crédit, qui partait en 200 sans trace (relecture du
+      // 2026-10-22). Toujours 200 : un rejeu qui créditerait après un crédit fait à la main paierait deux fois.
+      const notre = notreRechargeSchema.safeParse(session.metadata ?? {});
+      if (notre.success && reglee) {
+        const { tenant_id: espace, offre: inconnue } = notre.data;
+        journaliser('error', 'stripe_offre_inconnue', { evenement: evenement.id, session: session.id, tenantId: espace, offre: inconnue.slice(0, 40) });
+        // La voie sûre est nommée : un crédit fait à la main n'écrit aucune ligne de paiement, et un événement renvoyé
+        // ensuite par une version qui connaît l'offre créditerait la session une seconde fois.
+        const encaisse = session.payment_status === 'paid' ? 'payée' : 'réglée à zéro par un code promo, rien encaissé';
+        await deps.numero.alerter(`Recharge ${encaisse}, pour une offre que cette version ne connaît pas (${inconnue.slice(0, 40)}) : espace ${espace}, session ${session.id}, rien n'a été crédité. Pour créditer : revenir à une version qui connaît l'offre, puis renvoyer l'événement depuis Stripe (un seul crédit par session). Sinon rembourser ; ne jamais créditer à la main puis renvoyer.${lienFacture}`);
+        return reply.code(200).send({ recu: true, credite: false });
+      }
       return reply.code(200).send({ recu: true });
     }
+    if (!reglee) return reply.code(200).send({ recu: true });
 
     // 4. 🔴 L'offre des métadonnées doit correspondre au prix HT de la ligne, en euros, pour cet espace.
     // `amount_subtotal` est le prix avant remise : un code promo ne change pas le crédit, qui reste plein.
@@ -259,9 +284,6 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
     // 5. Une transaction : la ligne de paiement (idempotence), le crédit, le mouvement `achat`. Une panne de base
     // lève, donc 5xx, et Stripe rejoue.
     const credit = creditDeLOffre(offre);
-    const facture = session.invoice === undefined || session.invoice === null
-      ? null
-      : typeof session.invoice === 'string' ? session.invoice : session.invoice.id;
     const issue = await deps.paiements.crediterPaiement({
       sessionId: session.id,
       tenantId,
@@ -277,7 +299,7 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
         evenement: evenement.id, session: session.id, tenantId,
       });
       // Un espace supprimé depuis l'ouverture du paiement : de l'argent encaissé sans crédit, à rembourser.
-      await deps.numero.alerter(`Recharge payée pour un espace inexistant (supprimé ?) ${tenantId} : session ${session.id}, à rembourser chez Stripe.${facture === null ? '' : ` ${lienTableauStripe('invoices', facture, evenement.livemode)}`}`);
+      await deps.numero.alerter(`Recharge payée pour un espace inexistant (supprimé ?) ${tenantId} : session ${session.id}, à rembourser chez Stripe.${lienFacture}`);
       return reply.code(200).send({ recu: true, credite: false });
     }
     if (issue === 'credite') {

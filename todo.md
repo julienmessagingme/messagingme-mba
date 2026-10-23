@@ -44,6 +44,16 @@ Aujourd'hui `budgetMicroEur` ne se règle que par la route de la console (`src/a
 micro-euros), et aucun écran ni outil ne l'expose. Ses deux voisins, `maxTours` (8 par défaut) et `maxAppelsOutils`
 (12), coupent toujours une conversation longue par « Plafond atteint » : à reposer avec Julien dans le même outil.
 
+## 🟡 Recharges du crédit IA : ce qui reste après le lot des jaunes (2026-10-23)
+
+Plan soldé : `docs/superpowers/plans/2026-10-23-recharges-jaunes.md`.
+
+- **Une image antérieure au lot encaisse encore en silence** une offre qu'elle ne connaît pas : l'alerte
+  `stripe_offre_inconnue` n'existe qu'à partir de ce lot. Après un retour arrière plus ancien, relever chez Stripe les
+  sessions de recharge payées pendant la fenêtre.
+- **Une instance en clé de test refuse toute recharge si ses prix ne sont pas `exclusive`** : seuls les quatre prix live
+  ont été mesurés (le 2026-10-23). À vérifier avant un essai en mode test.
+
 ## 🟡 Filière application : ce qui reste après le lot des jaunes (2026-10-23)
 
 Plan soldé : `docs/superpowers/plans/2026-10-23-filiere-application-jaunes.md` (parcours gelé, deux filières, numéro de
@@ -76,17 +86,6 @@ Meta délié, finitions de l'adressage masqué, mise en file retentée, e-mail d
 - Mineurs : l'empreinte d'état a changé une fois pour tous les états au déploiement du lot 1 ; quelques textes disent
   encore la filière avant la connexion de Meta ; une demande de renvoi d'un de NOS appareils liés secondaires repart sans
   enveloppe pour un message adressé à `@lid` (limite de Baileys 6.7.23, `messages-send.js`).
-## 🟡 Les jaunes de la relecture des recharges de 5 et 10 € (2026-10-22)
-
-- **Une métadonnée d'offre inconnue répond 200 en silence** (`src/http/credit-stripe.ts`) : après un retour arrière d'image
-  antérieure au lot, une session `refill_5` ou `refill_10` encore ouverte serait encaissée sans crédit, sans alerte, et
-  Stripe ne la rejouerait pas. Avec un `tenant_id` présent, journaliser une erreur et alerter (à rembourser).
-- **`lirePrixStripe` ne lit pas `tax_behavior`** : un prix créé taxe incluse passerait le contrôle. Les deux prix neufs
-  sont en `exclusive` (lu chez Stripe le 2026-10-22) ; ajouter la vérification au contrôle préalable.
-- **La description de `buy_credit` annonce les quatre offres même quand un prix est vide** sur l'instance : dériver
-  l'énumération des prix configurés.
-- **Aucun test du webhook ne crédite `refill_10`** (la dérivation commune le couvre).
-
 ## 🟡 Shopify depuis la console : ce que les relectures laissent (2026-10-22)
 
 Plan : `docs/superpowers/plans/2026-10-22-shopify-console.md`.

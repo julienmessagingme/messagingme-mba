@@ -62,10 +62,12 @@ function ko(id: string | number, code: number, message: string): ReponseRpc {
 
 /**
  * La description d'un outil telle que MCP l'attend dans `tools/list`. `title` est aussi au premier niveau : c'est là
- * que la spécification 2025-06-18 le lit en premier, l'annotation n'étant que son repli.
+ * que la spécification 2025-06-18 le lit en premier, l'annotation n'étant que son repli. La description et le schéma
+ * sont ceux de l'instance quand l'outil les ajuste (`selonInstance`).
  */
-function descriptionOutil(o: OutilMcp): Record<string, unknown> {
-  return { name: o.nom, title: o.annotations.title, description: o.description, inputSchema: o.entree, annotations: o.annotations };
+function descriptionOutil(o: OutilMcp, deps: DepsMcp): Record<string, unknown> {
+  const { description, entree } = o.selonInstance?.(deps) ?? o;
+  return { name: o.nom, title: o.annotations.title, description, inputSchema: entree, annotations: o.annotations };
 }
 
 /**
@@ -105,7 +107,7 @@ export async function traiterMessage(deps: DepsMcp, ctx: ContexteMcp, message: u
     case 'tools/list':
       // Un outil hors des scopes de la clé n'est même pas listé, ni un outil qui exige une personne derrière une clé :
       // la liste dit exactement ce que cet appel permet.
-      return ok(id, { tools: outilsPour(ctx).map(descriptionOutil) });
+      return ok(id, { tools: outilsPour(ctx).map((o) => descriptionOutil(o, deps)) });
     case 'tools/call': {
       const params = (m.params ?? {}) as { name?: unknown; arguments?: unknown };
       const nom = typeof params.name === 'string' ? params.name : '';

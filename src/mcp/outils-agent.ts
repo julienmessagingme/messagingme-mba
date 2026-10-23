@@ -30,7 +30,7 @@ import type { OutilComplet } from '../agent/catalog';
 import { PLAFOND_GATEWAY_MIN_DOLLARS, eurosDepuisMicro } from '../agent/devise';
 import type { LigneHistorique } from '../agent/credits';
 import { ouvrirPaiement, type DepsPaiement } from '../stripe/paiement';
-import { OFFRES_RECHARGE, definitionOffre } from '../stripe/offres';
+import { OFFRES_RECHARGE, definitionOffre, type OffreRecharge } from '../stripe/offres';
 import { LIGNES_HISTORIQUE } from '../http/agents';
 import { estUuid } from '../http/scope';
 import { choisirRepondeur, choixDeLAncienneFormeSousLOffre, type ChoixRepondeur, type DepsReglageRepondeur } from '../repondeur/reglage';
@@ -218,10 +218,27 @@ const CHAMPS_FICHE_MCP = ['objectif', 'ton', 'personnalite', 'reglesTransfert', 
 const CLES_UPDATE_AGENT: ReadonlySet<string> = new Set(['agent_id', ...CHAMPS_FICHE_MCP, 'modele', 'fiche_version', 'mention_ia_langue']);
 
 /**
- * Une offre et son montant hors taxe, lus dans la définition de l'offre : le prix n'est écrit qu'une fois. Lu par la
- * seule description de `buy_credit`, donc en anglais.
+ * La description et le schéma de `buy_credit` pour des offres données, la plus petite en tête : toutes dans le
+ * catalogue, celles dont le prix est configuré dans `tools/list` (`selonInstance`). Chaque montant hors taxe est lu
+ * dans la définition de l'offre : le prix n'est écrit qu'une fois. En anglais, comme toutes les descriptions.
  */
-const OFFRES_EN_CLAIR = OFFRES_RECHARGE.map((o) => `${o} (€${definitionOffre(o).htCentimes / 100} excl. VAT)`).join(', ');
+function descriptionBuyCredit(offres: readonly OffreRecharge[]): Pick<OutilMcp, 'description' | 'entree'> {
+  const enClair = offres.map((o) => `${o} (€${definitionOffre(o).htCentimes / 100} excl. VAT)`).join(', ');
+  return {
+    description:
+      'Opens the payment of an AI credit top-up and returns the URL of the Stripe checkout page; the payment itself is '
+      + 'made by the person on that page, and the credit arrives once Stripe has confirmed it (get_credit). '
+      + `Offers: ${enClair}, credited in full. Offer the smallest amount that covers the need: ${offres[0]} is `
+      + 'enough for a trial. The amount is stated EXCLUDING TAX (montant_ht_eur): the tax is '
+      + 'calculated by Stripe on the payment page, from the country and the VAT number the person enters there. '
+      + LOURDE,
+    entree: {
+      type: 'object',
+      properties: { offre: { type: 'string', enum: [...offres], description: 'The top-up offer.' } },
+      required: ['offre'],
+    },
+  };
+}
 
 export const OUTILS_AGENT: OutilMcp[] = [
   {
@@ -936,20 +953,16 @@ export const OUTILS_AGENT: OutilMcp[] = [
   {
     ...ficheOutilMcp('buy_credit'),
     fonction: null,
-    description:
-      'Opens the payment of an AI credit top-up and returns the URL of the Stripe checkout page; the payment itself is '
-      + 'made by the person on that page, and the credit arrives once Stripe has confirmed it (get_credit). '
-      + `Offers: ${OFFRES_EN_CLAIR}, credited in full. Offer the smallest amount that covers the need: refill_5 is `
-      + 'enough for a trial. The amount is stated EXCLUDING TAX (montant_ht_eur): the tax is '
-      + 'calculated by Stripe on the payment page, from the country and the VAT number the person enters there. '
-      + LOURDE,
+    ...descriptionBuyCredit(OFFRES_RECHARGE),
+    // Une offre sans prix sur l'instance refuse « recharge pas encore disponible » : on ne la propose pas (relecture du
+    // 2026-10-22). Aucune en vente : le catalogue tel quel, et l'appel refuse comme avant.
+    selonInstance(deps) {
+      const s = deps.agentIa.paiement.stripe;
+      const enVente = OFFRES_RECHARGE.filter((o) => s !== null && s.prix[o] !== '');
+      return descriptionBuyCredit(enVente.length > 0 ? enVente : OFFRES_RECHARGE);
+    },
     // Monde ouvert : elle crée une session chez Stripe. Non idempotente : une session de plus à chaque appel.
     annotations: ecriture('Open an AI credit top-up', false, true),
-    entree: {
-      type: 'object',
-      properties: { offre: { type: 'string', enum: [...OFFRES_RECHARGE], description: 'The top-up offer.' } },
-      required: ['offre'],
-    },
     async executer(deps, tenantId, args, personne) {
       const payeur = signataire(personne);
       await plafondCouteux(deps, tenantId);

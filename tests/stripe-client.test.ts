@@ -111,8 +111,8 @@ describe('créer une session Checkout', () => {
 
 describe('lire un prix', () => {
   it('🔴 un GET sur le prix, clé en Bearer, version épinglée, SANS clé d’idempotence (une lecture ne crée rien)', async () => {
-    const t = new FauxTransport([{ status: 200, json: { id: 'price_refill_50', unit_amount: 5_000, currency: 'eur', active: true } }]);
-    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_refill_50' })).toEqual({ montantCentimes: 5_000, devise: 'eur', recurrence: null });
+    const t = new FauxTransport([{ status: 200, json: { id: 'price_refill_50', unit_amount: 5_000, currency: 'eur', tax_behavior: 'exclusive', active: true } }]);
+    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_refill_50' })).toEqual({ montantCentimes: 5_000, devise: 'eur', taxe: 'exclusive', recurrence: null });
     expect(t.appels[0]!.url).toBe('https://api.stripe.com/v1/prices/price_refill_50');
     expect(t.appels[0]!.entetes).toEqual({ authorization: `Bearer ${CLE}`, 'stripe-version': VERSION_API_STRIPE });
   });
@@ -123,7 +123,7 @@ describe('lire un prix', () => {
       { status: 200, json: { id: 'pas_un_prix' } },
       { status: 404, json: { error: { type: 'invalid_request_error', code: 'resource_missing', message: 'No such price' } } },
     ]);
-    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).toEqual({ montantCentimes: null, devise: 'eur', recurrence: null });
+    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).toEqual({ montantCentimes: null, devise: 'eur', taxe: null, recurrence: null });
     await expect(lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).rejects.toBeInstanceOf(StripeError);
     await expect(lirePrixStripe(t, { cle: CLE, prix: 'price_x' })).rejects.toMatchObject({ operation: 'prix', status: 404, code: 'resource_missing' });
   });
@@ -197,7 +197,7 @@ describe('l’abonnement du numéro fourni (lot 3c, livraison B)', () => {
 
   it('🔴 un prix récurrent se lit avec sa récurrence', async () => {
     const t = new FauxTransport([{ status: 200, json: { id: 'price_numero', unit_amount: 350, currency: 'eur', type: 'recurring', recurring: { interval: 'month', interval_count: 1 } } }]);
-    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_numero' })).toEqual({ montantCentimes: 350, devise: 'eur', recurrence: { intervalle: 'month', nombre: 1 } });
+    expect(await lirePrixStripe(t, { cle: CLE, prix: 'price_numero' })).toEqual({ montantCentimes: 350, devise: 'eur', taxe: null, recurrence: { intervalle: 'month', nombre: 1 } });
   });
 
   it('🔴 la session d’abonnement : mode subscription, taxe et TVA, NOS métadonnées sur la session ET l’abonnement, sans facture à part', async () => {

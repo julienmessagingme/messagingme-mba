@@ -86,11 +86,13 @@ export async function ouvrirPaiement(
     // paiement que s'il a encaissé, en euros, le HT de l'offre : un prix mal configuré (un identifiant interverti
     // entre les deux offres, un prix en dollars, un montant faux) laissait payer le client, puis refusait de le
     // créditer. On refuse donc AVANT le paiement, sans rien créer chez Stripe, et on le dit au journal.
+    // Le prix doit aussi être HORS TAXE (`exclusive`) : taxe incluse ou non précisée, la TVA serait prise dans le prix,
+    // et le crédit, dérivé du HT, dépasserait ce qui a été encaissé hors taxe (relecture du 2026-10-22).
     const attendu = definitionOffre(offre).htCentimes;
     const prix = await lirePrixStripe(s.transport, { cle: s.cle, prix: s.prix[offre] });
-    if (prix.montantCentimes !== attendu || prix.devise !== 'eur') {
+    if (prix.montantCentimes !== attendu || prix.devise !== 'eur' || prix.taxe !== 'exclusive') {
       journaliser('error', 'stripe_prix_incoherent', {
-        tenantId, offre, prix: s.prix[offre], attenduCentimes: attendu, luCentimes: prix.montantCentimes, devise: prix.devise,
+        tenantId, offre, prix: s.prix[offre], attenduCentimes: attendu, luCentimes: prix.montantCentimes, devise: prix.devise, taxe: prix.taxe,
       });
       return refus(422,
         'La recharge est momentanément indisponible : son tarif est en cours de correction. Réessayez plus tard, ou contactez-nous.',

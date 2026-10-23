@@ -31,12 +31,12 @@ beforeAll(async () => {
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const h = (jeton: string) => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${jeton}` } });
 
-/** Les prix tels que Stripe les rend : ceux de la configuration valent le HT de leur offre, en euros. */
+/** Les prix tels que Stripe les rend : ceux de la configuration valent le HT de leur offre, en euros, taxe en sus. */
 const PRIX_JUSTES: Record<string, ReponseStripe> = {
-  price_5: { status: 200, json: { id: 'price_5', unit_amount: 500, currency: 'eur' } },
-  price_10: { status: 200, json: { id: 'price_10', unit_amount: 1_000, currency: 'eur' } },
-  price_50: { status: 200, json: { id: 'price_50', unit_amount: 5_000, currency: 'eur' } },
-  price_100: { status: 200, json: { id: 'price_100', unit_amount: 10_000, currency: 'eur' } },
+  price_5: { status: 200, json: { id: 'price_5', unit_amount: 500, currency: 'eur', tax_behavior: 'exclusive' } },
+  price_10: { status: 200, json: { id: 'price_10', unit_amount: 1_000, currency: 'eur', tax_behavior: 'exclusive' } },
+  price_50: { status: 200, json: { id: 'price_50', unit_amount: 5_000, currency: 'eur', tax_behavior: 'exclusive' } },
+  price_100: { status: 200, json: { id: 'price_100', unit_amount: 10_000, currency: 'eur', tax_behavior: 'exclusive' } },
 };
 
 class FauxStripe implements TransportStripe {
@@ -197,14 +197,20 @@ describe('POST /tenants/:tenantId/credit/paiement', () => {
     await p.srv.close();
   });
 
-  it('🔴 un prix qui ne vaut pas le HT de l’offre, ou pas en euros : 422 lisible, RIEN n’est créé chez Stripe', async () => {
+  it('🔴 un prix qui ne vaut pas le HT de l’offre, pas en euros, ou pas hors taxe : 422 lisible, RIEN n’est créé chez Stripe', async () => {
     // Le défaut relevé le 2026-09-29 : un prix mal configuré laissait payer, puis le webhook refusait de créditer.
+    // Taxe incluse ou non précisée (relecture du 2026-10-22) : la TVA serait prise dans le prix, et le crédit, dérivé
+    // du HT, serait plus grand que ce qui a été encaissé hors taxe.
     const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
+      const faux50 = (json: Record<string, unknown>) => ({ ...PRIX_JUSTES, price_50: { status: 200, json: { id: 'price_50', ...json } } });
       for (const faux of [
-        { ...PRIX_JUSTES, price_50: { status: 200, json: { id: 'price_50', unit_amount: 10_000, currency: 'eur' } } }, // interverti
-        { ...PRIX_JUSTES, price_50: { status: 200, json: { id: 'price_50', unit_amount: 5_000, currency: 'usd' } } }, // devise
-        { ...PRIX_JUSTES, price_50: { status: 200, json: { id: 'price_50', unit_amount: null, currency: 'eur' } } }, // sans montant
+        faux50({ unit_amount: 10_000, currency: 'eur', tax_behavior: 'exclusive' }), // interverti
+        faux50({ unit_amount: 5_000, currency: 'usd', tax_behavior: 'exclusive' }), // devise
+        faux50({ unit_amount: null, currency: 'eur', tax_behavior: 'exclusive' }), // sans montant
+        faux50({ unit_amount: 5_000, currency: 'eur', tax_behavior: 'inclusive' }), // taxe incluse
+        faux50({ unit_amount: 5_000, currency: 'eur', tax_behavior: 'unspecified' }), // taxe non précisée
+        faux50({ unit_amount: 5_000, currency: 'eur' }), // taxe absente de la réponse
       ]) {
         const p = paiement({ prix: faux });
         const r = await payer(p.srv, { offre: 'refill_50' });
@@ -213,7 +219,7 @@ describe('POST /tenants/:tenantId/credit/paiement', () => {
         expect(p.transport.appels).toHaveLength(0);
         await p.srv.close();
       }
-      expect(erreurs.mock.calls.flat().join(' ').match(/stripe_prix_incoherent/g)).toHaveLength(3);
+      expect(erreurs.mock.calls.flat().join(' ').match(/stripe_prix_incoherent/g)).toHaveLength(6);
     } finally {
       erreurs.mockRestore();
     }
@@ -536,6 +542,41 @@ describe('POST /webhooks/stripe', () => {
     await w.srv.close();
   });
 
+  it('🔴 une recharge de 10 € crédite 10 € pour 1 000 centimes HT encaissés', async () => {
+    const w = webhook();
+    const dix = session({ id: 'cs_10', amount_subtotal: 1_000, amount_total: 1_200, metadata: { tenant_id: T1, offre: 'refill_10' } });
+    expect((await envoyer(w.srv, evenement(dix))).json()).toMatchObject({ credite: true });
+    expect(w.paiements.credits.map((c) => [c.offre, c.creditMicroEur, c.htCentimes])).toEqual([['refill_10', 10_000_000, 1_000]]);
+    await w.srv.close();
+  });
+
+  it('🔴 une offre que cette version ne connaît pas, réglée pour un espace : rien n’est crédité, l’erreur se journalise et Julien est prévenu', async () => {
+    // Un retour arrière d'image sous une session ouverte par une version plus récente (une offre ajoutée depuis) : de
+    // l'argent encaissé sans crédit, qui partait en 200 sans aucune trace (relecture du 2026-10-22).
+    const w = webhook();
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const inconnue = session({ id: 'cs_inconnue', metadata: { tenant_id: T1, offre: 'refill_20' } });
+      const r = await envoyer(w.srv, evenement(inconnue));
+      expect(r.statusCode).toBe(200);
+      expect(r.json()).toMatchObject({ credite: false });
+      expect(erreurs.mock.calls.flat().join(' ').match(/stripe_offre_inconnue/g)).toHaveLength(1);
+      // Pas encore réglée : le paiement différé dira s'il est encaissé, aucune alerte d'ici là.
+      await envoyer(w.srv, evenement(session({ id: 'cs_inconnue_b', payment_status: 'unpaid', metadata: { tenant_id: T1, offre: 'refill_20' } })));
+      expect(erreurs.mock.calls.flat().join(' ').match(/stripe_offre_inconnue/g)).toHaveLength(1);
+    } finally {
+      erreurs.mockRestore();
+    }
+    expect(w.paiements.credits).toEqual([]);
+    expect(w.plafonds).toEqual([]);
+    expect(w.alertes).toHaveLength(1);
+    expect(w.alertes[0]).toContain('refill_20');
+    expect(w.alertes[0]).toContain(T1);
+    expect(w.alertes[0]).toContain('cs_inconnue');
+    expect(w.alertes[0]).toContain('https://dashboard.stripe.com/invoices/in_1');
+    await w.srv.close();
+  });
+
   it('🔴 une session NON PAYÉE ne crédite rien : on attend le paiement différé', async () => {
     const w = webhook();
     expect((await envoyer(w.srv, evenement(session({ payment_status: 'unpaid' })))).statusCode).toBe(200);
@@ -574,7 +615,11 @@ describe('POST /webhooks/stripe', () => {
     expect((await envoyer(w.srv, evenement(session({ metadata: {} })))).statusCode).toBe(200);
     expect((await envoyer(w.srv, evenement(session({ metadata: null })))).statusCode).toBe(200);
     expect((await envoyer(w.srv, evenement(session({ mode: 'subscription' })))).statusCode).toBe(200);
+    // Une offre sans espace valide, ou un espace sans offre : pas nos métadonnées non plus, donc personne n'est prévenu.
+    expect((await envoyer(w.srv, evenement(session({ metadata: { tenant_id: 'pas-un-uuid', offre: 'refill_20' } })))).statusCode).toBe(200);
+    expect((await envoyer(w.srv, evenement(session({ metadata: { tenant_id: T1 } })))).statusCode).toBe(200);
     expect(w.paiements.credits).toEqual([]);
+    expect(w.alertes).toEqual([]);
     await w.srv.close();
   });
 

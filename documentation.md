@@ -3928,11 +3928,11 @@ est écrit sans SDK (formulaire `x-www-form-urlencoded`, `Stripe-Version` éping
 webhook, `Idempotency-Key` sur chaque création, `client-<espace>` pour le client Stripe), avec un transport
 injectable : aucun test n'appelle Stripe.
 - `POST /tenants/:tenantId/credit/paiement` (admin, plafond coûteux) : le corps ne porte qu'une offre
-  (`OFFRES_RECHARGE` : `refill_5`, `refill_10`, `refill_50`, `refill_100` ; l'écran n'en propose que 50 et 100, `buy_credit` les quatre) ; le prix Stripe vient de la configuration, le crédit de `src/stripe/offres.ts`
+  (`OFFRES_RECHARGE` : `refill_5`, `refill_10`, `refill_50`, `refill_100` ; l'écran n'en propose que 50 et 100, `buy_credit` celles dont le prix est configuré, par `selonInstance` dans `tools/list`) ; le prix Stripe vient de la configuration, le crédit de `src/stripe/offres.ts`
   (dérivé du HT). Le client Stripe de l'espace est créé au premier achat et gardé PAR MODE (`stripe_clients`,
   clé `(tenant_id, livemode)`) : un client de test n'existe pas en live. 🔴 **Le prix est relu chez Stripe AVANT
   tout** (`lirePrixStripe`, la clé restreinte a les prix en lecture) : s'il ne vaut pas le HT de l'offre, en
-  `eur`, la route rend 422 `prix_incoherent` et une trace `stripe_prix_incoherent`, sans rien créer, au lieu de
+  `eur`, hors taxe (`tax_behavior` à `exclusive`, sinon le crédit dérivé du HT dépasserait l'encaissé), la route rend 422 `prix_incoherent` et une trace `stripe_prix_incoherent`, sans rien créer, au lieu de
   laisser payer un paiement que le webhook refuserait de créditer. La session Checkout porte la taxe
   automatique, l'Adaptive Pricing ÉTEINT (le client paie en euros, que le webhook sait recouper), la collecte du
   numéro de TVA, l'adresse de facturation requise, la facture, et nos métadonnées (`tenant_id`, `offre`,
@@ -3950,7 +3950,9 @@ injectable : aucun test n'appelle Stripe.
 - `POST /webhooks/stripe` (classe `signature-service`) : 🔴 **la signature d'abord**, sur le corps brut
   (HMAC SHA-256 de `t.corps`, chaque `v1`, temps constant, cinq minutes), 401 sinon, avant toute lecture ;
   puis `safeParse`. Seuls `checkout.session.completed` payé et `checkout.session.async_payment_succeeded`
-  créditent ; une session sans nos métadonnées rend 200 sans effet. Un événement d'un autre `livemode` que la clé
+  créditent ; une session sans nos métadonnées rend 200 sans effet. Nos métadonnées avec une offre que la version ne
+  connaît pas (retour arrière d'image), une fois réglée : aucun crédit, 200, trace `stripe_offre_inconnue` et alerte
+  (à créditer à la main ou à rembourser). Un événement d'un autre `livemode` que la clé
   configurée ne crédite rien (200, trace `stripe_mode_incoherent`). 🔴 **Le recoupement** : `amount_subtotal`
   doit valoir le HT de l'offre, en `eur`, et la référence désigner le même espace, sinon aucun crédit et une trace
   `stripe_paiement_incoherent`. 🔴 **L'idempotence** : UNE transaction (ligne `stripe_paiements`, clé primaire
