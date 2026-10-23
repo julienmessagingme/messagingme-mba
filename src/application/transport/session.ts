@@ -2,7 +2,9 @@
 // de wagroups (commit 526d3cc, `src/transport/baileys/transport.ts` : options du socket, sauvegarde des identifiants,
 // lecture de la fermeture par la forme de l'erreur), réduite à ce que la filière application fait : le QR code, les
 // conversations individuelles, l'envoi d'un texte. Les types de Baileys ne sortent pas de ce dossier.
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, normalizeMessageContent, type proto, type WAMessage, type WASocket } from '@whiskeysockets/baileys';
+import makeWASocket, {
+  DisconnectReason, WAMessageStubType, fetchLatestBaileysVersion, normalizeMessageContent, type proto, type WAMessage, type WASocket,
+} from '@whiskeysockets/baileys';
 import type { Pool } from 'pg';
 import type { Verification } from '../interne';
 import { estIndividuel, type TypeMessageApplication } from '../message';
@@ -107,6 +109,26 @@ export function versMessageApplication(brut: WAMessage): MessageApplication | nu
     horodatage: new Date(Number(brut.messageTimestamp ?? 0) * 1000), type: c.type, texte: c.texte,
     numero: jid.endsWith('@s.whatsapp.net') ? chiffres(jid) : deMoi ? null : chiffres(pn),
   };
+}
+
+/**
+ * La trace d'un message que Baileys remet SANS CONTENU (essai 152 du 2026-10-23) : indéchiffré, ou simple marque
+ * d'attente que le téléphone de l'entreprise doit compléter. Il était écarté en silence, et un message reçu pendant une
+ * coupure n'est arrivé qu'à l'ouverture de ce téléphone. La trace dit ce que WhatsApp remet et quand, sans rien de
+ * personnel : ni numéro, ni identifiant de contact, ni texte. `null` pour tout le reste (un message lisible, une réaction,
+ * un groupe, et toute autre marque : un appel manqué n'est pas un message perdu).
+ */
+export function traceDuMessageSansContenu(brut: WAMessage, remise: string): string | null {
+  const jid = brut.key?.remoteJid;
+  if (!jid || !estIndividuel(jid) || normalizeMessageContent(brut.message)) return null;
+  const n = brut.messageStubType;
+  const indechiffre = n === WAMessageStubType.CIPHERTEXT;
+  if (typeof n === 'number' && !indechiffre) return null;
+  const marque = indechiffre ? 'CIPHERTEXT' : 'aucune';
+  // La raison d'un message indéchiffré est une phrase de Baileys (vérifié dans la 6.7.23) : ni numéro, ni texte.
+  const raison = indechiffre ? brut.messageStubParameters?.[0] : undefined;
+  return `message ${brut.key.id ?? '?'} remis sans contenu (${remise}, marque ${marque}`
+    + `${raison ? ` : ${String(raison).slice(0, 80)}` : ''}${brut.key.fromMe ? ', de moi' : ''})`;
 }
 
 /**
@@ -238,6 +260,8 @@ export async function ouvrirSession(
     try {
       if (u.qr) await rappels.qr(u.qr);
       if (u.connection === 'open') await rappels.ouverte(sock.user?.id ?? '');
+      // La fin de la remise de ce qui attendait pendant la coupure : l'heure à comparer aux messages tracés sans contenu.
+      if (u.receivedPendingNotifications) console.warn(`application ${compte.id} : messages en attente remis`);
       if (u.connection === 'close') {
         const code = codeDeconnexion(u.lastDisconnect?.error);
         await rappels.fermee(causeDeFermeture(code), code);
@@ -246,15 +270,19 @@ export async function ouvrirSession(
       console.error(`application ${compte.id} : changement de connexion non traité`, err);
     }
   });
-  sock.ev.on('messages.upsert', async ({ messages }) => {
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const brut of messages) {
-      const lu = versMessageApplication(brut);
-      if (!lu) continue;
       try {
+        const lu = versMessageApplication(brut);
+        if (!lu) {
+          const trace = traceDuMessageSansContenu(brut, type);
+          if (trace) console.warn(`application ${compte.id} : ${trace}`);
+          continue;
+        }
         const m = await completerNumero(lu, correspondances);
         await rappels.message(m);
       } catch (err) {
-        console.error(`application ${compte.id} : message ${lu.id} non traité`, err);
+        console.error(`application ${compte.id} : message ${brut.key?.id ?? '?'} non traité`, err);
       }
     }
   });

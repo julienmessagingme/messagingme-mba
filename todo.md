@@ -74,9 +74,14 @@ Meta délié, finitions de l'adressage masqué, mise en file retentée, e-mail d
   2026-10-23) : service arrêté de 19 h 08 à 19 h 10, message envoyé à 19 h 09, compte reconnecté à 19 h 10 min 59 s ; rien
   en 36 minutes alors que le message était sur le téléphone ; arrivé en base à 19 h 46 min 45 s, quand ce téléphone a été
   ouvert, et l'agent a répondu 3 s après. Le matin, il était arrivé avec le message suivant du contact. Le service écarte
-  sans trace un message qu'il ne sait pas lire (`versMessageApplication` rend `null` sans contenu) : journaliser ces
-  arrivées vides (sans contenu ni numéro) pour savoir ce que WhatsApp remet à la reconnexion, puis décider avec Julien
-  entre le dire au client (« gardez le téléphone allumé ») et corriger.
+  sans trace un message qu'il ne sait pas lire : depuis le lot qui suit l'essai, il le trace (`traceDuMessageSansContenu`,
+  « remis sans contenu », et « messages en attente remis » à la reconnexion). Refaire l'essai 152 et lire ces traces
+  pour savoir ce que WhatsApp remet à la reconnexion, puis décider avec Julien entre le dire au client (« gardez le
+  téléphone allumé ») et corriger.
+- 🔶 **Le journal de Baileys écrit le numéro du contact à chaque échec de déchiffrement** (relecture de la trace des
+  messages sans contenu, 2026-10-23) : `journalBaileys` (`src/application/transport/session.ts`) passe à `console.error`
+  l'objet `{ key, err }` de `decode-wa-message.js`, dont `key` porte `remoteJid` et `senderPn`. Filtrer `key` dans
+  `journalBaileys`, comme `journal-signal.ts` le fait pour les sessions. Préexistant, à traiter en premier dans ce bloc.
 - **La suppression d'un espace ne retire pas l'appareil lié** : la session continue, et ses messages finissent en file
   d'erreurs jusqu'au redémarrage du service. Appeler `retirer` du service à la suppression.
 - **Un message tapé sur le téléphone : la prise de main se perd si elle échoue puis que le job est rejoué** (« déjà

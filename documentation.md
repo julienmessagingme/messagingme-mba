@@ -351,7 +351,12 @@ avec `numero-du-lid`) : adressée à son numéro, elle restait « En attente de 
 son ordinateur. La conversation garde le numéro pour clé. 🔴 **Le socket a un `getMessage`** sur une mémoire des 500
 derniers envois PAR COMPTE (`memoiresDesComptes`, qui survit aux reconnexions) : sans lui, Baileys ne renvoie rien à
 l'appareil qui demande un renvoi. Les quatre messages de `libsignal` qui portent une session, clés privées comprises,
-s'écrivent sans elle (`taireLesClesDeSignal`, tenu par un test qui lit la bibliothèque installée).
+s'écrivent sans elle (`taireLesClesDeSignal`, tenu par un test qui lit la bibliothèque installée). Un message que
+Baileys remet SANS CONTENU (indéchiffré, ou marque d'attente que le téléphone doit compléter) se trace, sans numéro,
+identifiant de contact ni texte : son identifiant, la remise (`notify` ou `append`), sa marque et, pour un
+`CIPHERTEXT`, la raison donnée par Baileys (`traceDuMessageSansContenu`) ; la fin de la remise de ce qui attendait
+pendant une coupure se trace aussi (« messages en attente remis »). ⚠️ Mesuré (essai 152) : un message reçu pendant une
+coupure du service n'arrive qu'à la remise en ligne du téléphone de l'entreprise.
 
 
 ```
