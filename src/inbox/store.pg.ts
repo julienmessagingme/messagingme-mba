@@ -2033,7 +2033,7 @@ export class PgInboxStore implements InboxStore {
                          where meta_message_id = $3 and conversation_id = $1 and direction = 'out') as recorded`,
       // Une réponse de Claude signée d'une personne compte comme celle de l'Inbox (`vautReponseDeLEquipe`).
       [conversationId, body, messageId, type, templateCategory, templateName, senderUserId, channel, origine, redactionOrigine,
-       vautReponseDeLEquipe(origine, senderUserId)],
+       vautReponseDeLEquipe(origine, senderUserId, type)],
     );
     // Un identifiant déjà porté par un AUTRE fil n'est pas un rejeu réussi.
     if (resultat.rows[0]?.recorded !== true) throw new Error('message sortant non journalisé dans cette conversation');

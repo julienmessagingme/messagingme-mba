@@ -51,12 +51,14 @@ export function parCause(quoi: string): AuteurDuChangement {
 
 /**
  * Qui prend le fil en écrivant au client, d'après l'origine du message : l'opérateur qui signe, ou la machine qui
- * écrit (API publique, agent tiers par MCP). Un seul endroit pour les deux routes d'envoi qui prennent le fil.
+ * écrit (API publique, agent tiers par MCP). Un seul endroit pour les deux routes d'envoi qui prennent le fil. Claude au
+ * nom d'une personne connectée (`mcp` avec un auteur) signe de cette personne, comme sa réponse vaut celle de l'équipe
+ * (`vautReponseDeLEquipe`) ; derrière une clé d'API, sans personne, c'est la machine.
  */
 export function auteurDeLEnvoi(origine: OrigineMessage, auteur: string | null): AuteurDuChangement {
   if (origine === 'humain') return { collaborateur: auteur };
   if (origine === 'api') return parCause('envoi par l’API');
-  if (origine === 'mcp') return parCause('envoi par un agent tiers (MCP)');
+  if (origine === 'mcp') return auteur !== null ? { collaborateur: auteur } : parCause('envoi par un agent tiers (MCP)');
   return parCause(`envoi (${origine})`);
 }
 

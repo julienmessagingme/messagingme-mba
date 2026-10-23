@@ -316,6 +316,15 @@ describe('la conversation passée à l’équipe', () => {
     }
   });
 
+  it('les deux e-mails de transfert bornent la règle des 24 heures : un numéro relié par l’application WhatsApp Business n’en a pas (lot 3)', () => {
+    for (const cle of CLES_TRANSFERT) {
+      const m = modeleDe(cle)!;
+      expect(m.textes.fr.corps, cle).toMatch(/l’application WhatsApp Business n’a pas cette limite/);
+      expect(m.textes.en.corps, cle).toMatch(/WhatsApp Business app has no such limit/);
+      for (const corps of [m.textes.fr.corps, m.textes.en.corps]) expect(corps, cle).not.toMatch(/WhatsApp n’accepte plus|WhatsApp only accepts/);
+    }
+  });
+
   it('une offre illisible garde l’e-mail d’aujourd’hui, avec le lien vers l’Inbox', async () => {
     const { p, e } = prevenir(contexte(), 0, 'panne');
     await p('t1', '33612345678');

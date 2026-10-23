@@ -1131,14 +1131,17 @@ describe('serveur MCP : les modèles (lot 13, domaine 3)', () => {
   /** Meta est un faux `fetch` qui garde le corps de chaque appel ; la création de l'écran Modèles est la vraie. */
   function modeles(reponse: unknown, liste: TemplateSummary[] = []) {
     const corps: Array<Record<string, unknown> | null> = [];
+    const oublis: string[] = [];
     const fetchMeta: FetchLike = async (_url, init) => {
       corps.push(typeof init.body === 'string' ? JSON.parse(init.body) as Record<string, unknown> : null);
       return { ok: true, status: 200, json: async () => reponse } as Response;
     };
     return {
       corps,
+      oublis,
       modeles: {
         lister: async () => liste,
+        oublier: async (tenant: string) => { oublis.push(tenant); },
         modeles: {
           ...modelesInertes,
           meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fetchMeta) },
@@ -1170,8 +1173,11 @@ describe('serveur MCP : les modèles (lot 13, domaine 3)', () => {
     expect(await outil.executer(deps, 't1', { template: MODELE }, { userId: 'u1' }))
       .toEqual({ id: 'tid', name: 'commande_prete', language: 'fr', category: 'utility', status: 'pending' });
     expect(m.corps).toHaveLength(1);
+    // La liste en cache s'oublie : list_templates montre le modèle créé tout de suite.
+    expect(m.oublis).toEqual(['t1']);
     await expect(outil.executer(deps, 't1', { template: { ...MODELE, category: 'AUTHENTICATION' } }, { userId: 'u1' })).rejects.toThrow(/category/);
     expect(m.corps).toHaveLength(1);
+    expect(m.oublis).toEqual(['t1']);
   });
 
   it('get_template_status rend chaque langue et le motif d’un refus ; list_templates la liste en minuscules', async () => {

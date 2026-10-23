@@ -1,5 +1,41 @@
 # todo.md : backlog
 
+## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 3 (2026-10-23)
+
+Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`).
+
+1. **Un lien tracé sous un ancien nom est refusé à tort par `update_template`** (`src/mcp/outils-modeles.ts`) : la garde
+   compare au préfixe de `lienDe` (l'hôte d'aujourd'hui). Passer par `codeDuLienTrace` (`src/links/rewrite.ts`), qui
+   accepte tout hôte ; la fixture du test prend alors un code de 12 caractères de l'alphabet.
+2. **L'infobulle du « Modifier » grisé de l'écran Modèles** (`web/app/templates/page.tsx`) parle encore du pied de page
+   (éditable) et pas des boutons qui bloquent désormais : l'aligner sur le refus de `src/templates/gestion.ts`. Voisin :
+   « Dupliquer » relit les boutons par `buttonsOf`, et un bouton téléphone y devient une réponse rapide sans rien dire.
+3. **Supprimer le compte d'un collaborateur qui répondait par Claude change les statistiques après coup** :
+   `sender_user_id` passe à null (0017), sa réponse `mcp` sort de `REPONSE_DE_L_EQUIPE_SQL` et la demande repasse en
+   « résolue sans réponse ». Figer à l'écriture, ou l'écrire comme limite connue.
+4. **Aucun test d'intégration de `REPONSE_DE_L_EQUIPE_SQL`** : dans `tests/integration/performance.integration.test.ts`,
+   une réponse `mcp` signée compte (répondant nommé), la même en réaction non ; renommer le cas « assistant MCP » existant
+   en « derrière une clé ».
+5. **`update_webhook_endpoint`** : si la relecture de l'adresse lève après une rotation réussie, l'outil échoue et le
+   secret neuf, montré une seule fois, est perdu. Un `try/catch` qui garde l'adresse d'avant en repli.
+6. **L'oubli de la liste des modèles ne vaut que dans UNE copie de l'API** (`cacheCourt` est par process) : avec
+   plusieurs copies (Scaleway), une autre copie montre l'ancien état jusqu'à une minute. Nuancer `features.md` et le
+   commentaire de `oublierLaListe` ; les routes Modèles de la console n'oublient pas non plus cette liste.
+7. **`update_template` lit deux fois la liste complète chez Meta** (la garde, puis `modifierUnModele`) : poser les gardes
+   dans `modifierUnModele` sur `existing`, une seule lecture (la règle du lien tracé passe alors par `codeDuLienTrace`).
+8. **Le `a_savoir` de `hand_back` en mode « équipe » renvoie à `set_default_responder`**, qui exige une personne : le
+   dire (« une personne connectée »), comme pour `block_contact`.
+9. **Une réaction n'est exclue des réponses que pour l'origine `mcp`** : une réaction `humain` (l'écho de la filière
+   application enregistre le type du message, `src/application/entrant.ts`) compte encore. L'exclure aussi, ou corriger
+   la phrase « une réaction n'est jamais une réponse » (test et `documentation.md`).
+10. **Textes** : `documentation.md` dit « `listerModeles`, pas le cache » alors qu'il y a deux fonctions de ce nom
+    (préciser `src/templates/gestion.ts`) et garde un « (lot 3 ; le lot 2 le refusait) » qui raconte ;
+    `src/mcp/outils-modeles.ts` affirme « aucun contrôle propre ici », devenu faux.
+11. **Les e-mails de transfert donnent une date limite puis disent qu'elle ne vaut pas pour la filière application** :
+    choisir le texte selon la filière de l'espace (`src/emails-produit/alertes.ts` la connaît). Mineur.
+12. **À trancher avec Julien : `hand_back` reste refusé pour un contact STOP ou bloqué même en mode « équipe »**, où aucun
+    robot ne lui parlerait ; or sortir d'« À traiter » est le seul moyen d'une Free.
+
 ## 🟡 Un plafond de crédit par conversation, posé depuis Claude (idée de Julien, 2026-10-22)
 
 Le budget par conversation d'un agent n'a plus de limite par défaut (0248). Julien : « il pourrait être judicieux de créer
@@ -50,33 +86,6 @@ Meta délié, finitions de l'adressage masqué, mise en file retentée, e-mail d
 - **La description de `buy_credit` annonce les quatre offres même quand un prix est vide** sur l'instance : dériver
   l'énumération des prix configurés.
 - **Aucun test du webhook ne crédite `refill_10`** (la dérivation commune le couvre).
-
-## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 2 (2026-10-22)
-
-Relecture du lot des jaunes (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`, « Suite ») : aucun rouge, ce
-qui suit attend un lot.
-
-- **Les statistiques ne comptent pas la réponse d'une personne par Claude**, alors que le fil la compte depuis ce lot
-  (`vautReponseDeLEquipe`, `src/inbox/origine.ts`) : `src/stats/performance.pg.ts` ne retient que `origin = 'humain'`,
-  donc une demande escaladée, répondue par Claude puis rendue par le balayage, passe en « résolue sans réponse ». Un
-  seul fragment SQL à côté de `vautReponseDeLEquipe`, lu par les trois endroits. Même famille : la frise signe la prise
-  du fil « agent tiers (MCP) » même quand une personne est derrière (`auteurDeLEnvoi`, `src/inbox/evenements.ts`).
-- **`vautReponseDeLEquipe` ignore le type du message** : une réaction envoyée par `send_message` avec un jeton OAuth lève
-  l'escalade ; exclure `reaction`. Et un jeton OAuth peut tourner sans personne devant (une routine planifiée) :
-  l'hypothèse « un jeton, c'est un humain qui lit » est à écrire, ou à resserrer.
-- **Un modèle envoyé par une personne depuis Claude** (`send_template_to_contact`, origine `campagne`) ne lève pas
-  l'escalade, alors que le même geste dans l'Inbox la lève : une Free qui répond hors des 24 h reste escaladée.
-- **Le refus de `hand_back` en mode « équipe » est plus large que ce qu'il protège** : il retire à une Free le seul moyen
-  de sortir un fil d'« À traiter » depuis Claude (aucun outil ne marque « Traité »), et de rendre un parcours en attente.
-  Refuser seulement sans escalade ni parcours en attente, ou outiller « Traité ».
-- **`update_template` laisse passer d'autres boutons que son format ne renvoie pas** : `buttonsOf`
-  (`src/meta/templates.ts`) relit un bouton téléphone, code à copier, appel ou catalogue comme une réponse rapide (la
-  console a le même défaut), une URL dynamique n'est pas renvoyable, et la garde lit la liste en cache (une minute).
-  Poser l'indicateur dans la lecture du modèle (`isSimpleEditable`), et vérifier sur `existing` dans `modifierUnModele`.
-- **Des textes** : derrière une clé d'API, les refus de `control_conversation` renvoient vers `block_contact` et
-  `set_default_responder`, qui exigent une personne ; la description de `reply_in_open_window` promet un délai de
-  reprise qui ne court pas sur un fil escaladé, ni quand il vaut 0 ; l'e-mail de la Free borne à 24 h une réponse par
-  Claude, ce qui est faux sur la filière application (à vérifier si elle le reçoit).
 
 ## 🟡 Shopify depuis la console : ce que les relectures laissent (2026-10-22)
 

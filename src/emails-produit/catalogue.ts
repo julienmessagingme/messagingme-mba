@@ -467,15 +467,15 @@ export const CATALOGUE = [
       fr: {
         sujet: 'Une conversation attend votre équipe : {{contact}}',
         corps: 'Bonjour,\n\nLa conversation avec {{contact}} vient d’être confiée à l’équipe de l’espace {{espace}} : le '
-          + 'contact attend une réponse.\n\nVous pouvez lui répondre librement jusqu’au {{fin_fenetre}}. Passé ce délai, '
-          + 'WhatsApp n’accepte plus qu’un modèle validé.',
+          + 'contact attend une réponse.\n\nVous pouvez lui répondre librement jusqu’au {{fin_fenetre}} ; passé ce délai, il '
+          + 'faut un modèle validé (un numéro relié par l’application WhatsApp Business n’a pas cette limite).',
         bouton: { libelle: 'Ouvrir la conversation', lien: '{{lien_conversation}}' },
       },
       en: {
         sujet: 'A conversation is waiting for your team: {{contact}}',
         corps: 'Hello,\n\nThe conversation with {{contact}} has just been handed to the {{espace}} workspace team: the contact '
-          + 'is waiting for a reply.\n\nYou can reply freely until {{fin_fenetre}}. After that, WhatsApp only accepts an '
-          + 'approved template.',
+          + 'is waiting for a reply.\n\nYou can reply freely until {{fin_fenetre}}; after that, an approved template is '
+          + 'needed (a number linked through the WhatsApp Business app has no such limit).',
         bouton: { libelle: 'Open the conversation', lien: '{{lien_conversation}}' },
       },
     },
@@ -498,7 +498,8 @@ export const CATALOGUE = [
         corps: 'Bonjour,\n\nLa conversation avec {{contact}} vient d’être confiée à l’équipe de l’espace {{espace}} : le '
           + 'contact attend une réponse.\n\nRépondez-lui depuis Claude, en lui demandant les conversations qui attendent une '
           + 'réponse, ou depuis votre application. Par l’un ou l’autre, la réponse est libre jusqu’au {{fin_fenetre}} ; '
-          + 'ensuite, il faut un modèle validé.\n\nL’Inbox de la console, pour répondre à plusieurs, fait partie de l’offre Pro.',
+          + 'ensuite, il faut un modèle validé (un numéro relié par l’application WhatsApp Business n’a pas cette limite).'
+          + '\n\nL’Inbox de la console, pour répondre à plusieurs, fait partie de l’offre Pro.',
         bouton: { libelle: 'Voir l’offre Pro', lien: '{{lien_offre}}' },
       },
       en: {
@@ -506,7 +507,8 @@ export const CATALOGUE = [
         corps: 'Hello,\n\nThe conversation with {{contact}} has just been handed to the {{espace}} workspace team: the contact '
           + 'is waiting for a reply.\n\nReply from Claude, by asking it for the conversations waiting for a reply, or from '
           + 'your application. Either way, the reply is free until {{fin_fenetre}}; after that, an approved template is '
-          + 'needed.\n\nThe console Inbox, to reply as a team, is part of the Pro plan.',
+          + 'needed (a number linked through the WhatsApp Business app has no such limit).\n\nThe console Inbox, to reply as '
+          + 'a team, is part of the Pro plan.',
         bouton: { libelle: 'See the Pro plan', lien: '{{lien_offre}}' },
       },
     },

@@ -1182,6 +1182,11 @@ async function main(): Promise<void> {
     if (!waba) return [];
     return catalogueTemplatesCache.lire(`${tenant}:${waba}`, async () => (await metaFactory.templateClientForTenant(tenant)).list(waba));
   };
+  /** Oublie cette liste pour un espace : un changement fait par Claude s'y voit tout de suite (`DepsModelesMcp.oublier`). */
+  const oublierModeles = async (tenant: string): Promise<void> => {
+    const waba = await repo.getTenantWabaId(tenant);
+    if (waba) catalogueTemplatesCache.invalider(`${tenant}:${waba}`);
+  };
 
   /**
    * La création d'un modèle au format de Meta (lot 13, domaine 3) : l'en-tête téléchargé par la voie gardée
@@ -3079,7 +3084,7 @@ async function main(): Promise<void> {
         // La création d'une clé d'API (spec offres v2) : la MÊME fonction que la route de la console, pour `create_api_key`.
         cles: { cles: apiKeyStore, limiteCles: limiteClesDeLOffre, audit: auditSink },
         // Les modèles (lot 13, domaine 3) : la MÊME création que `POST /v1/templates`, la MÊME liste que le catalogue.
-        modeles: { ...creationModeles, lister: listerModeles },
+        modeles: { ...creationModeles, lister: listerModeles, oublier: oublierModeles },
         // Le connecteur Shopify (2026-10-21) : la MÊME gestion que la carte de la console.
         shopify: gestionShopify,
         // L'envoi d'un modèle à un contact (livraison B) : le MÊME cœur que `POST /v1/sends`, sans clé d'en-tête.

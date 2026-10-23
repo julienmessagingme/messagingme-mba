@@ -120,7 +120,9 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
     expect(appels.map((a) => a.geste)).toEqual(['prendre']);
   });
 
-  it('🔴 hand_back sans répondeur automatique (mode « équipe », ou un répondeur que l’offre éteint) est refusé : aucun robot ne reprendrait le fil', async () => {
+  it('🔴 hand_back sans répondeur automatique (mode « équipe », ou un répondeur que l’offre éteint) se fait, et le résultat dit qu’aucun robot ne répondra', async () => {
+    // Le geste sort la conversation d'« À traiter » et rend un parcours qui attendait le contact (lot 3) : le refuser en
+    // mode « équipe » privait une Free de son seul moyen de le faire. Il ne promet plus pour autant une réponse automatique.
     const sansRobot = [
       { mode: 'equipe' },
       // Un scénario hors de l'offre se lit « équipe » (`sousLOffre`), comme le contrôle du fil le lit.
@@ -129,13 +131,16 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
     ];
     for (const o of sansRobot) {
       const { d, appels } = deps(o);
-      await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI), o.mode).rejects.toThrow(/set_default_responder/);
-      expect(appels, o.mode).toHaveLength(0);
+      const r = await outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI) as { repondeur?: string; a_savoir?: string };
+      expect(appels.map((a) => a.geste), o.mode).toEqual(['rendre']);
+      expect(r.repondeur, o.mode).toBe('equipe');
+      expect(r.a_savoir, o.mode).toMatch(/set_default_responder/);
     }
     for (const mode of ['agent', 'scenario', 'mba', 'application']) {
       const { d, appels } = deps({ mode });
-      await outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI);
+      const r = await outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI);
       expect(appels.map((a) => a.geste), mode).toEqual(['rendre']);
+      expect(r, mode).not.toHaveProperty('repondeur');
     }
   });
 

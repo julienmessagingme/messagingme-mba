@@ -27,8 +27,9 @@ import { horairesExploitables, mesureurDeTempsOuvre } from '../lib/heures-ouvree
  *
  * SA FIN : le premier `traitee`, `archivee`, `rendue_mba` ou `rendue_scenario` qui suit l'ouverture. Tout compte
  * comme résolu.
- * SA RÉPONSE : le premier message sortant d'origine `humain` (écrit dans l'Inbox, texte ou modèle) entre le début et
- * la fin. Ni l'API, ni un assistant MCP, ni une campagne, ni un robot.
+ * SA RÉPONSE : le premier message sortant de l'équipe (`REPONSE_DE_L_EQUIPE_SQL` : écrit dans l'Inbox, texte ou modèle,
+ * ou par Claude au nom d'une personne connectée) entre le début et la fin. Ni l'API, ni un assistant MCP derrière une
+ * clé, ni une campagne, ni un robot.
  *
  * 🔴 LES DEMANDES SE CALCULENT À LA LECTURE, jamais stockées : la base rend des INSTANTS et des AUTEURS
  * (`PgPerformanceStore`), et les durées, qui dépendent des heures d'ouverture de l'espace, se calculent ici. Une

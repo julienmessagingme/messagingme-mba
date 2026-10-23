@@ -235,7 +235,9 @@ export const OUTILS_EVENEMENTS: OutilMcp[] = [
         throw new RefusOutil(adresse === null ? r.erreur : `la modification est enregistrée, mais le secret n’a pas tourné : ${r.erreur}`);
       }
       await deps.evenements.audit(tenantId, auteur, 'evenements.secret_tourne', cible, { ancienJusqua: r.valeur.ancienJusqua, via: 'mcp' });
-      adresse ??= await g.adresses.lire(tenantId, id);
+      // Relue APRÈS la rotation : la vue de la modification, d'avant, n'aurait pas la fin de validité de l'ancien secret
+      // (vu à l'essai réel du 2026-10-23, `previousSecretValidUntil` nul).
+      adresse = (await g.adresses.lire(tenantId, id)) ?? adresse;
       return {
         ...(adresse ? { adresse: webhookV1(adresse) } : {}),
         secret: r.valeur.secret,

@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { BOUNDS_CTE, STATS_TZ, type DateRange } from './range';
 import { TYPES_FIN, TYPES_OUVERTURE, type DemandeBrute, type Qui } from './performance';
+import { REPONSE_DE_L_EQUIPE_SQL } from '../inbox/origine';
 
 /**
  * La migration qui a ouvert la mesure : avant elle, le journal ne datait ni le passage d'un scénario ou d'un agent
@@ -17,13 +18,13 @@ export const MIGRATION_DES_DEMANDES = '0194_evenements_demandes.sql';
 const ENTRANT_SQL = `(m.direction = 'in' and m.type is distinct from 'reaction')`;
 
 /**
- * Un message qui dit à qui est la balle, alias `m` : un entrant (`ENTRANT_SQL`), un modèle sortant, un message écrit
- * par un collaborateur (`origin = 'humain'`), ou un envoi de campagne, modèle WhatsApp comme message RCS (`origin =
- * 'campagne'`) : c'est notre prise de parole, et après elle la balle est chez le client. Les réponses d'un robot
- * (scénario, agent IA, agent de Meta), modèles à part, ne comptent pas : un robot qui répond ne rend pas la balle au
- * client. Le début d'une demande se lit dessus (`src/stats/performance.ts`).
+ * Un message qui dit à qui est la balle, alias `m` : un entrant (`ENTRANT_SQL`), un modèle sortant, une réponse de
+ * l'équipe (`REPONSE_DE_L_EQUIPE_SQL` : l'Inbox, ou Claude au nom d'une personne), ou un envoi de campagne, modèle
+ * WhatsApp comme message RCS (`origin = 'campagne'`) : c'est notre prise de parole, et après elle la balle est chez le
+ * client. Les réponses d'un robot (scénario, agent IA, agent de Meta), modèles à part, ne comptent pas : un robot qui
+ * répond ne rend pas la balle au client. Le début d'une demande se lit dessus (`src/stats/performance.ts`).
  */
-const MESSAGE_SIGNIFICATIF_SQL = `(${ENTRANT_SQL} or (m.direction = 'out' and (m.type = 'template' or m.origin in ('humain', 'campagne'))))`;
+const MESSAGE_SIGNIFICATIF_SQL = `(${ENTRANT_SQL} or (m.direction = 'out' and (m.type = 'template' or m.origin = 'campagne' or ${REPONSE_DE_L_EQUIPE_SQL})))`;
 
 interface LigneDemande {
   conversation_id: string;
@@ -43,7 +44,8 @@ interface LigneDemande {
 
 /**
  * Qui a répondu : le collaborateur, s'il existe encore DANS l'espace ; sinon un ancien collaborateur (compte supprimé,
- * `sender_user_id` passé à null). Une réponse d'origine `humain` n'est jamais automatique.
+ * `sender_user_id` passé à null). Une réponse de l'équipe (`REPONSE_DE_L_EQUIPE_SQL` : l'Inbox, ou Claude au nom d'une
+ * personne, qui porte alors son `sender_user_id`) n'est jamais automatique.
  */
 function repondantDe(r: LigneDemande): Qui | null {
   if (r.repondu_le === null) return null;
@@ -141,7 +143,7 @@ export class PgPerformanceStore {
               (select max(m.created_at)
                  from conversation_messages m
                 where m.conversation_id = d.conversation_id
-                  and m.direction = 'out' and m.origin = 'humain'
+                  and m.direction = 'out' and ${REPONSE_DE_L_EQUIPE_SQL}
                   and m.created_at >= d.debut_le and (d.close_le is null or m.created_at <= d.close_le)) as derniere_reponse_le,
               d.close_le, uf.id as clos_par_id, coalesce(nullif(uf.name, ''), uf.email) as clos_par_nom,
               (d.acteur_id is not null) as clos_par_acteur, d.cause as clos_cause
@@ -151,7 +153,7 @@ export class PgPerformanceStore {
            select m.created_at, m.sender_user_id
              from conversation_messages m
             where m.conversation_id = d.conversation_id
-              and m.direction = 'out' and m.origin = 'humain'
+              and m.direction = 'out' and ${REPONSE_DE_L_EQUIPE_SQL}
               and m.created_at >= d.debut_le and (d.close_le is null or m.created_at <= d.close_le)
             order by m.created_at
             limit 1

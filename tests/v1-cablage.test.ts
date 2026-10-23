@@ -72,7 +72,10 @@ describe('câblage de /v1/templates', () => {
     // Une seule lecture, `listerModeles`, partagée par le catalogue et l'outil `list_templates` (lot 13, domaine 3).
     expect(source).toMatch(/const listerModeles = async \(tenant: string\): Promise<TemplateSummary\[\]> => \{\s*const waba = await repo\.getTenantWabaId\(tenant\);\s*if \(!waba\) return \[\];\s*return catalogueTemplatesCache\.lire\(`\$\{tenant\}:\$\{waba\}`, async \(\) => \(await metaFactory\.templateClientForTenant\(tenant\)\)\.list\(waba\)\);/);
     expect(source).toMatch(/catalogues: \{\s*templates: listerModeles,/);
-    expect(source).toMatch(/modeles: \{ \.\.\.creationModeles, lister: listerModeles \}/);
+    expect(source).toMatch(/modeles: \{ \.\.\.creationModeles, lister: listerModeles, oublier: oublierModeles \}/);
+    // Un changement fait par Claude (créer, corriger, supprimer) oublie la MÊME entrée que celle que `listerModeles` lit :
+    // une autre clé laisserait `list_templates` montrer l'ancien état une minute (lot 3).
+    expect(source).toMatch(/const oublierModeles = async \(tenant: string\): Promise<void> => \{\s*const waba = await repo\.getTenantWabaId\(tenant\);\s*if \(waba\) catalogueTemplatesCache\.invalider\(`\$\{tenant\}:\$\{waba\}`\);\s*\};/);
     // 🔴 Le téléchargement de l'en-tête est la voie GARDÉE (inventoriée par `tests/lib-adresse-privee.test.ts`) : un
     // `fetch` nu injecté ici échapperait à l'inventaire, `DepsCreationModele` acceptant n'importe quel téléchargeur.
     // Livraison B : Claude envoie par le MÊME cœur que `POST /v1/sends`, sur les MÊMES dépendances.

@@ -685,6 +685,7 @@ export const mcpMessagesInertes: Pick<DepsMcp, 'messagesApi' | 'envoyerMessage' 
   envoyerModele: neDevraitPasEtreAppelee('envoyerModele'),
   modeles: {
     lister: async () => [],
+    oublier: async () => {},
     modeles: {
       ...modelesInertes,
       meta: { templateClientForTenant: neDevraitPasEtreAppelee('templateClientForTenant') },

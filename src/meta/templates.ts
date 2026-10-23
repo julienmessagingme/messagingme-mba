@@ -209,17 +209,25 @@ function carouselOf(components: unknown): { cards: OutboundCarouselCard[] } | un
   return undefined;
 }
 
+/** Les seuls boutons que `buttonsOf` relit tels qu'ils sont, donc qu'une édition sait renvoyer à Meta. */
+const BOUTONS_RELUS: ReadonlySet<string> = new Set(['QUICK_REPLY', 'URL', 'FLOW']);
+
 /**
  * Éditable en place = on sait regénérer tous ses composants à l'identique (Meta les remplace tous à l'édition) :
- * BODY, BUTTONS, FOOTER et un HEADER texte. Pas un HEADER média (header_handle non récupérable) ni un CAROUSEL.
+ * BODY, BUTTONS, FOOTER et un HEADER texte. Pas un HEADER média (header_handle non récupérable) ni un CAROUSEL, ni un
+ * bouton que `buttonsOf` ne sait pas relire (téléphone, code à copier, appel, catalogue...) : il le lit comme une
+ * réponse rapide, et une édition l'aurait remplacé par elle sans rien dire.
  */
 function isSimpleEditable(components: unknown): boolean {
   if (!Array.isArray(components)) return false;
   let hasBody = false;
   for (const c of components) {
-    const comp = c as { type?: string; format?: string };
+    const comp = c as { type?: string; format?: string; buttons?: unknown };
     if (comp?.type === 'BODY') hasBody = true;
-    else if (comp?.type === 'BUTTONS' || comp?.type === 'FOOTER') continue;
+    else if (comp?.type === 'BUTTONS') {
+      const boutons = Array.isArray(comp.buttons) ? comp.buttons as Array<{ type?: string }> : [];
+      if (boutons.some((b) => !BOUTONS_RELUS.has(b?.type ?? ''))) return false;
+    } else if (comp?.type === 'FOOTER') continue;
     else if (comp?.type === 'HEADER' && comp.format === 'TEXT') continue;
     else return false; // HEADER média, CAROUSEL, ou composant inconnu -> non éditable
   }

@@ -8,7 +8,7 @@ import { journaliser } from '../lib/journal';
 import { messageDeForme } from '../api/forme';
 import { BORNES_MODELE, schemaModeleMeta, versModeleConsole } from '../api/modele-meta';
 import { creerModeleDepuisMeta, estNomDeModele, refusDeMeta, statutsDuModele, type DepsCreationModele } from '../api/creer-modele';
-import { modifierUnModele, supprimerUnModele, type RefusGestionModele } from '../templates/gestion';
+import { listerModeles, modifierUnModele, supprimerUnModele, type RefusGestionModele } from '../templates/gestion';
 import type { TemplateSummary } from '../meta/templates';
 import { LOURDE, plafondCouteux } from './outils-agent';
 
@@ -21,6 +21,21 @@ import { LOURDE, plafondCouteux } from './outils-agent';
 export interface DepsModelesMcp extends DepsCreationModele {
   /** Les modèles du compte WhatsApp de l'espace, la MÊME lecture (en cache une minute) que le catalogue `/v1/templates`. */
   lister(tenantId: string): Promise<TemplateSummary[]>;
+  /** Oublie cette liste en cache pour l'espace : après une création, une correction ou une suppression par Claude. */
+  oublier(tenantId: string): Promise<void>;
+}
+
+/**
+ * Après un changement fait par Claude, la liste en cache (une minute) montrerait l'ancien état, et Claude croirait le geste
+ * raté (vu à l'essai réel du 2026-10-23 : un modèle supprimé encore listé « approuvé »). Un raté de l'oubli ne fait rien
+ * échouer : la liste se rafraîchit au plus une minute plus tard, et le journal le dit.
+ */
+async function oublierLaListe(deps: DepsMcp, tenantId: string): Promise<void> {
+  try {
+    await deps.modeles.oublier(tenantId);
+  } catch (err) {
+    journaliser('warn', 'mcp_modeles_liste_non_oubliee', { tenantId, erreur: err instanceof Error ? err.message : String(err) });
+  }
 }
 
 /** Une erreur de l'envoi (`{ error, code }`), lue pour la rendre à Claude telle que l'API la rend. */
@@ -146,6 +161,7 @@ export const OUTILS_MODELES: OutilMcp[] = [
       if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
       const r = await creerModeleDepuisMeta(deps.modeles, tenantId, lu.data);
       if ('refus' in r) throw new RefusOutil(r.refus.message);
+      await oublierLaListe(deps, tenantId);
       journaliser('info', 'mcp_modele_cree', { tenantId, userId: personne?.userId ?? null, nom: r.modele.name, langue: r.modele.language });
       return r.modele;
     },
@@ -159,8 +175,9 @@ export const OUTILS_MODELES: OutilMcp[] = [
       + 'suspended, the plan\'s monthly templates. The person is designated by phone (with the country code: '
       + '+33612345678) or contact_id; an unknown number creates its contact record. values: one value per variable '
       + '{{1}}, {{2}}... of the body, in order. idempotency_key: a key chosen for THIS send (a call replayed with the '
-      + 'same key sends nothing again, for 24 hours). The send goes out within the minute: returns send_id. Counts '
-      + 'toward the workspace\'s heavy operations.',
+      + 'same key sends nothing again, for 24 hours). The send goes out within the minute: returns send_id. It does not '
+      + 'take a conversation escalated to the team out of "To handle": once the person has answered, '
+      + 'control_conversation (hand_back) does. Counts toward the workspace\'s heavy operations.',
     // Monde ouvert : un message part chez une personne. Idempotent : la même clé ne renvoie rien. Un modèle ne prend
     // pas le fil, mais l'outil est destructeur pour la règle du répertoire de Claude (voir `AnnotationsMcp`).
     annotations: { title: 'Send a template to a contact', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
@@ -233,8 +250,9 @@ export const OUTILS_MODELES: OutilMcp[] = [
       'Edits ONE language of a template already submitted, in META\'S FORMAT, the same as create_template: name and '
       + 'language designate it, and the components REPLACE the current ones (send them all). Only a template made of a '
       + 'BODY, with BUTTONS, a FOOTER or a TEXT HEADER, can be edited; an image, video or document header can be neither '
-      + 'added nor kept: create a new template instead. A template with a Flow button is refused too: this format '
-      + 'cannot send that button back, and the edit would remove it. Meta\'s rules: an APPROVED template can be edited '
+      + 'added nor kept: create a new template instead. A template with a Flow button, or with a link button that takes a '
+      + 'variable ({{1}}, filled by a scenario or Shopify), is refused too: this format cannot send that button back, and '
+      + 'the edit would remove or change it. Meta\'s rules: an APPROVED template can be edited '
       + 'once in 24 hours and 10 times in 30 days, and its category cannot change; a REJECTED or PAUSED one without limit. The '
       + 'template goes back to review (pending), which get_template_status follows. Refused while an active campaign uses '
       + 'it. ' + LOURDE,
@@ -266,15 +284,24 @@ export const OUTILS_MODELES: OutilMcp[] = [
       const { name, language, ...champs } = input;
       await ouRefusDeMeta(async () => {
         // 🔴 Les composants REMPLACENT ceux d'avant, et ce format ne porte que des boutons « réponse rapide » et « lien »
-        // (`schemaModeleMeta`) : le bouton Flow d'un modèle, que la console sait garder, disparaîtrait en silence.
-        const actuel = (await deps.modeles.lister(tenantId)).find((t) => t.name === name && t.language === language);
+        // sans variable (`schemaModeleMeta`) : le bouton Flow d'un modèle, que la console sait garder, et le lien dont une
+        // variable vient d'un scénario ou de Shopify (son panier) disparaîtraient en silence. Relu chez Meta, pas dans le
+        // cache d'une minute de `lister`. Nos liens tracés (`/r/<code>/{{1}}`) se retracent à la correction : ils passent.
+        const actuel = (await listerModeles(deps.modeles.modeles, tenantId)).find((t) => t.name === name && t.language === language);
         if (actuel?.buttons?.some((b) => b.type === 'FLOW')) {
           throw new RefusOutil('ce modèle porte un bouton Flow, que ce format ne sait pas renvoyer : la correction le '
             + 'supprimerait. Il ne se corrige pas depuis Claude');
         }
+        const trace = deps.modeles.modeles.tracking.lienDe('_', false).slice(0, -1);
+        if (actuel?.buttons?.some((b) => b.type === 'URL' && /\{\{\s*\d+\s*\}\}/.test(b.url ?? '') && !(b.url ?? '').startsWith(trace))) {
+          throw new RefusOutil('ce modèle porte un bouton de lien qui prend une variable ({{1}}), que ce format ne sait pas '
+            + 'renvoyer : la correction le changerait, et les envois qui la remplissent échoueraient. Il ne se corrige pas '
+            + 'depuis Claude');
+        }
         const issue = await modifierUnModele(deps.modeles.modeles, tenantId, name, language, champs);
         if ('refus' in issue) throw new RefusOutil(phraseDuRefus(issue.refus));
       });
+      await oublierLaListe(deps, tenantId);
       journaliser('info', 'mcp_modele_modifie', { tenantId, userId: personne?.userId ?? null, nom: name, langue: language });
       return { name, language, status: 'pending' };
     },
@@ -302,8 +329,9 @@ export const OUTILS_MODELES: OutilMcp[] = [
       await ouRefusDeMeta(async () => {
         const issue = await supprimerUnModele(deps.modeles.modeles, tenantId, name);
         if ('refus' in issue) throw new RefusOutil(phraseDuRefus(issue.refus));
-        if (!issue.res.success) throw new RefusOutil('Meta n’a pas confirmé la suppression : vérifiez avec list_templates avant de réessayer');
+        if (!issue.res.success) throw new RefusOutil('Meta n’a pas confirmé la suppression : vérifiez avec get_template_status avant de réessayer');
       });
+      await oublierLaListe(deps, tenantId);
       journaliser('info', 'mcp_modele_supprime', { tenantId, userId: personne?.userId ?? null, nom: name });
       return { supprime: true, name };
     },

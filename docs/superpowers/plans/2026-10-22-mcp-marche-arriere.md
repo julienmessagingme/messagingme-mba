@@ -241,3 +241,30 @@ du lot), puis une relecture indépendante du lot entier ; chaque test de garde v
 migration. **Déploiement** : API et worker, puis le plugin (0.3.5 ou 0.3.6, selon qui publie le premier avec la session
 du plugin), puis la fiche d'aide rechargée. **Essai réel** : rattaché à celui du lot 1 (étape 1 : un contact qui a dit
 STOP n'est pas rendu ; une réponse de Claude après une escalade laisse revenir l'agent après le délai).
+
+## Suite : les jaunes du lot 2 et de l'essai réel (2026-10-23, lot 3)
+
+La relecture du lot 2 a laissé six jaunes (`todo.md`), l'essai réel du 2026-10-23 deux de plus. Julien demande de les
+traiter en un lot relu.
+
+1. **Les statistiques** comptent comme « répondue » une demande à laquelle une personne a répondu par Claude, comme le
+   fil le fait depuis le lot 2 : un seul fragment SQL (`REPONSE_DE_L_EQUIPE_SQL`, à côté de `vautReponseDeLEquipe`), lu
+   par les trois endroits de `src/stats/performance.pg.ts`. La frise signe la prise du fil de la personne.
+2. **Une réaction** envoyée par Claude ne lève plus l'escalade (`vautReponseDeLEquipe` lit le type).
+3. **Un modèle envoyé par Claude** (`send_template_to_contact`) ne lève pas l'escalade (il part en différé, par le
+   moteur de campagne, et peut encore échouer) : sa description dit le geste qui la lève, `control_conversation`.
+4. **`hand_back` en mode « équipe »** n'est plus refusé : il sort la conversation d'« À traiter » et rend un parcours en
+   attente, et son résultat dit qu'aucun répondeur automatique ne répondra.
+5. **`update_template`** relit le modèle sans le cache, refuse un bouton d'URL dynamique, et un modèle à bouton que la
+   lecture ne sait pas renvoyer (téléphone, code à copier, appel, catalogue) devient non éditable, console comprise.
+6. **Les textes** : les refus de `control_conversation` derrière une clé d'API, la description de
+   `reply_in_open_window`, et la règle des 24 heures des deux e-mails de transfert, fausse pour un numéro relié par
+   l'application WhatsApp Business.
+7. **`list_templates`** n'affiche plus l'ancien état après une création, une correction ou une suppression par Claude :
+   le cache d'une minute s'oublie après chacune.
+8. **`rotate_secret`** rend la vue de l'adresse relue après la rotation.
+
+**Méthode** : en direct, dans une copie à part de `main`, puis une relecture indépendante ; chaque garde vérifiée dans
+les deux sens. Le câblage partagé (`src/index.ts`, une ligne pour le cache) s'annonce aux sessions voisines. Aucune
+migration. **Déploiement** : API et workers, avec l'accord de Julien. **Essai réel** : `list_templates` juste après une
+correction, et `hand_back` en mode « équipe ».

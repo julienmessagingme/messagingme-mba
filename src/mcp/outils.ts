@@ -692,8 +692,9 @@ export const OUTILS: OutilMcp[] = [
       'Sends a text message in a conversation, ONLY while the 24-hour customer service window is open (the contact '
       + 'wrote recently). Outside the window, the call is refused: WhatsApp then requires an approved template, which '
       + 'this tool does not send. Sending TAKES OVER the conversation: no scenario, AI agent or Meta Business Agent '
-      + 'answers this contact until it is handed back (control_conversation, hand_back) or the workspace\'s takeover '
-      + 'delay runs out.',
+      + 'answers this contact until it is handed back (control_conversation, hand_back), or until the workspace\'s '
+      + 'takeover delay runs out when it has one; a conversation escalated to the team waits for a reply signed by a '
+      + 'person (OAuth) before that delay runs.',
     // Le monde ouvert : un message part chez une personne, et ne se reprend pas. Destructrice : l'envoi PREND le fil,
     // le scénario cesse d'avancer, ce qui n'est pas un simple ajout.
     annotations: { title: 'Reply in the 24-hour window', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -829,8 +830,9 @@ export const OUTILS: OutilMcp[] = [
       + 'the thread, nothing is written to the contact, and no scenario, AI agent or Meta Business Agent answers it until '
       + 'it is handed back or the workspace\'s takeover delay runs out. hand_back: the workspace\'s automatic responder (a '
       + 'scenario, the AI agent or the Meta Business Agent) takes the thread again and answers the contact\'s NEXT '
-      + 'message, not the ones already received. hand_back is refused for a contact who said STOP or is blocked, and '
-      + 'when nobody answers automatically (responder mode "equipe": set_default_responder first). reply_in_open_window '
+      + 'message, not the ones already received. hand_back is refused for a contact who said STOP or is blocked. When '
+      + 'nobody answers automatically (responder mode "equipe"), hand_back still takes the conversation out of "To '
+      + 'handle", and the result says that no responder will answer (repondeur, a_savoir). reply_in_open_window '
       + 'and send_message take over by themselves: call hand_back once the reply is done if the responder should answer '
       + 'again. handled_by tells who holds the thread afterwards.',
     // Destructrice : elle REMPLACE qui tient le fil. Idempotente : rejouer le même geste laisse le même détenteur. Monde
@@ -868,20 +870,18 @@ export const OUTILS: OutilMcp[] = [
       // délibéré (`rendreLaMain`, `src/inbox/fil.ts`). Cet outil s'ouvre aussi derrière une clé d'API : un contact qui a
       // dit STOP, ou bloqué, n'est rendu à aucun robot, comme dans toute remise automatique.
       if (await deps.estDesabonne(tenantId, ctx.waId)) {
-        throw new RefusOutil('ce contact a demandé à ne plus recevoir de messages (STOP) : aucun robot ne reprend sa '
-          + 'conversation, elle reste à l’équipe');
+        throw new RefusOutil('ce contact a demandé à ne plus recevoir de messages (STOP) : aucun robot ne reprendra sa '
+          + 'conversation');
       }
       if (await deps.contacts.isBlockedByWaId(tenantId, ctx.waId)) {
-        throw new RefusOutil('ce contact est bloqué : aucun robot ne reprend sa conversation, elle reste à l’équipe. Le '
-          + 'débloquer (block_contact, blocked false) se fait d’abord, si c’est la décision de la personne');
+        throw new RefusOutil('ce contact est bloqué : aucun robot ne reprendra sa conversation. Une personne connectée peut '
+          + 'le débloquer d’abord (block_contact, blocked false), si c’est sa décision');
       }
-      // Le mode « équipe » (lu sous l'offre, comme le fait le contrôle du fil) : aucun répondeur automatique, le fil
-      // rendu irait aux robots et le prochain message reviendrait à l'équipe. Rien à rendre.
+      // Le mode « équipe » (lu sous l'offre, comme le fait le contrôle du fil) : aucun répondeur automatique. Le geste
+      // reste utile (il sort la conversation d'« À traiter », et rend un parcours qui attendait le contact), mais aucun
+      // robot ne répondra au message suivant : le résultat le dit plutôt que de laisser croire le contraire.
       const reglage = sousLOffre(await deps.agentIa.repondeur.reglages.get(tenantId), (await deps.offres.offreDe(tenantId)).droits.fonctions);
-      if (modeEffectif(reglage) === 'equipe') {
-        throw new RefusOutil('aucun répondeur automatique dans cet espace (mode « équipe ») : personne ne reprendrait la '
-          + 'conversation. set_default_responder choisit d’abord qui répond au client');
-      }
+      const sansRepondeur = modeEffectif(reglage) === 'equipe';
       let detenteur: IssueRendreLaMain;
       try {
         detenteur = await deps.fil.rendreLaMain(tenantId, ctx.waId, par);
@@ -894,7 +894,15 @@ export const OUTILS: OutilMcp[] = [
         throw new RefusOutil('Aucun numéro WhatsApp n’est connecté : l’agent de Meta ne peut pas reprendre la conversation, '
           + 'elle reste à l’équipe.');
       }
-      return { conversation_id: id, handled_by: detenteur };
+      if (!sansRepondeur) return { conversation_id: id, handled_by: detenteur };
+      return {
+        conversation_id: id,
+        handled_by: detenteur,
+        repondeur: 'equipe',
+        a_savoir: 'Aucun répondeur automatique dans cet espace (mode « équipe ») : la conversation sort d’« À traiter », '
+          + 'mais personne ne répondra seul au prochain message du contact, qui reviendra à l’équipe. set_default_responder '
+          + 'choisit qui répond.',
+      };
     },
   },
   /**

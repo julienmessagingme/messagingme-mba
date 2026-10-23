@@ -23,10 +23,15 @@ function deps(o: {
   campagnes?: Array<{ id: string; name: string; status: string; templateLanguage: string }>;
   echecMeta?: MetaApiError;
   lourdAccepte?: boolean;
+  /** Ce que rendrait la liste en CACHE (`lister`), quand elle diffère de ce que Meta rend maintenant. */
+  listeEnCache?: TemplateSummary[];
+  /** L'oubli de la liste en cache échoue (la base ne répond pas). */
+  oubliEchoue?: boolean;
 } = {}) {
   const editions: Array<{ id: string; input: Record<string, unknown> }> = [];
   const suppressions: string[] = [];
   let lourds = 0;
+  let oublis = 0;
   const client = {
     list: async () => [{ ...RESUME, ...o.resume }],
     update: async (id: string, input: Record<string, unknown>) => {
@@ -54,11 +59,11 @@ function deps(o: {
     },
   };
   const d = {
-    // La liste du catalogue lit le même compte (`listerModeles`) : `update_template` y relit les boutons du modèle.
-    modeles: { modeles: gestion, lister: async () => client.list() },
+    // La liste du catalogue, en cache une minute (`lister`), et son oubli après un changement fait par Claude.
+    modeles: { modeles: gestion, lister: async () => o.listeEnCache ?? client.list(), oublier: async () => { oublis += 1; if (o.oubliEchoue) throw new Error('base injoignable'); } },
     couteux: { consommer: async () => { lourds += 1; return { accepte: o.lourdAccepte ?? true, attenteMs: 2000 }; } },
   } as unknown as DepsMcp;
-  return { d, editions, suppressions, lourds: () => lourds };
+  return { d, editions, suppressions, lourds: () => lourds, oublis: () => oublis };
 }
 
 const CORRIGE = {
@@ -113,6 +118,48 @@ describe('corriger et supprimer un modèle depuis Claude (marche arrière, tâch
     const simple = deps({ resume: { buttons: [{ type: 'QUICK_REPLY', text: 'Merci' }] } });
     await outil('update_template').executer(simple.d, T, { template: CORRIGE }, MOI);
     expect(simple.editions).toHaveLength(1);
+  });
+
+  it('🔴 le bouton se relit chez Meta, pas dans le cache d’une minute de la liste (lot 3)', async () => {
+    // La liste en cache ne montre pas encore le bouton Flow, ajouté dans la console il y a quelques secondes.
+    const { d, editions } = deps({
+      resume: { buttons: [{ type: 'FLOW', text: 'Prendre rendez-vous', flowId: 'flow-1' }] },
+      listeEnCache: [RESUME],
+    });
+    await expect(outil('update_template').executer(d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/bouton Flow/);
+    expect(editions).toEqual([]);
+  });
+
+  it('🔴 un lien qui prend une variable d’un scénario ou de Shopify ne se corrige pas d’ici ; nos liens tracés, si', async () => {
+    const panier = deps({ resume: { buttons: [{ type: 'URL', text: 'Mon panier', url: 'https://boutique.example/panier/{{1}}' }] } });
+    await expect(outil('update_template').executer(panier.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/prend une variable/);
+    expect(panier.editions).toEqual([]);
+    // Un lien tracé par nous (`/r/<code>/{{1}}`) se retrace à la correction : rien à refuser.
+    const trace = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://api.exemple.test/r/abc123/{{1}}' }] } });
+    await outil('update_template').executer(trace.d, T, { template: CORRIGE }, MOI);
+    expect(trace.editions).toHaveLength(1);
+  });
+
+  it('la liste en cache s’oublie après une correction et une suppression : list_templates montre le nouvel état', async () => {
+    const corrige = deps();
+    await outil('update_template').executer(corrige.d, T, { template: CORRIGE }, MOI);
+    expect(corrige.oublis()).toBe(1);
+    const supprime = deps();
+    await outil('delete_template').executer(supprime.d, T, { name: 'commande_prete' }, MOI);
+    expect(supprime.oublis()).toBe(1);
+    // Un refus ne change rien chez Meta : rien à oublier.
+    const refuse = deps({ resume: { buttons: [{ type: 'FLOW', text: 'Rendez-vous', flowId: 'flow-1' }] } });
+    await expect(outil('update_template').executer(refuse.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(RefusOutil);
+    expect(refuse.oublis()).toBe(0);
+  });
+
+  it('un oubli raté ne fait pas croire à Claude que le geste a échoué : Meta a déjà changé le modèle', async () => {
+    const corrige = deps({ oubliEchoue: true });
+    expect(await outil('update_template').executer(corrige.d, T, { template: CORRIGE }, MOI)).toMatchObject({ status: 'pending' });
+    expect(corrige.editions).toHaveLength(1);
+    expect(corrige.oublis()).toBe(1);
+    const supprime = deps({ oubliEchoue: true });
+    expect(await outil('delete_template').executer(supprime.d, T, { name: 'commande_prete' }, MOI)).toEqual({ supprime: true, name: 'commande_prete' });
   });
 
   it('les refus de l’écran gardent leur phrase : campagne active, modèle non éditable', async () => {

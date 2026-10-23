@@ -207,6 +207,22 @@ describe('modifier et supprimer une adresse depuis Claude (marche arrière, tâc
     expect(ecrits).toEqual([{ description: 'Production' }]);
   });
 
+  it('le résultat d’une modification avec rotation relit l’adresse APRÈS la rotation : l’ancien secret y a sa fin (lot 3)', async () => {
+    const { d } = avecAdresse();
+    let tournee = false;
+    const jusqua = '2026-10-24T08:00:00.000Z';
+    const lireAvant = d.evenements.gestion.adresses.lire;
+    const tournerAvant = d.evenements.gestion.adresses.tourner;
+    d.evenements.gestion.adresses = {
+      ...d.evenements.gestion.adresses,
+      tourner: async (...a: Parameters<typeof tournerAvant>) => { tournee = true; return tournerAvant(...a); },
+      lire: async (t, id) => { const a = await lireAvant(t, id); return a && tournee ? { ...a, ancienSecretJusqua: jusqua } : a; },
+    };
+    const r = await outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, description: 'Production', rotate_secret: true }, { userId: 'u1' }) as
+      { adresse: { previousSecretValidUntil: string | null } };
+    expect(r.adresse.previousSecretValidUntil).toBe(jusqua);
+  });
+
   it('réactiver au-delà de la limite de l’offre garde la phrase de la gestion', async () => {
     const { d, ecrits } = avecAdresse({ limite: 1 });
     await expect(outil('update_webhook_endpoint').executer(d, T, { adresse_id: A, active: true }, { userId: 'u1' }))
