@@ -5,6 +5,31 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-23 : la marche arrière des outils MCP, lot 3 (les jaunes du lot 2 et de l'essai réel)
+
+Le lot 3 de la marche arrière (`cbaa0ae5`, plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`) traite les
+jaunes de la relecture du lot 2 et les deux relevés de l'essai réel. Une relecture indépendante, sans rouge (douze jaunes
+au `todo.md`), 20 mutations prouvées dans les deux sens, CI verte job par job.
+
+- **Une réponse de Claude au nom d'une personne (OAuth) vaut réponse de l'équipe partout** : sortie d'escalade, délai
+  de réponse et début de demande des statistiques, nom de la personne dans l'Inbox. Une seule règle en deux formes,
+  `vautReponseDeLEquipe` et `REPONSE_DE_L_EQUIPE_SQL` (`src/inbox/origine.ts`) ; une réaction n'en est jamais une.
+  L'index partiel `conversation_messages_origin_idx` sert toujours les deux lectures de réponse (`direction = 'out'`
+  reste au premier niveau).
+- **`hand_back` en mode « équipe »** n'est plus refusé : il sort la conversation d'« À traiter » et dit qu'aucun robot
+  ne répondra.
+- **`update_template`** relit le modèle chez Meta (pas dans le cache), refuse un bouton Flow et un lien à variable qui
+  n'est pas un de nos liens tracés ; un bouton que l'édition ne sait pas refaire rend le modèle non éditable.
+- **La liste des modèles en cache s'oublie** après une création, une correction ou une suppression faite par Claude.
+  ⚠️ `tests/v1-cablage.test.ts` lit le TEXTE du câblage de `src/index.ts` : la suite complète l'a vu rouge, il tient
+  désormais aussi la clé de l'oubli (la même que la lecture).
+- Déployé à `cbaa0ae5` sur les trois conteneurs avec l'accord de Julien (aucune migration), puis repris sous `e5bd1bfa`.
+- **Essai réel avec Julien le même jour** (essai 148, `docs/prive/ESSAIS-REELS.md`) : le cache rempli juste avant montre
+  un modèle créé dès la relecture suivante et ne montre plus un modèle supprimé ; en mode « équipe », `hand_back` est
+  accepté, rend `repondeur: equipe` et sort la conversation d'« À traiter ». ⚠️ Le brouillon de campagne laissé par
+  l'essai précédent bloquait la correction de son modèle (un brouillon compte comme campagne active, à dessein) : un
+  essai qui crée une campagne la supprime avant de finir.
+
 ## 2026-10-23 : les passes de démarrage du worker partent au décalage de lissage
 
 - **L'alerte** : « base saturée (worker-principal) : 33 % des prises de connexion ont attendu, la plus longue 406 ms »
