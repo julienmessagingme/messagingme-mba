@@ -2747,11 +2747,17 @@ tâche selon son RANG d'enregistrement (`decalageDeLissage`, déterministe, born
 cadence de la tâche, donc aucune ne tourne moins souvent qu'on l'a demandée). ⚠️ Ce qu'on protège est un
 INDICATEUR, pas une latence : l'attente sur pool saturé est le seul signal de saturation du produit, et un
 signal allumé en permanence par une cause structurelle ne signale plus rien (même leçon que la migration
-0111). ⚠️ Le décalage ne lance AUCUNE passe : la première arrive à `décalage + cadence`, le registre ne
-déclenchant toujours pas de passe implicite.
+0111). ⚠️ Sans `immediat`, le décalage ne lance AUCUNE passe : la première arrive à `décalage + cadence`, le
+registre ne déclenchant toujours pas de passe implicite.
 
 🔴 **LA PASSE DE DÉMARRAGE PASSE PAR LE REGISTRE** (`immediat`), donc sous la même garde de ré-entrance : un
-premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé. Les gardes locales de
+premier tour qui arrive pendant qu'elle tourne encore est sauté et journalisé. 🔴 **Et elle part AU DÉCALAGE de
+la tâche, pas à son enregistrement** : lancées toutes à t=0, la vingtaine de passes de démarrage du principal
+échappaient au lissage, et chaque redémarrage du worker faisait sa propre minute de rendez-vous. Le décalage
+vient du rang d'enregistrement, compté par rôle : nul au seul rang 0 (le battement de cœur, qui n'est pas
+`immediat`), donc les balayages du principal partent entre 2 et 58 s après le démarrage, et un arrêt pendant ce
+délai annule la passe (`tests/worker-taches.test.ts`). ⚠️ Un worker qui ne vit pas une minute (redémarrage en
+boucle) ne joue donc pas ses passes les plus tardives, rétentions comprises : elles reprennent dès qu'il tient. Les gardes locales de
 `reveil-parcours` et `tours-agent-bloques` sont parties ; celles de `creerDlqSweep` et
 `creerWebhooksMuetsSweep` restent, liées à leur compteur.
 
@@ -4955,7 +4961,7 @@ avec elle) garde son test de parité.
 | `src/auth/plafond-partage.ts` -> `PlafondPartage`, `consommerPartageAvecEntetes` | un plafond à une fenêtre dans le compteur partagé, avec sa politique OBLIGATOIRE si la base ne répond pas (`siLaBaseEchoue` : `laisser-passer` pour ce qui protège la charge, `refuser` pour ce qui protège d'une attaque). Le plafond de l'API publique a ses deux fenêtres dans `plafond-espace.ts` |
 | `src/lib/en-vol.ts` -> `creerTravauxEnVol` | 🔴 un travail qu'une réponse HTTP laisse derrière elle et dont la perte a une conséquence pour quelqu'un (un envoi du relais annoncé « c'est parti », le signal d'un clic que l'outil du client attend) se confie ici : `arreterApi` (`src/shutdown.ts`) l'attend, borné, avant de fermer la file et le pool. ⚠️ Restent des `void` hors suivi, qu'un arrêt de copie peut couper, et c'est accepté : les écritures d'observation (horodatage de connexion et d'usage d'une clé, lignes d'audit d'un échec de connexion ou du second facteur, compte d'un refus de `/ops`) et l'e-mail du mot de passe oublié (la réponse ne promet rien, l'utilisateur redemande) |
 | `src/db/transaction.ts` -> `enTransaction` | LA transaction du dépôt : `begin`, `commit` si le travail rend, `rollback` s'il lève, connexion relâchée dans tous les cas (y compris un `rollback` qui échoue), et c'est l'erreur D'ORIGINE qui remonte. ⚠️ Rendre sans lever VALIDE : un travail qui a écrit et ne doit rien laisser doit lever (`PgUserStore.deleteUser` garde donc sa transaction à la main) |
-| `src/worker/taches.ts` -> `programmer(nom, cadence, passe, { immediat, enEchec })` | les tâches périodiques du worker. `immediat` lance la passe de démarrage SOUS la même garde de ré-entrance que les autres ; `enEchec` porte le journal et l'alerte (`echecDeBalayage`, `src/worker.ts`). Une passe lancée à côté (`void passe()`) échappe à la garde |
+| `src/worker/taches.ts` -> `programmer(nom, cadence, passe, { immediat, enEchec })` | les tâches périodiques du worker. `immediat` lance la passe de démarrage, au décalage de lissage de la tâche, SOUS la même garde de ré-entrance que les autres ; `enEchec` porte le journal et l'alerte (`echecDeBalayage`, `src/worker.ts`). Une passe lancée à côté (`void passe()`) échappe à la garde |
 | `src/lib/tenter.ts` -> `tenter` | une étape ISOLÉE : son échec est journalisé (`console.error(echec, message)`) puis avalé |
 | `src/lib/erreur.ts` -> `messageDe`, `texteDe` | le message d'une valeur levée : `messageDe` rend la valeur elle-même si ce n'est pas une `Error`, `texteDe` la convertit en texte. Un repli différent (« erreur inconnue ») reste sur place |
 | `src/meta/graph.ts` -> `appelGraph` | l'appel Graph authentifié des clients WhatsApp (modèles, flows, lecture du numéro, ajout et vérification d'un numéro, média entrant) : `Bearer`, `fetch` injectable, `MetaApiError` si non-2xx. ⚠️ Ni `ClientGraph.call` (plafond de durée, `ErreurGraph`), ni `MbaClient`, ni le transport des envois |

@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-23 : les passes de démarrage du worker partent au décalage de lissage
+
+- **L'alerte** : « base saturée (worker-principal) : 33 % des prises de connexion ont attendu, la plus longue 406 ms »
+  (Telegram, 15:08 UTC), personne sur la console. `pool_attentes` : 80 prises en une minute pour 18 d'ordinaire, 26 en
+  attente, 518 ms au pire, une minute après le redémarrage des trois conteneurs par un déploiement (`e5bd1bfa`,
+  15:07:35 UTC). Aucun job en file à ce moment-là. Le matin, la même alerte sur l'API venait d'une ouverture de console
+  à froid (33 images de `/m/` lues dans la base) : Julien garde l'alerte telle quelle, il veut être prévenu.
+- **La cause** : `registreDeTaches` lissait déjà les minuteries périodiques (`decalageDeLissage`, pas de 2,3 s, sous la
+  minute), mais la passe de démarrage `immediat` partait à l'ENREGISTREMENT : la vingtaine de balayages du principal
+  tournaient dans la même seconde à chaque redémarrage, sur un pool de 8.
+- **Le correctif** : la passe de démarrage part dans `lancer()`, au décalage de la tâche. Les balayages du principal
+  partent entre 2 et 58 s après le démarrage (DLQ 2 s, `reclaim` 11,5 s, campagnes 14 à 18 s, réveil des parcours
+  25 s, rétentions 41 à 51 s, automations par date 57,5 s). Rien ne dépend de leur immédiateté, vérifié tâche par
+  tâche par la relecture (aucun rouge) : les agrégats d'analyse sont attendus HORS du registre avant la purge RGPD, la
+  reprise des campagnes gelées attendait déjà l'expiration du bail (environ 2 min), `reclaim` ne reprend qu'un envoi
+  vieux de 15 min. Seule perte : un worker qui ne vit pas une minute ne joue plus ses passes tardives.
+- **Tests** : deux nouveaux dans `tests/worker-taches.test.ts` (chaque passe part à son décalage exact ; un arrêt
+  pendant le délai l'annule), qui échouent sur l'ancien code ; `tests/mesure-taches.test.ts` avance jusqu'aux décalages
+  au lieu de 0 ms. La preuve réelle est le prochain redémarrage : `pool_attentes` du worker principal sans attente
+  dans sa première minute. Si l'alerte revient, la cause est ailleurs (démarrage de pg-boss, `queue.work`).
+
 ## 2026-10-23 : les jaunes des recharges, et les limites d'une conversation d'agent réglées depuis Claude
 
 Plans : `docs/superpowers/plans/2026-10-23-recharges-jaunes.md` et `2026-10-23-limites-conversation.md`.

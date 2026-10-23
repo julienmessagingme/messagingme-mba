@@ -5,13 +5,16 @@ import { lignesRendues } from '../ops/mesure-taches';
  * peut plus en oublier une dans l'arrêt propre (une passe qui part pendant qu'on ferme le pool laisse une
  * erreur à chaque déploiement).
  *
- * La première passe n'est lancée que sur demande (`immediat`), et passe par la même garde de ré-entrance que
- * les passes périodiques.
+ * La première passe n'est lancée que sur demande (`immediat`), au décalage de lissage de la tâche, et passe par
+ * la même garde de ré-entrance que les passes périodiques.
  */
 
 /** Ce qu'une tâche peut demander de plus que sa cadence. */
 export interface OptionsTache {
-  /** Une première passe tout de suite, sous la même garde que les passes périodiques. */
+  /**
+   * Une première passe au démarrage, sans attendre l'intervalle : au décalage de lissage de la tâche (moins d'une
+   * minute, nul au seul rang 0), sous la même garde que les passes périodiques.
+   */
   immediat?: boolean;
   /**
    * Ce que fait une passe qui lève : le journal et l'alerte de l'appelant. Sans lui, le registre la journalise
@@ -128,10 +131,17 @@ export function registreDeTaches(mesure?: MesureRegistre): RegistreDeTaches {
         const t = setInterval(tour, intervalMs);
         t.unref();
         entree.intervalle = t;
+        // 🔴 La passe de démarrage part AU DÉCALAGE, pas à l'enregistrement (2026-10-23). Lancée tout de suite, elle
+        // échappait au lissage : la vingtaine de balayages `immediat` du principal partaient dans la même seconde,
+        // 80 prises de connexion en une minute sur un pool de 8 à chaque déploiement, et l'alerte « base saturée »
+        // à chaque redémarrage. Au pire elle part une minute plus tard, ce qu'aucun balayage n'attend.
+        if (options.immediat) tour();
       };
 
-      // Le décalage ne lance aucune passe, il retarde seulement la minuterie : la première passe périodique
-      // arrive à `décalage + intervalle`, et sans `immediat` aucune passe implicite n'est déclenchée.
+      // Sans `immediat`, le décalage ne lance aucune passe, il retarde seulement la minuterie : la première passe
+      // périodique arrive à `décalage + intervalle`. Avec, la passe de démarrage part au décalage : nul au rang 0
+      // seulement (dans le worker, le battement de cœur, qui n'est pas `immediat`), donc les balayages du principal
+      // partent entre 2 et 58 s après le démarrage.
       const decalage = decalageDeLissage(taches.size - 1, intervalMs);
       if (decalage === 0) {
         lancer();
@@ -140,7 +150,6 @@ export function registreDeTaches(mesure?: MesureRegistre): RegistreDeTaches {
         d.unref();
         entree.demarrage = d;
       }
-      if (options.immediat) tour();
     },
 
     arreterTout() {

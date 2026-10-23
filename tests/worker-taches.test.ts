@@ -210,6 +210,33 @@ describe('registre des tâches périodiques', () => {
     spy.mockRestore();
   });
 
+  it('🔴 `immediat` : la passe de démarrage d’une tâche décalée part à SON décalage, pas à l’enregistrement (2026-10-23)', async () => {
+    // Lancées toutes à l'enregistrement, les passes de démarrage du principal faisaient 80 prises de connexion en une
+    // minute sur un pool de 8 à chaque déploiement, et l'alerte « base saturée » partait à chaque redémarrage.
+    vi.useFakeTimers();
+    const registre = registreDeTaches();
+    const parties: Record<string, number> = {};
+    const noms = ['t0', 't1', 't2', 't3'];
+    for (const nom of noms) registre.programmer(nom, 60_000, () => { parties[nom] = Date.now(); }, { immediat: true });
+    const depart = Date.now();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(Object.keys(parties), 'seule la première part tout de suite').toEqual(['t0']);
+    await vi.advanceTimersByTimeAsync(59_000);
+    for (const [i, nom] of noms.entries()) expect(parties[nom]! - depart, nom).toBe(decalageDeLissage(i, 60_000));
+    registre.arreterTout();
+  });
+
+  it('🔴 `immediat` : un arrêt pendant le décalage annule aussi la passe de démarrage', async () => {
+    vi.useFakeTimers();
+    const registre = registreDeTaches();
+    let passes = 0;
+    registre.programmer('premiere', 60_000, () => {});
+    registre.programmer('decalee', 60_000, () => { passes += 1; }, { immediat: true });
+    registre.arreterTout();
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(passes).toBe(0);
+  });
+
   it('🔴 `enEchec` reçoit l’erreur d’une passe, et s’il lève à son tour le registre rattrape encore', async () => {
     vi.useFakeTimers();
     const journal: unknown[] = [];

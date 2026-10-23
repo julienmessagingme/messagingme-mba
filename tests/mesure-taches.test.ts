@@ -60,7 +60,8 @@ describe('🔴 le registre mesure CHAQUE passe, sans que la tâche y pense', () 
     registre.programmer('compte', 1000, async () => 7, { immediat: true });
     registre.programmer('muette', 1000, () => {}, { immediat: true });
     registre.programmer('casse', 1000, async () => { throw new Error('boom'); }, { immediat: true, enEchec: () => {} });
-    await vi.advanceTimersByTimeAsync(0);
+    // Les passes de démarrage partent au décalage de lissage (0, 300 et 600 ms ici), avant le premier tour périodique.
+    await vi.advanceTimersByTimeAsync(900);
     expect(notes).toEqual(expect.arrayContaining([['compte', 7, true], ['muette', null, true], ['casse', null, false]]));
     registre.arreterTout();
   });
