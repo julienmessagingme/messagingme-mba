@@ -4915,6 +4915,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | get_agent | mcp:read | An AI agent: its profile, model, tools, knowledge, what it lacks, and the offered models with their price. |
 | create_agent | mcp:write OAuth connection required | Create a draft AI agent. A workspace’s first agent needs a little credit. |
 | update_agent | mcp:write OAuth connection required | Edit an AI agent’s profile (goal, tone, handovers, stop rules) and its model, logged under the person’s name. |
+| set_agent_limits | mcp:write OAuth connection required | Set the limits of an AI agent’s conversation (answers, actions, credit spent, no credit limit by default), logged under the person’s name. |
 | set_agent_tools | mcp:write OAuth connection required | Add and enable an AI agent’s four safe tools (finish, search, read the contact, hand over). |
 | activate_agent | mcp:write OAuth connection required | Activate a complete AI agent, or deactivate it. It answers in a published scenario, or if chosen to answer the customer. |
 | test_agent | mcp:write OAuth connection required | Try an AI agent on a mock conversation. Each try is charged to the credit. |

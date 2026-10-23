@@ -121,7 +121,7 @@ describe.skipIf(!url)('plomberie de lecture de l agent (Postgres)', () => {
     const apres = await agents.complet(tenantId, a.id);
     expect(apres?.budgetMicroEur).toBe(12_345);
     expect(apres?.mentionIa).toBe('Mention d origine.');
-    expect(apres?.maxTours).toBe(8); // le défaut de la colonne, intact
+    expect(apres?.maxTours).toBe(20); // le défaut de la colonne (0250), intact
   });
 
   it('la fiche jsonb s écrit et se relit, et sa version avance à chaque écriture de fiche', async () => {

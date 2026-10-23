@@ -31,6 +31,8 @@ export const CATALOGUE_MCP = {
   get_agent: { scope: 'mcp:read' },
   create_agent: { scope: 'mcp:write', exigePersonne: true },
   update_agent: { scope: 'mcp:write', exigePersonne: true },
+  /** Les limites d'une conversation de l'agent (2026-10-23) : elles s'écrivent dans la fiche, au nom d'une personne. */
+  set_agent_limits: { scope: 'mcp:write', exigePersonne: true },
   set_agent_tools: { scope: 'mcp:write', exigePersonne: true },
   activate_agent: { scope: 'mcp:write', exigePersonne: true },
   set_default_responder: { scope: 'mcp:write', exigePersonne: true },

@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: b8e2be
+source_empreinte: 21990f
 ---
 # Construire un agent IA
 
@@ -161,10 +161,11 @@ il devient bas, et un bandeau rouge à zéro. Un administrateur le recharge dans
 l'espace, une fois que Meta l'a vérifié. **Sans crédit, on ne peut pas créer d'agent et le
 bac à sable refuse** : un essai appelle vraiment le modèle, il se paie comme une conversation.
 
-**Trois plafonds** protègent chaque conversation en plus du solde : le nombre de tours, le nombre d'appels
-d'outils et un budget (sans limite par défaut : c'est votre solde qui borne la dépense). Le premier atteint
-fait sortir le parcours par « Plafond atteint », qui est une
-sortie à brancher, pas un réglage de confort.
+**Trois plafonds** protègent chaque conversation en plus du solde : le nombre de réponses de l'agent (20 par
+défaut), le nombre de ses actions, une recherche dans sa base ou un outil (60 par défaut), et le crédit dépensé (sans
+limite par défaut : c'est votre solde qui borne la dépense). Le premier atteint fait sortir le parcours par
+« Plafond atteint », qui est une sortie à brancher. Ils se règlent dans l'onglet **Périmètre** de l'agent (le crédit
+par une case « Sans limite » et un montant en euros), ou en le demandant à Claude.
 
 **La mention d'IA**, enfin, est obligatoire et ne peut jamais être vide. La phrase appartient à l'agent, le
 moment où elle est dite appartient à votre espace et se règle dans Sécurité > IA : jamais, une fois par

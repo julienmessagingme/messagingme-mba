@@ -3464,7 +3464,8 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   la liste. ⚠️ Avant cette date, le crédit était décompté au coût brut (environ 10 % sous le tarif
   affiché), et l'écran le disait ; une conversation d'avant garde le montant qui lui a été décompté.
   ⚠️ Si le catalogue du fournisseur est injoignable, la liste reste utilisable, simplement sans tarif.
-- ✅ **Budget d'une conversation**. Budget épuisé, l'agent sort par « Plafond atteint ».
+- ✅ **Crédit d'une conversation**. Sans limite par défaut ; une limite atteinte fait sortir l'agent par « Plafond
+  atteint » (onglet Périmètre, ou depuis Claude).
 
 ### La base de connaissance : la seule chose dont il a le droit de se servir
 
@@ -3883,11 +3884,14 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 - 🔴 **Sans crédit, rien ne démarre**, et c'est le bon défaut : un crédit implicite ferait payer une
   consommation que personne n'a autorisée. Conséquence concrète : **un espace à zéro n'a ni agent qui
   démarre, ni bac à sable, ni traduction, ni transcription, et ses nouvelles fiches de connaissance attendent**.
-- ✅ **Trois plafonds de conversation** en plus du solde, réglés sur la fiche (tours, appels d'outils, budget).
-  Le premier atteint fait sortir le parcours par 🛑 « Plafond atteint », qui est une sortie à brancher : c'est
-  un garde-fou, pas un réglage de confort. Le budget n'a **plus de limite par défaut** depuis le 2026-10-22 (100 €, le
-  maximum de la fiche, décision de Julien : c'est le client qui paie son crédit IA) ; il valait 0,07 € depuis le lot 6,
-  0,03 € avant. Les tours et les appels d'outils bornent toujours une conversation, et le solde reste la vraie limite.
+- ✅ **Trois plafonds de conversation** en plus du solde : le nombre de réponses (tours), d'actions (appels d'outils)
+  et le crédit dépensé. Ils se règlent dans l'onglet **Périmètre** de l'agent (le crédit par une case « Sans limite » et
+  un montant en euros) et **depuis Claude** (`set_agent_limits`, 2026-10-23). Le premier atteint fait sortir le
+  parcours par 🛑 « Plafond atteint », qui est une sortie à brancher. Par défaut, décisions de Julien (c'est le client
+  qui paie son crédit IA) : **aucune limite de crédit** depuis le 2026-10-22 (100 €, le maximum de la fiche ; il valait
+  0,07 € depuis le lot 6, 0,03 € avant), et **20 réponses et 60 actions** depuis le 2026-10-23 (8 et 12 avant, les
+  agents restés au défaut ont suivi). Le maximum des réponses reste une limite : il arrête deux robots qui se
+  répondraient sans fin. Le solde reste la vraie limite de la dépense.
 - ✅ **CHAQUE ESPACE A SA PROPRE CLÉ DE MODÈLE** (2026-09-09), créée automatiquement au moment où le client
   crée son PREMIER agent, ou depuis le 2026-09-28 à sa PREMIÈRE TRADUCTION s'il a du crédit, et plafonnée au
   crédit qu'il a acheté. Ce qui change côté client : **sans crédit,
@@ -4937,6 +4941,9 @@ chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de 
   repris entre-temps (par le balayage ou dans la console). Le récapitulatif de reprise dit pourquoi la campagne s'est
   arrêtée (une pause pour la qualité du numéro demande de la vérifier d'abord) ; une pause qu'un autre geste lève
   (numéro délié, abonnement impayé) ne se reprend pas par Claude.
+- **Les limites d'une conversation d'un agent IA** (`set_agent_limits`, 2026-10-23) : le nombre de réponses, d'actions
+  et le crédit qu'une conversation peut dépenser (sans limite par défaut), les mêmes que l'onglet Périmètre de l'agent.
+  `get_agent` les rend. Claude ne les change qu'à la demande de la personne, et le changement est signé de son nom.
 - **La mention d'IA en anglais** : `create_agent` et `update_agent` choisissent entre deux phrases relues, « Vous
   échangez avec un assistant automatique. » et « You are chatting with an automated assistant. ». `get_agent` dit
   laquelle ; un texte libre se règle toujours dans la console.

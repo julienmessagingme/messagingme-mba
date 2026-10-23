@@ -4916,6 +4916,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | get_agent | mcp:read | Un agent IA : sa fiche, son modèle, ses outils, sa connaissance, ce qui lui manque, et les modèles proposés avec leur prix. |
 | create_agent | mcp:write connexion OAuth requise | Créer un agent IA en brouillon. Le premier agent d’un espace demande un peu de crédit. |
 | update_agent | mcp:write connexion OAuth requise | Modifier la fiche d’un agent IA (objectif, ton, transferts, règles d’arrêt) et son modèle, journalisé au nom de la personne. |
+| set_agent_limits | mcp:write connexion OAuth requise | Régler les limites d’une conversation d’un agent IA (réponses, actions, crédit dépensé, sans limite de crédit par défaut), journalisé au nom de la personne. |
 | set_agent_tools | mcp:write connexion OAuth requise | Ajouter et activer les quatre outils sûrs d’un agent IA (terminer, chercher, lire le contact, passer la main). |
 | activate_agent | mcp:write connexion OAuth requise | Activer un agent IA complet, ou le désactiver. Il répond dans un scénario publié, ou s’il est choisi pour répondre au client. |
 | test_agent | mcp:write connexion OAuth requise | Essayer un agent IA sur une conversation fictive. Chaque essai est débité du crédit. |

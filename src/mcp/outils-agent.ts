@@ -5,7 +5,8 @@ import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './sais
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import type { AgentComplet, AgentResume } from '../agent/agent-store';
 import {
-  AGENT_INTROUVABLE, MAX_LABEL_AGENT, MENTIONS_IA, changerStatut, creerAgent, langueDeLaMention, manquesDeLAgent, modifierAgent,
+  AGENT_INTROUVABLE, BUDGET_CONVERSATION_MAX_MICRO_EUR, MAX_APPELS_OUTILS_AGENT, MAX_LABEL_AGENT, MAX_TOURS_AGENT, MENTIONS_IA,
+  changerStatut, creerAgent, langueDeLaMention, manquesDeLAgent, modifierAgent,
   type DepsGestionAgents, type LangueMentionIa,
 } from '../agent/gestion';
 import {
@@ -179,8 +180,43 @@ export function signataire(personne: PersonneMcp | null): string {
   return personne.userId;
 }
 
+/** Le budget le plus bas qu'on accepte de Claude, en euros : un centime (la console descend au micro-euro). */
+const BUDGET_MIN_EUR = 0.01;
+
 /**
- * Un agent tel que Claude le voit : ni ses plafonds de coût ni le texte de sa mention d'IA (spec, section 2), seulement la
+ * Les limites d'une conversation telles que Claude les lit et les écrit (2026-10-23) : les noms de l'outil, le budget en
+ * euros, `null` quand il est au maximum (« sans limite », 0248). Rendues à côté de la vue de l'agent, jamais dedans : la
+ * vue que rendent create_agent et update_agent ne change pas.
+ */
+function vueLimites(a: Pick<AgentComplet, 'maxTours' | 'maxAppelsOutils' | 'budgetMicroEur'>): Record<string, unknown> {
+  return {
+    max_turns: a.maxTours,
+    max_tool_calls: a.maxAppelsOutils,
+    budget_eur: a.budgetMicroEur >= BUDGET_CONVERSATION_MAX_MICRO_EUR ? null : a.budgetMicroEur / 1_000_000,
+  };
+}
+
+/** Une limite entière dans ses bornes, ou un refus qui les dit : jamais ramenée en silence, Claude l'annoncerait. */
+function limiteEntiere(v: unknown, cle: string, mini: number, maxi: number): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < mini || v > maxi) {
+    throw new RefusOutil(`${cle} : un nombre entier entre ${mini} et ${maxi}`);
+  }
+  return v;
+}
+
+/** Le budget en micro-euros : `null` vaut « sans limite » (le maximum de la fiche). */
+function budgetEnMicro(v: unknown): number {
+  if (v === null) return BUDGET_CONVERSATION_MAX_MICRO_EUR;
+  const max = BUDGET_CONVERSATION_MAX_MICRO_EUR / 1_000_000;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < BUDGET_MIN_EUR || v > max) {
+    throw new RefusOutil(`budget_eur : un montant en euros entre ${BUDGET_MIN_EUR} et ${max}, ou null pour aucune limite de crédit`);
+  }
+  return Math.round(v * 1_000_000);
+}
+
+/**
+ * Un agent tel que Claude le voit : ni ses limites (`vueLimites`, rendues à part par get_agent) ni le texte de sa
+ * mention d'IA (spec, section 2), seulement la
  * langue de celle-ci (`fr`, `en`, ou `personnalisee` pour un texte écrit dans la console), qu'il peut choisir.
  */
 function vueAgent(a: AgentComplet): Record<string, unknown> {
@@ -292,6 +328,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
       const estAction = (o: OutilComplet): boolean => handlerMaison(o) === 'declencher_action';
       return {
         agent: vueAgent(agent),
+        limites: vueLimites(agent),
         transfer_mode: reglages.agentTransfertMode ?? MODE_TRANSFERT_DEFAUT,
         outils: maison.filter((o) => !estAction(o)).map((o) => ({ code: handlerMaison(o), nom: o.name, titre: o.title, actif: o.actif })),
         // Les actions à part, avec leur cible : c'est ce que set_agent_action modifie.
@@ -348,8 +385,9 @@ export const OUTILS_AGENT: OutilMcp[] = [
       + 'the way forward is a completed profile, or the person\'s decision, rather than deactivating the agent. '
       + DESACTIVER_SUR_DEMANDE + ' The update goes to production at once (an active agent has no draft version), and it '
       + 'is logged under the signed-in person\'s name. mention_ia_langue chooses the AI disclosure among reviewed phrases '
-      + '(get_agent tells the current one, personnalisee for a text written in the console). The label, cost caps and a '
-      + 'free-text AI disclosure are set only in the console; the status, through activate_agent.',
+      + '(get_agent tells the current one, personnalisee for a text written in the console). The label and a free-text AI '
+      + 'disclosure are set only in the console; the conversation limits, through set_agent_limits; the status, through '
+      + 'activate_agent.',
     // Elle remplace les champs fournis, `sorties` en entier.
     annotations: ecriture('Edit an AI agent', true, false),
     entree: {
@@ -406,8 +444,9 @@ export const OUTILS_AGENT: OutilMcp[] = [
       const interdites = Object.keys(args).filter((k) => !CLES_UPDATE_AGENT.has(k));
       if (interdites.length > 0) {
         throw new RefusOutil(
-          `champ non modifiable par cet outil : ${interdites.join(', ')}. Le libellé, les plafonds de coût et une mention `
-          + 'd’IA en texte libre se règlent dans la console (mention_ia_langue choisit une phrase relue), le statut par activate_agent.',
+          `champ non modifiable par cet outil : ${interdites.join(', ')}. Le libellé et une mention d’IA en texte libre se `
+          + 'règlent dans la console (mention_ia_langue choisit une phrase relue), les limites d’une conversation par '
+          + 'set_agent_limits, le statut par activate_agent.',
         );
       }
       const langue = langueSaisie(args);
@@ -422,6 +461,57 @@ export const OUTILS_AGENT: OutilMcp[] = [
       };
       const auteur = { userId: signataire(personne), origine: 'mcp' as const };
       return { agent: vueAgent(valeurOuRefus(await modifierAgent(deps.agentIa.gestion, tenantId, id, corps, auteur))) };
+    },
+  },
+  {
+    ...ficheOutilMcp('set_agent_limits'),
+    fonction: null,
+    description:
+      'Sets the limits of each conversation of an AI agent: the answers it gives (max_turns), the actions it takes, a '
+      + 'knowledge search or a tool (max_tool_calls), and the AI credit it may spend, in euros, commission included '
+      + `(budget_eur, null for no credit limit). Defaults: ${MAX_TOURS_AGENT} answers, ${MAX_APPELS_OUTILS_AGENT} actions and no credit `
+      + 'limit, the prepaid balance being the real limit. The first limit reached makes the agent leave through its '
+      + '"Plafond atteint" (cap reached) exit, which hands the conversation to the team. Only the limits provided change. '
+      + 'Change them only at the explicit request of the person, never to get around a refusal: the change applies at '
+      + "once to the agent's conversations and is logged under the signed-in person's name. get_agent reads them (limites).",
+    // Elle remplace les limites fournies ; la rejouer ne change rien.
+    annotations: ecriture("Set the limits of an AI agent's conversations", true, false),
+    entree: {
+      type: 'object',
+      properties: {
+        agent_id: AGENT_ID,
+        max_turns: {
+          type: 'integer', minimum: 1, maximum: MAX_TOURS_AGENT,
+          description: 'The answers the agent gives in one conversation before it leaves through "Plafond atteint".',
+        },
+        max_tool_calls: {
+          type: 'integer', minimum: 0, maximum: MAX_APPELS_OUTILS_AGENT,
+          description: 'The actions (knowledge searches, tools) the agent may take in one conversation.',
+        },
+        budget_eur: {
+          type: ['number', 'null'], minimum: BUDGET_MIN_EUR, maximum: BUDGET_CONVERSATION_MAX_MICRO_EUR / 1_000_000,
+          description: 'The AI credit one conversation may spend, in euros, commission included; null for no credit limit.',
+        },
+      },
+      required: ['agent_id'],
+      additionalProperties: false,
+    },
+    async executer(deps, tenantId, args, personne) {
+      const id = texteObligatoire(args, 'agent_id', 100);
+      const corps = {
+        ...(args.max_turns !== undefined ? { maxTours: limiteEntiere(args.max_turns, 'max_turns', 1, MAX_TOURS_AGENT) } : {}),
+        ...(args.max_tool_calls !== undefined
+          ? { maxAppelsOutils: limiteEntiere(args.max_tool_calls, 'max_tool_calls', 0, MAX_APPELS_OUTILS_AGENT) }
+          : {}),
+        ...(args.budget_eur !== undefined ? { budgetMicroEur: budgetEnMicro(args.budget_eur) } : {}),
+      };
+      if (Object.keys(corps).length === 0) {
+        throw new RefusOutil('au moins une limite à régler : max_turns, max_tool_calls ou budget_eur');
+      }
+      // La porte de la console : ses bornes, et la ligne d'historique signée de la personne (`fiche_agent`).
+      const auteur = { userId: signataire(personne), origine: 'mcp' as const };
+      const agent = valeurOuRefus(await modifierAgent(deps.agentIa.gestion, tenantId, id, corps, auteur));
+      return { agent_id: agent.id, limites: vueLimites(agent) };
     },
   },
   {

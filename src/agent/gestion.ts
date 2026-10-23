@@ -56,12 +56,19 @@ const MENTION_IA_DEFAUT = MENTIONS_IA.fr;
  */
 /** La longueur d'un libellé d'agent, à la création comme à la modification. */
 export const MAX_LABEL_AGENT = 120;
+/** Les limites d'une conversation, au plus (les CHECK de 0086 pour les deux premières) ; `set_agent_limits` les annonce. */
+export const MAX_TOURS_AGENT = 20;
+export const MAX_APPELS_OUTILS_AGENT = 60;
+/** 100 € : le budget le plus haut, qui vaut « sans limite » (0248), le solde prépayé bornant déjà la dépense. */
+export const BUDGET_CONVERSATION_MAX_MICRO_EUR = 100_000_000;
 const LABEL = z.string().trim().min(1).max(MAX_LABEL_AGENT);
 export const saisieDeModification = z.object({
   label: LABEL.optional(),
   status: z.enum(['draft', 'active', 'disabled']).optional(),
   mentionIa: z.string().trim().min(1).max(500).optional(),
   modele: z.string().trim().min(1).max(120).optional(),
+  // Les bornes restent écrites en chiffres : deux tests les lisent dans ce texte (`tests/agents-bornes-parity.test.ts`,
+  // `tests/migration-0248.test.ts`), et `tests/migration-0250.test.ts` tient les constantes ci-dessus égales à elles.
   maxTours: z.number().int().min(1).max(20).optional(),
   maxAppelsOutils: z.number().int().min(0).max(60).optional(),
   budgetMicroEur: z.number().int().min(1).max(100_000_000).optional(),

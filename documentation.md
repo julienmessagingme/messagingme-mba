@@ -3264,10 +3264,15 @@ l'activer, et d'ouvrir une recharge du crédit.
 - **`update_agent` filtre ses arguments** : objectif, ton, personnalité, règles de transfert, règles d'arrêt, modèle
   (liste fermée), `fiche_version` et `mention_ia_langue`, une des phrases relues de `MENTIONS_IA` (`src/agent/gestion.ts`,
   français et anglais), que `create_agent` accepte aussi. Toute autre clé est REFUSÉE, pas ignorée : `modifierAgent` est
-  la porte de l'administrateur et accepte aussi les plafonds de coût, une mention d'IA en texte libre, le libellé et le
-  statut. Claude ne lit ni les plafonds ni le texte de la mention : `get_agent` rend seulement sa langue
-  (`personnalisee` pour un texte écrit dans la console), même si `test_agent` rend la phrase en tête de la réponse,
-  comme le contact la lira.
+  la porte de l'administrateur et accepte aussi les plafonds, une mention d'IA en texte libre, le libellé et le
+  statut. Claude ne lit pas le texte de la mention : `get_agent` rend seulement sa langue (`personnalisee` pour un
+  texte écrit dans la console), même si `test_agent` rend la phrase en tête de la réponse, comme le contact la lira.
+- **`set_agent_limits` écrit les trois plafonds d'une conversation** (`maxTours`, `maxAppelsOutils`, `budgetMicroEur`)
+  par `modifierAgent`, donc avec ses bornes et sa ligne `fiche_agent` signée de la personne ; ses bornes à lui
+  (`MAX_TOURS_AGENT`, `MAX_APPELS_OUTILS_AGENT`, `BUDGET_CONVERSATION_MAX_MICRO_EUR`, `src/agent/gestion.ts`) sont
+  celles de la saisie de la console, un budget à `null` écrit le maximum (« sans limite », 0248) et se relit `null`. Une
+  valeur hors bornes est refusée, jamais ramenée. `get_agent` rend ces limites dans `limites`, À CÔTÉ de `agent` : la
+  vue que rendent `create_agent` et `update_agent` ne change pas.
 - **La personne signe** : la ligne `fiche_agent` de l'historique (origine `mcp`), l'activation des outils sûrs
   (`active_par`), la suppression d'une fiche de connaissance (origine `mcp`, par `journaliserSuppressionDe`), et le
   payeur d'une recharge. L'historique de la console l'affiche « par Claude ».

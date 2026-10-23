@@ -807,6 +807,13 @@ function OngletPerimetre({ agent, busy, onSave }: { agent: AgentComplet; busy: b
   const t = useT();
   return (
     <div className={`${cardCls} flex flex-col gap-4`}>
+      <p className="text-xs leading-relaxed text-ink-500">
+        {t(
+          'Les limites d’une conversation : la première atteinte fait sortir l’agent par « Plafond atteint ». Elles se règlent aussi depuis Claude.',
+          'The limits of a conversation: the first one reached makes the agent leave through “Cap reached”. They can also be set from Claude.',
+        )}
+      </p>
+      <BudgetConversation busy={busy} valeur={agent.budgetMicroEur} onSave={(v) => onSave({ budgetMicroEur: v })} />
       <Nombre
         testId="agent-max-tours" busy={busy} label={t('Tours maximum', 'Maximum turns')} min={1} max={20}
         aide={t('Au-delà, l’agent sort par « Plafond atteint ». Un garde-fou, pas un réglage de confort.', 'Beyond this, the agent leaves through “Cap reached”. A guardrail, not a comfort setting.')}
@@ -964,6 +971,81 @@ function OngletModele({ agent, tenantId, busy, onSave }: {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+/** 100 € : le budget le plus haut, qui vaut « sans limite » (`BUDGET_CONVERSATION_MAX_MICRO_EUR` du serveur, 0248). */
+const BUDGET_SANS_LIMITE_MICRO_EUR = 100_000_000;
+/** Un centime : le plus petit budget proposé ici, comme depuis Claude. */
+const BUDGET_MIN_MICRO_EUR = 10_000;
+const enEuros = (micro: number) => String(micro / 1_000_000).replace('.', ',');
+
+/**
+ * Le crédit qu'une conversation peut dépenser (2026-10-23) : une case « Sans limite », cochée par défaut, et un montant
+ * en euros quand elle ne l'est pas. Décocher n'enregistre rien tant qu'un montant valable n'est pas saisi.
+ */
+function BudgetConversation({ valeur, onSave, busy }: { valeur: number; busy: boolean; onSave: (micro: number) => void }) {
+  const t = useT();
+  const sansLimite = valeur >= BUDGET_SANS_LIMITE_MICRO_EUR;
+  const [limite, setLimite] = useState(!sansLimite);
+  const [v, setV] = useState(sansLimite ? '' : enEuros(valeur));
+  useEffect(() => {
+    setLimite(valeur < BUDGET_SANS_LIMITE_MICRO_EUR);
+    setV(valeur < BUDGET_SANS_LIMITE_MICRO_EUR ? enEuros(valeur) : '');
+  }, [valeur]);
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor="agent-budget" className="text-sm font-medium text-ink-900">
+        {t('Crédit par conversation', 'Credit per conversation')}
+      </label>
+      <label className="flex items-center gap-2 text-sm text-ink-700">
+        <input
+          type="checkbox"
+          data-testid="agent-budget-sans-limite"
+          checked={!limite}
+          disabled={busy}
+          onChange={(e) => {
+            if (e.target.checked) {
+              setLimite(false);
+              if (!sansLimite) onSave(BUDGET_SANS_LIMITE_MICRO_EUR);
+            } else {
+              setLimite(true);
+              setV('');
+            }
+          }}
+        />
+        {t('Sans limite', 'No limit')}
+      </label>
+      {limite && (
+        <input
+          id="agent-budget"
+          data-testid="agent-budget"
+          type="text"
+          inputMode="decimal"
+          placeholder={t('en euros, par exemple 0,50', 'in euros, for example 0.50')}
+          className={`${inputCls} max-w-[12rem]`}
+          value={v}
+          disabled={busy}
+          onChange={(e) => setV(e.target.value)}
+          onBlur={() => {
+            const n = Number(v.trim().replace(',', '.'));
+            const micro = Math.round(n * 1_000_000);
+            // Bornes rejouées ici, comme pour les nombres voisins : hors bornes, le champ reprend la valeur enregistrée.
+            if (v.trim() === '' || !Number.isFinite(n) || micro < BUDGET_MIN_MICRO_EUR || micro > BUDGET_SANS_LIMITE_MICRO_EUR) {
+              setV(sansLimite ? '' : enEuros(valeur));
+              return;
+            }
+            if (micro !== valeur) onSave(micro);
+          }}
+        />
+      )}
+      <p className="text-xs leading-relaxed text-ink-500">
+        {t(
+          'Ce qu’une conversation peut dépenser de votre crédit IA, commission comprise. Sans limite, c’est votre solde qui borne la dépense. Entre 0,01 et 100 €.',
+          'What one conversation may spend of your AI credit, commission included. With no limit, your balance caps the spending. Between €0.01 and €100.',
+        )}
+      </p>
     </div>
   );
 }

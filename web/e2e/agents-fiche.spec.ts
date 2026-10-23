@@ -223,6 +223,31 @@ test.describe('Agents IA : la fiche', () => {
     await page.getByTestId('agent-inactivite').click();
     await expect.poll(() => patches.some((p) => p.maxTours === 12), { timeout: 5000 }).toBe(true);
   });
+
+  test('🔴 le crédit par conversation : un montant en euros part en micro-euros, « Sans limite » écrit le maximum', async ({ page }) => {
+    // L'agent du jeu d'essai a un budget de 30 000 micro-euros : 0,03 €.
+    const patches: Patch[] = [];
+    await mockAgents(page, patches);
+    await page.goto('/agents');
+    await page.getByTestId('agent-ligne-ag1').click();
+    await page.getByTestId('mba-tab-perimetre').click();
+
+    await expect(page.getByTestId('agent-budget')).toHaveValue('0,03');
+    // Hors bornes : le champ reprend la valeur enregistrée, rien ne part.
+    await page.getByTestId('agent-budget').fill('150');
+    await page.getByTestId('agent-inactivite').click();
+    await expect(page.getByTestId('agent-budget')).toHaveValue('0,03');
+    expect(patches.some((p) => 'budgetMicroEur' in p)).toBe(false);
+
+    // Une virgule française se lit : 0,50 € font 500 000 micro-euros.
+    await page.getByTestId('agent-budget').fill('0,50');
+    await page.getByTestId('agent-inactivite').click();
+    await expect.poll(() => patches.some((p) => p.budgetMicroEur === 500_000), { timeout: 5000 }).toBe(true);
+
+    await page.getByTestId('agent-budget-sans-limite').check();
+    await expect.poll(() => patches.some((p) => p.budgetMicroEur === 100_000_000), { timeout: 5000 }).toBe(true);
+    await expect(page.getByTestId('agent-budget')).toHaveCount(0);
+  });
 });
 
 test.describe('Agents IA : la modification qui rendrait un agent actif incomplet', () => {

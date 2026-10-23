@@ -14,7 +14,7 @@ export const FAMILLES_OUTILS: ReadonlyArray<{ readonly titre: string; readonly o
   {
     titre: 'AI agent',
     outils: [
-      'list_agents', 'get_agent', 'create_agent', 'update_agent', 'set_agent_tools', 'set_agent_action', 'delete_agent_action',
+      'list_agents', 'get_agent', 'create_agent', 'update_agent', 'set_agent_limits', 'set_agent_tools', 'set_agent_action', 'delete_agent_action',
       'test_agent', 'activate_agent', 'set_default_responder', 'set_transfer_mode', 'set_business_hours',
     ],
   },

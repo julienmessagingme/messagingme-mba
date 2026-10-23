@@ -805,6 +805,8 @@ describe('serveur MCP : cohérence du catalogue', () => {
       create_agent: [true, false, true],
       update_agent: [true, true, false],
       set_agent_tools: [true, true, false],
+      // Les limites d'une conversation (2026-10-23) : elles remplacent celles d'avant ; les rejouer ne change rien.
+      set_agent_limits: [true, true, false],
       activate_agent: [true, true, false],
       // Monde ouvert depuis le 2026-10-05 (décision de Julien) : un connecteur GET qui intègre y interroge pour de
       // vrai le système du client.

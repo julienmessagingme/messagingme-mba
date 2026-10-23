@@ -36,14 +36,6 @@ Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowe
 12. **À trancher avec Julien : `hand_back` reste refusé pour un contact STOP ou bloqué même en mode « équipe »**, où aucun
     robot ne lui parlerait ; or sortir d'« À traiter » est le seul moyen d'une Free.
 
-## 🟡 Un plafond de crédit par conversation, posé depuis Claude (idée de Julien, 2026-10-22)
-
-Le budget par conversation d'un agent n'a plus de limite par défaut (0248). Julien : « il pourrait être judicieux de créer
-un outil MCP qui permettrait de définir une limite de crédit maximum par conversation, mais par défaut, pas de limite ».
-Aujourd'hui `budgetMicroEur` ne se règle que par la route de la console (`src/agent/gestion.ts`, entre 1 et 100 000 000
-micro-euros), et aucun écran ni outil ne l'expose. Ses deux voisins, `maxTours` (8 par défaut) et `maxAppelsOutils`
-(12), coupent toujours une conversation longue par « Plafond atteint » : à reposer avec Julien dans le même outil.
-
 ## 🟡 Recharges du crédit IA : ce qui reste après le lot des jaunes (2026-10-23)
 
 Plan soldé : `docs/superpowers/plans/2026-10-23-recharges-jaunes.md`.

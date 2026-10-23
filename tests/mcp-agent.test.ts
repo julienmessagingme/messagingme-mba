@@ -501,6 +501,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
   get_agent: { agent_id: AG },
   create_agent: { label: 'Accueil' },
   update_agent: { agent_id: AG, ton: 'Chaleureux.' },
+  set_agent_limits: { agent_id: AG, max_turns: 10 },
   set_agent_tools: { agent_id: AG, outils: ['terminer'] },
   activate_agent: { agent_id: AG, active: true },
   test_agent: { agent_id: AG, messages: [{ role: 'user', content: 'Bonjour' }] },
@@ -523,7 +524,7 @@ const ARGS: Record<string, Record<string, unknown>> = {
 const touche = (cap: ReturnType<typeof monter>['cap']) => Object.entries(cap).filter(([, v]) => v.length > 0).map(([k]) => k);
 
 describe('🔴 la personne requise : une clé d’API ne voit ni n’appelle les outils qui écrivent au nom de quelqu’un', () => {
-  it('vingt outils : quatre lectures sans personne, seize outils qui l’exigent (le répondeur, les horaires et les actions compris)', () => {
+  it('vingt et un outils : quatre lectures sans personne, dix-sept outils qui l’exigent (le répondeur, les horaires, les actions et les limites compris)', () => {
     const agent = OUTILS.filter((o) => Object.hasOwn(ARGS, o.nom));
     expect(agent.map((o) => o.nom).sort()).toEqual(Object.keys(ARGS).sort());
     expect(agent.filter((o) => o.exigePersonne !== true).map((o) => o.nom).sort())
@@ -669,6 +670,8 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
       const r = await appeler(server, JETON.brut, 'update_agent', { agent_id: AG, ...interdit });
       expect(r.isError, JSON.stringify(interdit)).toBe(true);
       expect(r.texte, JSON.stringify(interdit)).toContain(`champ non modifiable par cet outil : ${Object.keys(interdit)[0]}`);
+      // Les limites d'une conversation ont leur outil (2026-10-23) : le refus y renvoie.
+      expect(r.texte, JSON.stringify(interdit)).toContain('set_agent_limits');
     }
     expect(cap.patches).toEqual([]);
     await server.close();
@@ -692,6 +695,45 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     const { server, cap } = monter();
     expect((await appeler(server, JETON.brut, 'update_agent', { agent_id: AG, modele: 'openai/gpt-maison' })).texte).toMatch(/^modèle inconnu/);
     expect((await appeler(server, JETON_T2.brut, 'update_agent', { agent_id: AG, ton: 'x' })).texte).toBe('agent introuvable');
+    expect(cap.patches).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 set_agent_limits écrit les trois limites par la porte de la console, signées « mcp » par la personne, et les rend', async () => {
+    const { server, cap } = monter();
+    const r = await appeler(server, JETON.brut, 'set_agent_limits', { agent_id: AG, max_turns: 12, max_tool_calls: 30, budget_eur: 0.5 });
+    expect(r.isError, r.texte).toBe(false);
+    expect(cap.patches).toEqual([{ tenant: 't1', patch: { maxTours: 12, maxAppelsOutils: 30, budgetMicroEur: 500_000 } }]);
+    expect(cap.historique).toHaveLength(1);
+    expect(cap.historique[0]).toMatchObject({ element: 'fiche_agent', origine: 'mcp', acteurId: PERSONNE, surfaceId: AG });
+    expect(r.json()).toEqual({ agent_id: AG, limites: { max_turns: 12, max_tool_calls: 30, budget_eur: 0.5 } });
+    // Une seule limite : les deux autres ne sont pas écrites.
+    await appeler(server, JETON.brut, 'set_agent_limits', { agent_id: AG, max_tool_calls: 0 });
+    expect(cap.patches.at(-1)).toEqual({ tenant: 't1', patch: { maxAppelsOutils: 0 } });
+    await server.close();
+  });
+
+  it('🔴 set_agent_limits : budget_eur à null retire la limite de crédit (le maximum de la fiche), que get_agent relit null', async () => {
+    const { server, cap } = monter();
+    const r = await appeler(server, JETON.brut, 'set_agent_limits', { agent_id: AG, budget_eur: null });
+    expect(r.isError, r.texte).toBe(false);
+    expect(cap.patches).toEqual([{ tenant: 't1', patch: { budgetMicroEur: 100_000_000 } }]);
+    expect(r.json().limites).toEqual({ max_turns: 8, max_tool_calls: 12, budget_eur: null });
+    expect((await appeler(server, JETON.brut, 'get_agent', { agent_id: AG })).json().limites.budget_eur).toBeNull();
+    await server.close();
+  });
+
+  it('set_agent_limits refuse sans rien écrire : aucune limite, hors bornes, un montant illisible, un agent d’un autre espace', async () => {
+    const { server, cap } = monter();
+    expect((await appeler(server, JETON.brut, 'set_agent_limits', { agent_id: AG })).texte).toMatch(/au moins une limite/);
+    for (const faux of [
+      { max_turns: 0 }, { max_turns: 21 }, { max_turns: 2.5 }, { max_tool_calls: -1 }, { max_tool_calls: 61 },
+      { budget_eur: 0 }, { budget_eur: 0.009 }, { budget_eur: 100.01 }, { budget_eur: '5' }, { budget_eur: {} },
+    ]) {
+      const r = await appeler(server, JETON.brut, 'set_agent_limits', { agent_id: AG, ...faux });
+      expect(r.isError, JSON.stringify(faux)).toBe(true);
+    }
+    expect((await appeler(server, JETON_T2.brut, 'set_agent_limits', { agent_id: AG, max_turns: 10 })).texte).toBe('agent introuvable');
     expect(cap.patches).toEqual([]);
     await server.close();
   });
@@ -977,7 +1019,7 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     }
   });
 
-  it('list_agents et get_agent : les manques comptés et listés, sans plafonds ni texte de mention d’IA', async () => {
+  it('list_agents et get_agent : les manques comptés et listés, les limites à part de la vue de l’agent, sans texte de mention d’IA', async () => {
     const { server, cap } = monter({ fichesConnaissance: 0, outilsPoses: [outil('terminer', true)] });
     const liste = await appeler(server, CLE_ECRITURE, 'list_agents');
     expect(liste.json()).toEqual({ agents: [{ id: AG, label: 'Conseiller', status: 'draft', nb_manques: 1, repondeur: false }] });
@@ -988,6 +1030,9 @@ describe('les outils de l’agent appellent les fonctions de la console, dans l�
     expect(r.outils).toEqual([{ code: 'terminer', nom: 'mba_terminer', titre: 'terminer', actif: true }]);
     expect(r.manques).toHaveLength(1);
     expect(r.modeles).toHaveLength(2);
+    // Les limites d'une conversation (2026-10-23) : à côté de l'agent et pas dedans, la vue que rendent create_agent et
+    // update_agent ne change pas. 30 000 micro-euros : 0,03 €.
+    expect(r.limites).toEqual({ max_turns: 8, max_tool_calls: 12, budget_eur: 0.03 });
     expect(JSON.stringify(r)).not.toMatch(/budgetMicroEur|maxTours|mentionIa/);
     expect((await appeler(server, JETON_T2.brut, 'get_agent', { agent_id: AG })).texte).toBe('agent introuvable');
     await server.close();
@@ -1087,6 +1132,10 @@ describe('les descriptions disent ce qu’un modèle doit savoir pour ne pas se 
   });
 
   it('🔴 désactiver COUPE l’agent dans ses scénarios : seulement sur demande, jamais pour faire passer un refus', () => {
+    // Les limites (2026-10-23) : ce qu'une limite atteinte fait, et seulement à la demande de la personne.
+    expect(d('set_agent_limits')).toMatch(/Plafond atteint/);
+    expect(d('set_agent_limits')).toMatch(/explicit request of the person/);
+    expect(d('set_agent_limits')).toMatch(/no credit limit/);
     for (const nom of ['activate_agent', 'update_agent']) {
       expect(d(nom), nom).toMatch(/CUTS it from the published scenarios/);
       expect(d(nom), nom).toMatch(/explicit request from the person, never as a way to get a refused update through/);
@@ -1119,6 +1168,8 @@ describe('🔴 les bornes de la console sont annoncées dans les schémas des ou
     ['import_site', bornesDesChamps({ url: site.url, pages: site.pages })],
     ['import_document_text', bornesDesChamps(champsDe(saisieDeTexteDocument))],
     ['buy_credit', bornesDesChamps(champsDe(saisieDePaiement))],
+    // Le budget s'annonce en euros, la console le borne en micro-euros : il a son propre cas.
+    ['set_agent_limits', bornesDesChamps({ max_turns: modification.maxTours, max_tool_calls: modification.maxAppelsOutils })],
   ];
 
   it('chaque borne, avec sa valeur', () => {
