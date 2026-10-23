@@ -100,8 +100,9 @@ Plan : `docs/superpowers/plans/2026-10-22-shopify-console.md`.
   un texte proposé sans prénom, et un mot neutre en secours (« à vous », « there ») quand un marchand le garde. À trancher.
 - **Shopify réutilise le même paiement pendant des jours** pour un même navigateur (mesuré : un paiement créé le 21,
   repris le 23) : un client qui abandonne de nouveau dans la semaine n'a pas de seconde relance (une par jeton).
-- **Deux corps de `checkouts/create` et `checkouts/update` illisibles** le 2026-10-23 à 08:06:43 (UTC), sans le champ
-  en cause : le journal le nomme désormais (`champs` de `shopify_corps_illisible`) ; le relire au prochain cas.
+- **Une adresse incomplète n'est pas transmise par Shopify** (essai réel du 2026-10-23 : pays des États-Unis sans État) :
+  depuis `d9465d77` le corps n'est plus rejeté, mais un téléphone saisi SEULEMENT dans cette adresse ne nous arrive pas, et
+  le panier ne peut pas être relancé. Relire la forme reçue dans `shopify_forme_inattendue` au prochain cas.
 - **Le ménage des modèles** ne garde pas les scénarios, les étages de repli ni l'API `/v1` qui enverraient un modèle de
   l'assistant par son nom (la fiche d'aide le dit) ; un réessai 131026 d'une campagne terminée non plus.
 

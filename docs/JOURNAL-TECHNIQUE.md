@@ -93,6 +93,31 @@ e-mail de la Free qui renvoie vers Claude, essai réel à deux). Aucune migratio
   l'`up` s'est compté lui-même et a arrêté le déploiement sans rien relancer. L'essai réel à deux reste dû
   (`docs/prive/ESSAIS-REELS.md`, essai 148).
 
+## 2026-10-23 : l'essai réel de Shopify depuis la console, et ce qu'il a trouvé
+
+Essai 149, fait par Julien dans l'espace « Messaging Me demo » (boutique de dev `messaging-me-essai`), réussi de bout en
+bout : la boutique branchée par Claude Code se règle depuis la carte (le délai sans repasser par Meta), puis rebranchée
+avec l'app créée à la main sur le tableau de bord développeur, une relance au texte modifié approuvée et activée seule en
+quelques minutes, et la relance REÇUE sur WhatsApp. En chemin :
+
+- **Le ménage des modèles remplacés** (demande de Julien après l'essai : « tu ne peux pas mettre à jour ton template plus
+  d'une fois toutes les 24 h ») : l'assistant ne modifie jamais un modèle, il en crée un nouveau, donc cette limite de Meta
+  ne le touche pas ; le modèle remplacé est supprimé chez Meta un quart d'heure plus tard (`e6900d59`, file
+  `shopify-oubli-modele`). La relecture de la première version (suppression immédiate) a montré deux pertes possibles
+  de messages : un envoi en vol, et une préparation concurrente d'une approbation. La suppression est donc DIFFÉRÉE et
+  relit l'état ; la refonte n'a pas été relue (jaunes), huit gardes mutées dans les deux sens.
+- **Deux défauts de production trouvés par l'essai**, corrigés et déployés le jour même. (1) Un corps de checkout dont
+  l'adresse n'est pas un objet (une adresse incomplète : pays des États-Unis sans État) était rejeté EN ENTIER,
+  téléphone compris : le panier n'était jamais noté, sa relance jamais envoyée, depuis la relance de panier
+  (`d0f1a645`). Une adresse ou un client qui n'est pas un objet se lit désormais comme absent (`d9465d77`). (2) Le
+  journal `shopify_corps_illisible` ne disait pas le champ en cause : il le nomme (`b0c9c1c5`), et la forme reçue se
+  trace (`shopify_forme_inattendue`), jamais une valeur ; la forme exacte de l'adresse incomplète reste à relire.
+- **Ce que Shopify fait, mesuré** : le prénom est FACULTATIF au paiement (une relance à `{prénom}` ne part pas sans lui,
+  `donnee_manquante`, et le panier est consommé) ; un même navigateur reprend le même paiement pendant des jours (une
+  seule relance par jeton) ; une adresse incomplète n'est pas transmise, ni le téléphone saisi dedans.
+- **Déploiements** : `7925abc4` (API et deux workers, un seul up avec le correctif du blocage de la session MCP),
+  puis l'API seule à `b0c9c1c5` et à `d9465d77` ; chaque fois code servi égal à git, fumée verte, fiches chargées.
+
 ## 2026-10-22 (nuit) : Shopify depuis la console, pour les clients payants
 
 Plan : `docs/superpowers/plans/2026-10-22-shopify-console.md`, conception
