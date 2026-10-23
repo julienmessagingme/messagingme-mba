@@ -188,9 +188,16 @@ describe('pousserHandoff : le client de POST /service/handoff', () => {
       .toEqual({ issue: 'fait', created: null, taskId: null });
   });
 
-  it('🔴 404 : « non relié », une fin normale', async () => {
+  it('🔴 404 tenant_not_connected : « non relié », une fin normale', async () => {
     const t = new FauxTransport({ status: 404, json: { error: 'tenant_not_connected' } });
     expect(await pousserHandoff(connecteur(t), corps)).toEqual({ issue: 'non_relie' });
+  });
+
+  it('🟡 tout AUTRE 404 (route absente, objet introuvable) est un refus, jamais « non relié »', async () => {
+    for (const json of [{ error: 'hubspot_object_not_found' }, { message: 'Route POST:/service/handoff not found', error: 'Not Found' }, {}]) {
+      const t = new FauxTransport({ status: 404, json });
+      expect(await pousserHandoff(connecteur(t), corps)).toMatchObject({ issue: 'refuse', status: 404 });
+    }
   });
 
   it('🔴 400, 401, 409 : un refus terminal, RENDU et non levé (sinon pg-boss le rejouerait), en un seul appel', async () => {

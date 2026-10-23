@@ -127,7 +127,12 @@ export async function pousserHandoff(deps: ConnectorDeps, corps: CorpsHandoff): 
   } catch (err) {
     if (err instanceof ReconsentRequiredError) return { issue: 'refuse', status: 409, code: 'reconsent_required' };
     if (err instanceof HubspotServiceError && !err.retryable) {
-      return err.status === 404 ? { issue: 'non_relie' } : { issue: 'refuse', status: err.status, code: err.code };
+      // Seul le 404 `tenant_not_connected` dit « espace sans portail ». Tout autre 404 (route absente parce que le
+      // connecteur n'est pas encore déployé, objet introuvable d'un connecteur ancien) est un REFUS journalisé en
+      // erreur : le confondre avec une fin normale perdrait la demande d'humain sans aucune trace.
+      return err.status === 404 && err.code === 'tenant_not_connected'
+        ? { issue: 'non_relie' }
+        : { issue: 'refuse', status: err.status, code: err.code };
     }
     throw err;
   }

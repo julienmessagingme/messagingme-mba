@@ -2581,9 +2581,13 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   par `callService` avec `HUBSPOT_SERVICE_SECRET`) avec `e164` (la valeur de `contactE164` de l'analyse, `e164DuWaId`), le
   nom du profil, le lien de la conversation (la fonction `lienConversation` du socle, celle de l'e-mail), `finFenetre`
   (dernier entrant WhatsApp + 24 h, jamais nulle en pratique puisque le job exige un entrant) et `occasion` = `conversationId:escaladee_le`
-  en ISO, la clé qui empêche le connecteur de créer une seconde tâche sur un rejeu. 2xx finit le job, 404 (espace sans
-  portail) aussi ; un autre 4xx (400, 401, 409) est journalisé (`push_handoff_refuse`) et le finit, puisque le rejouer
-  rendrait le même refus ; 429, 5xx et réseau sont rejoués par `withRetry` puis lèvent, et pg-boss rejoue le job.
+  en ISO, la clé qui empêche le connecteur de créer une seconde tâche sur un rejeu. 2xx finit le job, un 404
+  `tenant_not_connected` (espace sans portail) aussi ; 🟡 tout AUTRE 404 (route absente parce que le connecteur n'est
+  pas encore déployé, par exemple) est un refus, comme un autre 4xx (400, 401, 409) : journalisé en erreur
+  (`push_handoff_refuse`), il finit le job, puisque le rejouer rendrait le même refus. Le confondre avec « sans
+  portail » perdrait la demande sans trace. Un objet HubSpot introuvable en cours de route (contact supprimé ou
+  fusionné) revient en 503 du connecteur, qui a oublié le contact en cache : 429, 5xx et réseau sont rejoués par
+  `withRetry` puis lèvent, et pg-boss rejoue le job.
   L'analyse poussée au connecteur (`EnrichedAnalyzedEvent`, `buildEvent`) porte le même lien (`lienConversation`).
 - **L'accompagnement** (`src/emails-produit/accompagnement.ts`, balayage `emails-produit-accompagnement`, trente
   minutes, des modèles `commercial`) : la bienvenue (moins de 48 h après la création), puis trois relances à occasion
