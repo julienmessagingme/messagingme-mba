@@ -2348,6 +2348,19 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   affirmé, et porte en pied « Répondez STOP... » (une réponse texte désabonne ; un bouton, non). Retirer l'affirmation
   passe par le réglage (`PATCH .../messages/:evenement`), jamais par la préparation : la relance reste branchée mais ne
   part plus (gardes de la prise de panier et du balayage), et la carte la dit EN PAUSE ;
+- 🔴 **le ménage des modèles remplacés** (2026-10-23) : l'assistant ne MODIFIE jamais un modèle chez Meta, il en crée un
+  nouveau (`shopify_<événement>_<horodatage base 36>`), donc la limite de Meta d'une modification par 24 h ne s'applique
+  pas. Le modèle remplacé (à l'approbation, à une nouvelle préparation, au branchement direct par Claude Code), refusé
+  par Meta ou refusé dès sa création, est supprimé chez Meta, SEULEMENT si `estModeleDeLAssistant` le reconnaît (le nom
+  exact ET un horodatage entre la mise en service de l'assistant et maintenant). 🔴 **La suppression est DIFFÉRÉE** : le
+  geste programme un travail (`oublierPlusTard`, file `shopify-oubli-modele`, un quart d'heure plus tard) que le worker
+  traite (`traiterOubli`) en relisant les messages et les attentes ; supprimer tout de suite ferait échouer les envois
+  qui ont lu l'ancien modèle juste avant (confirmation en vol, lot de relances réclamé), et une préparation concurrente
+  d'une approbation pourrait supprimer le modèle que l'approbation vient de brancher. La suppression est celle de
+  l'écran Modèles (`supprimerUnModele`), qui refuse tant qu'une campagne active s'en sert : un refus se retente toutes
+  les heures, six fois, puis s'abandonne (`shopify_modele_oubli_abandonne`). ⚠️ **Limite assumée** : un scénario, un
+  étage de repli de campagne ou un appel `/v1` qui enverrait un modèle de l'assistant par son nom n'est pas gardé ;
+  la fiche d'aide dit de ne pas les réutiliser hors de la boutique ;
 - **les textes, les données et leurs libellés** vivent dans `web/lib/partage/shopify-messages.ts`, que le serveur
   importe (`src/shopify/donnees.ts`, `preparation.ts`) : l'aperçu de l'assistant et le modèle créé chez Meta disent la
   même chose. La carte écrit les repères `{prénom}` et les convertit en `{{first_name}}` (`web/lib/shopify-assistant.ts`).

@@ -54,6 +54,8 @@ export const FILES_PAR_ROLE: Record<NomDeFile, Appartenance> = {
   'emails-produit': 'principal',
   // Les messages reçus par la filière application (2026-10-22) : un client attend la réponse derrière.
   'application-entrant': 'principal',
+  // Le ménage des modèles Shopify remplacés (2026-10-23) : un appel à Meta par modèle, rare, à côté de l'activation.
+  'shopify-oubli-modele': 'principal',
   // L'analyse et ce qu'elle alimente : personne n'attend derrière, et c'est ce qui appelle les modèles.
   'analyze-conversation': 'analyse',
   'push-analysis': 'analyse',

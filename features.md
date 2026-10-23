@@ -2386,7 +2386,10 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
     `{lien du panier}`... avec un aperçu WhatsApp ; le délai pour la relance ; le consentement. « Envoyer à Meta et
     activer dès l'approbation » crée le modèle chez Meta, et le message s'active seul à l'approbation (un e-mail le dit,
     ou dit le refus de Meta et sa raison). Modifier un message actif ne l'arrête pas : l'ancien part jusqu'à
-    l'approbation du nouveau ; changer seulement le délai ou la case s'applique tout de suite ;
+    l'approbation du nouveau ; changer seulement le délai ou la case s'applique tout de suite. Chaque nouveau texte crée
+    un NOUVEAU modèle (aucune modification de modèle chez Meta, donc pas sa limite d'une par 24 h) ; celui qu'il
+    remplace, s'il a été créé par l'assistant, est supprimé chez Meta un quart d'heure après (2026-10-23), plus tard
+    si une campagne active s'en sert ;
   - l'import des clients abonnés, les chiffres des 30 jours et des paniers, et « Couper » (plus aucun message ; l'app
     se désinstalle depuis la boutique ; une boutique coupée se rebranche depuis la carte).
   - En Free, sans console, tout passe par Claude Code (`get_shopify_state`, `disconnect_shopify`). Les deux chemins

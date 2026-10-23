@@ -53,10 +53,12 @@ function monter() {
       places: non,
       importer: non,
       abonner: async (a) => { trace.abonnements.push(a); return { ok: true, abonnes: ['ORDERS_PAID'], deja: [] }; },
+      programmerOubli: async () => undefined,
     },
     preparation: {
       store,
       creerModele: async (_t, input) => { trace.modeles.push(input); return { ok: true, statut: 'pending', categorie: input.category.toLowerCase() }; },
+      programmerOubli: async () => undefined,
     },
     audit: async (_t, _acteur, action, cible, detail) => { trace.audit.push({ action, cible, detail }); },
   };

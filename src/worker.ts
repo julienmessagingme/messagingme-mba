@@ -17,7 +17,8 @@ import { creerApresLAgent } from './mba/lien-de-test';
 import { PgEventStore } from './webhooks/store';
 import { PgCampaignStore, PgQualityProvider } from './campaign/store.pg';
 import { PgShopifyStore } from './shopify/store.pg';
-import { activerSelonStatut, type DepsActivation } from './shopify/preparation';
+import { activerSelonStatut, FILE_OUBLI_MODELE, suppressionDesModeles, traiterOubli, type DepsActivation, type ProgrammerOubli } from './shopify/preparation';
+import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { campaignRunJob, type CapacitesMoteur } from './campaign/run-job';
 import { PgCampaignRunLock } from './campaign/run-lock';
 import { runCampaignScheduleSweep } from './campaign/schedule-sweep';
@@ -438,11 +439,25 @@ export async function demarrerWorker(): Promise<void> {
    * L'activation des messages Shopify préparés dans la console (conception 2026-10-22), au statut que Meta tranche pour
    * leur modèle. Construite AVANT l'abonnement à la file : un job peut arriver dès que le worker l'écoute.
    */
+  const programmerOubliShopify: ProgrammerOubli = (job, quand) => queue.enqueue(FILE_OUBLI_MODELE, job, { groupId: job.tenantId, startAfter: quand });
   const activationShopify: DepsActivation = {
     store: new PgShopifyStore(pool, config.ENCRYPTION_KEY),
+    // Le ménage (2026-10-23) : l'activation ne fait que programmer l'oubli du modèle remplacé (file ci-dessous).
+    programmerOubli: programmerOubliShopify,
     emails: { emettre: (e) => emetteurEmails.emettre(e) },
     pageParametres: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres`,
   };
+
+  /**
+   * Le ménage des modèles Shopify remplacés (2026-10-23) : un quart d'heure après le geste, relire, puis supprimer chez
+   * Meta par la suppression de l'écran Modèles (garde des campagnes actives), si plus rien ne s'en sert.
+   */
+  const oubliShopify = {
+    store: activationShopify.store,
+    supprimerModele: suppressionDesModeles({ meta: metaFactory, repo, indices: new PgTemplateHintStore(pool) }),
+    programmerOubli: programmerOubliShopify,
+  };
+  await queue.work(FILE_OUBLI_MODELE, async (data) => { await traiterOubli(oubliShopify, data); });
 
   await queue.work('webhook', async (data) => {
     await handleWebhookJob(data, {

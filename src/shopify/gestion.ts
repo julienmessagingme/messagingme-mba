@@ -2,6 +2,8 @@ import type { LectureModele } from '../api/modele-envoi';
 import { domaineShopify, pageApps, type IssueJeton, type IssueVerification } from './connexion';
 import type { AccesClients, ClientAbonne, LectureClients } from './clients';
 import type { IssueAbonnement } from './abonnements';
+// Le ménage des modèles remplacés : la préparation n'importe de la gestion que des TYPES, aucun cycle à l'exécution.
+import { oublierPlusTard, type ProgrammerOubli } from './preparation';
 import type { ImportInput } from '../crm/import';
 import type { ImportReport } from '../crm/types';
 import { LimiteOffreError } from '../offres/refus';
@@ -37,6 +39,8 @@ export interface DepsGestionShopify {
   importer(input: ImportInput): Promise<ImportReport>;
   /** Le branchement par la console (conception 2026-10-22) : `abonnerWebhooks` lié à `fetchPublic` par le câblage. */
   abonner(acces: { domaine: string; jeton: string }): Promise<IssueAbonnement>;
+  /** Le ménage (2026-10-23) : programmer l'oubli du modèle de l'assistant que ce branchement remplace. */
+  programmerOubli: ProgrammerOubli;
 }
 
 export type Refus = { ok: false; statut: 400 | 402 | 409 | 422 | 503; message: string };
@@ -190,14 +194,17 @@ export async function brancherMessage(
       return refus(422, `Le modèle « ${modele} » a ${m.variables} variable(s) : variables doit en nommer exactement autant, dans l’ordre.`);
     }
   }
+  const actifAvant = (await deps.store.messages(tenantId)).find((m) => m.evenement === evenement) ?? null;
   await deps.store.brancher(tenantId, { evenement, modele, langue, variables, actif, par });
   // Le dernier geste gagne (conception 2026-10-22) : un message préparé par la console pour cet événement, encore en
   // validation chez Meta, ne remplacera pas celui qu'on branche ici à son approbation.
-  await deps.store.retirerAttente(tenantId, { evenement });
+  const retiree = await deps.store.retirerAttente(tenantId, { evenement });
   if (typeof b.delaiMinutes === 'number') await deps.store.reglerDelaiPanier(tenantId, b.delaiMinutes);
   // Trois états : vrai affirme, faux RETIRE (plus aucune fiche n'est écrite consentante), absent ne change rien.
   if (affirme) await deps.store.affirmerConsentement(tenantId, par);
   else if (b.consentementAffirme === false) await deps.store.retirerConsentement(tenantId);
+  await oublierPlusTard(deps, tenantId, actifAvant?.modele, modele);
+  await oublierPlusTard(deps, tenantId, retiree?.modele, modele);
   return { ok: true, valeur: await deps.store.messages(tenantId) };
 }
 

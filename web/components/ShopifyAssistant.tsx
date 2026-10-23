@@ -234,6 +234,14 @@ export function ShopifyAssistant({ tenantId, evenement, vue, onClose, onFini }: 
                   {langues.map((l) => <option key={l} value={l}>{l === 'fr' ? 'Français' : l === 'en' ? 'English' : l}</option>)}
                 </select>
               </label>
+              <p className="text-ink-500" data-testid="shopify-assistant-nouveau-modele">
+                {source === null
+                  ? t('Le texte devient un modèle chez Meta, validé en général en quelques minutes.', 'The text becomes a template at Meta, usually approved within minutes.')
+                  : t(
+                    'Un nouveau texte crée un nouveau modèle chez Meta, validé en général en quelques minutes : le message actuel part en attendant, et l’ancien modèle, s’il a été créé ici, est ensuite supprimé. Changer seulement le délai ou la case s’applique tout de suite.',
+                    'A new text creates a new template at Meta, usually approved within minutes: the current message goes out meanwhile, and the old template, if it was created here, is then deleted. Changing only the delay or the checkbox applies right away.',
+                  )}
+              </p>
               {relance && (
                 <p className="text-ink-500">
                   {t(

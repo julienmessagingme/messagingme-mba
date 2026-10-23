@@ -1,6 +1,8 @@
 import { isValidTemplateLanguage } from '../../web/lib/partage/langues-modeles';
 import type { CreateTemplateInput } from '../meta/templates';
 import { journaliser } from '../lib/journal';
+import { messageDe } from '../lib/erreur';
+import { supprimerUnModele, type DepsGestionModeles } from '../templates/gestion';
 import type { Emission } from '../emails-produit/emission';
 import {
   CATEGORIES_ADMISES, DELAI_PANIER_MAX, DELAI_PANIER_MIN, DONNEES_PAR_EVENEMENT, EVENEMENTS_DISPONIBLES, estEvenementShopify,
@@ -25,11 +27,115 @@ export { PIED_STOP, TEXTES_PROPOSES };
  *
  * Le dernier geste gagne : une nouvelle préparation remplace l'attente de l'événement, un branchement direct (Claude
  * Code, set_shopify_message) la retire.
+ *
+ * Le ménage (demande de Julien, 2026-10-23) : chaque nouveau texte crée un NOUVEAU modèle chez Meta (aucune édition, donc
+ * aucune limite de Meta sur les modifications). Le modèle qu'il remplace, s'il a été créé par l'assistant, est supprimé
+ * chez Meta : sinon chaque retouche en laisserait un de plus dans l'écran Modèles, sous le plafond de modèles du compte.
+ *
+ * 🔴 LA SUPPRESSION EST DIFFÉRÉE (relecture du lot) : un geste ne fait que PROGRAMMER un travail (`oublierPlusTard`, file
+ * `FILE_OUBLI_MODELE`), qui relit tout un quart d'heure plus tard (`traiterOubli`). Supprimée tout de suite, la version
+ * remplacée ferait échouer les envois qui l'ont lue juste avant (une confirmation de commande en vol, un lot de relances
+ * réclamé), et une préparation concurrente d'une approbation pourrait supprimer le modèle que l'approbation vient de
+ * brancher. Le travail sort aussi l'appel à Meta de la file des messages entrants.
  */
+
+/** Supprimer un modèle chez Meta, toutes langues : `supprimerUnModele` (garde des campagnes actives), traduite. */
+export type SupprimerModele = (tenantId: string, nom: string) => Promise<{ ok: true } | { ok: false; message: string }>;
+
+/** La file du ménage différé (`BASE_QUEUES`), consommée par le worker. */
+export const FILE_OUBLI_MODELE = 'shopify-oubli-modele';
+/** Le délai avant la suppression : plus long que tout envoi en vol (un lot de relances se vide en moins d'une minute). */
+export const DELAI_OUBLI_MS = 15 * 60_000;
+/** Un refus (une campagne active s'en sert) se retente toutes les heures, six fois au plus, puis s'abandonne. */
+export const REESSAI_OUBLI_MS = 60 * 60_000;
+export const ESSAIS_OUBLI = 6;
+
+export interface JobOubli { tenantId: string; modele: string; essai: number }
+/** Enfiler un travail du ménage à son heure (`queue.enqueue` avec `startAfter`, lié par le câblage). */
+export type ProgrammerOubli = (job: JobOubli, quand: Date) => Promise<void>;
+
+/** La mise en service de l'assistant : aucun de ses modèles n'est plus ancien. */
+const DEBUT_ASSISTANT = Date.UTC(2026, 9, 22);
+const NOM_DE_L_ASSISTANT = /^shopify_(order_paid|order_fulfilled|checkout_abandoned)_([0-9a-z]{8})$/;
+
+/**
+ * Le modèle a-t-il été créé par l'assistant ? Son nom EXACT : `shopify_<événement>_<horodatage en base 36>`, et cet
+ * horodatage tombe entre la mise en service de l'assistant et maintenant (plus un jour de marge). 🔴 C'est la seule garde
+ * qui dit « créé par l'assistant » : un nom choisi par le marchand ou par Claude Code (`commande_payee`,
+ * `shopify_order_paid_v2`, `shopify_order_paid_20261023`, qui décodé tombe en 1974) n'est jamais supprimé.
+ */
+export function estModeleDeLAssistant(nom: string, maintenant: number = Date.now()): boolean {
+  const m = NOM_DE_L_ASSISTANT.exec(nom);
+  if (!m) return false;
+  const quand = parseInt(m[2]!, 36);
+  return quand >= DEBUT_ASSISTANT && quand <= maintenant + 24 * 3600_000;
+}
+
+/** La suppression de l'écran Modèles, liée par le câblage du worker : un refus ou une panne devient un message. */
+export function suppressionDesModeles(deps: Pick<DepsGestionModeles, 'repo' | 'meta' | 'indices'>): SupprimerModele {
+  return async (tenantId, nom) => {
+    try {
+      const issue = await supprimerUnModele(deps, tenantId, nom);
+      if ('refus' in issue) return { ok: false, message: issue.refus.error };
+      return issue.res.success ? { ok: true } : { ok: false, message: 'Meta n’a pas confirmé la suppression' };
+    } catch (err) {
+      return { ok: false, message: String(messageDe(err)) };
+    }
+  };
+}
+
+/**
+ * Programmer l'oubli d'un modèle que ce geste remplace. Rien si le nom n'est pas celui de l'assistant, ou si c'est le
+ * modèle qu'on vient de brancher (`garde`). Un enfilement qui échoue se journalise et ne bloque pas le geste : le
+ * modèle reste simplement dans l'écran Modèles.
+ */
+export async function oublierPlusTard(
+  deps: { programmerOubli: ProgrammerOubli; maintenant?: () => number },
+  tenantId: string, modele: string | null | undefined, garde: string,
+): Promise<void> {
+  const maintenant = (deps.maintenant ?? Date.now)();
+  if (!modele || modele === garde || !estModeleDeLAssistant(modele, maintenant)) return;
+  try {
+    await deps.programmerOubli({ tenantId, modele, essai: 0 }, new Date(maintenant + DELAI_OUBLI_MS));
+  } catch (err) {
+    journaliser('warn', 'shopify_modele_oubli_non_programme', { tenantId, modele, raison: String(messageDe(err)) });
+  }
+}
+
+/**
+ * Le travail du ménage (worker) : relire, puis supprimer le modèle s'il ne sert plus. Rien s'il est ENCORE branché à un
+ * message ou attendu par une préparation (relus au moment même : un geste a pu le rebrancher entre-temps). Un refus se
+ * retente une heure plus tard, `ESSAIS_OUBLI` fois au plus.
+ */
+export async function traiterOubli(
+  deps: { store: Pick<PgShopifyStore, 'messages' | 'attentes'>; supprimerModele: SupprimerModele; programmerOubli: ProgrammerOubli; maintenant?: () => number },
+  donnees: unknown,
+): Promise<'supprime' | 'garde' | 'reessai' | 'abandon' | 'ignore'> {
+  const j = donnees as Partial<JobOubli> | null;
+  if (!j || typeof j.tenantId !== 'string' || typeof j.modele !== 'string' || typeof j.essai !== 'number') return 'ignore';
+  const maintenant = (deps.maintenant ?? Date.now)();
+  if (!estModeleDeLAssistant(j.modele, maintenant)) return 'ignore';
+  const [messages, attentes] = await Promise.all([deps.store.messages(j.tenantId), deps.store.attentes(j.tenantId)]);
+  if (messages.some((m) => m.modele === j.modele) || attentes.some((a) => a.modele === j.modele)) return 'garde';
+  const r = await deps.supprimerModele(j.tenantId, j.modele);
+  if (r.ok) {
+    journaliser('info', 'shopify_modele_oublie', { tenantId: j.tenantId, modele: j.modele });
+    return 'supprime';
+  }
+  if (j.essai + 1 < ESSAIS_OUBLI) {
+    await deps.programmerOubli({ tenantId: j.tenantId, modele: j.modele, essai: j.essai + 1 }, new Date(maintenant + REESSAI_OUBLI_MS));
+    journaliser('info', 'shopify_modele_oubli_reporte', { tenantId: j.tenantId, modele: j.modele, raison: r.message, essai: j.essai + 1 });
+    return 'reessai';
+  }
+  journaliser('warn', 'shopify_modele_oubli_abandonne', { tenantId: j.tenantId, modele: j.modele, raison: r.message });
+  return 'abandon';
+}
 
 export interface DepsPreparation {
   store: Pick<PgShopifyStore, 'lire' | 'brancher' | 'poserAttente' | 'retirerAttente' | 'affirmerConsentement'
-    | 'retirerConsentement' | 'reglerDelaiPanier' | 'message'>;
+    | 'retirerConsentement' | 'reglerDelaiPanier' | 'message' | 'messages' | 'attentes'>;
+  /** Le ménage : programmer l'oubli du modèle remplacé, s'il vient de l'assistant (`oublierPlusTard`). */
+  programmerOubli: ProgrammerOubli;
   /** La création de l'écran Modèles (creerUnModele), traduite : statut et catégorie de Meta, en minuscules. */
   creerModele(tenantId: string, input: CreateTemplateInput): Promise<{ ok: true; statut: string; categorie: string } | { ok: false; message: string }>;
   /** La date du nom du modèle ; injectable pour les tests. */
@@ -37,7 +143,9 @@ export interface DepsPreparation {
 }
 
 export interface DepsActivation {
-  store: Pick<PgShopifyStore, 'lire' | 'brancher' | 'retirerAttente' | 'reglerDelaiPanier' | 'attenteDuModele'>;
+  store: Pick<PgShopifyStore, 'lire' | 'brancher' | 'retirerAttente' | 'reglerDelaiPanier' | 'attenteDuModele' | 'messages' | 'attentes'>;
+  /** Le ménage : programmer l'oubli du modèle que l'approbation remplace, ou de celui que Meta refuse. */
+  programmerOubli: ProgrammerOubli;
   emails: { emettre(e: Emission): Promise<unknown> };
   /** La page Paramètres de la console, où vit la carte Shopify : le lien des deux e-mails. */
   pageParametres: string;
@@ -128,6 +236,11 @@ export async function preparerMessage(deps: DepsPreparation, tenantId: string, p
 
   if (p.consentementAffirme === true) await deps.store.affirmerConsentement(tenantId, par);
   const modele = `shopify_${evenement}_${(deps.maintenant ?? Date.now)().toString(36)}`;
+  // Ce que ce geste remplacera, lu AVANT : l'attente précédente de l'événement, et le message en place.
+  const [attenteAvant, actifAvant] = await Promise.all([
+    deps.store.attentes(tenantId).then((as) => as.find((a) => a.evenement === evenement) ?? null),
+    deps.store.message(tenantId, evenement),
+  ]);
   const categorie = relance ? 'MARKETING' : 'UTILITY';
   const cree = await deps.creerModele(tenantId, {
     name: modele, category: categorie, language: langue, body: c.corps,
@@ -137,20 +250,26 @@ export async function preparerMessage(deps: DepsPreparation, tenantId: string, p
   if (!cree.ok) return refus(422, `La création du modèle chez Meta a échoué : ${cree.message}`);
   // Un refus dès la création ne viendra pas forcément par le statut : le dire tout de suite plutôt que d'attendre.
   if (cree.statut === 'rejected') {
+    await oublierPlusTard(deps, tenantId, modele, '');
     return refus(422, 'Meta a refusé ce modèle dès sa création : reformulez le texte (sans promotion pour un message de commande), puis réessayez.');
   }
   // Meta peut reclasser un modèle de service en marketing : un message de commande n'est admis qu'en service.
   if (!(CATEGORIES_ADMISES[evenement] as readonly string[]).includes(cree.categorie)) {
+    await oublierPlusTard(deps, tenantId, modele, '');
     return refus(422, `Meta a classé ce message en ${cree.categorie} : un message de commande doit rester un message de service. Retirez-en toute promotion, puis réessayez.`);
   }
   const delaiMinutes = relance && typeof p.delaiMinutes === 'number' ? p.delaiMinutes : null;
   if (cree.statut === 'approved') {
     await activer(deps.store, tenantId, { evenement, modele, langue, variables: c.variables, delaiMinutes });
     // Le dernier geste gagne : une attente plus ancienne du même événement ne s'activera pas par-dessus.
-    await deps.store.retirerAttente(tenantId, { evenement });
+    const retiree = await deps.store.retirerAttente(tenantId, { evenement });
+    await oublierPlusTard(deps, tenantId, actifAvant?.modele, modele);
+    await oublierPlusTard(deps, tenantId, retiree?.modele, modele);
     return { ok: true, valeur: { etat: 'actif', modele } };
   }
   await deps.store.poserAttente(tenantId, { evenement, modele, langue, variables: c.variables, delaiMinutes, par });
+  // La version précédente, encore en validation, ne s'activera jamais : elle part. Le message ACTIF, lui, reste.
+  await oublierPlusTard(deps, tenantId, attenteAvant?.modele, modele);
   journaliser('info', 'shopify_message_prepare', { tenantId, evenement, modele });
   return { ok: true, valeur: { etat: 'en_validation', modele } };
 }
@@ -210,6 +329,8 @@ export async function activerSelonStatut(
   const attente = await deps.store.attenteDuModele(tenantId, s.modele, s.langue);
   if (attente === null) return 'rien';
   const boutique = await deps.store.lire(tenantId);
+  // Le modèle en place, que l'approbation va remplacer : lu AVANT de brancher.
+  const actifAvant = (await deps.store.messages(tenantId)).find((m) => m.evenement === attente.evenement) ?? null;
   const valeurs = { boutique: boutique?.domaine ?? '', message: LIBELLES_EVENEMENTS[attente.evenement][0], lien_parametres: deps.pageParametres };
   if (statut === 'APPROVED') {
     // 🔴 BRANCHER AVANT DE RETIRER L'ATTENTE (relecture des lots 0 et 1) : une panne entre les deux laisse l'attente, que
@@ -223,9 +344,12 @@ export async function activerSelonStatut(
     const part = boutique.etat === 'connectee' && (attente.evenement !== 'checkout_abandoned' || boutique.consentement !== null);
     if (part) await deps.emails.emettre({ cle: 'shopify_message_actif', tenantId, a: 'admins', occasion: s.modele, valeurs }).catch(() => undefined);
     journaliser('info', 'shopify_message_active', { tenantId, evenement: attente.evenement, modele: s.modele, part });
+    await oublierPlusTard(deps, tenantId, actifAvant?.modele, s.modele);
     return 'active';
   }
   if ((await deps.store.retirerAttente(tenantId, { modele: s.modele, langue: s.langue })) === null) return 'rien';
+  // Le modèle refusé ne servira jamais : il part (le message actif, lui, reste en place).
+  await oublierPlusTard(deps, tenantId, s.modele, actifAvant?.modele ?? '');
   await deps.emails.emettre({
     cle: 'shopify_modele_refuse', tenantId, a: 'admins', occasion: s.modele, valeurs: { ...valeurs, raison: (s.raison ?? 'non précisée').slice(0, 300) },
   }).catch(() => undefined);

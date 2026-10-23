@@ -7,7 +7,7 @@
  * Les files travaillées par le worker. `analyze-conversation` et `push-analysis` ne sont enregistrées que si la
  * fonction est activée, mais la file existe côté /ops même désactivée : on les liste inconditionnellement.
  */
-export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn', 'optout-poussee', 'signaux-batch', 'evenements-distribution', 'evenements-envoi', 'emails-produit', 'application-entrant'] as const;
+export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn', 'optout-poussee', 'signaux-batch', 'evenements-distribution', 'evenements-envoi', 'emails-produit', 'application-entrant', 'shopify-oubli-modele'] as const;
 
 /**
  * Le nom de la DLQ d'une file, défini une seule fois : `PgBossQueue.ensure()` l'importe pour la créer, donc le nom
@@ -52,6 +52,8 @@ export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number>
   'evenements-envoi': 5,
   'emails-produit': 10,
   'application-entrant': 2,
+  // Le ménage des modèles Shopify remplacés (2026-10-23) : un travail différé d'un quart d'heure, personne n'attend.
+  'shopify-oubli-modele': 60,
 };
 
 /**
@@ -78,6 +80,7 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
   'evenements-envoi': true, // idem, et un réessai différé n'est pris qu'à son heure (`startAfter`)
   'emails-produit': false, // un e-mail à un admin : personne ne regarde l'horloge à la seconde (lot 7)
   'application-entrant': true, // un message reçu par la filière application : un contact attend sa réponse (plan 2026-10-22)
+  'shopify-oubli-modele': false, // le ménage des modèles remplacés, différé d'un quart d'heure : personne n'attend (2026-10-23)
 };
 
 /**

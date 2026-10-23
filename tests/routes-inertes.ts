@@ -821,6 +821,7 @@ export const mcpShopifyInerte: Pick<DepsMcp, 'shopify'> = {
     places: neDevraitPasEtreAppelee('shopify.places'),
     importer: neDevraitPasEtreAppelee('shopify.importer'),
     abonner: neDevraitPasEtreAppelee('shopify.abonner'),
+    programmerOubli: neDevraitPasEtreAppelee('shopify.programmerOubli'),
   },
 };
 

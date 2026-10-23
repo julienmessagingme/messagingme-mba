@@ -362,7 +362,7 @@ export async function modifierUnModele(
 
 /** Suppression de toutes les langues d'un nom, refusée tant qu'une campagne active l'utilise. */
 export async function supprimerUnModele(
-  deps: DepsGestionModeles,
+  deps: Pick<DepsGestionModeles, 'repo' | 'meta' | 'indices'>,
   tenant: string,
   name: string,
 ): Promise<IssueSuppressionModele> {

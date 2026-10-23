@@ -83,7 +83,7 @@ import { PgShopifyStore } from './shopify/store.pg';
 import { demanderJeton, verifierBoutique } from './shopify/connexion';
 import { lireClientsAbonnes } from './shopify/clients';
 import { abonnerWebhooks } from './shopify/abonnements';
-import { relireAttentes, type DepsPreparation } from './shopify/preparation';
+import { FILE_OUBLI_MODELE, relireAttentes, type DepsPreparation, type ProgrammerOubli } from './shopify/preparation';
 import { importContacts } from './crm/import';
 import type { DepsGestionShopify } from './shopify/gestion';
 import { traiterWebhookShopify, type DepsTraitementShopify } from './shopify/traitement';
@@ -1263,8 +1263,12 @@ async function main(): Promise<void> {
    * worker serait une liste tenue à la main. Shopify réessaie ce qui n'a pas reçu de 2xx, il tient lieu de file.
    */
   const shopifyStore = new PgShopifyStore(pool, config.ENCRYPTION_KEY);
+  // Le ménage des modèles de l'assistant que remplace un nouveau message (2026-10-23) : l'API ne fait que PROGRAMMER
+  // l'oubli ; le worker le traite un quart d'heure plus tard (`traiterOubli`, la suppression de l'écran Modèles).
+  const programmerOubliShopify: ProgrammerOubli = (job, quand) => queue.enqueue(FILE_OUBLI_MODELE, job, { groupId: job.tenantId, startAfter: quand });
   const gestionShopify: DepsGestionShopify = {
     store: shopifyStore,
+    programmerOubli: programmerOubliShopify,
     verifier: (domaine, clientId, secret) => verifierBoutique(domaine, clientId, secret),
     // La MÊME lecture du modèle chez Meta que l'envoi qui le fera partir.
     lireModele: (tenant, nom, langue) => depsEnvois.lireModele(tenant, nom, langue),
@@ -1316,6 +1320,7 @@ async function main(): Promise<void> {
    */
   const preparationShopify: DepsPreparation = {
     store: shopifyStore,
+    programmerOubli: programmerOubliShopify,
     creerModele: async (tenant, input) => {
       try {
         const issue = await creerUnModele(depsModeles, tenant, input);
@@ -1330,6 +1335,7 @@ async function main(): Promise<void> {
   };
   const filetAttentesShopify = {
     store: shopifyStore,
+    programmerOubli: programmerOubliShopify,
     emails: emetteurEmails,
     pageParametres: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres`,
     statutModele: async (tenant: string, modele: string, langue: string) => {

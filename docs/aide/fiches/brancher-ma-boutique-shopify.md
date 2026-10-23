@@ -1,7 +1,7 @@
 ---
 ecran: parametres
 source_section: Boutique Shopify : les messages de commande sur WhatsApp (Claude Code ou console, 2026-10-21)
-source_empreinte: 288763
+source_empreinte: 085246
 ---
 # Brancher ma boutique Shopify
 
@@ -21,7 +21,10 @@ de la commande s'écrivent `{prénom}`, `{lien du panier}`... et un aperçu mont
 pour la relance, puis votre affirmation du consentement. **« Envoyer à Meta et activer dès l'approbation »** : le
 message s'active tout seul quand Meta l'approuve, en général en quelques minutes, et un e-mail vous prévient (ou vous
 dit pourquoi Meta l'a refusé). Modifier un message actif ne l'arrête pas : l'ancien part jusqu'à l'approbation du
-nouveau.
+nouveau. Chaque nouveau texte crée un nouveau modèle chez Meta, que vous pouvez donc retoucher autant que vous voulez ;
+l'ancien, s'il a été créé ici, est supprimé peu après l'approbation du nouveau. Changer seulement le délai ou la case
+s'applique tout de suite, sans repasser par Meta. Les modèles créés par l'assistant (leur nom commence par
+« shopify_ ») servent à la boutique : ne les réutilisez pas dans un scénario ou une campagne.
 
 **Depuis Claude Code**, avec le plugin Messaging Me (toutes les offres, Free comprise) : demandez « branche ma boutique
 Shopify ». Claude crée l'app dans votre propre organisation Shopify (aucune validation de Shopify n'est nécessaire) ;

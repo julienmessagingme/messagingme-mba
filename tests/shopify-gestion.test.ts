@@ -8,7 +8,7 @@ import type { IssueJeton } from '../src/shopify/connexion';
 import type { ImportInput } from '../src/crm/import';
 import { LimiteOffreError } from '../src/offres/refus';
 import type { LectureModele } from '../src/api/modele-envoi';
-import type { AccesBoutique, MessageBranche, VueBoutique } from '../src/shopify/store.pg';
+import type { AccesBoutique, AttenteMessage, MessageBranche, VueBoutique } from '../src/shopify/store.pg';
 import { OUTILS, type DepsMcp } from '../src/mcp/outils';
 import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 
@@ -27,17 +27,26 @@ function monter(o: {
   boutique?: VueBoutique | null; modele?: LectureModele; ailleurs?: boolean; verif?: Awaited<ReturnType<DepsGestionShopify['verifier']>>;
   jeton?: Awaited<ReturnType<DepsGestionShopify['jeton']>>; abonnement?: Awaited<ReturnType<DepsGestionShopify['abonner']>>;
   acces?: Awaited<ReturnType<DepsGestionShopify['store']['acces']>>;
+  actifs?: MessageBranche[]; attenteRetiree?: AttenteMessage;
 } = {}) {
   let boutique: VueBoutique | null = o.boutique === undefined ? VUE : o.boutique;
   const journal = { connexions: [] as unknown[], branches: [] as unknown[], consentements: [] as Array<string | null>, retraits: 0, coupes: 0, verifs: 0, delais: [] as number[], attentesRetirees: [] as unknown[], abonnements: [] as unknown[] };
-  const messages: MessageBranche[] = [];
+  const messages: MessageBranche[] = [...(o.actifs ?? [])];
+  let attenteRetiree = o.attenteRetiree ?? null;
+  const programmes: string[] = [];
   const deps: DepsGestionShopify = {
     store: {
       lire: async () => boutique,
       connecter: async (_t, c) => { journal.connexions.push(c); if (o.ailleurs) return 'boutique_ailleurs'; boutique = { ...VUE, domaine: c.domaine }; return 'ok'; },
       couper: async () => { journal.coupes += 1; const deja = boutique?.etat === 'coupee'; if (boutique) boutique = { ...boutique, etat: 'coupee' }; return !deja; },
       messages: async () => messages,
-      brancher: async (_t, m) => { journal.branches.push(m); },
+      // Comme le vrai store : brancher REMPLACE le message de l'événement.
+      brancher: async (_t, m) => {
+        journal.branches.push(m);
+        const i = messages.findIndex((x) => x.evenement === m.evenement);
+        const ligne: MessageBranche = { evenement: m.evenement, modele: m.modele, langue: m.langue, variables: m.variables, actif: m.actif, modifieLe: '' };
+        if (i >= 0) messages[i] = ligne; else messages.push(ligne);
+      },
       affirmerConsentement: async (_t, par) => { journal.consentements.push(par); },
       retirerConsentement: async () => { journal.retraits += 1; },
       compteurs: async () => ({ envoye: 3 }),
@@ -45,7 +54,7 @@ function monter(o: {
       compteursPaniers: async () => ({ relances: { envoye: 1 }, fermesATemps: 2, enAttente: 3 }),
       acces: async () => o.acces ?? null,
       attentes: async () => [],
-      retirerAttente: async (_t, cible) => { journal.attentesRetirees.push(cible); return null; },
+      retirerAttente: async (_t, cible) => { journal.attentesRetirees.push(cible); const a = attenteRetiree; attenteRetiree = null; return a; },
     },
     verifier: async () => { journal.verifs += 1; return o.verif ?? { ok: true, nom: 'Essai', pays: 'FR', devise: 'EUR' }; },
     lireModele: async () => o.modele ?? { statut: 'approuve', categorie: 'utility', variables: 2 },
@@ -55,8 +64,9 @@ function monter(o: {
     places: async () => { throw new Error('places : hors de ce test'); },
     importer: async () => { throw new Error('importer : hors de ce test'); },
     abonner: async (acces) => { journal.abonnements.push(acces); return o.abonnement ?? { ok: true, abonnes: ['ORDERS_PAID'], deja: [] }; },
+    programmerOubli: async (job) => { programmes.push(job.modele); },
   };
-  return { deps, journal };
+  return { deps, journal, programmes };
 }
 
 describe('connecter une boutique', () => {
@@ -168,6 +178,30 @@ describe('brancher un message', () => {
     const { deps, journal } = monter({ modele: { statut: 'absent' } });
     expect((await brancherMessage(deps, T, { ...branchement, actif: false }, null)).ok).toBe(true);
     expect(journal.branches).toHaveLength(1);
+  });
+});
+
+describe('le ménage des modèles remplacés (2026-10-23)', () => {
+  // Des noms de l'assistant : son horodatage en base 36, après sa mise en service.
+  const ASSISTANT = `shopify_order_paid_${Date.UTC(2026, 9, 22, 9).toString(36)}`;
+  const attente: AttenteMessage = { evenement: 'order_paid', modele: `shopify_order_paid_${Date.UTC(2026, 9, 22, 10).toString(36)}`, langue: 'fr', variables: ['first_name'], delaiMinutes: null, creeLe: '' };
+  const branchement = { evenement: 'order_paid', modele: 'commande_payee', langue: 'fr', variables: ['first_name', 'order_number'], actif: true, consentementAffirme: undefined };
+  const actif = (modele: string): MessageBranche => ({ evenement: 'order_paid', modele, langue: 'fr', variables: ['first_name', 'order_number'], actif: true, modifieLe: '' });
+
+  it('🔴 Claude Code branche par-dessus un message de l’assistant : l’oubli de l’ancien modèle et de l’attente retirée est programmé', async () => {
+    const { deps, programmes } = monter({ actifs: [actif(ASSISTANT)], attenteRetiree: attente });
+    expect((await brancherMessage(deps, T, branchement, null)).ok).toBe(true);
+    expect(programmes.sort()).toEqual([ASSISTANT, attente.modele].sort());
+  });
+
+  it('🔴 un modèle nommé par le marchand ou par Claude Code n’est jamais visé, ni celui qu’on rebranche', async () => {
+    const nomme = monter({ actifs: [actif('commande_payee_v1')] });
+    await brancherMessage(nomme.deps, T, branchement, null);
+    expect(nomme.programmes).toEqual([]);
+    // Le même modèle de l'assistant, rebranché : c'est la garde (`modele === garde`), pas le nom, qui le protège.
+    const meme = monter({ actifs: [actif(ASSISTANT)] });
+    await brancherMessage(meme.deps, T, { ...branchement, modele: ASSISTANT }, null);
+    expect(meme.programmes).toEqual([]);
   });
 });
 
