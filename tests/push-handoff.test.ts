@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { composerPassageEquipe, pushHandoffJob, type PushHandoffDeps } from '../src/analysis/push-handoff';
-import { pousserHandoff, HubspotServiceError, type CorpsHandoff, type IssueHandoff } from '../src/crm/hubspot-service';
+import { flagSelonLeChoix, pousserHandoff, HubspotServiceError, type CorpsHandoff, type IssueHandoff } from '../src/crm/hubspot-service';
 import type { EtatPassage } from '../src/analysis/enrichment';
 import { ATTENTE_RECENTE_MS, FENETRE_MS } from '../src/emails-produit/alertes';
 import { signRequest } from '../src/lib/signature';
@@ -23,6 +23,7 @@ function banc(over: Partial<PushHandoffDeps> = {}, e: EtatPassage | null = etat(
   const pousses: CorpsHandoff[] = [];
   const lus: string[][] = [];
   const d: PushHandoffDeps = {
+    passageBranche: async () => true,
     lireEtat: async (t, w) => { lus.push([t, w]); return e; },
     numeros: { getHubspotGateStatus: async () => ({ connected: true, pausedAt: null }) },
     lienConversation: (id) => `https://console.exemple.test/inbox?c=${encodeURIComponent(id)}`,
@@ -211,5 +212,38 @@ describe('pousserHandoff : le client de POST /service/handoff', () => {
   it('🔴 une erreur que le client ne sait pas qualifier remonte : le job la laisse à pg-boss', async () => {
     const t: HttpTransport = { post: async () => { throw new Error('boom'); } };
     await expect(pousserHandoff(connecteur(t), corps)).rejects.toThrow('boom');
+  });
+});
+
+describe('pushHandoffJob : le choix du client (lot 1bis)', () => {
+  it('🔴 tâche immédiate NON branchée -> l’état n’est même pas relu, rien n’est poussé', async () => {
+    const { d, pousses, lus } = banc({ passageBranche: async () => false });
+    await pushHandoffJob({ tenantId: 't1', waId: 'w' }, d);
+    expect(lus).toHaveLength(0);
+    expect(pousses).toHaveLength(0);
+  });
+
+  it('branchée -> le chemin d’avant, inchangé, et le choix lu pour l’espace du job', async () => {
+    const choix: string[] = [];
+    const { d, pousses } = banc({ passageBranche: async (t) => { choix.push(t); return true; } });
+    await pushHandoffJob({ tenantId: 't1', waId: 'w' }, d);
+    expect(choix).toEqual(['t1']);
+    expect(pousses).toHaveLength(1);
+  });
+});
+
+describe('flagSelonLeChoix : le contact injoignable selon le choix du client (lot 1bis)', () => {
+  it('🔴 signal éteint -> rien n’est flagué, et c’est un succès (la clôture qui suit ne doit pas bloquer)', async () => {
+    const flags: string[][] = [];
+    const f = flagSelonLeChoix(async () => false, async (t, e) => { flags.push([t, e]); });
+    await expect(f('t1', '+33600000001')).resolves.toBeUndefined();
+    expect(flags).toHaveLength(0);
+  });
+
+  it('signal allumé -> flagué pour l’espace et le numéro, et une erreur du flag remonte comme avant', async () => {
+    const flags: string[][] = [];
+    await flagSelonLeChoix(async () => true, async (t, e) => { flags.push([t, e]); })('t1', '+33600000001');
+    expect(flags).toEqual([['t1', '+33600000001']]);
+    await expect(flagSelonLeChoix(async () => true, async () => { throw new Error('connecteur 500'); })('t1', 'x')).rejects.toThrow('connecteur 500');
   });
 });

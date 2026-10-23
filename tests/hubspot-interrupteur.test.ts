@@ -40,6 +40,7 @@ function reglages(o: { portail?: SettingsRouteDeps['hubspotPortalConnecte']; ini
   const settings: SettingsRouteDeps = {
     ...reglagesInertes,
     hubspotPortalConnecte: o.portail ?? sansPortailHubspot,
+    choixHubspot: async () => ({ analyse: true, passage: true, injoignable: true, reponse: false, valideLe: null }),
     reglages: {
       ...reglagesDepInertes,
       get: async () => ({

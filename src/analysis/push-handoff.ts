@@ -40,6 +40,8 @@ export function composerPassageEquipe(
 }
 
 export interface PushHandoffDeps {
+  /** Le client a-t-il branché « la tâche immédiate » (lot 1bis, `lireChoixHubspot`) ? Requis, pour la même raison. */
+  passageBranche(tenantId: string): Promise<boolean>;
   /** L'état frais de la conversation, filtré sur l'espace (`getEtatPassage`). */
   lireEtat(tenantId: string, waId: string): Promise<EtatPassage | null>;
   /** La porte HubSpot du numéro, la même que la poussée de l'analyse. */
@@ -68,6 +70,12 @@ export async function pushHandoffJob(data: unknown, deps: PushHandoffDeps): Prom
   const p = payloadHandoff.safeParse(data);
   if (!p.success) throw new Error('push-handoff : payload invalide (tenantId/waId manquant)');
   const { tenantId, waId } = p.data;
+
+  // Lot 1bis : le client a éteint la tâche immédiate. Lu au moment d'agir, comme le reste de l'état.
+  if (!(await deps.passageBranche(tenantId))) {
+    journaliser('info', 'push_handoff_non_branche', { tenantId });
+    return;
+  }
 
   const etat = await deps.lireEtat(tenantId, waId);
   if (etat === null || etat.escaladeeLe === null) {

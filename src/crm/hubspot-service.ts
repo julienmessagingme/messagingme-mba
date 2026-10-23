@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { signRequest } from '../lib/signature';
-import type { HubspotPortalLink } from '../account/types';
+import type { HubspotPortalLink, ModeTaches } from '../account/types';
 import { withRetry } from '../meta/http';
 import type { HttpTransport } from '../meta/http';
 import { importContacts } from './import';
@@ -140,14 +140,47 @@ export async function pousserHandoff(deps: ConnectorDeps, corps: CorpsHandoff): 
   return r.success ? { issue: 'fait', created: r.data.created, taskId: r.data.taskId } : { issue: 'fait', created: null, taskId: null };
 }
 
+/**
+ * Le signal « contact injoignable » SELON le choix du client (lot 1bis) : éteint, rien n'est flagué, et c'est un succès
+ * pour la clôture qui suit dans `runRetrySweep` (le no-op qui réussit, comme sans HubSpot). Extrait du câblage du
+ * worker pour être testé par la même porte que la production.
+ */
+export function flagSelonLeChoix(
+  injoignableBranche: (tenantId: string) => Promise<boolean>,
+  flag: (tenantId: string, e164: string) => Promise<unknown>,
+): (tenantId: string, e164: string) => Promise<void> {
+  return async (tenantId, e164) => {
+    if (!(await injoignableBranche(tenantId))) return;
+    await flag(tenantId, e164);
+  };
+}
+
 /** L'échéance d'une lecture du portail : deux requêtes indexées chez le connecteur, quelques millisecondes d'habitude. */
 export const DELAI_PORTAIL_MS = 3_000;
 
 /** La réponse de `POST /service/portal`, validée : rien d'autre ne passe. */
 const reponsePortail = z.union([
   z.object({ connected: z.literal(false) }),
-  z.object({ connected: z.literal(true), hubId: z.string().min(1), hubDomain: z.string().nullable(), listsScopeGranted: z.boolean() }),
+  z.object({
+    connected: z.literal(true), hubId: z.string().min(1), hubDomain: z.string().nullable(), listsScopeGranted: z.boolean(),
+    // Lot 1bis : facultatif, un connecteur plus ancien ne le rend pas.
+    routingMode: z.enum(['mm_routing', 'hubspot_native']).optional(),
+  }),
 ]);
+
+/** La réponse de `POST /service/routing-mode` (lot 1bis), validée. */
+const reponseModeTaches = z.object({ routingMode: z.enum(['mm_routing', 'hubspot_native']) });
+
+/**
+ * Pose le mode des tâches du portail de l'espace (lot 1bis, « Créer des tâches dans HubSpot ») : `POST
+ * /service/routing-mode`. Il vaut pour tout le portail. LÈVE sur tout échec (portail absent, connecteur injoignable,
+ * réponse invalide) : l'appelant le dit au client, jamais un succès muet.
+ */
+export async function poserModeTaches(deps: ConnectorDeps, tenantId: string, mode: ModeTaches): Promise<ModeTaches> {
+  const r = reponseModeTaches.safeParse(await callService<unknown>(deps, '/service/routing-mode', { tenantId, mode }));
+  if (!r.success) throw new HubspotServiceError(502, 'reponse_invalide', false);
+  return r.data.routingMode;
+}
 
 /**
  * Le portail HubSpot relié à un espace, lu PAR LE CONNECTEUR (`POST /service/portal`, lot 1 de la bascule Scaleway).

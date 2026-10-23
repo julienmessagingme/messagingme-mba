@@ -36,7 +36,7 @@ import { assignerReponse } from './inbox/assignation-campagne';
 import { arriveeParWidget } from './widgets/arrivee';
 import { relanceurDeCampagnes } from './campaign/enqueue';
 import { plafondDuCanal, plafondLePlusBas } from './campaign/pacing';
-import { flagContactUnreachable, pousserHandoff } from './crm/hubspot-service';
+import { flagContactUnreachable, flagSelonLeChoix, pousserHandoff } from './crm/hubspot-service';
 import { DUREE_CLE_IDEMPOTENCE_MS } from './api/idempotence';
 import { PgArriveesPubStore } from './pubs/arrivees.pg';
 import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
@@ -1024,6 +1024,7 @@ export async function demarrerWorker(): Promise<void> {
     const connecteurHubspot = { baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport };
     await queue.work('push-handoff', (data) =>
       pushHandoffJob(data, {
+        passageBranche: async (t) => (await settingsStore.lireChoixHubspot(t)).passage,
         lireEtat: (t, w) => getEtatPassage(pool, t, w),
         numeros: phoneStatusStore,
         lienConversation,
@@ -1046,6 +1047,7 @@ export async function demarrerWorker(): Promise<void> {
           // Relecture fraîche : le payload ne porte qu'une référence, on relit l'analyse courante ici. Skip en pause
           // -> marque à rattraper (décision prise par le job sur le snapshot) ; post réussi -> efface la marque.
           analyses: analysisStore,
+          analyseBranchee: async (t) => (await settingsStore.lireChoixHubspot(t)).analyse,
           getEnrichment: (id) => getEnrichment(pool, id),
           // Porte + décision de rattrapage en un seul snapshot : connected (pousse ou non) + pausedAt (marque ou non).
           numeros: phoneStatusStore,
@@ -1353,9 +1355,11 @@ export async function demarrerWorker(): Promise<void> {
     // devient un no-op qui réussit (rien à flaguer), jamais un no-op qui lève, qui bloquerait la clôture des
     // injoignables de tous les espaces sans CRM.
     const flagUnreachable = config.HUBSPOT_SERVICE_URL
-      ? async (tenantId: string, e164: string): Promise<void> => {
-          await flagContactUnreachable({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenantId, e164);
-        }
+      // Lot 1bis : le client a pu éteindre ce signal (`flagSelonLeChoix`).
+      ? flagSelonLeChoix(
+          async (tenantId) => (await settingsStore.lireChoixHubspot(tenantId)).injoignable,
+          (tenantId, e164) => flagContactUnreachable({ baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport }, tenantId, e164),
+        )
       : async (): Promise<void> => {};
     const retrySweep = async (): Promise<void> => {
       const res = await runRetrySweep({

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import type { TenantSettings, MbaHandoffMode } from '../settings/store.pg';
+import type { TenantSettings, MbaHandoffMode, ChoixHubspot } from '../settings/store.pg';
 import type { BusinessHours } from '../workflow/conditions';
 import { espaceVerifie } from './scope';
 import { estFrequenceMention, FREQUENCES_MENTION_IA, type FrequenceMentionIa } from '../agent/agent-store';
@@ -61,6 +61,8 @@ export interface SettingsRouteDeps {
    * éteindrait HubSpot par-dessus un portail relié.
    */
   hubspotPortalConnecte(tenantId: string): Promise<boolean>;
+  /** Ce que le client a branché entre Messaging Me et HubSpot (lot 1bis, `lireChoixHubspot`), rendu par `GET /settings`. */
+  choixHubspot(tenantId: string): Promise<ChoixHubspot>;
   /** Les requêtes de connecteur de l'espace (Tools > Connecteurs API), réduites à ce que l'écran affiche. */
   listerRequetesConnecteur(tenantId: string): Promise<Array<{ id: string; label: string }>>;
   agents: {
@@ -98,7 +100,16 @@ export function registerSettings(
     // Une panne de lecture vaut « pas relié » ici seulement : c'est un drapeau d'affichage, l'écran ne doit
     // pas tomber pour lui. L'extinction de l'interrupteur, elle, refuse (plus bas).
     const hubspotPortalConnecte = await deps.hubspotPortalConnecte(tenant).catch(() => false);
-    return reply.code(200).send({ ...settings, rcsEnabled, hubspotPortalConnecte });
+    const choix = await deps.choixHubspot(tenant);
+    return reply.code(200).send({
+      ...settings, rcsEnabled, hubspotPortalConnecte,
+      // Lot 1bis : le choix des fonctions HubSpot (l'écran Paramètres > Intégrations > HubSpot et son étape de choix).
+      hubspotAnalyse: choix.analyse,
+      hubspotPassage: choix.passage,
+      hubspotInjoignable: choix.injoignable,
+      hubspotReponse: choix.reponse,
+      hubspotChoixValideLe: choix.valideLe ? choix.valideLe.toISOString() : null,
+    });
   });
 
   app.put('/tenants/:tenantId/settings', opts, async (req, reply) => {

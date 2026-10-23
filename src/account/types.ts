@@ -42,4 +42,12 @@ export interface HubspotPortalLink {
   hubDomain?: string | null;
   /** Le portail a-t-il accordé le scope crm.lists.read (import de listes possible sans re-consentement) ? */
   listsScopeGranted?: boolean;
+  /**
+   * Le mode des tâches du portail (lot 1bis, « Créer des tâches dans HubSpot ») : `mm_routing` crée les tâches,
+   * `hubspot_native` n'écrit que les propriétés. Absent d'un connecteur plus ancien.
+   */
+  routingMode?: ModeTaches;
 }
+
+/** Le mode des tâches d'un portail HubSpot (lot 1bis). Il vaut pour tout le portail, donc pour ses espaces. */
+export type ModeTaches = 'mm_routing' | 'hubspot_native';

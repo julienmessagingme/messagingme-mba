@@ -185,7 +185,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Liens tracés** | compter les clics sur les boutons URL d'un template | `src/links/` | | `tracked_links`, `tracked_link_clicks` | |
 | **Webhooks entrants** | un tiers poste du JSON, on en fait un contact et un événement | `src/webhook-entrant/` | `/webhooks` | `webhooks` | |
 | **Webhooks sortants** | l'application du client reçoit les événements, signés et réessayés 24 h (§ 6) | `src/evenements/`, `src/http/evenements.ts`, `src/mcp/outils-evenements.ts` | `/developers/evenements` | `adresses_evenements`, `envois_evenements` | `evenements-distribution`, `evenements-envoi` |
-| **Connecteur HubSpot** | import de listes, étapes de deal, la tâche d'un passage à l'équipe (`push-handoff`, ci-dessous § 6) | `src/hubspot/`, `src/crm/hubspot-service.ts`, `src/analysis/push-handoff.ts` | `/tuto-hubspot` | | `hubspot-catchup`, `push-handoff` |
+| **Connecteur HubSpot** | import de listes, étapes de deal, la tâche d'un passage à l'équipe (`push-handoff`, ci-dessous § 6), le choix des fonctions par le client (§ 6) | `src/hubspot/`, `src/crm/hubspot-service.ts`, `src/analysis/push-handoff.ts`, `src/http/hubspot-choix.ts` | `/tuto-hubspot`, Paramètres > Intégrations | `tenant_settings` (`hubspot_*`) | `hubspot-catchup`, `push-handoff` |
 | **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
 | **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
 | **API publique v1** | ce qu'un intégrateur du client appelle, son contrat OpenAPI (`GET /openapi.json`, dérivé de `src/api/openapi/`), et le SDK TypeScript qui en tire ses types (`sdk/`, publié par `.github/workflows/sdk.yml` dans le dépôt public `messagingme-sdk`) | `src/api/`, `src/http/v1-*.ts`, `src/http/openapi.ts`, `sdk/`, `scripts/sdk-contrat.ts` | `/developers` | `api_keys`, `api_idempotency` | |
@@ -2597,6 +2597,28 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   fusionné) revient en 503 du connecteur, qui a oublié le contact en cache : 429, 5xx et réseau sont rejoués par
   `withRetry` puis lèvent, et pg-boss rejoue le job.
   L'analyse poussée au connecteur (`EnrichedAnalyzedEvent`, `buildEvent`) porte le même lien (`lienConversation`).
+- **Le choix des fonctions HubSpot** (lot 1bis, migration 0251, `src/http/hubspot-choix.ts`). Le client branche ce
+  qui lui plaît : quatre interrupteurs par espace dans `tenant_settings` (`hubspot_analyse`, `hubspot_passage`,
+  `hubspot_injoignable` allumés par défaut, `hubspot_reponse` éteint) et la date `hubspot_choix_valide_le`, lus À PART
+  du reste des réglages (`lireChoixHubspot`, comme l'interrupteur Salesforce). Une base en retard ou un espace sans
+  ligne rend les défauts, soit le comportement d'avant : un déploiement avant `migrate` ne coupe rien. Chaque chemin
+  relit son choix au moment d'agir : `push-analysis` (éteint, rien n'est poussé ni marqué à rattraper, et une marque
+  d'avant est effacée, sinon le balayage du rattrapage la ré-enfilerait sans fin), `push-handoff` (avant même de
+  relire l'état), le contact injoignable (`flagSelonLeChoix` : éteint, un succès sans appel, pour ne pas bloquer la
+  clôture de `runRetrySweep`). `PUT /tenants/:tenantId/hubspot/choix` (admin, monté avec un connecteur, SANS garde
+  d'offre au montage) écrit les choix et la liste HubSpot en une transaction, refuse en 402 le seul passage d'ÉTEINT
+  à ALLUMÉ de ce que l'offre n'ouvre pas (`analyse`, `crm` pour les listes, `inbox` pour la réponse ; un espace
+  descendu d'offre garde ce qui l'était et peut tout éteindre), en 409 sans portail relié, et allume la synchro du
+  numéro principal à la PREMIÈRE validation (date encore nulle ; une installation ne la posait jamais ; un numéro en
+  pause n'est pas touché), AVANT d'écrire la date : un échec n'a donc rien posé, la validation suivante réessaie.
+  🔴 « Créer des tâches » est FACULTATIF dans le corps : absent, le mode du portail n'est pas touché. Il vaut pour tout
+  le portail et la console ne le connaît que par une lecture qui peut échouer ; elle ne l'envoie qu'à la validation
+  (s'il est connu) ou quand c'est sa ligne qu'on bascule, sinon chaque bascule d'une autre ligne le réécrirait depuis
+  une valeur devinée. Présent, il part au connecteur (`poserModeTaches`, `POST /service/routing-mode`) : un échec le
+  dit (`tachesAppliquees: false`), il ne défait pas le reste. La reprise de 0251 ne date le choix que des espaces dont
+  un numéro est synchronisé (l'ancien `hubspot_actif` ne prouvait rien) : les autres verront l'étape de choix à leur
+  connexion. `GET /settings` rend le choix ; `lireHubspotPortal` rend
+  `routingMode` quand le connecteur le donne.
 - **L'accompagnement** (`src/emails-produit/accompagnement.ts`, balayage `emails-produit-accompagnement`, trente
   minutes, des modèles `commercial`) : la bienvenue (moins de 48 h après la création), puis trois relances à occasion
   fixe, donc une fois chacune : le numéro absent après 24 h, le répondeur effectif `equipe` (`modeEffectif` sous

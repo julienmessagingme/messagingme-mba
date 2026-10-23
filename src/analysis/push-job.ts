@@ -13,6 +13,11 @@ export interface PushJobDeps {
     /** Efface la marque de rattrapage après un post réussi (best-effort). */
     clearPendingCatchup(conversationId: string): Promise<void>;
   };
+  /**
+   * Le client a-t-il branché « la fiche contact et l'analyse » (lot 1bis, `lireChoixHubspot`) ? Requis : un câblage
+   * qui l'oublierait ne compilerait pas, plutôt que de pousser en silence ce que le client a éteint.
+   */
+  analyseBranchee: (tenantId: string) => Promise<boolean>;
   getEnrichment: (conversationId: string) => Promise<Enrichment | null>;
   /**
    * État de synchro du numéro en un seul instantané : `connected` (le gate) et `pausedAt` (le rattrapage). Les lire
@@ -43,6 +48,19 @@ export async function pushAnalysisJob(data: unknown, deps: PushJobDeps): Promise
   const tenantId = d.tenantId;
   const [stored, enr] = await Promise.all([deps.analyses.getStored(conversationId), deps.getEnrichment(conversationId)]);
   if (!stored || !enr) return; // analyse ou conversation disparue -> rien à pousser
+
+  // Lot 1bis : le client a éteint la remontée de l'analyse. C'est un CHOIX, pas une pause : rien n'est poussé et rien
+  // n'est marqué à rattraper. Une marque posée avant (pendant une pause) est effacée, sinon le balayage du rattrapage
+  // ré-enfilerait cette conversation toutes les dix minutes pour rien.
+  if (!(await deps.analyseBranchee(tenantId))) {
+    try {
+      await deps.analyses.clearPendingCatchup(conversationId);
+    } catch (err) {
+      deps.log?.(`push-analysis: clearPendingCatchup échoué (best-effort) pour ${conversationId}: ${messageDe(err)}`);
+    }
+    deps.log?.(`push-analysis: analyse non branchée par le client -> skip (conversation ${conversationId})`);
+    return;
+  }
 
   const gate = await deps.numeros.getHubspotGateStatus(tenantId, enr.whatsappLine);
   if (!gate.connected) {

@@ -30,6 +30,7 @@ function deps(over: Surcharges = {}): { d: PushJobDeps; posted: EnrichedAnalyzed
       clearPendingCatchup: async (id) => { cleared.push(id); },
       ...surAnalyses,
     },
+    analyseBranchee: async () => true,
     getEnrichment: async () => enr,
     numeros: {
       getHubspotGateStatus: async () => ({ connected: true, pausedAt: null }),
@@ -95,5 +96,26 @@ describe('pushAnalysisJob (contrat ref-only + snapshot unique gate/pause)', () =
     const { d } = deps();
     await expect(pushAnalysisJob({}, d)).rejects.toThrow(/invalide/);
     await expect(pushAnalysisJob({ conversationId: 'c1' }, d)).rejects.toThrow(/invalide/);
+  });
+});
+
+describe('pushAnalysisJob : le choix du client (lot 1bis)', () => {
+  it('🔴 analyse NON branchée -> aucun post, aucune marque, et une marque d’avant est EFFACÉE (un choix, pas une pause)', async () => {
+    const { d, posted, marked, cleared } = deps({
+      analyseBranchee: async () => false,
+      numeros: { getHubspotGateStatus: async () => ({ connected: false, pausedAt: '2026-10-20T10:00:00Z' }) },
+    });
+    await pushAnalysisJob(REF, d);
+    expect(posted).toHaveLength(0);
+    expect(marked).toHaveLength(0); // en pause, la porte aurait marqué : le choix passe avant elle
+    expect(cleared).toEqual(['c1']);
+  });
+
+  it('le choix est lu pour l’espace du job', async () => {
+    const lus: string[] = [];
+    const { d, posted } = deps({ analyseBranchee: async (t) => { lus.push(t); return true; } });
+    await pushAnalysisJob(REF, d);
+    expect(lus).toEqual(['t1']);
+    expect(posted).toHaveLength(1);
   });
 });

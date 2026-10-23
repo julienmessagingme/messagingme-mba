@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { enTransaction } from '../db/transaction';
 import type { BusinessHours } from '../workflow/conditions';
 import { estFrequenceMention, type FrequenceMentionIa } from '../agent/agent-store';
 import { estModeTransfert, type ModeTransfert } from '../agent/disponibilite-equipe';
@@ -144,9 +145,88 @@ function modeDeLaLigne(r: Record<string, unknown> | undefined): ModeRepondeur {
   return r?.mba_enabled === true ? 'mba' : 'equipe';
 }
 
+/**
+ * Ce que le client branche entre Messaging Me et HubSpot (lot 1bis de la reprise humaine, migration 0251). Lu à part
+ * comme l'interrupteur Salesforce : seuls ses lecteurs le lisent (les deux poussées vers le connecteur, le contact
+ * injoignable, l'écran), et un champ de plus dans `TenantSettings` s'imposerait à chaque fixture.
+ */
+export interface ChoixHubspot {
+  /** La fiche contact et l'analyse de chaque conversation (job `push-analysis`). */
+  analyse: boolean;
+  /** La tâche immédiate quand un client demande un humain (job `push-handoff`). */
+  passage: boolean;
+  /** Le contact signalé injoignable sur WhatsApp (second échec 131026). */
+  injoignable: boolean;
+  /** Répondre aux clients depuis HubSpot (lot 2). */
+  reponse: boolean;
+  /** L'étape de choix a été validée ; nul, l'écran la propose. */
+  valideLe: Date | null;
+}
+
+/**
+ * Le choix d'une ligne de réglages. 🔴 Une base en retard sur 0251, ou un espace sans ligne, ne rend pas les colonnes
+ * (`select *`) : on retombe sur les DÉFAUTS de la migration (les trois poussées allumées, la réponse éteinte), qui sont
+ * exactement le comportement d'avant le lot. Un déploiement avant `migrate` ne coupe donc rien.
+ */
+function choixDeLaLigne(r: Record<string, unknown> | undefined): ChoixHubspot {
+  return {
+    analyse: r?.hubspot_analyse !== false,
+    passage: r?.hubspot_passage !== false,
+    injoignable: r?.hubspot_injoignable !== false,
+    reponse: r?.hubspot_reponse === true,
+    valideLe: r?.hubspot_choix_valide_le instanceof Date ? r.hubspot_choix_valide_le : null,
+  };
+}
+
+/** Ce que l'écran de choix écrit en une fois (lot 1bis). « Créer des tâches » vit chez le connecteur, pas ici. */
+export interface ChoixHubspotEcrit {
+  analyse: boolean;
+  passage: boolean;
+  injoignable: boolean;
+  reponse: boolean;
+  listes: boolean;
+}
+
 /** Réglages par espace, un upsert ciblé par réglage. */
 export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
+
+  /** Le choix HubSpot de l'espace (lot 1bis). `select *`, comme `get` : une base en retard rend les défauts. */
+  async lireChoixHubspot(tenantId: string): Promise<ChoixHubspot> {
+    const res = await this.pool.query<Record<string, unknown>>(`select * from tenant_settings where tenant_id = $1`, [tenantId]);
+    return choixDeLaLigne(res.rows[0]);
+  }
+
+  /**
+   * Écrit le choix HubSpot de l'espace en une transaction, et la date de validation à la PREMIÈRE seulement
+   * (`coalesce`). `premiereValidation` le dit à l'appelant, qui allume alors la synchro du numéro principal. La ligne
+   * est verrouillée (`for update`) : deux validations simultanées ne voient pas toutes deux « première » sur une
+   * ligne existante ; sur un espace SANS ligne, les deux peuvent la voir, et l'allumage du numéro est idempotent.
+   */
+  async poserChoixHubspot(tenantId: string, c: ChoixHubspotEcrit): Promise<{ choix: ChoixHubspot; listes: boolean; premiereValidation: boolean }> {
+    return enTransaction(this.pool, async (client) => {
+      const avant = await client.query<{ v: Date | null }>(
+        `select hubspot_choix_valide_le as v from tenant_settings where tenant_id = $1 for update`,
+        [tenantId],
+      );
+      const premiereValidation = (avant.rows[0]?.v ?? null) === null;
+      const res = await client.query<Record<string, unknown>>(
+        `insert into tenant_settings (tenant_id, hubspot_analyse, hubspot_passage, hubspot_injoignable, hubspot_reponse,
+                                      hubspot_lists_enabled, hubspot_choix_valide_le, updated_at)
+         values ($1, $2, $3, $4, $5, $6, now(), now())
+         on conflict (tenant_id) do update set
+           hubspot_analyse = excluded.hubspot_analyse, hubspot_passage = excluded.hubspot_passage,
+           hubspot_injoignable = excluded.hubspot_injoignable, hubspot_reponse = excluded.hubspot_reponse,
+           hubspot_lists_enabled = excluded.hubspot_lists_enabled,
+           hubspot_choix_valide_le = coalesce(tenant_settings.hubspot_choix_valide_le, excluded.hubspot_choix_valide_le),
+           updated_at = now()
+         returning *`,
+        [tenantId, c.analyse, c.passage, c.injoignable, c.reponse, c.listes],
+      );
+      const r = res.rows[0];
+      return { choix: choixDeLaLigne(r), listes: r?.hubspot_lists_enabled === true, premiereValidation };
+    });
+  }
 
   /** Upsert ciblé d'un seul réglage : crée la ligne de l'espace au besoin, n'écrase aucun autre réglage. */
   private async poser(tenantId: string, colonne: ColonneReglage, valeur: unknown): Promise<void> {

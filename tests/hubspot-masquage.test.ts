@@ -44,6 +44,7 @@ function app(portail: SettingsRouteDeps['hubspotPortalConnecte']) {
     settings: {
       ...reglagesInertes,
       hubspotPortalConnecte: portail,
+      choixHubspot: async () => ({ analyse: true, passage: true, injoignable: true, reponse: false, valideLe: null }),
       reglages: {
         get: async () => REGLAGES,
         setMbaEnabled: async () => {},

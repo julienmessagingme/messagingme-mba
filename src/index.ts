@@ -91,7 +91,10 @@ import { relancerPaniers, type DepsRelance } from './shopify/relance';
 import { effacerContacts } from './crm/effacement';
 import { signalDeLAccuse, signalDuClic } from './signaux/emetteur';
 import { plafondLePlusBas } from './campaign/pacing';
-import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages, lireHubspotPortal } from './crm/hubspot-service';
+import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages, lireHubspotPortal, poserModeTaches } from './crm/hubspot-service';
+import type { HubspotChoixRouteDeps } from './http/hubspot-choix';
+import type { ChoixHubspotEcrit } from './settings/store.pg';
+import type { ModeTaches } from './account/types';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { MetaMediaClient } from './meta/media';
 import { Media360dialogClient } from './meta/media-360dialog';
@@ -1796,6 +1799,8 @@ async function main(): Promise<void> {
        * par-dessus un portail relié.
        */
       hubspotPortalConnecte: (tenant) => lirePortailHubspot(tenant).then((p) => p.connected),
+      // Lot 1bis : le choix des fonctions HubSpot, rendu par `GET /settings` pour l'écran et son étape de choix.
+      choixHubspot: (tenant) => settingsStore.lireChoixHubspot(tenant),
       // Le module possède persistance, calcul instantané et application Meta : cette route ne peut plus en
       // oublier une moitié quand la règle évolue.
       reglerMbaHandoff: (tenant, mode) => reglerModeHandoff(
@@ -1837,6 +1842,24 @@ async function main(): Promise<void> {
       connectorPublicUrl: config.HUBSPOT_CONNECTOR_PUBLIC_URL,
       serviceSecret: config.HUBSPOT_SERVICE_SECRET,
     },
+    // Le choix des fonctions HubSpot (lot 1bis) : monté seulement avec un connecteur, qui lit le portail et pose le
+    // mode des tâches. Sans lui, la route n'existe pas (404) et l'écran garde « Connecter HubSpot ».
+    ...(hubspotSuppression
+      ? {
+          hubspotChoix: {
+            poserChoix: (t: string, c: ChoixHubspotEcrit) => settingsStore.poserChoixHubspot(t, c),
+            fonctions: async (t: string) => (await offres.offreDe(t)).droits.fonctions,
+            choixEnVigueur: async (t: string) => {
+              const [c, s] = await Promise.all([settingsStore.lireChoixHubspot(t), settingsStore.get(t)]);
+              return { analyse: c.analyse, reponse: c.reponse, listes: s.hubspotListsEnabled, valideLe: c.valideLe };
+            },
+            portail: lirePortailHubspot,
+            numeroPrincipal: (t: string) => phoneStatusStore.getPhoneNumber(t),
+            allumerSynchro: async (phoneNumberId: string, t: string) => { await phoneStatusStore.setHubspotConnected(phoneNumberId, t, true); },
+            poserModeTaches: (t: string, mode: ModeTaches) => poserModeTaches(hubspotSuppression, t, mode),
+          } satisfies HubspotChoixRouteDeps,
+        }
+      : {}),
     admin: {
       audit: auditSink,
       users: userStore,

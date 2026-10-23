@@ -1,5 +1,16 @@
 # todo.md : backlog
 
+## 🟡 Le choix des fonctions HubSpot : ce que la relecture du lot 1bis laisse (2026-10-23)
+
+- **Un numéro branché APRÈS la validation du choix n'est pas synchronisé.** Un espace neuf peut connecter HubSpot avant
+  d'avoir un numéro (parcours prévu par l'écran) ; il valide, il n'a pas de numéro, la date du choix est posée. Quand le
+  numéro arrive, `phone_numbers.hubspot_connected` vaut faux par défaut (0028) : ni l'analyse ni la tâche immédiate ne
+  partent, jusqu'à ce que l'admin allume la synchro sur l'Accueil. Correctif envisagé : au branchement d'un numéro, si le
+  choix est fait et que l'analyse ou la tâche immédiate est allumée, allumer sa synchro. Reporté : il touche tous les
+  chemins qui créent un numéro (Embedded Signup, 360dialog, numéro fourni, ajout manuel), à recenser d'abord.
+- **`PATCH /tenants/:tenantId/settings/hubspot-lists` n'a plus d'appelant dans la console** (l'interrupteur des listes a
+  rejoint l'écran de choix). Gardée pour l'instant ; à retirer avec ses tests si rien d'autre ne l'appelle.
+
 ## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 5 (2026-10-23)
 
 Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`).
@@ -409,8 +420,9 @@ Plans `docs/superpowers/plans/2026-10-14-mm-api-envoi.md` et `2026-10-14-duree-v
 
 - 🟡 **Un état « inconnu » distinct de « non connecté » à l'écran.** Quand le connecteur ne répond pas, l'Accueil dit
   « HubSpot non connecté, aucun portail n'est relié » avec le bouton « Connecter HubSpot », et cache la synchro et la
-  déconnexion complète (`web/app/accueil/page.tsx`) ; la carte des Paramètres dit « Aucun portail HubSpot relié » et
-  déverrouille l'interrupteur (`web/components/ReglageHubspot.tsx`). Rien de destructeur (l'extinction relit côté
+  déconnexion complète (`web/app/accueil/page.tsx`) ; l'écran HubSpot des Paramètres propose « Connecter HubSpot » au
+  lieu du choix des fonctions (`web/components/ReglageHubspot.tsx`, depuis le lot 1bis ; « Créer des tâches », lui, se
+  grise quand le mode du portail n'a pas été lu). Rien de destructeur (l'extinction relit côté
   serveur et répond 503 ou 409, « Connecter » ne fait qu'une réinstallation), mais l'écran invite à agir sur une
   fausse base pendant un hoquet. Il faudrait que `GET /account-status` et `GET /settings` disent « on ne sait pas »
   au lieu de `connected: false`, et que les deux écrans l'affichent.

@@ -130,6 +130,7 @@ describe('le mode de transfert de l’agent IA', () => {
       const settings: SettingsRouteDeps = {
         ...reglagesInertes,
         hubspotPortalConnecte: sansPortailHubspot,
+        choixHubspot: async () => ({ analyse: true, passage: true, injoignable: true, reponse: false, valideLe: null }),
         reglages: {
           ...reglagesDepInertes,
           get: async () => ({
