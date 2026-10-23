@@ -2,7 +2,7 @@ import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
-import { getEnrichment } from '../../src/analysis/enrichment';
+import { getEnrichment, getEtatPassage } from '../../src/analysis/enrichment';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -66,5 +66,34 @@ describe.skipIf(!url)('getEnrichment (Supabase)', () => {
 
   it('conversation inexistante -> null', async () => {
     expect(await getEnrichment(pool, '00000000-0000-0000-0000-000000000000')).toBeNull();
+  });
+
+  // Le job `push-handoff` (lot 1 de la reprise humaine) : la conversation relue par l'espace et le wa_id.
+  it('🔴 getEtatPassage : le MÊME numéro que l’analyse, la ligne, le dernier entrant WhatsApp et l’escalade', async () => {
+    await pool.query(`update conversations set escaladee_le = timestamptz '2026-10-23 09:15:30.123+00' where id = $1`, [convId]);
+    const e = await getEtatPassage(pool, tenantId, '33600000009');
+    const enr = await getEnrichment(pool, convId);
+    expect(e).not.toBeNull();
+    expect(e!.conversationId).toBe(convId);
+    expect(e!.contactE164).toBe(enr!.contactE164); // le contrat : exactement la valeur de `contactE164`
+    expect(e!.nom).toBe('Jean');
+    expect(e!.whatsappLine).toBe('+33525680250');
+    expect(e!.escaladeeLe!.toISOString()).toBe('2026-10-23T09:15:30.123Z');
+    const dernierIn = (await pool.query<{ mx: Date }>(
+      `select max(created_at) mx from conversation_messages where conversation_id = $1 and direction = 'in' and channel = 'whatsapp'`, [convId],
+    )).rows[0]!.mx;
+    expect(e!.dernierEntrantLe!.getTime()).toBe(dernierIn.getTime());
+
+    await pool.query(`update conversations set escaladee_le = null where id = $1`, [convId]);
+    expect((await getEtatPassage(pool, tenantId, '33600000009'))!.escaladeeLe).toBeNull();
+  });
+
+  it('🔴 getEtatPassage : la conversation d’un AUTRE espace n’est jamais lue (tenant_id = $1)', async () => {
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-enrich-autre') returning id`)).rows[0]!.id;
+    try {
+      expect(await getEtatPassage(pool, autre, '33600000009')).toBeNull();
+    } finally {
+      await pool.query('delete from tenants where id = $1', [autre]);
+    }
   });
 });

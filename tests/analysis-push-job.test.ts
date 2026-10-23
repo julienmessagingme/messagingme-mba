@@ -35,6 +35,7 @@ function deps(over: Surcharges = {}): { d: PushJobDeps; posted: EnrichedAnalyzed
       getHubspotGateStatus: async () => ({ connected: true, pausedAt: null }),
     },
     post: async (e) => { posted.push(e); },
+    lienConversation: (id) => `https://console.exemple.test/inbox?c=${id}`,
     log: (m) => logs.push(m),
     ...reste,
   };
@@ -47,6 +48,7 @@ describe('pushAnalysisJob (contrat ref-only + snapshot unique gate/pause)', () =
     await pushAnalysisJob(REF, d);
     expect(posted).toHaveLength(1);
     expect(posted[0]!.eventId).toBe(`c1:${enr.analyzedAt}`);
+    expect(posted[0]!.lienConversation).toBe('https://console.exemple.test/inbox?c=c1'); // le lien du câblage, jamais recalculé
     expect(cleared).toEqual(['c1']);
     expect(marked).toHaveLength(0);
   });

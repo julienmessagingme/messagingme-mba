@@ -36,7 +36,7 @@ import { assignerReponse } from './inbox/assignation-campagne';
 import { arriveeParWidget } from './widgets/arrivee';
 import { relanceurDeCampagnes } from './campaign/enqueue';
 import { plafondDuCanal, plafondLePlusBas } from './campaign/pacing';
-import { flagContactUnreachable } from './crm/hubspot-service';
+import { flagContactUnreachable, pousserHandoff } from './crm/hubspot-service';
 import { DUREE_CLE_IDEMPOTENCE_MS } from './api/idempotence';
 import { PgArriveesPubStore } from './pubs/arrivees.pg';
 import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
@@ -92,8 +92,9 @@ import { analyseDeLaConversation } from './analysis/fiche';
 import type { OnConversationAnalyzed } from './analysis/events';
 import { runAnalysisSweep } from './analysis/sweep';
 import { AnthropicClient } from './analysis/llm-client';
-import { getEnrichment } from './analysis/enrichment';
+import { getEnrichment, getEtatPassage } from './analysis/enrichment';
 import { pushAnalysisJob } from './analysis/push-job';
+import { pushHandoffJob } from './analysis/push-handoff';
 import { hubspotCatchupJob } from './analysis/catchup-job';
 import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
 import { pullFromInfo, pullFromError } from './account/pull';
@@ -216,7 +217,7 @@ export async function demarrerWorker(): Promise<void> {
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
-    emailsProduit, emetteurEmails, envoyeurProduit, prevenirEquipe, quotaModeles, comptesApplication, clientApplication,
+    emailsProduit, emetteurEmails, envoyeurProduit, prevenirEquipe, lienConversation, quotaModeles, comptesApplication, clientApplication,
   } = construireSocle({ pool, queue, config });
   // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : le cerveau des tours d'agent la lit.
   const commissionDeLEspace = commissionPour(offres);
@@ -1014,6 +1015,23 @@ export async function demarrerWorker(): Promise<void> {
     return accompagnes + recaps;
   }, { enEchec: echecDeBalayage('emails-produit-accompagnement', 'sweeper:emails-produit-accompagnement') });
 
+  /**
+   * Le passage à l'équipe poussé au connecteur HubSpot (`push-handoff`, lot 1 de la reprise humaine, 2026-10-23) :
+   * `prevenirEquipe` (le socle) l'enfile seulement avec un connecteur configuré, et la file n'est travaillée qu'alors.
+   * Le job relit l'escalade et la porte HubSpot du numéro, puis appelle `POST /service/handoff`.
+   */
+  if (config.HUBSPOT_SERVICE_URL) {
+    const connecteurHubspot = { baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport };
+    await queue.work('push-handoff', (data) =>
+      pushHandoffJob(data, {
+        lireEtat: (t, w) => getEtatPassage(pool, t, w),
+        numeros: phoneStatusStore,
+        lienConversation,
+        pousser: (corps) => pousserHandoff(connecteurHubspot, corps),
+      }),
+    );
+  }
+
   // File analyze-conversation : inerte tant que CONVERSATION_ANALYSIS_ENABLED != 'true' (aucun worker, aucun
   // balayage, aucun appel LLM).
   if (config.CONVERSATION_ANALYSIS_ENABLED === 'true') {
@@ -1032,6 +1050,8 @@ export async function demarrerWorker(): Promise<void> {
           // Porte + décision de rattrapage en un seul snapshot : connected (pousse ou non) + pausedAt (marque ou non).
           numeros: phoneStatusStore,
           post: (event) => postAnalysis(event, { url: config.CONNECTOR_PUSH_URL, secret: config.CONNECTOR_PUSH_SECRET, transport }),
+          // Le lien de la conversation dans l'événement : la fonction du socle, celle de l'e-mail et de la tâche HubSpot.
+          lienConversation,
           // eslint-disable-next-line no-console
           log: (m) => console.log(m),
         }),

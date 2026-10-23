@@ -56,6 +56,8 @@ export const FILES_PAR_ROLE: Record<NomDeFile, Appartenance> = {
   'application-entrant': 'principal',
   // Le ménage des modèles Shopify remplacés (2026-10-23) : un appel à Meta par modèle, rare, à côté de l'activation.
   'shopify-oubli-modele': 'principal',
+  // Le passage à l'équipe poussé à HubSpot (2026-10-23) : un client attend un humain derrière, pas une analyse.
+  'push-handoff': 'principal',
   // L'analyse et ce qu'elle alimente : personne n'attend derrière, et c'est ce qui appelle les modèles.
   'analyze-conversation': 'analyse',
   'push-analysis': 'analyse',

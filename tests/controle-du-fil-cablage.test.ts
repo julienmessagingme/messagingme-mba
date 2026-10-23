@@ -8,6 +8,7 @@ import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import { bancDuFil, type ReponseMeta } from './banc-du-fil';
 import { offresToutOuvert, filiereApiSeule } from './gardes';
+import { composerPassageEquipe } from '../src/analysis/push-handoff';
 
 /**
  * LE CÂBLAGE DE LA SOUPAPE DE CONTRÔLE DU FIL.
@@ -79,6 +80,8 @@ describe('le balayage réclame l’âge, et le câblage le transmet', () => {
 function cablageDuScenario(
   lireNom: () => Promise<{ nom: string; systeme: 'repondeur' | null } | null> = async () => ({ nom: 'Bienvenue', systeme: null }),
   bascule = true,
+  /** Le passage à l'équipe : par défaut il est noté ; la garde de `push-handoff` y monte la VRAIE composition du socle. */
+  prevenirEquipe?: (tenantId: string, waId: string) => Promise<void>,
 ) {
   const appels: unknown[][] = [];
   const inerte = {} as never;
@@ -93,7 +96,7 @@ function cablageDuScenario(
     fil: { passerAUnHumain: async (...a: unknown[]) => { appels.push(['passer', ...a]); return bascule; } } as never,
     offres: offresToutOuvert,
     // L'e-mail aux admins (lot 7) : la demande est notée, ce qu'elle décide ensuite est `tests/emails-produit-alertes.test.ts`.
-    prevenirEquipe: async (...a: unknown[]) => { appels.push(['prevenir', ...a]); },
+    prevenirEquipe: prevenirEquipe ?? (async (...a: unknown[]) => { appels.push(['prevenir', ...a]); }),
     application: filiereApiSeule,
   });
   // `deps` est privé à l'exécuteur : on lit la dépendance que le câblage lui a donnée, sans monter un parcours entier.
@@ -119,6 +122,28 @@ describe('le câblage d’un scénario ne prévient les admins que d’un vrai p
     await masse.escalateToHuman('t1', 'w', null, true, 'wf-1', false);
     expect(masse.appels.some((a) => a[0] === 'prevenir')).toBe(false);
     expect(masse.appels.some((a) => a[0] === 'passer')).toBe(true);
+  });
+
+  /**
+   * 🔴 LA TÂCHE HUBSPOT SUIT LA MÊME GARDE (lot 1 de la reprise humaine, 2026-10-23). `prevenirEquipe` enfile désormais
+   * `push-handoff` en plus de l'e-mail : monté ici avec la VRAIE composition du socle, un démarrage de masse, un réveil
+   * ou un saut n'enfile rien, et seul un vrai passage avec escalade enfile, une fois. Une tâche HubSpot par
+   * destinataire d'une campagne « modèle puis passer à un humain » serait l'envoi de masse que cette garde ferme.
+   */
+  it('🔴 aucun chemin de masse n’enfile `push-handoff` ; un vrai passage l’enfile une fois', async () => {
+    const enfiles: unknown[] = [];
+    const prevenir = composerPassageEquipe(async () => {}, async (job) => { enfiles.push(job); });
+    const masse = cablageDuScenario(undefined, true, prevenir);
+    await masse.escalateToHuman('t1', 'w', null, true, 'wf-1', false);
+    const sansEscalade = cablageDuScenario(undefined, true, prevenir);
+    await sansEscalade.escalateToHuman('t1', 'w', null, false, 'wf-1', true);
+    const sansBascule = cablageDuScenario(undefined, false, prevenir);
+    await sansBascule.escalateToHuman('t1', 'w', null, true, 'wf-1', true);
+    expect(enfiles).toEqual([]);
+
+    const vrai = cablageDuScenario(undefined, true, prevenir);
+    await vrai.escalateToHuman('t1', 'w', null, true, 'wf-1', true);
+    expect(enfiles).toEqual([{ tenantId: 't1', waId: 'w' }]);
   });
 });
 

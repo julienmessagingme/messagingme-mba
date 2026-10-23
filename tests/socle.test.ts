@@ -41,10 +41,12 @@ const configuration: ConfigSocle = {
   // Sans service de connexions : la filière application est fermée.
   APPLICATION_SERVICE_URL: '',
   APPLICATION_SERVICE_SECRET: '',
+  // Sans connecteur HubSpot : `prevenirEquipe` n'enfile pas `push-handoff` (le cas avec, plus bas, le pose).
+  HUBSPOT_SERVICE_URL: '',
 };
 
 /** Un faux pool qui répond aux deux lectures du chemin (la fiche avant l'écriture, les espaces branchés), et une file qui garde ce qu'on lui confie. */
-function banc() {
+function banc(config: ConfigSocle = configuration) {
   const requetes: string[] = [];
   const pool = {
     query: async (sql: string) => {
@@ -62,7 +64,7 @@ function banc() {
   const queue = {
     enqueue: async (file: string, job: unknown): Promise<void> => { enfiles.push({ file, job }); },
   };
-  return { requetes, enfiles, socle: construireSocle({ pool, queue, config: configuration }) };
+  return { requetes, enfiles, socle: construireSocle({ pool, queue, config }) };
 }
 
 describe('le socle commun aux deux processus', () => {
@@ -84,6 +86,28 @@ describe('le socle commun aux deux processus', () => {
     const { requetes, enfiles } = banc();
     expect(requetes).toEqual([]);
     expect(enfiles).toEqual([]);
+  });
+
+  /**
+   * 🔴 LE PASSAGE À L'ÉQUIPE DU VRAI SOCLE ENFILE `push-handoff` (lot 1 de la reprise humaine, 2026-10-23), et
+   * seulement avec un connecteur configuré. Le contexte de l'e-mail est vide ici (aucune conversation lue) : l'e-mail
+   * ne part pas, l'enfilement si, parce que c'est le job qui relit l'escalade, pas l'enfilement qui filtre.
+   */
+  it('🔴 avec un connecteur HubSpot, `prevenirEquipe` enfile `push-handoff` (la référence seule) ; sans, rien', async () => {
+    const avec = banc({ ...configuration, HUBSPOT_SERVICE_URL: 'http://mm-hubspot-api:8096' });
+    await avec.socle.prevenirEquipe(TENANT, WA_ID);
+    expect(avec.enfiles).toEqual([{ file: 'push-handoff', job: { tenantId: TENANT, waId: WA_ID } }]);
+
+    const sans = banc();
+    await sans.socle.prevenirEquipe(TENANT, WA_ID);
+    expect(sans.enfiles.filter((e) => e.file === 'push-handoff')).toEqual([]);
+  });
+
+  it('🔴 une file qui refuse l’enfilement ne fait JAMAIS échouer l’appelant qui vient de passer la main', async () => {
+    const pool = { query: async () => ({ rows: [] }) } as unknown as Pool;
+    const queue = { enqueue: async (): Promise<void> => { throw new Error('pg-boss indisponible'); } };
+    const socle = construireSocle({ pool, queue, config: { ...configuration, HUBSPOT_SERVICE_URL: 'http://mm-hubspot-api:8096' } });
+    await expect(socle.prevenirEquipe(TENANT, WA_ID)).resolves.toBeUndefined();
   });
 
   /**

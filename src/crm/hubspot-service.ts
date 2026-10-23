@@ -1,6 +1,7 @@
 /**
  * Client du canal service vers le connecteur mm-hubspot : appel signé (`callService`), import de listes,
- * déconnexion d'un portail, signalement d'un contact injoignable, lecture des étapes de deal et du portail relié.
+ * déconnexion d'un portail, signalement d'un contact injoignable, passage à l'équipe, lecture des étapes de deal et
+ * du portail relié.
  */
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
@@ -84,6 +85,54 @@ export async function flagContactUnreachable(deps: ConnectorDeps, tenantId: stri
     if (err instanceof HubspotServiceError && err.status === 404) return { flagged: false }; // portail non lié : rien à marquer
     throw err;
   }
+}
+
+/**
+ * Le corps de `POST /service/handoff` : une conversation passée à l'équipe (contrat figé avec le connecteur, plan du
+ * lot 1 de la reprise humaine, 2026-10-23). `e164` est la valeur que porte `contactE164` dans l'analyse poussée,
+ * `occasion` = `conversationId:escaladee_le` en ISO, la clé qui fait qu'un rejeu ne crée jamais une seconde tâche.
+ */
+export interface CorpsHandoff {
+  tenantId: string;
+  e164: string;
+  nom: string | null;
+  conversationId: string;
+  lienConversation: string;
+  finFenetre: string | null;
+  occasion: string;
+}
+
+/** La réponse 200 du connecteur, validée : `taskId` nul en mode `hubspot_native`, `created` faux sur un rejeu. */
+const reponseHandoff = z.object({ taskId: z.string().nullable(), contactId: z.string(), created: z.boolean() });
+
+/**
+ * L'issue d'un passage poussé. `fait` : le connecteur a répondu 2xx (une réponse illisible reste un succès, rien ne
+ * se rejoue pour elle). `non_relie` : 404, l'espace n'a pas de portail, fin normale. `refuse` : un autre 4xx (corps
+ * invalide, signature refusée, portail désinstallé), terminal : le rejouer donnerait le même refus.
+ */
+export type IssueHandoff =
+  | { issue: 'fait'; created: boolean | null; taskId: string | null }
+  | { issue: 'non_relie' }
+  | { issue: 'refuse'; status: number; code: string | undefined };
+
+/**
+ * Pousse un passage à l'équipe au connecteur. 429, 5xx et réseau sont rejoués ici (`withRetry`), puis LÈVENT : pg-boss
+ * rejoue le job. Tout autre refus rend une issue, jamais une erreur, pour ne pas rejouer à l'infini un appel voué au
+ * même refus.
+ */
+export async function pousserHandoff(deps: ConnectorDeps, corps: CorpsHandoff): Promise<IssueHandoff> {
+  let reponse: unknown;
+  try {
+    reponse = await callService<unknown>(deps, '/service/handoff', corps);
+  } catch (err) {
+    if (err instanceof ReconsentRequiredError) return { issue: 'refuse', status: 409, code: 'reconsent_required' };
+    if (err instanceof HubspotServiceError && !err.retryable) {
+      return err.status === 404 ? { issue: 'non_relie' } : { issue: 'refuse', status: err.status, code: err.code };
+    }
+    throw err;
+  }
+  const r = reponseHandoff.safeParse(reponse);
+  return r.success ? { issue: 'fait', created: r.data.created, taskId: r.data.taskId } : { issue: 'fait', created: null, taskId: null };
 }
 
 /** L'échéance d'une lecture du portail : deux requêtes indexées chez le connecteur, quelques millisecondes d'habitude. */

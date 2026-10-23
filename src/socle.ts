@@ -81,6 +81,7 @@ import { creerEnvoyeurProduit } from './support/resend';
 import { PgEmailsProduitStore } from './emails-produit/store.pg';
 import { creerEmetteurEmails, FILE_EMAILS_PRODUIT } from './emails-produit/emission';
 import { creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe } from './emails-produit/alertes';
+import { composerPassageEquipe } from './analysis/push-handoff';
 import { PgOffresStore } from './offres/offre.pg';
 import { OffresEnCache } from './offres/cache';
 import { QuotaModeles } from './offres/compteurs';
@@ -97,7 +98,7 @@ export type ConfigSocle = Pick<Config,
   | 'DRY_RUN' | 'PGBOSS_SCHEMA' | 'ENCRYPTION_KEY' | 'META_ACCESS_TOKEN' | 'META_APP_ID' | 'META_APP_SECRET'
   | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER' | 'CREDIT_OFFERT_MICRO_EUR'
   | 'CONTROL_HUMAN_TIMEOUT_MS' | 'AI_GATEWAY_API_KEY' | 'RESEND_API_KEY' | 'SUPPORT_FROM' | 'APP_URL'
-  | 'APPLICATION_SERVICE_URL' | 'APPLICATION_SERVICE_SECRET'
+  | 'APPLICATION_SERVICE_URL' | 'APPLICATION_SERVICE_SECRET' | 'HUBSPOT_SERVICE_URL'
 >;
 
 export interface DepsSocle {
@@ -274,6 +275,11 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const console_ = config.APP_URL.trim().replace(/\/+$/, '');
   const pageCredit = `${console_}/parametres/credit`;
   /**
+   * L'adresse d'une conversation dans l'Inbox : celle de l'e-mail de passage à l'équipe, de la tâche HubSpot
+   * (`push-handoff`) et de l'analyse poussée au connecteur (`lienConversation` de l'événement). Une seule fonction.
+   */
+  const lienConversation = (id: string): string => `${console_}/inbox?c=${encodeURIComponent(id)}`;
+  /**
    * Le crédit IA, et l'alerte du crédit BAS (lot 7, livraison B) sur chaque débit qui passe sous 0,50 € : tous les
    * débits passent par ce magasin (agent, traduction, essais, recherche, transcription), donc l'alerte ne peut en manquer
    * aucun. Son occasion est le dernier crédit reçu : une recharge la réarme.
@@ -300,16 +306,22 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    * (agent IA et passation de l'agent de Meta dans le worker, bloc d'un scénario dans l'exécuteur), seulement quand la
    * bascule a eu lieu ; elle-même n'écrit que si le contact vient d'écrire (`ATTENTE_RECENTE_MS`), ce qui écarte le
    * démarrage d'une campagne et les réveils en masse.
+   * Avec un connecteur HubSpot configuré, le même appel enfile aussi `push-handoff` (la tâche HubSpot, lot 1 de la
+   * reprise humaine) : l'enfilement ne filtre rien, le job relit l'escalade, rejoue le filtre du quart d'heure (sans
+   * lui, une automation en rafale créerait une tâche par contact silencieux) et lit la porte HubSpot du numéro.
    */
-  const prevenirEquipe = creerPrevenirEquipe({
-    contexte: (t, w) => inboxStore.contexteDuPassage(t, w),
-    transfertsDuJour: (t) => emailsProduit.transfertsDuJour(t),
-    emettre: (e) => emetteurEmails.emettre(e),
-    lienConversation: (id) => `${console_}/inbox?c=${encodeURIComponent(id)}`,
-    // Un espace dont l'offre n'ouvre pas l'Inbox (la Free) reçoit la version qui dit de répondre depuis Claude (2026-10-22).
-    inboxOuverte: async (t) => (await offres.offreDe(t)).droits.fonctions.has('inbox'),
-    lienOffre: adresseOffre(),
-  });
+  const prevenirEquipe = composerPassageEquipe(
+    creerPrevenirEquipe({
+      contexte: (t, w) => inboxStore.contexteDuPassage(t, w),
+      transfertsDuJour: (t) => emailsProduit.transfertsDuJour(t),
+      emettre: (e) => emetteurEmails.emettre(e),
+      lienConversation,
+      // Un espace dont l'offre n'ouvre pas l'Inbox (la Free) reçoit la version qui dit de répondre depuis Claude (2026-10-22).
+      inboxOuverte: async (t) => (await offres.offreDe(t)).droits.fonctions.has('inbox'),
+      lienOffre: adresseOffre(),
+    }),
+    config.HUBSPOT_SERVICE_URL ? (job) => queue.enqueue('push-handoff', job) : null,
+  );
   const agentSources = new PgSourceStore(pool);
   // Les requêtes de connecteur : un appel mis au point une fois dans la bibliothèque de l'espace, que l'outil d'un
   // agent, un bloc de scénario ou la poussée d'un opt-out désigne au lieu de le redécrire.
@@ -564,7 +576,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, connexionPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
-    emailsProduit, emetteurEmails, envoyeurProduit, paiementRefuse, prevenirEquipe,
+    emailsProduit, emetteurEmails, envoyeurProduit, paiementRefuse, prevenirEquipe, lienConversation,
     comptesApplication, clientApplication, envoiApplication,
   };
 }

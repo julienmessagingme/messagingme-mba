@@ -7,7 +7,7 @@
  * Les files travaillées par le worker. `analyze-conversation` et `push-analysis` ne sont enregistrées que si la
  * fonction est activée, mais la file existe côté /ops même désactivée : on les liste inconditionnellement.
  */
-export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'automation-event', 'agent-turn', 'optout-poussee', 'signaux-batch', 'evenements-distribution', 'evenements-envoi', 'emails-produit', 'application-entrant', 'shopify-oubli-modele'] as const;
+export const BASE_QUEUES = ['webhook', 'webhook-status', 'campaign-run', 'analyze-conversation', 'push-analysis', 'hubspot-catchup', 'push-handoff', 'automation-event', 'agent-turn', 'optout-poussee', 'signaux-batch', 'evenements-distribution', 'evenements-envoi', 'emails-produit', 'application-entrant', 'shopify-oubli-modele'] as const;
 
 /**
  * Le nom de la DLQ d'une file, défini une seule fois : `PgBossQueue.ensure()` l'importe pour la créer, donc le nom
@@ -36,6 +36,8 @@ export const ALL_QUEUES: string[] = BASE_QUEUES.flatMap((q) => [q, dlqName(q)]);
  *   cochés (décochés par défaut), et partent en priorité basse.
  * - `emails-produit` (lot 7) : une alerte ou un e-mail à un admin ; quelques secondes ne se ressentent pas -> 10 s.
  * - `application-entrant` (filière application, plan 2026-10-22) : un message reçu, le même chemin que `webhook` -> 2 s.
+ * - `push-handoff` (reprise humaine dans HubSpot, 2026-10-23) : la tâche d'un client qui attend un humain doit arriver
+ *   dans HubSpot en moins d'une minute, mais pas à la seconde ; le volume est celui des escalades -> 10 s.
  */
 export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number> = {
   webhook: 2,
@@ -45,6 +47,7 @@ export const QUEUE_POLLING_SECONDS: Record<(typeof BASE_QUEUES)[number], number>
   'analyze-conversation': 30,
   'push-analysis': 30,
   'hubspot-catchup': 30,
+  'push-handoff': 10,
   'agent-turn': 2,
   'optout-poussee': 30,
   'signaux-batch': 30,
@@ -74,6 +77,7 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
   'analyze-conversation': false, // traitement de fond
   'push-analysis': false, // traitement de fond
   'hubspot-catchup': false, // traitement de fond
+  'push-handoff': false, // la tâche HubSpot d'un passage à l'équipe : dix secondes ne se ressentent pas (2026-10-23)
   'optout-poussee': false, // le refus est deja ecrit ; sa diffusion peut attendre le tour d'horloge
   'signaux-batch': false, // traitement de fond, et une rafale d'accusés en produit autant : l'espacer protège la base
   'evenements-distribution': true, // l'application d'un client attend le message reçu (lot 12)

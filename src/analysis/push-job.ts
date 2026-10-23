@@ -20,6 +20,8 @@ export interface PushJobDeps {
    */
   numeros: { getHubspotGateStatus(tenantId: string, whatsappLine: string): Promise<{ connected: boolean; pausedAt: string | null }> };
   post: (event: EnrichedAnalyzedEvent) => Promise<void>;
+  /** L'adresse de la conversation dans l'Inbox, la fonction du socle (`lienConversation` de l'événement). */
+  lienConversation: (conversationId: string) => string;
   /** Journalisation optionnelle (skip HubSpot). */
   log?: (msg: string) => void;
 }
@@ -51,7 +53,7 @@ export async function pushAnalysisJob(data: unknown, deps: PushJobDeps): Promise
     return;
   }
 
-  await deps.post(buildEvent(stored, enr));
+  await deps.post(buildEvent(stored, enr, deps.lienConversation));
   // Best-effort : un échec laisse `pending_catchup`, qu'un rattrapage futur rejouera (POST dédoublonné) ; un POST
   // réussi n'échoue jamais pour de la comptabilité.
   try {

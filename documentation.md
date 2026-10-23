@@ -185,7 +185,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Liens tracés** | compter les clics sur les boutons URL d'un template | `src/links/` | | `tracked_links`, `tracked_link_clicks` | |
 | **Webhooks entrants** | un tiers poste du JSON, on en fait un contact et un événement | `src/webhook-entrant/` | `/webhooks` | `webhooks` | |
 | **Webhooks sortants** | l'application du client reçoit les événements, signés et réessayés 24 h (§ 6) | `src/evenements/`, `src/http/evenements.ts`, `src/mcp/outils-evenements.ts` | `/developers/evenements` | `adresses_evenements`, `envois_evenements` | `evenements-distribution`, `evenements-envoi` |
-| **Connecteur HubSpot** | import de listes, étapes de deal | `src/hubspot/` | `/tuto-hubspot` | | `hubspot-catchup` |
+| **Connecteur HubSpot** | import de listes, étapes de deal, la tâche d'un passage à l'équipe (`push-handoff`, ci-dessous § 6) | `src/hubspot/`, `src/crm/hubspot-service.ts`, `src/analysis/push-handoff.ts` | `/tuto-hubspot` | | `hubspot-catchup`, `push-handoff` |
 | **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
 | **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
 | **API publique v1** | ce qu'un intégrateur du client appelle, son contrat OpenAPI (`GET /openapi.json`, dérivé de `src/api/openapi/`), et le SDK TypeScript qui en tire ses types (`sdk/`, publié par `.github/workflows/sdk.yml` dans le dépôt public `messagingme-sdk`) | `src/api/`, `src/http/v1-*.ts`, `src/http/openapi.ts`, `sdk/`, `scripts/sdk-contrat.ts` | `/developers` | `api_keys`, `api_idempotency` | |
@@ -2566,6 +2566,25 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
     n'ouvre pas l'Inbox (`inboxOuverte`, la Free) reçoit `transfert_equipe_free` : répondre depuis Claude ou
     l'application, le bouton vers l'offre ; une offre illisible garde l'e-mail ordinaire. 🔴 Le plafond compte les DEUX
     clés (`CLES_TRANSFERT`), sinon la version Free y échapperait.
+- **Le passage à l'équipe dans HubSpot** (`push-handoff`, `src/analysis/push-handoff.ts`). `prevenirEquipe` est la
+  composition de l'e-mail ci-dessus (inchangé, avec son filtre du quart d'heure) et d'un enfilement `push-handoff`
+  `{ tenantId, waId }` (`composerPassageEquipe`), posé seulement quand `HUBSPOT_SERVICE_URL` est configuré. 🔴 L'enfilement
+  passe AVANT les filtres de l'e-mail : la garde de masse est rejouée par le job (ci-dessous), pas tenue par les appelants
+  (une automation `avant_date`, `tag_added`, `webhook` ou `hubspot_deal_stage` passe `prevenir`) ; un enfilement en échec est journalisé (`push_handoff_enfilement_impossible`)
+  et ne remonte jamais chez l'appelant. La file vit sur le worker `principal`, sondée toutes les 10 s, et n'est
+  travaillée qu'avec un connecteur configuré. Le job relit l'état frais (`getEtatPassage`, `src/analysis/enrichment.ts`,
+  filtré sur `tenant_id`) : `escaladee_le` nul (escalade déjà close, ou échec remonté sans le drapeau) ou conversation
+  absente, il s'arrête ; 🔴 aucun entrant WhatsApp, ou le dernier plus vieux que `escaladee_le` moins `ATTENTE_RECENTE_MS`
+  (la règle de l'e-mail), il s'arrête (`push_handoff_sans_attente`) : c'est la garde contre une automation qui passe la
+  main sur des centaines de contacts silencieux ; une ligne non reliée à HubSpot ou en pause (`getHubspotGateStatus`, la porte de `push-analysis`),
+  il s'arrête sans marque de rattrapage. Sinon il appelle `POST /service/handoff` du connecteur (`pousserHandoff`, signé
+  par `callService` avec `HUBSPOT_SERVICE_SECRET`) avec `e164` (la valeur de `contactE164` de l'analyse, `e164DuWaId`), le
+  nom du profil, le lien de la conversation (la fonction `lienConversation` du socle, celle de l'e-mail), `finFenetre`
+  (dernier entrant WhatsApp + 24 h, jamais nulle en pratique puisque le job exige un entrant) et `occasion` = `conversationId:escaladee_le`
+  en ISO, la clé qui empêche le connecteur de créer une seconde tâche sur un rejeu. 2xx finit le job, 404 (espace sans
+  portail) aussi ; un autre 4xx (400, 401, 409) est journalisé (`push_handoff_refuse`) et le finit, puisque le rejouer
+  rendrait le même refus ; 429, 5xx et réseau sont rejoués par `withRetry` puis lèvent, et pg-boss rejoue le job.
+  L'analyse poussée au connecteur (`EnrichedAnalyzedEvent`, `buildEvent`) porte le même lien (`lienConversation`).
 - **L'accompagnement** (`src/emails-produit/accompagnement.ts`, balayage `emails-produit-accompagnement`, trente
   minutes, des modèles `commercial`) : la bienvenue (moins de 48 h après la création), puis trois relances à occasion
   fixe, donc une fois chacune : le numéro absent après 24 h, le répondeur effectif `equipe` (`modeEffectif` sous

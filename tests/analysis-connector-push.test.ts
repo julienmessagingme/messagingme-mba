@@ -24,21 +24,35 @@ const enr: Enrichment = {
   lastInboundAt: '2026-07-14 10:00:00.111+00', analyzedAt: '2026-07-14 10:05:00.222+00',
 };
 const ok = (): HttpResponse => ({ status: 200, json: { received: true } });
+/** La fonction de lien du socle, telle que le câblage la fournit (`src/socle.ts`). */
+const lien = (id: string): string => `https://console.exemple.test/inbox?c=${encodeURIComponent(id)}`;
 
 describe('buildEvent', () => {
   it('assemble eventId=convId:analyzedAt + identité + bloc analysis (sans conversationId/tenantId dedans)', () => {
-    const ev = buildEvent(stored, enr);
+    const ev = buildEvent(stored, enr, lien);
     expect(ev.eventId).toBe('c1:2026-07-14 10:05:00.222+00');
     expect(ev).toMatchObject({ conversationId: 'c1', tenantId: 't1', contactE164: '+33600000001', whatsappLine: '+33525680250', lastInboundAt: enr.lastInboundAt });
     expect(ev.analysis).toMatchObject({ intent: 'information', handled_by: 'humain', exchanges_count: 2, abusive: false });
     expect(ev.analysis).not.toHaveProperty('conversationId');
+  });
+
+  it('🔴 porte le lien de la conversation, calculé par la fonction du câblage sur SA conversation', () => {
+    // Le connecteur le met dans la tâche, la note et la carte (lot 1 de la reprise humaine) : un lien absent ou vers
+    // une autre conversation ouvrirait la mauvaise discussion depuis HubSpot.
+    const ev = buildEvent({ ...stored, conversationId: 'c 1/x' }, enr, lien);
+    expect(ev.lienConversation).toBe('https://console.exemple.test/inbox?c=c%201%2Fx');
+  });
+
+  it('une console qui n’est pas en https (un poste) : pas de lien, plutôt qu’un événement que le connecteur refuserait', () => {
+    const ev = buildEvent(stored, enr, (id) => `http://localhost:3000/inbox?c=${id}`);
+    expect(ev).not.toHaveProperty('lienConversation');
   });
 });
 
 describe('postAnalysis', () => {
   it('poste avec x-mma-signature au format v1 (horodaté), lié au corps + chemin /ingest', async () => {
     const t = new FakeTransport(() => ok());
-    await postAnalysis(buildEvent(stored, enr), { url: 'http://x/ingest', secret: 'S', transport: t });
+    await postAnalysis(buildEvent(stored, enr, lien), { url: 'http://x/ingest', secret: 'S', transport: t });
     expect(t.calls).toHaveLength(1);
     expect(t.calls[0]!.url).toBe('http://x/ingest');
     const header = t.calls[0]!.headers['x-mma-signature'];
@@ -50,12 +64,12 @@ describe('postAnalysis', () => {
   });
   it('429 -> rejoué puis succès', async () => {
     const t = new FakeTransport((n) => (n === 0 ? { status: 429, json: {} } : ok()));
-    await postAnalysis(buildEvent(stored, enr), { url: 'http://x', secret: 'S', transport: t });
+    await postAnalysis(buildEvent(stored, enr, lien), { url: 'http://x', secret: 'S', transport: t });
     expect(t.calls.length).toBeGreaterThanOrEqual(2);
   });
   it('400 -> terminal (PushApiError, pas rejoué)', async () => {
     const t = new FakeTransport(() => ({ status: 400, json: {} }));
-    await expect(postAnalysis(buildEvent(stored, enr), { url: 'http://x', secret: 'S', transport: t })).rejects.toBeInstanceOf(PushApiError);
+    await expect(postAnalysis(buildEvent(stored, enr, lien), { url: 'http://x', secret: 'S', transport: t })).rejects.toBeInstanceOf(PushApiError);
     expect(t.calls).toHaveLength(1);
   });
 });

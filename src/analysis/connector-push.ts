@@ -18,12 +18,24 @@ export interface EnrichedAnalyzedEvent {
   profileName: string | null;
   whatsappLine: string;
   lastInboundAt: string | null;
+  /**
+   * L'adresse de la conversation dans l'Inbox (URL https absolue), la même que l'e-mail et la tâche du passage à
+   * l'équipe. Facultative pour le connecteur, qui accepte encore un événement sans (2026-10-23). Absente quand la
+   * console n'est pas servie en https (`APP_URL` d'un poste) : le connecteur refuserait l'événement ENTIER pour un lien
+   * dont l'analyse n'a pas besoin.
+   */
+  lienConversation?: string;
   analysis: Omit<StoredConversationAnalysis, 'conversationId' | 'tenantId'>;
 }
 
-/** Assemble l'événement (fonction pure). */
-export function buildEvent(stored: StoredConversationAnalysis, enr: Enrichment): EnrichedAnalyzedEvent {
+/** Assemble l'événement (fonction pure). `lienConversation` : la fonction de lien du socle, fournie par le câblage. */
+export function buildEvent(
+  stored: StoredConversationAnalysis,
+  enr: Enrichment,
+  lienConversation: (conversationId: string) => string,
+): EnrichedAnalyzedEvent {
   const { conversationId, tenantId, ...analysis } = stored;
+  const lien = lienConversation(conversationId);
   return {
     eventId: `${conversationId}:${enr.analyzedAt ?? 'na'}`,
     conversationId,
@@ -32,6 +44,7 @@ export function buildEvent(stored: StoredConversationAnalysis, enr: Enrichment):
     profileName: enr.profileName,
     whatsappLine: enr.whatsappLine,
     lastInboundAt: enr.lastInboundAt,
+    ...(lien.startsWith('https://') ? { lienConversation: lien } : {}),
     analysis,
   };
 }
