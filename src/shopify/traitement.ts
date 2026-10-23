@@ -1,3 +1,4 @@
+import type { ZodError } from 'zod';
 import { journaliser } from '../lib/journal';
 import { messageDe } from '../lib/erreur';
 import { moisDeParis } from '../offres/compteurs';
@@ -83,7 +84,7 @@ export async function traiterWebhookShopify(
   switch (sujet) {
     case 'orders/paid': {
       const c = schemaCommande.safeParse(corps);
-      if (!c.success) return illisible(b, sujet);
+      if (!c.success) return illisible(b, sujet, c.error);
       // Une commande payée ferme aussi son panier : `orders/create` peut arriver après (aucun ordre entre sujets).
       await fermerSiPanier(deps, b, c.data.checkout_token, telephoneDeCommande(c.data, b.pays));
       return servir(deps, b, {
@@ -94,7 +95,7 @@ export async function traiterWebhookShopify(
     }
     case 'fulfillments/create': {
       const f = schemaExpedition.safeParse(corps);
-      if (!f.success) return illisible(b, sujet);
+      if (!f.success) return illisible(b, sujet, f.error);
       return servir(deps, b, {
         evenement: 'order_fulfilled', cle: `fulfillments/create:${f.data.id}`, sujet,
         commandeId: String(f.data.order_id), clientId: null,
@@ -106,7 +107,7 @@ export async function traiterWebhookShopify(
       // Le panier se ferme dès qu'une commande en naît, même non payée : un client qui a commandé par virement ne
       // reçoit pas « vous avez oublié votre panier ».
       const c = schemaCommande.safeParse(corps);
-      if (!c.success) return illisible(b, sujet);
+      if (!c.success) return illisible(b, sujet, c.error);
       await fermerSiPanier(deps, b, c.data.checkout_token, telephoneDeCommande(c.data, b.pays));
       return OK;
     }
@@ -123,7 +124,7 @@ export async function traiterWebhookShopify(
       return effacerClient(deps, b, corps);
     case 'customers/data_request': {
       const d = schemaDemandeDonnees.safeParse(corps);
-      if (!d.success) return illisible(b, sujet);
+      if (!d.success) return illisible(b, sujet, d.error);
       const jour = new Date((deps.maintenant ?? Date.now)()).toISOString().slice(0, 10);
       await deps.emails.emettre({
         cle: 'shopify_demande_donnees', tenantId: b.tenantId, a: 'admins',
@@ -172,7 +173,7 @@ async function fermerSiPanier(deps: DepsTraitementShopify, b: BoutiqueRecue, jet
  */
 async function noterCheckout(deps: DepsTraitementShopify, b: BoutiqueRecue, sujet: string, corps: unknown): Promise<ReponseTraitement> {
   const c = schemaCheckout.safeParse(corps);
-  if (!c.success) return illisible(b, sujet);
+  if (!c.success) return illisible(b, sujet, c.error);
   if (c.data.completed_at) {
     await fermerSiPanier(deps, b, c.data.token, null);
     return OK;
@@ -188,10 +189,22 @@ async function noterCheckout(deps: DepsTraitementShopify, b: BoutiqueRecue, suje
   return OK;
 }
 
-/** Un corps bien signé qui ne se lit pas : 200 et une trace, jamais un 4xx (Shopify réessaierait, puis désabonnerait). */
-function illisible(b: BoutiqueRecue, sujet: string): ReponseTraitement {
-  journaliser('warn', 'shopify_corps_illisible', { tenantId: b.tenantId, sujet });
+/**
+ * Un corps bien signé qui ne se lit pas : 200 et une trace, jamais un 4xx (Shopify réessaierait, puis désabonnerait).
+ * La trace nomme les CHAMPS refusés et le type attendu (`champsIllisibles`), jamais une valeur : un corps de Shopify porte
+ * le nom, le téléphone et l'adresse d'un client. Sans eux, un refus ne se diagnostiquait pas (essai réel du 2026-10-23).
+ */
+function illisible(b: BoutiqueRecue, sujet: string, erreur?: ZodError): ReponseTraitement {
+  journaliser('warn', 'shopify_corps_illisible', { tenantId: b.tenantId, sujet, ...(erreur ? { champs: champsIllisibles(erreur) } : {}) });
   return OK;
+}
+
+/** Les champs refusés d'un corps : chemin, code, et type attendu ; dix au plus. Aucune valeur reçue n'y entre. */
+export function champsIllisibles(erreur: ZodError): string[] {
+  return erreur.issues.slice(0, 10).map((i) => {
+    const chemin = i.path.map(String).join('.') || '(racine)';
+    return i.code === 'invalid_type' ? `${chemin} : ${i.code} (attendu ${String(i.expected)})` : `${chemin} : ${i.code}`;
+  });
 }
 
 interface Service {
@@ -255,7 +268,7 @@ async function servir(deps: DepsTraitementShopify, b: BoutiqueRecue, s: Service)
  */
 async function effacerClient(deps: DepsTraitementShopify, b: BoutiqueRecue, corps: unknown): Promise<ReponseTraitement> {
   const d = schemaEffacementClient.safeParse(corps);
-  if (!d.success) return illisible(b, 'customers/redact');
+  if (!d.success) return illisible(b, 'customers/redact', d.error);
   try {
     const ids = new Set(await deps.store.contactsLies(
       b.tenantId, (d.data.orders_to_redact ?? []).map(String), d.data.customer?.id ? String(d.data.customer.id) : null,

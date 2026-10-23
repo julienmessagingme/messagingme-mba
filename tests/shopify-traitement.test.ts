@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { traiterWebhookShopify, type BoutiqueRecue, type DepsTraitementShopify } from '../src/shopify/traitement';
 import { envoyerShopify, type EnvoyerPublic } from '../src/shopify/envoi';
 import type { MessageBranche, Reservation } from '../src/shopify/store.pg';
@@ -309,6 +309,23 @@ describe('une boutique coupée, la désinstallation et les sujets RGPD', () => {
     expect(journal.emails).toHaveLength(1);
     expect(journal.emails[0]).toMatchObject({ cle: 'shopify_demande_donnees', a: 'admins', valeurs: { boutique: 'b.myshopify.com' } });
     expect(JSON.stringify(journal.emails[0]!.valeurs)).not.toContain('x@y.z');
+  });
+
+  it('🔴 un corps illisible : le journal nomme les champs refusés et le type attendu, JAMAIS une valeur reçue', async () => {
+    const espion = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const { deps } = monter();
+      const corps = { token: 42, phone: '+33612345678', shipping_address: { first_name: 'Camille', phone: 33612345678 } };
+      expect(await traiterWebhookShopify(deps, BOUTIQUE, 'checkouts/update', corps)).toEqual({ statut: 200 });
+      const ligne = espion.mock.calls.map((c) => String(c[0])).find((l) => l.includes('shopify_corps_illisible')) ?? '';
+      expect(JSON.parse(ligne)).toMatchObject({
+        sujet: 'checkouts/update',
+        champs: ['token : invalid_type (attendu string)', 'shipping_address.phone : invalid_type (attendu string)'],
+      });
+      for (const valeur of ['42', '33612345678', 'Camille']) expect(ligne).not.toContain(valeur);
+    } finally {
+      espion.mockRestore();
+    }
   });
 
   it('un corps bien signé mais illisible rend 200 (Shopify ne doit pas réessayer en boucle) ; un sujet inconnu aussi', async () => {
