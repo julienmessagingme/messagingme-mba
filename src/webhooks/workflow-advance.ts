@@ -51,6 +51,27 @@ function contexteDeLAvance(err: unknown): { workflowId?: string; runId?: string;
 }
 
 /**
+ * L'AVANCE DU PARCOURS EN ATTENTE, telle que le worker la câble pour les deux réceptions (Meta et filière application).
+ * Rend `true` quand un parcours attendait ce contact ET que le fil est à nous : la remise laisse alors le message au
+ * parcours. 🔴 Un parcours GELÉ (le fil tenu par l'équipe ou par l'agent de Meta) ne le reçoit pas : `false`, et la
+ * remise décide avec ses gardes, dont la demande de réouverture d'une conversation « Traité » ; avant, le message était
+ * avalé (relecture des correctifs de la filière application, 2026-10-22). L'avance est tentée dans les deux cas :
+ * l'exécuteur journalise le gel, comme avant. Les deux lectures précèdent l'avance, qui peut terminer le parcours.
+ */
+export function avanceDuParcours(d: {
+  trouverEnAttente(tenantId: string, waId: string): Promise<object | null>;
+  peutAgir(tenantId: string, waId: string): Promise<boolean>;
+  avancer(tenantId: string, waId: string, messageId: string, buttonPayload: string | null, entrant: { reaction: boolean; formulaire: boolean }): Promise<void>;
+}): WorkflowAdvanceDeps['advance'] {
+  return async (tenantId, waId, messageId, buttonPayload, entrant) => {
+    const enAttente = (await d.trouverEnAttente(tenantId, waId)) !== null;
+    const aNous = enAttente && (await d.peutAgir(tenantId, waId));
+    await d.avancer(tenantId, waId, messageId, buttonPayload, entrant);
+    return aNous;
+  };
+}
+
+/**
  * Avance les workflows sur les messages entrants (une réponse du contact = un pas dans le graphe). Isolé dans le
  * handler : ne doit jamais faire échouer le job webhook partagé. Le bouton tapé choisit la branche ; une réponse
  * texte suit la 1re arête sortante.

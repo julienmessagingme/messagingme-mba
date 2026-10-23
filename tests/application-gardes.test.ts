@@ -40,6 +40,17 @@ describe('la mise en sommeil', () => {
     }]);
   });
 
+  it('🔴 un courriel en échec n’arrête pas le balayage des autres comptes (relecture du lot 1)', async () => {
+    const sommeils: string[] = [];
+    const n = await endormirLesComptes({
+      comptes: { endormables: async () => [compte('c1'), compte('c2')] },
+      client: client(sommeils),
+      emettre: async (e) => { if (e.occasion.includes('c1')) throw new Error('file pleine'); },
+    }, 30, new Date('2026-10-22T10:00:00Z'));
+    expect(sommeils).toEqual(['c1', 'c2']);
+    expect(n).toBe(2);
+  });
+
   it('un service qui refuse n’endort rien et ne prévient personne', async () => {
     const emis: Emission[] = [];
     const n = await endormirLesComptes({

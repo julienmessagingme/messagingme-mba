@@ -39,6 +39,12 @@ export function creerLectureSuspension(d: DepsSuspension): (phoneNumberId: strin
 export function creerNumeroBloqueDeLEspace(o: {
   numeroDeLEspace(tenantId: string): Promise<string | null>;
   verifierNumero(phoneNumberId: string): Promise<void>;
+  /**
+   * La filière de l'espace (`PgComptesApplication.filiereDe`), lue seulement quand le numéro de Meta est bloqué. 🔴 Un
+   * espace passé à l'application n'envoie pas par son ancien numéro de Meta, délié : il ne le bloque pas, sinon la remise
+   * et le tour d'agent se taisaient (relecture du 2026-10-22).
+   */
+  filiereDe(tenantId: string): Promise<'api' | 'application' | null>;
 }): (tenantId: string) => Promise<boolean> {
   return async (tenantId) => {
     const numero = await o.numeroDeLEspace(tenantId);
@@ -47,7 +53,7 @@ export function creerNumeroBloqueDeLEspace(o: {
       await o.verifierNumero(numero);
       return false;
     } catch (err) {
-      if (err instanceof NumeroBloqueError) return true;
+      if (err instanceof NumeroBloqueError) return (await o.filiereDe(tenantId)) !== 'application';
       throw err;
     }
   };

@@ -8,31 +8,28 @@ Aujourd'hui `budgetMicroEur` ne se règle que par la route de la console (`src/a
 micro-euros), et aucun écran ni outil ne l'expose. Ses deux voisins, `maxTours` (8 par défaut) et `maxAppelsOutils`
 (12), coupent toujours une conversation longue par « Plafond atteint » : à reposer avec Julien dans le même outil.
 
-## 🟡 Filière application : les jaunes de la relecture des correctifs de l'essai (2026-10-22)
+## 🟡 Filière application : ce qui reste après le lot des jaunes (2026-10-23)
 
-- **Un parcours gelé avale le message** (`src/worker.ts`, `avanceDesParcours`, et `fil.ts`) : après une réponse tapée
-  sur le téléphone, le fil passe à l'équipe sans clore le parcours du répondeur, resté en attente sur le bloc agent. Si
-  l'équipe classe la conversation « Traité » et que le contact réécrit, l'avance (gelée, `mayAct` faux) rend quand même
-  `true` : la remise est sautée et la demande de réouverture (`CAUSE_REOUVERTURE`) ne s'ouvre pas. Identique sur la
-  réception de Meta, plus fréquent ici où répondre du téléphone est le geste courant. Que `advance` rende `false` quand
-  elle est gelée, ou ouvrir la demande dans cette branche.
-- **Un espace sur les deux filières confond les canaux** : un espace qui relie l'API de Meta après l'application garde
-  sa session de l'application, qui verse toujours dans `application-entrant` ; l'avance y ferait progresser des
-  parcours de l'époque Meta, dont les blocs partent par Meta. Ignorer `application-entrant` quand `filiereDe` rend `api`,
-  ou fermer la session quand l'API est reliée.
-- **Un espace dont le numéro de Meta est délié puis passé à l'application** : `getTenantPhoneNumberId` ne filtre pas
-  `delie_le`, donc `numeroBloqueDeLEspace` peut rendre `true` et l'agent se taire (remise et tour). `numeroBloque` doit
-  rendre `false` quand la filière est `application`.
+Plan soldé : `docs/superpowers/plans/2026-10-23-filiere-application-jaunes.md` (parcours gelé, deux filières, numéro de
+Meta délié, finitions de l'adressage masqué, mise en file retentée, e-mail d'appairage, balayage du sommeil, code mort).
+
 - **Un message reçu pendant un arrêt du service arrive en retard** : mesuré le 2026-10-23, livré environ 8 minutes après
   la reprise, avec le message suivant du même contact. À remesurer sans message suivant (arrive-t-il seul, et quand ?),
   puis décider s'il faut le dire au client.
-- **Les jaunes de la relecture de l'adressage masqué** (`8e9b3d8d`) : la correspondance inverse peut manquer pour un
-  contact déjà connu (`retenir` s'arrête quand le sens direct est en mémoire) ; une correspondance inverse périmée n'est
-  jamais retirée (`lidDe` doit vérifier que les deux sens concordent) ; le numéro du contact est en clair dans la clé de
-  ligne `lid-du-numero` (un HMAC sous la clé du compte) ; si `creds.me.lid` manque, Baileys 6.7.23 lève à tout envoi vers
-  `@lid` (adresser au numéro dans ce cas) ; une demande de renvoi d'un de nos appareils liés secondaires repart sans
-  enveloppe (limite de Baileys).
-
+- **La suppression d'un espace ne retire pas l'appareil lié** : la session continue, et ses messages finissent en file
+  d'erreurs jusqu'au redémarrage du service. Appeler `retirer` du service à la suppression.
+- **Un message tapé sur le téléphone : la prise de main se perd si elle échoue puis que le job est rejoué** (« déjà
+  reçu » arrête le rejeu après l'enregistrement). Rare (même base) ; la refaire au rejeu ne doit pas reprendre un fil
+  rendu depuis à l'agent.
+- **Un contact masqué sans correspondance connue** : la réponse tapée sur le téléphone tombe dans une autre conversation
+  (`wa_id` = l'identifiant masqué) que celle du numéro.
+- **`start_whatsapp_connection` re-prépare un compte banni sous le même numéro** (geste humain, à refuser ou à dire).
+- **Le numéro déclaré n'est jamais comparé au `jid`** à la liaison : un compte en attente réserve un numéro sans
+  échéance, `numero_pris` le révèle, et deux espaces peuvent viser le même téléphone.
+- **`/envoyer` est rejouable 60 s** depuis le réseau privé (la signature n'a pas de nonce retenu).
+- Mineurs : l'empreinte d'état a changé une fois pour tous les états au déploiement du lot 1 ; quelques textes disent
+  encore la filière avant la connexion de Meta ; une demande de renvoi d'un de NOS appareils liés secondaires repart sans
+  enveloppe pour un message adressé à `@lid` (limite de Baileys 6.7.23, `messages-send.js`).
 ## 🟡 Les jaunes de la relecture des recharges de 5 et 10 € (2026-10-22)
 
 - **Une métadonnée d'offre inconnue répond 200 en silence** (`src/http/credit-stripe.ts`) : après un retour arrière d'image

@@ -2,6 +2,7 @@
 // (`comptes_application_auth`, migration 0247, au lieu de `wa_auth_state`), le pool (`pg`), le chiffrement recopié
 // (`./chiffrement`), et un `effacer` pour qu'une session retirée ne laisse aucune clé derrière elle.
 import { BufferJSON, initAuthCreds, type AuthenticationCreds, type AuthenticationState, type SignalDataTypeMap } from '@whiskeysockets/baileys';
+import { createHmac } from 'node:crypto';
 import type { Pool } from 'pg';
 import { chiffrer, dechiffrer } from './chiffrement';
 
@@ -118,8 +119,10 @@ export interface Correspondances {
 }
 
 const CATEGORIE_NUMEROS = 'numero-du-lid';
-// Le sens inverse, ecrit avec le premier : une reponse se retrouve par le numero, cle de la conversation.
+// Le sens inverse, ecrit avec le premier : une reponse se retrouve par le numero, cle de la conversation. Sa cle de
+// ligne est un HMAC du numero sous la cle du compte, jamais le numero en clair (relecture de 8e9b3d8d).
 const CATEGORIE_LIDS = 'lid-du-numero';
+const cleDuNumero = (cle: Buffer, numero: string): string => createHmac('sha256', cle).update(numero).digest('hex');
 
 /**
  * Les correspondances d'un compte, rangees avec son etat (chiffrees, effacees avec lui). Une memoire par session evite
@@ -128,32 +131,38 @@ const CATEGORIE_LIDS = 'lid-du-numero';
 export function correspondancesPostgres(pool: Pool, compteId: string, cle: Buffer): Correspondances {
   const memoire = new Map<string, string>();
   const inverse = new Map<string, string>();
+  const numeroDe = async (lid: string): Promise<string | null> => {
+    const connu = memoire.get(lid);
+    if (connu) return connu;
+    const lu = await lireUne(pool, compteId, cle, CATEGORIE_NUMEROS, lid);
+    if (typeof lu !== 'string') return null;
+    memoire.set(lid, lu);
+    return lu;
+  };
   return {
     async retenir(lid, numero) {
-      if (memoire.get(lid) === numero) return;
+      // Les DEUX sens en memoire, pas le seul sens direct : `numeroDe` le range aussi, et un contact connu avant le
+      // redemarrage n'aurait jamais eu son sens inverse (relecture de 8e9b3d8d).
+      if (memoire.get(lid) === numero && inverse.get(numero) === lid) return;
       await ecrireLot(pool, compteId, cle, [
         { categorie: CATEGORIE_NUMEROS, cle: lid, valeur: numero },
-        { categorie: CATEGORIE_LIDS, cle: numero, valeur: lid },
+        { categorie: CATEGORIE_LIDS, cle: cleDuNumero(cle, numero), valeur: lid },
       ]);
+      // La ligne du format de 8e9b3d8d, le numero en clair pour cle, ne survit pas a la reecriture.
+      await supprimerLot(pool, compteId, [{ categorie: CATEGORIE_LIDS, cle: numero }]);
       memoire.set(lid, numero);
       inverse.set(numero, lid);
     },
     async lidDe(numero) {
-      const connu = inverse.get(numero);
-      if (connu) return connu;
-      const lu = await lireUne(pool, compteId, cle, CATEGORIE_LIDS, numero);
-      if (typeof lu !== 'string') return null;
-      inverse.set(numero, lu);
-      return lu;
+      const lid = inverse.get(numero) ?? (await lireUne(pool, compteId, cle, CATEGORIE_LIDS, cleDuNumero(cle, numero)));
+      if (typeof lid !== 'string') return null;
+      // Les deux sens doivent concorder : un compte qui change de numero garde son identifiant masque, et l'ancienne
+      // ligne inverse enverrait la reponse au nouveau titulaire de ce numero.
+      if ((await numeroDe(lid)) !== numero) return null;
+      inverse.set(numero, lid);
+      return lid;
     },
-    async numeroDe(lid) {
-      const connu = memoire.get(lid);
-      if (connu) return connu;
-      const lu = await lireUne(pool, compteId, cle, CATEGORIE_NUMEROS, lid);
-      if (typeof lu !== 'string') return null;
-      memoire.set(lid, lu);
-      return lu;
-    },
+    numeroDe,
   };
 }
 

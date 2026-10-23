@@ -17,14 +17,6 @@ export function causeDeFermeture(code: number | undefined): CauseFermeture {
   return 'reprise';
 }
 
-/**
- * Le compte est-il relié ? Par code d'appairage, Baileys pose `registered` ; par QR code, il ne pose que l'identité du
- * compte (`me`), mesuré sur l'essai du 2026-10-21. Les deux comptent.
- */
-export function estRelie(creds: { me?: { id?: string } | null; registered?: boolean }): boolean {
-  return Boolean(creds.registered) || Boolean(creds.me?.id);
-}
-
 /** Un message de l'application, sans rien de Baileys. */
 export interface MessageApplication {
   id: string;
@@ -192,8 +184,11 @@ export function optionsDuSocket(memoire: Pick<MemoireDesEnvois, 'retrouver'>) {
  * arrivait sur l'ordinateur du contact et restait « En attente de ce message » sur son mobile ; la même, adressée à son
  * identifiant masqué, est arrivée sur les deux (mesuré sur newCompany). La conversation garde le numéro pour clé.
  */
-export async function adresseDeReponse(destinataire: string, c: Pick<Correspondances, 'lidDe'>): Promise<string> {
-  if (!destinataire.endsWith('@s.whatsapp.net')) return destinataire;
+export async function adresseDeReponse(
+  destinataire: string, c: Pick<Correspondances, 'lidDe'>, monLid: string | null | undefined,
+): Promise<string> {
+  // Sans identifiant masqué à nous (`creds.me.lid`), Baileys 6.7.23 lève à tout envoi vers `@lid` (relecture de 8e9b3d8d).
+  if (!monLid || !destinataire.endsWith('@s.whatsapp.net')) return destinataire;
   const numero = chiffres(destinataire);
   return (numero ? await c.lidDe(numero) : null) ?? destinataire;
 }
@@ -261,7 +256,7 @@ export async function ouvrirSession(
   });
 
   return {
-    envoyer: envoyeur(sock, envois, (destinataire) => adresseDeReponse(destinataire, correspondances)),
+    envoyer: envoyeur(sock, envois, (destinataire) => adresseDeReponse(destinataire, correspondances, sock.user?.lid)),
     fermer() {
       // end() ferme la socket sans détruire la session côté WhatsApp, contrairement à logout().
       sock.end(undefined);

@@ -6,6 +6,7 @@ import { auteurDeLEnvoi, type AuteurDuChangement } from '../inbox/evenements';
 import type { OrigineMessage } from '../inbox/origine';
 import { TYPES_MESSAGE, estIndividuel, idDuMessage } from './message';
 import type { JobEntrant } from './sessions';
+import type { Filiere } from './comptes';
 
 /**
  * RECEVOIR, FILIÈRE APPLICATION (plan 2026-10-22, tâche 4) : le job de la file `application-entrant`, traité par le
@@ -75,6 +76,12 @@ export interface DepsEntrantApplication {
    * parcours en attente : sans elle, il ne répondait qu'au premier message (essai réel du 2026-10-22).
    */
   avance: WorkflowAdvanceDeps;
+  /**
+   * La filière de l'espace (`filiereDe`). 🔴 Un espace qui a relié l'API de Meta ignore ce que la session de
+   * l'application reçoit encore : sinon l'avance ferait progresser des parcours de l'API sur une réponse arrivée par
+   * l'autre numéro, et leurs blocs partiraient par Meta (relecture du 2026-10-22).
+   */
+  filiere(tenantId: string): Promise<Filiere | null>;
   /** La prise de main humaine, comme une réponse de l'Inbox (`ControleDuFil.prisEnEcrivant`). */
   priseDeMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<void>;
 }
@@ -89,6 +96,11 @@ export interface DepsEntrantApplication {
 export async function traiterEntrantApplication(job: JobEntrant, deps: DepsEntrantApplication): Promise<void> {
   const m = versInboundMessage(job);
   if (!m) return;
+  if ((await deps.filiere(job.tenantId)) === 'api') {
+    // eslint-disable-next-line no-console
+    console.warn(`application-entrant : l'espace ${job.tenantId} est sur l'API de Meta, message ${m.messageId} du compte ${job.compteId} ignoré`);
+    return;
+  }
   if (await deps.dejaRecu(job.tenantId, m.messageId)) return;
   if (job.message.deMoi) {
     await deps.inbox.recordOutboundByWaId(job.tenantId, m.waId, { body: m.body ?? `[${m.type}]`, messageId: m.messageId, type: m.type, origine: 'humain' });

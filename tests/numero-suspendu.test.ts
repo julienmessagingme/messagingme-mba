@@ -69,9 +69,11 @@ describe('creerLectureSuspension', () => {
 });
 
 describe('creerNumeroBloqueDeLEspace : le numéro de CET espace, vu du point d’envoi', () => {
-  const bloque = (o: { numero?: string | null; erreur?: unknown }) => creerNumeroBloqueDeLEspace({
+  const filieresLues: string[] = [];
+  const bloque = (o: { numero?: string | null; erreur?: unknown; filiere?: 'api' | 'application' | null }) => creerNumeroBloqueDeLEspace({
     numeroDeLEspace: async () => (o.numero === undefined ? 'pn1' : o.numero),
     verifierNumero: async () => { if (o.erreur) throw o.erreur; },
+    filiereDe: async (t) => { filieresLues.push(t); return o.filiere === undefined ? 'api' : o.filiere; },
   });
   it('suspendu ou délié : vrai ; ni l’un ni l’autre, ou aucun numéro : faux', async () => {
     expect(await bloque({ erreur: new NumeroSuspenduError('pn1') })('t1')).toBe(true);
@@ -79,6 +81,16 @@ describe('creerNumeroBloqueDeLEspace : le numéro de CET espace, vu du point d�
     expect(await bloque({})('t1')).toBe(false);
     expect(await bloque({ numero: null, erreur: new NumeroSuspenduError('pn1') })('t1')).toBe(false);
   });
+  it('🔴 un espace passé à l’application n’est pas bloqué par son ancien numéro de Meta, délié', async () => {
+    // Sinon la remise et le tour d'agent se taisaient : l'agent ne répondait jamais (relecture du 2026-10-22).
+    expect(await bloque({ erreur: new NumeroDelieError('pn1'), filiere: 'application' })('t1')).toBe(false);
+    expect(await bloque({ erreur: new NumeroDelieError('pn1'), filiere: 'api' })('t1')).toBe(true);
+    filieresLues.length = 0;
+    expect(await bloque({ filiere: 'application' })('t1')).toBe(false);
+    // Un numéro qui ne bloque rien ne coûte aucune lecture de plus.
+    expect(filieresLues).toEqual([]);
+  });
+
   it('une panne de lecture n’est pas un blocage : elle remonte', async () => {
     await expect(bloque({ erreur: new Error('pooler injoignable') })('t1')).rejects.toThrow('pooler injoignable');
   });

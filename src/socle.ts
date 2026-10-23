@@ -424,11 +424,6 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    * le contrôle du fil à chaque geste chez Meta. Une instance, un cache.
    */
   const numeroDeLEspace = creerNumeroDeLEspace((t) => repo.getTenantPhoneNumberId(t));
-  // Le numéro de l'espace est-il bloqué (délié, ou suspendu faute de paiement, lot 4) ? La fabrique le dit : le fil et
-  // le tour d'un agent le demandent avant de confier un message à un robot ou d'appeler un modèle.
-  const numeroBloqueDeLEspace = creerNumeroBloqueDeLEspace({
-    numeroDeLEspace, verifierNumero: (pn) => metaFactory.verifierNumero(pn),
-  });
   const runStore = new PgWorkflowRunStore(pool);
 
   /**
@@ -440,6 +435,12 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     ? creerClientApplication({ url: config.APPLICATION_SERVICE_URL, secret: config.APPLICATION_SERVICE_SECRET })
     : null;
   const envoiApplication = creerEnvoiApplication({ comptes: comptesApplication, client: clientApplication });
+  // Le numéro de l'espace est-il bloqué (délié, ou suspendu faute de paiement, lot 4) ? La fabrique le dit : le fil et
+  // le tour d'un agent le demandent avant de confier un message à un robot ou d'appeler un modèle. Un espace passé à la
+  // filière application n'est pas bloqué par son ancien numéro de Meta, délié (`filiereDe`).
+  const numeroBloqueDeLEspace = creerNumeroBloqueDeLEspace({
+    numeroDeLEspace, verifierNumero: (pn) => metaFactory.verifierNumero(pn), filiereDe: (t) => comptesApplication.filiereDe(t),
+  });
 
   /**
    * L'alerte de crédit épuisé (`src/repondeur/alerte-credit.ts`) : une par jour et par admin, tenue par le journal des

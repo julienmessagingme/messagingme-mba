@@ -57,6 +57,8 @@ describe('le gestionnaire des sessions', () => {
   let jobs: JobEntrant[];
   let prevenus: string[];
   let effaces: string[];
+  let echecsEnfiler: number;
+  let attentes: number[];
   let g: ReturnType<typeof creerGestionnaireSessions>;
 
   beforeEach(() => {
@@ -65,13 +67,18 @@ describe('le gestionnaire des sessions', () => {
     jobs = [];
     prevenus = [];
     effaces = [];
+    echecsEnfiler = 0;
+    attentes = [];
     g = creerGestionnaireSessions({
       comptes,
       ouvrir: (c, r) => transport.ouvrir(c, r),
-      enfiler: async (j) => { jobs.push(j); },
+      enfiler: async (j) => {
+        if (echecsEnfiler > 0) { echecsEnfiler -= 1; throw new Error('pool saturé'); }
+        jobs.push(j);
+      },
       prevenir: async (c, quoi) => { prevenus.push(`${c.id}:${quoi}`); },
       effacer: async (id) => { effaces.push(id); },
-      attendre: async () => undefined,
+      attendre: async (ms) => { attentes.push(ms); },
     });
   });
 
@@ -105,6 +112,13 @@ describe('le gestionnaire des sessions', () => {
     expect((await comptes.parId('c1'))?.statut).toBe('deconnecte');
     expect(prevenus).toEqual(['c1:deconnecte']);
     expect(transport.ouvertures).toHaveLength(1);
+  });
+
+  it('🔴 un 401 pendant l’appairage ne prévient personne : l’appareil n’avait jamais été relié', async () => {
+    await g.relier('c5');
+    await transport.derniere('c5').rappels.fermee('deconnecte', DisconnectReason.loggedOut);
+    expect((await comptes.parId('c5'))?.statut).toBe('deconnecte');
+    expect(prevenus).toEqual([]);
   });
 
   it('une coupure ordinaire rouvre la session', async () => {
@@ -143,6 +157,21 @@ describe('le gestionnaire des sessions', () => {
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({ tenantId: espace(1), compteId: 'c1', message: { id: 'M1', texte: 'Bonjour', horodatage: '2026-10-22T10:00:00.000Z' } });
     expect(comptes.touches).toEqual(['c1']);
+  });
+
+  it('🔴 une mise en file refusée est retentée : deux échecs, puis le message part (relecture du lot 1)', async () => {
+    await g.reprendre();
+    echecsEnfiler = 2;
+    await transport.derniere('c1').rappels.message(message('Bonjour'));
+    expect(jobs).toHaveLength(1);
+    expect(attentes).toEqual([1_000, 3_000]);
+  });
+
+  it('trois échecs : le message remonte en erreur, que la session journalise', async () => {
+    await g.reprendre();
+    echecsEnfiler = 3;
+    await expect(transport.derniere('c1').rappels.message(message('Bonjour'))).rejects.toThrow('pool saturé');
+    expect(jobs).toHaveLength(0);
   });
 
   it('envoyer sur un compte relié passe par sa session ; sur un compte non relié, un refus lisible', async () => {

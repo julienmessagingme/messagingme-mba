@@ -135,7 +135,7 @@ import { DROITS } from './offres/offres';
 import { purgerJusquAEpuisement } from './lib/purge-par-lots';
 import { PURGE_CONVERSATIONS_PAR_LOT, BUDGET_PURGE_CONVERSATIONS_MS } from './inbox/store.pg';
 import { lireJobEntrant, traiterEntrantApplication } from './application/entrant';
-import type { WorkflowAdvanceDeps } from './webhooks/workflow-advance';
+import { avanceDuParcours, type WorkflowAdvanceDeps } from './webhooks/workflow-advance';
 import { creerDejaRecu } from './application/entrant.pg';
 import { endormirLesComptes } from './application/sommeil';
 
@@ -422,14 +422,14 @@ export async function demarrerWorker(): Promise<void> {
    * application (un agent IA qui converse est un parcours en attente : essai réel du 2026-10-22).
    */
   const avanceDesParcours: WorkflowAdvanceDeps = {
-    // `true` si un parcours attendait ce contact : lu AVANT l'avance, qui peut le terminer (réponse « à côté »,
-    // dernier bloc). La remise à l'agent de Meta, dans le même job, laisse alors ce message au parcours.
-    // `entrant` dit si c'est une réaction : un agent IA en pleine conversation ne répond pas à un emoji (lot 5, J1).
-    advance: async (t, w, m, bp, entrant) => {
-      const enAttente = await runStore.findWaitingByWaId(t, w);
-      await workflowExecutor.advance(t, w, m, bp, 'whatsapp', entrant);
-      return enAttente !== null;
-    },
+    // `true` si un parcours attendait ce contact ET que le fil est à nous (`avanceDuParcours`) : la remise, dans le
+    // même job, laisse alors ce message au parcours. `entrant` dit si c'est une réaction : un agent IA en pleine
+    // conversation ne répond pas à un emoji (lot 5, J1).
+    advance: avanceDuParcours({
+      trouverEnAttente: (t, w) => runStore.findWaitingByWaId(t, w),
+      peutAgir: (t, w) => fil.peutAgir(t, w),
+      avancer: (t, w, m, bp, entrant) => workflowExecutor.advance(t, w, m, bp, 'whatsapp', entrant),
+    }),
     // Une avance qui échoue atterrit dans le journal des erreurs que l'écran montre : sinon le job finirait en
     // succès, sans rejeu ni trace, et le contact resterait bloqué sur son bloc.
     journaliserEchec: (e) => erreursLivraison.enregistrerEchecAvance(e),
@@ -683,6 +683,7 @@ export async function demarrerWorker(): Promise<void> {
       },
       remise: { remettre: fil.remettreSiPersonneNeSuit },
       avance: avanceDesParcours,
+      filiere: (t) => comptesApplication.filiereDe(t),
       priseDeMain: fil.prisEnEcrivant,
     });
   }, { concurrency: config.WEBHOOK_CONCURRENCY, groupConcurrency: 1 });

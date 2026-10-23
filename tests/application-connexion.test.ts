@@ -1,84 +1,14 @@
 import { DisconnectReason } from '@whiskeysockets/baileys';
 import { describe, expect, it } from 'vitest';
-import { codeDeconnexion, delaiBackoff, surDeconnexion, surOuverture } from '../src/application/transport/connexion';
-import { causeDeFermeture, estRelie } from '../src/application/transport/session';
+import { codeDeconnexion, delaiBackoff } from '../src/application/transport/connexion';
+import { causeDeFermeture } from '../src/application/transport/session';
 
 /**
- * LA MACHINE D'ÉTATS DE LA CONNEXION, recopiée de wagroups (commit 526d3cc, `src/transport/connectionState.test.ts`),
- * plus ce que la filière application y ajoute : la cause d'une fermeture dans nos statuts, et la reconnaissance d'un
- * compte relié par QR code.
+ * LA CONNEXION, recopiée de wagroups (commit 526d3cc, `src/transport/connectionState.test.ts`) : le délai de
+ * reconnexion et la lecture du code de fermeture, plus ce que la filière application y ajoute, la cause d'une
+ * fermeture dans nos statuts. La machine d'états de wagroups n'est pas recopiée : le gestionnaire des sessions décide.
  */
-describe('machine a etats de connexion (recopiée de wagroups 526d3cc)', () => {
-  it('passe a connected a l ouverture', () => {
-    const t = surOuverture();
-    expect(t.statut).toBe('connected');
-    expect(t.reconnecter).toBe(false);
-    expect(t.delaiMs).toBe(0);
-  });
-
-  it('reconnecte sur une perte de connexion', () => {
-    const t = surDeconnexion('connected', DisconnectReason.connectionLost, 0);
-    expect(t.statut).toBe('reconnecting');
-    expect(t.reconnecter).toBe(true);
-    expect(t.delaiMs).toBe(delaiBackoff(0));
-  });
-
-  it('branche par defaut : le delai renvoye est bien celui de delaiBackoff, pas un delai fige', () => {
-    const t = surDeconnexion('connected', DisconnectReason.connectionLost, 3);
-    expect(t.statut).toBe('reconnecting');
-    expect(t.delaiMs).toBe(delaiBackoff(3));
-  });
-
-  it('reconnecte immediatement sur restartRequired, qui suit toujours un pairing', () => {
-    const t = surDeconnexion('pairing', DisconnectReason.restartRequired, 0);
-    expect(t.statut).toBe('reconnecting');
-    expect(t.reconnecter).toBe(true);
-    expect(t.delaiMs).toBe(0);
-  });
-
-  it('un restartRequired qui se repete au-dela de la premiere tentative applique le backoff', () => {
-    const t = surDeconnexion('reconnecting', DisconnectReason.restartRequired, 2);
-    expect(t.reconnecter).toBe(true);
-    expect(t.delaiMs).toBe(delaiBackoff(2));
-  });
-
-  it('passe a dead sur loggedOut et ne reconnecte pas', () => {
-    const t = surDeconnexion('connected', DisconnectReason.loggedOut, 0);
-    expect(t.statut).toBe('dead');
-    expect(t.reconnecter).toBe(false);
-    expect(t.raison).toContain('401');
-  });
-
-  it('passe a banned sur forbidden et ne reconnecte pas', () => {
-    const t = surDeconnexion('connected', DisconnectReason.forbidden, 0);
-    expect(t.statut).toBe('banned');
-    expect(t.reconnecter).toBe(false);
-    expect(t.raison).toContain('403');
-  });
-
-  it('un 403 fait basculer vers banned meme depuis dead : le ban domine dead', () => {
-    const t = surDeconnexion('dead', DisconnectReason.forbidden, 0);
-    expect(t.statut).toBe('banned');
-    expect(t.reconnecter).toBe(false);
-  });
-
-  it('ne sort jamais de banned, meme sur un evenement anodin', () => {
-    const t = surDeconnexion('banned', DisconnectReason.connectionLost, 0);
-    expect(t.statut).toBe('banned');
-    expect(t.reconnecter).toBe(false);
-  });
-
-  it('ne reconnecte pas non plus depuis dead', () => {
-    const t = surDeconnexion('dead', DisconnectReason.connectionLost, 0);
-    expect(t.statut).toBe('dead');
-    expect(t.reconnecter).toBe(false);
-  });
-
-  it('reconnecte sur un code inconnu ou absent, sans jamais supposer un ban', () => {
-    expect(surDeconnexion('connected', 999, 0).reconnecter).toBe(true);
-    expect(surDeconnexion('connected', undefined, 0).reconnecter).toBe(true);
-  });
-
+describe('le délai de reconnexion (recopié de wagroups 526d3cc)', () => {
   it('applique un backoff exponentiel plafonne a cinq minutes, et clampe un tentative hors domaine', () => {
     expect(delaiBackoff(0)).toBe(1000);
     expect(delaiBackoff(4)).toBe(16000);
@@ -110,9 +40,4 @@ describe('la filière application', () => {
     expect(causeDeFermeture(undefined)).toBe('reprise');
   });
 
-  it('un compte relié par QR code se reconnaît à son identité, même sans `registered` (essai du 2026-10-21)', () => {
-    expect(estRelie({ me: { id: '441555479304:1@s.whatsapp.net' }, registered: false })).toBe(true);
-    expect(estRelie({ registered: true })).toBe(true);
-    expect(estRelie({ registered: false })).toBe(false);
-  });
 });

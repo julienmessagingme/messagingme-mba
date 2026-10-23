@@ -59,6 +59,9 @@ const RELIABLES: ReadonlySet<StatutCompte> = new Set(['en_attente', 'relie', 'so
 
 const versJson = (m: MessageApplication): MessageApplicationJson => ({ ...m, horodatage: m.horodatage.toISOString() });
 
+/** Les attentes entre deux mises en file d'un message reçu : trois essais en tout. */
+const ATTENTES_MISE_EN_FILE_MS = [1_000, 3_000];
+
 export function creerGestionnaireSessions(d: DepsSessions): GestionnaireSessions {
   const entrees = new Map<string, Entree>();
   const attendre = d.attendre ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -83,11 +86,23 @@ export function creerGestionnaireSessions(d: DepsSessions): GestionnaireSessions
         await d.comptes.marquer(compte.id, 'relie', jid ? { jid } : {});
       },
       async message(m) {
-        await d.enfiler({ tenantId: compte.tenantId, compteId: compte.id, message: versJson(m) });
+        // Trois essais avant d'abandonner : le service n'a que deux connexions, qu'une rafale peut occuper, et un message
+        // dont la mise en file échoue est perdu (relecture du lot 1). L'échec final remonte à la session, qui le journalise.
+        const job = { tenantId: compte.tenantId, compteId: compte.id, message: versJson(m) };
+        for (let essai = 0; ; essai += 1) {
+          try {
+            await d.enfiler(job);
+            break;
+          } catch (err) {
+            if (essai >= ATTENTES_MISE_EN_FILE_MS.length) throw err;
+            await attendre(ATTENTES_MISE_EN_FILE_MS[essai]!);
+          }
+        }
         await d.comptes.toucher(compte.id, m.horodatage);
       },
       async fermee(cause: CauseFermeture, code) {
         if (!actuelle()) return;
+        const etaitOuverte = entree.ouverte;
         entree.ouverte = false;
         entree.session = null;
         if (cause === 'banni' || cause === 'deconnecte') {
@@ -95,7 +110,10 @@ export function creerGestionnaireSessions(d: DepsSessions): GestionnaireSessions
           // laisser un compte banni « relié », que `reprendre` relierait au redémarrage.
           entrees.delete(compte.id);
           await d.comptes.marquer(compte.id, cause);
-          await d.prevenir((await d.comptes.parId(compte.id)) ?? compte, cause);
+          // Un 401 pendant l'appairage n'a rien retiré : l'appareil n'avait jamais été relié, l'e-mail « appareil
+          // retiré » serait faux (relecture du lot 1). Un bannissement se dit toujours.
+          const avaitEteRelie = etaitOuverte || compte.statut === 'relie' || compte.statut === 'sommeil';
+          if (cause === 'banni' || avaitEteRelie) await d.prevenir((await d.comptes.parId(compte.id)) ?? compte, cause);
           return;
         }
         const etat = await d.comptes.parId(compte.id);

@@ -582,8 +582,8 @@ describe('J4 : ce que rien ne tenait', () => {
     // second tour. Sans `entrant`, l'exécuteur ne sait plus qu'un message est une réaction (J1).
     const worker = readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8');
     expect(worker).toContain('rendreLeFil: (t, waId, contenu, dernierLead) => fil.remettreSiPersonneNeSuit(t, waId, contenu, { rouverte: false, messageDeclencheur: dernierLead }),');
-    expect(worker).toContain('advance: async (t, w, m, bp, entrant) => {');
-    expect(worker).toContain("await workflowExecutor.advance(t, w, m, bp, 'whatsapp', entrant);");
+    // Depuis le lot des jaunes de la filière application, l'avance passe par `avanceDuParcours` : le type y voyage toujours.
+    expect(worker).toContain("avancer: (t, w, m, bp, entrant) => workflowExecutor.advance(t, w, m, bp, 'whatsapp', entrant),");
   });
 });
 

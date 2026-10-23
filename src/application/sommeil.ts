@@ -22,10 +22,15 @@ export async function endormirLesComptes(d: DepsSommeil, jours: number, maintena
   for (const c of await d.comptes.endormables(jours)) {
     if (!(await d.client.sommeil(c.id)).ok) continue;
     n += 1;
-    await d.emettre({
-      cle: 'application_en_sommeil', tenantId: c.tenantId, occasion: `sommeil:${c.id}:${maintenant.toISOString().slice(0, 10)}`,
-      a: 'admins', valeurs: { numero: `+${c.numero}`, jours: String(jours) },
-    });
+    // Un courriel en échec n'arrête pas le balayage des autres comptes (relecture du lot 1) : le compte est endormi.
+    try {
+      await d.emettre({
+        cle: 'application_en_sommeil', tenantId: c.tenantId, occasion: `sommeil:${c.id}:${maintenant.toISOString().slice(0, 10)}`,
+        a: 'admins', valeurs: { numero: `+${c.numero}`, jours: String(jours) },
+      });
+    } catch (err) {
+      console.error(`application-sommeil : courriel du compte ${c.id} non émis`, err);
+    }
   }
   return n;
 }

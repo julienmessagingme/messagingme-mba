@@ -153,7 +153,7 @@ describe('le job de la file, côté worker', () => {
   });
 });
 
-function banc(o: { enAttente?: boolean } = {}) {
+function banc(o: { enAttente?: boolean; filiere?: 'api' | 'application' } = {}) {
   const traces: string[] = [];
   const enregistres = new Set<string>();
   const deps: DepsEntrantApplication = {
@@ -176,6 +176,7 @@ function banc(o: { enAttente?: boolean } = {}) {
     },
     remise: { remettre: async (_t, waId, contenu, e) => { traces.push(`remise:${waId}:${contenu}:${e.messageDeclencheur}:${e.redelivre}`); } },
     avance: { advance: async (_t, waId, id) => { traces.push(`avance:${waId}:${id}`); return o.enAttente ?? false; } },
+    filiere: async () => o.filiere ?? 'application',
     priseDeMain: async (_t, waId) => { traces.push(`main:${waId}`); },
   };
   return { traces, deps };
@@ -202,6 +203,15 @@ describe('traiter un message reçu', () => {
     await traiterEntrantApplication(job(), deps);
     expect(traces.filter((t) => t.startsWith('in:'))).toHaveLength(1);
     expect(traces.filter((t) => t.startsWith('remise:'))).toHaveLength(1);
+  });
+
+  it('🔴 un espace qui a relié l’API de Meta ignore ce que la session de l’application reçoit encore', async () => {
+    // Sinon l'avance ferait progresser des parcours de l'API sur une réponse arrivée par l'autre numéro, et leurs blocs
+    // partiraient par Meta (relecture du 2026-10-22).
+    const { traces, deps } = banc({ filiere: 'api' });
+    await traiterEntrantApplication(job(), deps);
+    await traiterEntrantApplication(job({ deMoi: true }), deps);
+    expect(traces).toEqual([]);
   });
 
   it('🔴 un STOP désabonne le contact, avant la remise', async () => {
