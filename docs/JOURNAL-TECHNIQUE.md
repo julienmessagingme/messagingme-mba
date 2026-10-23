@@ -5,6 +5,28 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-23 : les jaunes des recharges, et les limites d'une conversation d'agent réglées depuis Claude
+
+Plans : `docs/superpowers/plans/2026-10-23-recharges-jaunes.md` et `2026-10-23-limites-conversation.md`.
+
+- **Les jaunes des recharges** (`d7586ae4`) : une recharge réglée pour une offre que la version ne connaît pas alerte au
+  lieu de partir en 200 silencieux ; le prix d'une recharge doit être hors taxe (`tax_behavior` à `exclusive`, mesuré
+  en lecture seule chez Stripe avant d'écrire le contrôle : les quatre prix live l'étaient) ; `buy_credit` n'annonce
+  dans `tools/list` que les offres dont le prix est configuré (`OutilMcp.selonInstance`). Relecture sans rouge.
+- **Les limites d'une conversation** (`e5bd1bfa`), cadrées avec Julien le jour même : les trois limites dans un outil
+  (`set_agent_limits`) et dans l'onglet Périmètre de la console, défaut monté à 20 réponses et 60 actions. Mesuré avant
+  de décider, en lecture seule : 40 sessions d'agent en 60 jours, la plus longue à 9 messages, aucune coupée par ses
+  tours. Relecture sans rouge, douze jaunes au `todo.md` (dont la mémoire de l'agent, 30 messages, qui ne couvre plus
+  une conversation de 20 réponses).
+- **Déploiement groupé** à `e5bd1bfa`, qui emportait aussi la reprise humaine dans HubSpot (`8ecdbd0d`, `9953bb96`,
+  accord de Julien confirmé ici) : migration 0250 appliquée et relue (défauts 20 et 60, CHECK inchangés, les neuf
+  agents à 20, 60 et sans limite de crédit), puis `mba-api`, `mba-worker` et `mba-worker-analyse` ; fumée,
+  fiches OAuth et `aide:charger` conformes ; plugin 0.3.7 publié en dernier. La marche arrière MCP (`cbaa0ae5`) avait
+  été déployée juste avant par sa session.
+- ⚠️ **Deux tests lisent les bornes de `saisieDeModification` dans le TEXTE de `src/agent/gestion.ts`**
+  (`agents-bornes-parity`, `migration-0248`) : y remplacer les chiffres par des constantes les a rendus rouges. Les
+  chiffres sont restés, et `tests/migration-0250.test.ts` tient les constantes exportées égales à eux.
+
 ## 2026-10-23 : l'essai réel de la marche arrière, et le blocage qui ne tenait pas en cours de session
 
 L'essai réel à deux des lots 1 et 2 de la marche arrière des outils MCP (`docs/prive/ESSAIS-REELS.md`, essai 148), sur

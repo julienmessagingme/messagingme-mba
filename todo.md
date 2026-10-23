@@ -36,6 +36,30 @@ Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowe
 12. **À trancher avec Julien : `hand_back` reste refusé pour un contact STOP ou bloqué même en mode « équipe »**, où aucun
     robot ne lui parlerait ; or sortir d'« À traiter » est le seul moyen d'une Free.
 
+## 🟡 Les limites d'une conversation d'agent : les jaunes de la relecture (2026-10-23)
+
+Relecture sans rouge du lot `e5bd1bfa` (plan `docs/superpowers/plans/2026-10-23-limites-conversation.md`).
+
+1. **La mémoire de l'agent ne couvre plus une conversation entière** : `MESSAGES_DE_CONTEXTE = 30` (`src/worker.ts`)
+   suffisait à 8 réponses, pas à 20. Au-delà d'environ 15 échanges, l'agent oublie le début, et en régime « session »
+   `dejaAnnonce` (`src/agent/brain.gateway.ts`) ne voit plus sa première réponse : la mention d'IA est redite en cours de
+   conversation. Relever la fenêtre (coût par tour) ou lire l'annonce ailleurs que dans le transcript.
+2. **`set_agent_limits` ignore une clé inconnue** alors que son schéma annonce `additionalProperties: false` :
+   `{ max_turns: 10, budget: 0.5 }` n'écrit que les tours et répond succès. La refuser, comme `update_agent`.
+3. **Textes périmés** : `src/mcp/outils-agent.ts` (en-tête) et `features.md` (section MCP) disent encore que Claude ne
+   lit ni ne règle les plafonds d'un agent. « Hands the conversation to the team » (description de l'outil) n'est vrai
+   que dans le répondeur ou sur une sortie non branchée ; dans un scénario, elle suit la branche câblée.
+4. **Les « défauts » de la description sont les constantes du maximum** : ils coïncident par décision, et divergeraient
+   en silence si l'un bouge.
+5. **La console** : `BUDGET_SANS_LIMITE_MICRO_EUR` recopie la constante du serveur sans test qui les relie
+   (`web/lib/partage`) ; l'écran anglais affiche « 0,03 » avec une virgule ; décocher « Sans limite » puis ouvrir un autre
+   agent sans limite le montre « limité », champ vide (affichage seulement).
+6. **`tests/migration-0248.test.ts`** vérifie son pire cas avec l'ancien défaut d'appels (12 de 0086) : l'invariant
+   tient à 60, mais le test ne le dit pas.
+7. **Écrits, pas corrigés** : 60 actions au lieu de 12 multiplient ce qu'une conversation détournée peut déclencher
+   (envois de bloc, connecteurs, actions) ; un agent réglé exprès à 8 ou 12 a été relevé par 0250 sans ligne
+   d'historique.
+
 ## 🟡 Recharges du crédit IA : ce qui reste après le lot des jaunes (2026-10-23)
 
 Plan soldé : `docs/superpowers/plans/2026-10-23-recharges-jaunes.md`.
