@@ -35,17 +35,3 @@ export function affichageHubspotAccueil(p: { actif: boolean | undefined; aUnNume
   if (p.actif || p.portailRelie) return 'bloc';
   return 'renvoi';
 }
-
-/**
- * Ce que la carte de Paramètres > Intégrations permet.
- *
- * 🔴 L'EXTINCTION EST BLOQUÉE TANT QU'UN PORTAIL EST RELIÉ, comme côté serveur (qui rend 409) : l'écran le
- * dit AVANT le clic plutôt que de laisser l'administrateur découvrir le refus. Allumer, jamais bloqué.
- * ⚠️ `portailRelie` inconnu : ni blocage ni proposition de connexion, on ne promet rien qu'on n'a pas lu.
- */
-export function etatCarteHubspot(p: { actif: boolean; portailRelie: boolean | undefined }): { extinctionBloquee: boolean; proposerConnexion: boolean } {
-  return {
-    extinctionBloquee: p.actif && p.portailRelie === true,
-    proposerConnexion: p.actif && p.portailRelie === false,
-  };
-}

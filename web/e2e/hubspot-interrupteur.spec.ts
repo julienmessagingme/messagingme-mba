@@ -74,22 +74,30 @@ test.describe('Accueil : le bloc HubSpot suit l’interrupteur', () => {
   });
 });
 
-interface Trace { patchs: Array<Record<string, unknown>> }
+interface Trace { puts: Array<Record<string, unknown>> }
 
-/** Monte Paramètres (admin) avec des réglages et un statut de compte donnés. `refus` : le PATCH rend 409. */
-async function parametres(page: Page, o: { reglages: Record<string, unknown>; compte?: Record<string, unknown>; refus?: string }): Promise<Trace> {
-  const trace: Trace = { patchs: [] };
+/**
+ * Monte Paramètres (admin) avec des réglages et un statut de compte donnés (lot 1bis : le choix des fonctions).
+ * `refus` : le PUT du choix rend ce statut avec ce message.
+ */
+async function parametres(page: Page, o: { reglages: Record<string, unknown>; compte?: Record<string, unknown>; refus?: { status: number; error: string } }): Promise<Trace> {
+  const trace: Trace = { puts: [] };
   const session = { token: 'e2e-token', email: 'moi@e2e.test', role: 'admin', tenantId: 't-e2e' };
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), session);
   await page.route('**/api/backend/**', async (route) => {
     const req = route.request();
     const chemin = req.url().split('?')[0]!;
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
-    if (chemin.endsWith('/settings/hubspot-actif') && req.method() === 'PATCH') {
+    if (chemin.endsWith('/hubspot/choix') && req.method() === 'PUT') {
       const corps = req.postDataJSON() as Record<string, unknown>;
-      trace.patchs.push(corps);
-      if (o.refus) return json({ error: o.refus }, 409);
-      return json({ hubspotActif: corps.actif });
+      trace.puts.push(corps);
+      if (o.refus) return json({ error: o.refus.error }, o.refus.status);
+      return json({
+        hubspotAnalyse: corps.analyse, hubspotPassage: corps.passage, hubspotInjoignable: corps.injoignable,
+        hubspotReponse: corps.reponse, hubspotListsEnabled: corps.listes, hubspotChoixValideLe: '2026-10-23T18:00:00.000Z',
+        routingMode: corps.taches === undefined ? null : corps.taches ? 'mm_routing' : 'hubspot_native',
+        tachesAppliquees: true, premiereValidation: true,
+      });
     }
     if (chemin.endsWith('/settings/agents-peuvent-prendre')) return json({ actif: false });
     if (chemin.endsWith('/settings')) return json({ mbaEnabled: false, timezone: 'Europe/Paris', businessHours: {}, ...o.reglages });
@@ -104,51 +112,52 @@ async function parametres(page: Page, o: { reglages: Record<string, unknown>; co
   return trace;
 }
 
-test.describe('Paramètres > Intégrations > HubSpot', () => {
-  test('🔴 éteint, non relié : on l’allume, l’écran envoie `actif: true` et propose la connexion', async ({ page }) => {
-    const trace = await parametres(page, { reglages: { hubspotActif: false, hubspotPortalConnecte: false } });
-    const carte = page.getByTestId('integration-hubspot');
-    const bouton = page.getByTestId('integration-hubspot-toggle');
-    await expect(carte).toBeVisible();
-    await expect(page.getByTestId('integration-hubspot-etat')).toContainText('Éteint');
-    await expect(page.getByTestId('integration-hubspot-portail')).toContainText('Aucun portail HubSpot relié');
-    await expect(bouton).toHaveAttribute('aria-pressed', 'false');
-    await expect(page.getByTestId('integration-hubspot-connecter')).toHaveCount(0);
-    await bouton.click();
-    await expect.poll(() => trace.patchs.length, { timeout: 10_000 }).toBe(1);
-    expect(trace.patchs[0]).toEqual({ actif: true });
-    await expect(bouton).toHaveAttribute('aria-pressed', 'true');
+const CHOIX_FAIT = { hubspotPortalConnecte: true, hubspotAnalyse: true, hubspotPassage: true, hubspotInjoignable: true, hubspotReponse: false, hubspotListsEnabled: false, hubspotChoixValideLe: '2026-10-20T10:00:00.000Z' };
+
+test.describe('Paramètres > Intégrations > HubSpot : le choix des fonctions (lot 1bis)', () => {
+  test('rien de relié : « Connecter HubSpot » et le tuto, pas de choix', async ({ page }) => {
+    await parametres(page, { reglages: { hubspotPortalConnecte: false } });
+    await expect(page.getByTestId('integration-hubspot-etat')).toContainText('Aucun portail HubSpot relié');
     await expect(page.getByTestId('integration-hubspot-connecter')).toBeVisible();
     await expect(page.getByTestId('integration-hubspot-tuto')).toHaveAttribute('href', '/tuto-hubspot');
+    await expect(page.getByTestId('integration-hubspot-analyse-toggle')).toHaveCount(0);
   });
 
-  test('🔴 allumé et relié : l’interrupteur est grisé, la raison est dite, le portail est nommé', async ({ page }) => {
+  test('🔴 relié, jamais choisi : l’étape de choix, défauts cochés, et « Valider » envoie le choix avec le mode connu', async ({ page }) => {
     const trace = await parametres(page, {
-      reglages: { hubspotActif: true, hubspotPortalConnecte: true },
-      compte: { hasNumber: false, hubspotPortal: PORTAIL },
+      reglages: { ...CHOIX_FAIT, hubspotChoixValideLe: null },
+      compte: { hasNumber: false, hubspotPortal: { ...PORTAIL, routingMode: 'mm_routing' } },
     });
-    const bouton = page.getByTestId('integration-hubspot-toggle');
-    await expect(bouton).toBeDisabled();
-    await expect(page.getByTestId('integration-hubspot-raison')).toContainText('Déconnexion complète');
-    await expect(page.getByTestId('integration-hubspot-portail')).toContainText('cobaye.hubspot.com');
-    await expect(page.getByTestId('integration-hubspot-connecter')).toHaveCount(0);
-    expect(trace.patchs).toEqual([]);
+    await expect(page.getByTestId('integration-hubspot-etape-choix')).toBeVisible();
+    await expect(page.getByTestId('integration-hubspot-etat')).toContainText('cobaye.hubspot.com');
+    await expect(page.getByTestId('integration-hubspot-analyse-toggle')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('integration-hubspot-listes-toggle')).toHaveAttribute('aria-pressed', 'false');
+    await page.getByTestId('integration-hubspot-valider').click();
+    await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(1);
+    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, listes: false, taches: true });
+    await expect(page.getByTestId('integration-hubspot-etape-choix')).toHaveCount(0);
   });
 
-  test('🔴 le serveur refuse (409) : son message s’affiche, et l’interrupteur revient à sa place', async ({ page }) => {
-    const message = 'Un portail HubSpot est relié à cet espace : faites d’abord la « Déconnexion complète » depuis l’Accueil, puis éteignez HubSpot.';
-    const trace = await parametres(page, { reglages: { hubspotActif: true, hubspotPortalConnecte: false }, refus: message });
-    const bouton = page.getByTestId('integration-hubspot-toggle');
-    await expect(bouton).toHaveAttribute('aria-pressed', 'true');
-    await bouton.click();
-    await expect(page.getByTestId('integration-hubspot-erreur')).toContainText('Déconnexion complète');
-    await expect(bouton).toHaveAttribute('aria-pressed', 'true');
-    expect(trace.patchs).toEqual([{ actif: false }]);
+  test('🔴 mode des tâches INCONNU (lecture du portail en échec) : la ligne est grisée et une bascule ne l’envoie jamais', async ({ page }) => {
+    const trace = await parametres(page, { reglages: CHOIX_FAIT, compte: { hasNumber: false, hubspotPortal: { connected: false } } });
+    await expect(page.getByTestId('integration-hubspot-taches-toggle')).toBeDisabled();
+    await page.getByTestId('integration-hubspot-injoignable-toggle').click();
+    await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(1);
+    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: false, reponse: false, listes: false });
   });
 
-  test('champ absent (API plus ancienne) : pas d’interrupteur, l’écran le dit', async ({ page }) => {
-    await parametres(page, { reglages: {} });
-    await expect(page.getByTestId('integration-hubspot-etat')).toContainText('indisponible');
-    await expect(page.getByTestId('integration-hubspot-toggle')).toHaveCount(0);
+  test('le serveur refuse : son message s’affiche, et l’interrupteur revient à sa place', async ({ page }) => {
+    const message = 'Votre offre ne comprend pas l’import de listes. Passez en Entreprise.';
+    const trace = await parametres(page, {
+      reglages: CHOIX_FAIT,
+      compte: { hasNumber: false, hubspotPortal: { ...PORTAIL, routingMode: 'mm_routing' } },
+      refus: { status: 402, error: message },
+    });
+    const listes = page.getByTestId('integration-hubspot-listes-toggle');
+    await expect(listes).toHaveAttribute('aria-pressed', 'false');
+    await listes.click();
+    await expect(page.getByTestId('integration-hubspot-erreur')).toContainText('offre');
+    await expect(listes).toHaveAttribute('aria-pressed', 'false');
+    expect(trace.puts).toHaveLength(1);
   });
 });

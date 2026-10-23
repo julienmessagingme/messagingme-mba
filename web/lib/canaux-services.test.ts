@@ -87,8 +87,13 @@ describe('ligneHubspot', () => {
   it('🔴 allumé AVEC un portail relié : extinction refusée, comme le serveur (409)', () => {
     expect(ligneHubspot({ actif: true, portailRelie: true })).toEqual({ allume: true, geste: null });
   });
-  it('réglage inconnu (API plus ancienne) : pas d’interrupteur', () => {
-    expect(ligneHubspot({ actif: undefined, portailRelie: true })).toEqual({ allume: null, geste: null });
+  it('réglage inconnu (API plus ancienne) et rien de relié : pas d’interrupteur', () => {
+    expect(ligneHubspot({ actif: undefined, portailRelie: false })).toEqual({ allume: null, geste: null });
+    expect(ligneHubspot({ actif: undefined, portailRelie: undefined })).toEqual({ allume: null, geste: null });
+  });
+  it('🟡 lot 1bis : un portail relié se lit ALLUMÉ, même avec l’ancien interrupteur éteint ou inconnu', () => {
+    expect(ligneHubspot({ actif: false, portailRelie: true })).toEqual({ allume: true, geste: null });
+    expect(ligneHubspot({ actif: undefined, portailRelie: true })).toEqual({ allume: true, geste: null });
   });
 });
 

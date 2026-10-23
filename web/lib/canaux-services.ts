@@ -94,9 +94,12 @@ export function lignePublicites(etat: { configure?: unknown; connexion?: unknown
  * d'interrupteur.
  */
 export function ligneHubspot(p: { actif: boolean | undefined; portailRelie: boolean | undefined }): Ligne {
+  // Lot 1bis : un portail relié, c'est HubSpot allumé, quel que soit l'ancien interrupteur d'affichage (une connexion
+  // faite depuis Paramètres > Intégrations ne le pose pas). Pas d'interrupteur : on le délie par la déconnexion complète.
+  if (p.portailRelie === true) return { allume: true, geste: null };
   if (p.actif === undefined) return SANS_INTERRUPTEUR;
   if (!p.actif) return { allume: false, geste: 'allumer_hubspot' };
-  return { allume: true, geste: p.portailRelie === true ? null : 'eteindre_hubspot' };
+  return { allume: true, geste: 'eteindre_hubspot' };
 }
 
 /**

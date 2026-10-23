@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lireHubspotActif, affichageHubspotAccueil, etatCarteHubspot } from './hubspot-actif';
+import { lireHubspotActif, affichageHubspotAccueil } from './hubspot-actif';
 
 describe('lireHubspotActif', () => {
   it('rend le booléen tel quel', () => {
@@ -40,24 +40,5 @@ describe('affichageHubspotAccueil', () => {
     expect(affichageHubspotAccueil({ actif: undefined, aUnNumero: true, portailRelie: false })).toBe('bloc');
     expect(affichageHubspotAccueil({ actif: undefined, aUnNumero: false, portailRelie: false })).toBe('rien');
     expect(affichageHubspotAccueil({ actif: undefined, aUnNumero: false, portailRelie: true })).toBe('rien');
-  });
-});
-
-describe('etatCarteHubspot', () => {
-  it('🔴 allumé et relié : l’extinction est bloquée, pas de connexion proposée', () => {
-    expect(etatCarteHubspot({ actif: true, portailRelie: true })).toEqual({ extinctionBloquee: true, proposerConnexion: false });
-  });
-
-  it('allumé et non relié : on propose de connecter', () => {
-    expect(etatCarteHubspot({ actif: true, portailRelie: false })).toEqual({ extinctionBloquee: false, proposerConnexion: true });
-  });
-
-  it('éteint : rien n’est bloqué (allumer ne l’est jamais), rien n’est proposé', () => {
-    expect(etatCarteHubspot({ actif: false, portailRelie: false })).toEqual({ extinctionBloquee: false, proposerConnexion: false });
-    expect(etatCarteHubspot({ actif: false, portailRelie: true })).toEqual({ extinctionBloquee: false, proposerConnexion: false });
-  });
-
-  it('portail inconnu : ni blocage ni promesse', () => {
-    expect(etatCarteHubspot({ actif: true, portailRelie: undefined })).toEqual({ extinctionBloquee: false, proposerConnexion: false });
   });
 });

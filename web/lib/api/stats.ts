@@ -715,6 +715,16 @@ export interface TenantSettings {
    * Lu par `lireHubspotActif` (`lib/hubspot-actif.ts`), jamais directement.
    */
   hubspotActif?: boolean;
+  /**
+   * LE CHOIX DES FONCTIONS HUBSPOT (lot 1bis, migration 0251) : ce que le client a branché entre Messaging Me et
+   * HubSpot, et la date où il a validé l'étape de choix (`null` : l'écran la propose). OPTIONNELS à la lecture, comme
+   * leurs voisins : une API antérieure ne les rend pas, et l'écran garde alors « Connecter HubSpot » sans choix.
+   */
+  hubspotAnalyse?: boolean;
+  hubspotPassage?: boolean;
+  hubspotInjoignable?: boolean;
+  hubspotReponse?: boolean;
+  hubspotChoixValideLe?: string | null;
   /*
    * `prix` A QUITTE LES REGLAGES LE 2026-09-23 (lot 8, migration 0168). Il n'y a plus qu'une grille, pour
    * tous les espaces, et elle se lit dans /ops : la laisser ici aurait permis a n'importe quel ecran du
@@ -746,16 +756,44 @@ export function getSettings(tenantId: string): Promise<TenantSettings> {
 export function putSettings(tenantId: string, mbaEnabled: boolean): Promise<TenantSettings> {
   return request<TenantSettings>(`/tenants/${tenantId}/settings`, { method: 'PUT', body: JSON.stringify({ mbaEnabled }) });
 }
-/** Active/désactive le toggle « Campagnes via données HubSpot ». */
-export function setHubspotListsEnabled(tenantId: string, enabled: boolean): Promise<{ hubspotListsEnabled: boolean }> {
-  return request(`/tenants/${tenantId}/settings/hubspot-lists`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
-}
 /**
  * Allume ou éteint l'interrupteur HubSpot de l'espace (admin). Le serveur REFUSE de l'éteindre (409, avec un
  * message à afficher tel quel) tant qu'un portail est relié : il faut d'abord la « Déconnexion complète ».
  */
 export function setHubspotActif(tenantId: string, actif: boolean): Promise<{ hubspotActif: boolean }> {
   return request(`/tenants/${tenantId}/settings/hubspot-actif`, { method: 'PATCH', body: JSON.stringify({ actif }) });
+}
+
+/** Ce que le client branche entre Messaging Me et HubSpot (lot 1bis), tel que l'écran de choix l'envoie. */
+export interface ChoixHubspot {
+  analyse: boolean;
+  passage: boolean;
+  injoignable: boolean;
+  reponse: boolean;
+  listes: boolean;
+  /** Créer des tâches dans HubSpot (sinon : propriétés seulement). Vaut pour tout le portail. */
+  taches: boolean;
+}
+
+/** La réponse de `PUT .../hubspot/choix`. `tachesAppliquees` faux : le connecteur n'a pas pu poser le mode des tâches. */
+export interface ChoixHubspotEnregistre {
+  hubspotAnalyse: boolean;
+  hubspotPassage: boolean;
+  hubspotInjoignable: boolean;
+  hubspotReponse: boolean;
+  hubspotListsEnabled: boolean;
+  hubspotChoixValideLe: string | null;
+  routingMode: 'mm_routing' | 'hubspot_native' | null;
+  tachesAppliquees: boolean;
+  premiereValidation: boolean;
+}
+
+/**
+ * Enregistre le choix des fonctions HubSpot (admin, lot 1bis). 402 si l'on ALLUME une fonction que l'offre n'ouvre pas,
+ * 409 sans portail relié.
+ */
+export function putHubspotChoix(tenantId: string, choix: Omit<ChoixHubspot, 'taches'> & { taches?: boolean }): Promise<ChoixHubspotEnregistre> {
+  return request(`/tenants/${tenantId}/hubspot/choix`, { method: 'PUT', body: JSON.stringify(choix) });
 }
 
 /**

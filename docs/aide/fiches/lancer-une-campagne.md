@@ -1,7 +1,7 @@
 ---
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: f6c9f5
+source_empreinte: 9cabe5
 publique: oui
 rubrique: parler-aux-clients
 rang: 5

@@ -12,7 +12,6 @@ import { useT, useLocale } from '@/lib/i18n';
 import { fmtNum, fmtCost, sendingLimitLabel, mmLiteBadge, accountReviewBadge, businessVerificationBadge, type StatusBadge } from '@/lib/format';
 import {
   getMe, getSettings, getAccountStatus, setHubspotConnected, disconnectHubspot, deconnecterHubspotEspace, listPhoneNumbers,
-  setHubspotListsEnabled as saveHubspotListsEnabled,
   getStats, getTemplateStats, getCostSeries,
   demanderCodeNumero, activerNumero, lireBilanDeconnexion, deconnecterNumero,
   type MeResponse, type AccountStatusResponse, type CanalCodeNumero, type BilanDeconnexionNumero,
@@ -115,7 +114,6 @@ function AccueilInner({ session }: { session: Session }) {
    * API plus ancienne : le bloc garde alors le comportement d'avant (`affichageHubspotAccueil`).
    */
   const [hubspotActif, setHubspotActif] = useState<boolean | undefined>(undefined);
-  const [savingLists, setSavingLists] = useState(false);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -378,19 +376,6 @@ function AccueilInner({ session }: { session: Session }) {
     }
   }
 
-  async function toggleHubspotLists() {
-    if (!isAdmin) return;
-    const next = !hubspotListsEnabled;
-    setSavingLists(true);
-    setHubspotListsEnabled(next); // optimiste
-    try {
-      await saveHubspotListsEnabled(session.tenantId, next);
-    } catch {
-      setHubspotListsEnabled(!next); // rollback
-    } finally {
-      setSavingLists(false);
-    }
-  }
 
   // Ouvre le lien d'install/re-consentement HubSpot : le MÊME geste que la carte de Paramètres > Intégrations.
   const { ouvrir: openHubspotInstall, enCours: installPending } = useInstallationHubspot(session.tenantId, isAdmin);
@@ -871,34 +856,24 @@ function AccueilInner({ session }: { session: Session }) {
                     </Modale>
                   )}
 
-                  {/* Toggle « Campagnes via données HubSpot » : autorise l'import de listes HubSpot comme destinataires. */}
+                  {/* « Campagnes via données HubSpot » : un ÉTAT ici, le réglage vit dans Paramètres > Intégrations >
+                      HubSpot avec les autres choix (lot 1bis), pour qu'un seul endroit l'écrive. */}
                   <div className="mt-3 border-t border-ink-50 pt-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-ink-900">{t('Campagnes via données HubSpot', 'Campaigns from HubSpot data')}</div>
-                        <p className="mt-0.5 text-xs text-ink-500">{t('Importez une liste HubSpot comme destinataires de campagne.', 'Import a HubSpot list as campaign recipients.')}</p>
+                        <p className="mt-0.5 text-xs text-ink-500" data-testid="accueil-hubspot-listes">
+                          {hubspotListsEnabled
+                            ? t('Branché : vos listes HubSpot peuvent servir d’audience de campagne.', 'On: your HubSpot lists can be used as a campaign audience.')
+                            : t('Non branché.', 'Off.')}
+                        </p>
                       </div>
                       {isAdmin && (
-                        <Toggle
-                          checked={hubspotListsEnabled}
-                          onChange={toggleHubspotLists}
-                          disabled={savingLists}
-                          title={t("Activer/désactiver l’import de listes HubSpot", 'Enable/disable HubSpot list import')}
-                        />
+                        <Link href="/parametres#integration-hubspot" className="shrink-0 text-sm text-brand-600 hover:underline">
+                          {t('Régler ce qui est branché', 'Choose what is connected')}
+                        </Link>
                       )}
                     </div>
-                    {/* Activé mais scope crm.lists.read pas encore accordé -> CTA de re-consentement CIBLÉ (ajoute le
-                        scope à CE portail uniquement, sans re-solliciter les autres). */}
-                    {isAdmin && hubspotListsEnabled && !account.hubspotPortal.listsScopeGranted && (
-                      <button
-                        type="button"
-                        onClick={() => void openHubspotInstall('lists')}
-                        disabled={installPending}
-                        className="mt-2 inline-flex items-center rounded-controle bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 transition-colors duration-150 hover:bg-brand-100 disabled:opacity-60"
-                      >
-                        {t("Autoriser l’accès aux listes HubSpot →", 'Authorize access to HubSpot lists →')}
-                      </button>
-                    )}
                   </div>
                 </div>
               )}

@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 69abba
+source_empreinte: 60ab03
 publique: oui
 rubrique: demarrer
 rang: 3

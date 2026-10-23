@@ -1273,7 +1273,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
       seul point final, elle n'en a aucun par elle-même. Arrêter ne touche pas à l'historique déjà envoyé.
     - Supprimer une adresse dont une campagne vivante se nourrit est **refusé**, en nommant la campagne.
   - **🔗 HubSpot** (2026-07-18, sous « Autre ») : importe une **liste HubSpot** comme destinataires. Le bouton est actif seulement
-    si le toggle « Campagnes via données HubSpot » est activé (sur l'Accueil) **et** que la synchronisation HubSpot
+    si « Vos listes HubSpot comme audience de campagne » est branché (Paramètres > Intégrations > HubSpot) **et** que la synchronisation HubSpot
     n'est pas en pause : pendant une pause, la source est **grisée** avec l'explication au survol, au lieu d'ouvrir
     un panneau vide. On choisit une liste du portail (nom, nombre de contacts, active/statique), on importe ses
     contacts (taggés `HubSpot: <nom>`, opt-in accordé : la liste HubSpot en porte la preuve ; sauf à qui a répondu
@@ -2169,20 +2169,21 @@ scénario, comment importer des contacts.
   interrupteur ni pastille. Réservé aux administrateurs. Côté API : `POST /v1/sends` sur un numéro délié refuse en
   409 `number_unlinked` si le premier envoi part par WhatsApp (rien n'est créé, la clé d'idempotence est rendue ;
   une cible qui ouvre en RCS est acceptée), et l'outil MCP `reply_in_open_window` rend un refus lisible.
-- ✅ **Interrupteur HubSpot de l'espace** (2026-09-25, **Paramètres > Intégrations**, admin) : c'est lui, et non
-  plus la présence d'un numéro WhatsApp, qui fait apparaître le bloc HubSpot de l'Accueil. Un **espace neuf, sans
-  numéro**, peut donc connecter HubSpot : il allume l'interrupteur, et le bouton « Connecter HubSpot » apparaît
-  dans la carte des Intégrations comme sur l'Accueil, avec le lien vers le guide. La carte dit aussi si un portail
-  est relié, et lequel. **Éteint** par défaut sur un espace neuf ; les espaces déjà reliés à un portail l'ont
-  trouvé allumé. Éteint, l'Accueil n'affiche plus qu'une ligne discrète qui renvoie vers Paramètres >
-  Intégrations. ⚠️ **On ne l'éteint pas tant qu'un portail est relié** : l'interrupteur est grisé, avec la raison,
-  et il faut d'abord la « Déconnexion complète » de l'Accueil (sinon les analyses continueraient de partir vers
-  HubSpot depuis un espace où il paraît éteint). Sans numéro, cette déconnexion est un bouton du bloc HubSpot,
-  sans l'option « pause », qui se règle par numéro. Les fonctions HubSpot des campagnes et des automations
-  suivent toujours le portail relié, pas cet interrupteur.
-- ✅ **Toggle « Campagnes via données HubSpot »**, juste sous le bloc HubSpot : autorise l'import d'une liste HubSpot
-  comme destinataires de campagne. Tant que l'accès aux listes n'a pas été accordé, un bouton **« Autoriser l'accès
-  aux listes HubSpot »** demande ce droit au portail déjà connecté, sans re-solliciter le reste.
+- ✅ **Le client choisit ce qu'il branche entre Messaging Me et HubSpot** (2026-10-23, **Paramètres > Intégrations >
+  HubSpot**, admin). Sans portail, la carte propose « Connecter HubSpot », numéro WhatsApp ou pas. Au retour de la
+  connexion (faite dans un autre onglet, la carte se relit d'elle-même), elle demande **ce que vous branchez**, les
+  défauts cochés : la fiche contact et l'analyse de chaque conversation, la tâche immédiate quand un client demande
+  un humain, « Créer des tâches dans HubSpot » (éteint : les propriétés seulement, pour vos workflows HubSpot ; vaut
+  pour tout le portail), le contact injoignable sur WhatsApp, et vos listes HubSpot comme audience de campagne
+  (décochée ; un bouton **« Autoriser l'accès aux listes HubSpot »** demande ce droit au portail s'il manque).
+  Valider allume aussi la synchronisation du numéro principal : avant, une installation ne branchait rien. Ensuite,
+  chaque choix se change d'un interrupteur. Ce que l'offre n'ouvre pas se lit « Compris dans l'offre Entreprise » et
+  ne s'allume pas (il s'éteint toujours). Si « Créer des tâches » n'a pas pu être appliqué chez HubSpot, la carte
+  le dit ; si son état n'a pas pu être lu, la ligne est grisée. Les espaces qui synchronisaient déjà un numéro avant
+  ce jour gardent exactement ce qu'ils avaient, sans étape de choix. La carte
+  renvoie aussi vers Automations (le déclencheur « étape de deal ») et dit où placer la carte Messaging Me dans
+  HubSpot. Sur l'Accueil, le bloc HubSpot s'affiche dès qu'un portail est relié et dit si vos listes servent
+  d'audience, avec un lien vers le réglage. La déconnexion complète reste un geste du bloc HubSpot de l'Accueil.
 - ✅ **Guide « Configurer HubSpot avec Messaging Me »** (ouvert dans un nouvel onglet depuis l'Accueil ; le Guide
   MBA, qui y menait aussi, a été retiré le 2026-09-29) : connecter son compte HubSpot, **ajouter la carte Messaging Me sur la fiche contact** (Paramètres >
   Objets > Contacts > onglet Personnalisation de la fiche > Ajouter des cartes), et ce que cette carte affiche.
