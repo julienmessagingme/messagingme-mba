@@ -29,7 +29,6 @@ import { creerChiffrage } from './stats/chiffrage';
 
 import { cacheCourt } from './lib/cache-court';
 import { journaliser } from './lib/journal';
-import { ResendClient } from './support/resend';
 import { PgUserAuthStore } from './auth/store';
 import { PgMfaStore } from './auth/mfa-store.pg';
 import { estAdresseOps } from './auth/middleware';
@@ -278,7 +277,7 @@ async function main(): Promise<void> {
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
-    emailsProduit, envoyeurProduit, paiementRefuse, emetteurEmails, envoiApplication, comptesApplication, clientApplication,
+    emailsProduit, envoisResend, paiementRefuse, emetteurEmails, envoiApplication, comptesApplication, clientApplication,
   } = construireSocle({ pool, queue, config });
 
   /**
@@ -576,9 +575,9 @@ async function main(): Promise<void> {
   });
 
   // Envoi d'email auth (liens reset/invitation) : seulement si Resend est configuré, sinon undefined.
-  const sendAuthEmail = config.RESEND_API_KEY
+  const sendAuthEmail = envoisResend
     ? async ({ to, subject, text, html }: { to: string; subject: string; text: string; html?: string }) => {
-        await new ResendClient(config.RESEND_API_KEY).send({ from: `Messaging Me <${config.SUPPORT_FROM}>`, to, subject, text, ...(html ? { html } : {}) });
+        await envoisResend.produit({ to, subject, text, ...(html ? { html } : {}) });
       }
     : undefined;
   /**
@@ -2828,7 +2827,10 @@ async function main(): Promise<void> {
      * refuse tout), le lien de désinscription (signé par `AUTH_SECRET`, pour ce seul usage) et les préférences de la
      * personne connectée.
      */
-    opsEmails: { store: emailsProduit, envoyer: envoyeurProduit },
+    opsEmails: {
+      store: emailsProduit,
+      envoyer: envoisResend ? (message) => envoisResend.produit(message) : null,
+    },
     resendWebhook: {
       secret: config.RESEND_WEBHOOK_SECRET,
       noterEvenement: (resendId, ev, le) => emailsProduit.noterEvenementResend(resendId, ev, le),
@@ -2848,10 +2850,9 @@ async function main(): Promise<void> {
         : null,
     },
     support: {
-      enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
+      enabled: envoisResend !== null && !!config.SUPPORT_TO,
       getUserEmail: async (userId) => (await userStore.getById(userId))?.email ?? null,
       sendSupport: async ({ tenantId, userId, email, subject, message }) => {
-        const client = new ResendClient(config.RESEND_API_KEY);
         const text = [
           'Nouveau message de support (console MBA)',
           '',
@@ -2863,8 +2864,8 @@ async function main(): Promise<void> {
           '',
           message,
         ].join('\n');
-        await client.send({
-          from: config.SUPPORT_FROM,
+        if (envoisResend === null) throw new Error('Resend non configuré');
+        await envoisResend.support({
           to: config.SUPPORT_TO,
           subject: `[Support MBA] ${subject}`,
           text,
@@ -2876,10 +2877,10 @@ async function main(): Promise<void> {
     openapi: { contrat: contratOpenapi },
     // Même envoi et même destinataire que le support : le texte du courriel se construit dans la route (testée).
     contactVitrine: {
-      enabled: !!config.RESEND_API_KEY && !!config.SUPPORT_TO,
+      enabled: envoisResend !== null && !!config.SUPPORT_TO,
       envoyer: async ({ sujet, texte, repondreA }) => {
-        await new ResendClient(config.RESEND_API_KEY).send({
-          from: config.SUPPORT_FROM,
+        if (envoisResend === null) throw new Error('Resend non configuré');
+        await envoisResend.support({
           to: config.SUPPORT_TO,
           subject: sujet,
           text: texte,
