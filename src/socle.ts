@@ -77,7 +77,7 @@ import { PgCompteurDebit } from './db/debit.pg';
 import { creerDemarreurRepondeur, type DemarreurRepondeur } from './repondeur/demarrer';
 import { creerDemarreurScenario, type DemarreurScenario } from './repondeur/scenario';
 import { creerAlerteCreditEpuise } from './repondeur/alerte-credit';
-import { creerEnvoyeurProduit } from './support/resend';
+import { creerEnvoisResend } from './support/resend';
 import { PgEmailsProduitStore } from './emails-produit/store.pg';
 import { creerEmetteurEmails, FILE_EMAILS_PRODUIT } from './emails-produit/emission';
 import { creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe } from './emails-produit/alertes';
@@ -270,7 +270,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     fuseau: async (t) => (await settingsStore.get(t)).timezone,
     enfiler: (job) => queue.enqueue(FILE_EMAILS_PRODUIT, job, { groupId: job.tenantId }),
   });
-  const envoyeurProduit = config.RESEND_API_KEY ? creerEnvoyeurProduit(config.RESEND_API_KEY, `Messaging Me <${config.SUPPORT_FROM}>`) : null;
+  const envoisResend = config.RESEND_API_KEY ? creerEnvoisResend(config.RESEND_API_KEY, config.SUPPORT_FROM) : null;
   /** Les pages de la console vers lesquelles les e-mails du produit renvoient. */
   const console_ = config.APP_URL.trim().replace(/\/+$/, '');
   const pageCredit = `${console_}/parametres/credit`;
@@ -576,7 +576,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, connexionPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
-    emailsProduit, emetteurEmails, envoyeurProduit, paiementRefuse, prevenirEquipe, lienConversation,
+    emailsProduit, emetteurEmails, envoisResend, paiementRefuse, prevenirEquipe, lienConversation,
     comptesApplication, clientApplication, envoiApplication,
   };
 }

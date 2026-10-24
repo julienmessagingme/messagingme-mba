@@ -217,7 +217,7 @@ export async function demarrerWorker(): Promise<void> {
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
-    emailsProduit, emetteurEmails, envoyeurProduit, prevenirEquipe, lienConversation, quotaModeles, comptesApplication, clientApplication,
+    emailsProduit, emetteurEmails, envoisResend, prevenirEquipe, lienConversation, quotaModeles, comptesApplication, clientApplication,
   } = construireSocle({ pool, queue, config });
   // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : le cerveau des tours d'agent la lit.
   const commissionDeLEspace = commissionPour(offres);
@@ -954,7 +954,7 @@ export async function demarrerWorker(): Promise<void> {
     noterIgnore: (t, id, raison) => emailsProduit.noterIgnore(t, id, raison),
     actif: (cle) => emailsProduit.actif(cle),
     texteModifie: (cle, langue) => emailsProduit.texteModifie(cle, langue),
-    envoyer: envoyeurProduit,
+    envoyer: envoisResend ? (message) => envoisResend.produit(message) : null,
     secretDesinscription: config.AUTH_SECRET,
     baseApi: adressesPubliques(config.APP_URL, config.PUBLIC_API_URL).avecPrefixe,
   }), { concurrency: 2, groupConcurrency: 1 });

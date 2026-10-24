@@ -1,8 +1,11 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
-import { ResendClient } from '../src/support/resend';
+import { creerEnvoisResend, ResendClient } from '../src/support/resend';
 import type { FetchLike } from '../src/support/resend';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { SupportRouteDeps } from '../src/http/support';
@@ -68,6 +71,74 @@ describe('ResendClient.send', () => {
     await client.send({ from: 'a@x.fr', to: 'b@y.fr', subject: 'Hi', text: 'body' });
     const body = JSON.parse(calls[0]!.init.body as string);
     expect('html' in body).toBe(false);
+  });
+});
+
+describe('porte de sortie Resend', () => {
+  class FauxHttp {
+    readonly appels: Array<{ url: string; init: RequestInit }> = [];
+
+    async appeler(url: string, init: RequestInit): Promise<Response> {
+      this.appels.push({ url, init });
+      return { ok: true, status: 200, json: async () => ({ id: `em${this.appels.length}` }) } as Response;
+    }
+  }
+
+  it('partage clé et délai, tout en conservant les deux identités d’expéditeur', async () => {
+    const http = new FauxHttp();
+    const resend = creerEnvoisResend('cle-secrete', 'support@messagingme.app', (url, init) => http.appeler(url, init));
+
+    // Les propriétés sont volontairement des fermetures détachables : aucun `this` de ResendClient ne peut être perdu.
+    const envoyerProduit = resend.produit;
+    const envoyerSupport = resend.support;
+    await envoyerProduit({
+      to: 'client@example.com', subject: 'Produit', text: 'Corps',
+      headers: { 'List-Unsubscribe': '<https://example.com/non>' },
+      tags: [{ name: 'modele', value: 'bienvenue' }],
+      cleIdempotence: 'emails-produit/1',
+    });
+    await envoyerSupport({ to: 'equipe@example.com', subject: 'Support', text: 'Besoin', replyTo: 'client@example.com' });
+
+    expect(http.appels).toHaveLength(2);
+    const [produit, support] = http.appels.map((appel) => ({
+      corps: JSON.parse(appel.init.body as string) as Record<string, unknown>,
+      headers: appel.init.headers as Record<string, string>,
+      signal: appel.init.signal,
+    }));
+    expect(produit?.corps).toMatchObject({
+      from: 'Messaging Me <support@messagingme.app>',
+      headers: { 'List-Unsubscribe': '<https://example.com/non>' },
+      tags: [{ name: 'modele', value: 'bienvenue' }],
+    });
+    expect(produit?.headers).toMatchObject({ authorization: 'Bearer cle-secrete', 'idempotency-key': 'emails-produit/1' });
+    expect(support?.corps).toMatchObject({ from: 'support@messagingme.app', reply_to: 'client@example.com' });
+    expect(produit?.signal).toBeInstanceOf(AbortSignal);
+    expect(support?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('impose ses expéditeurs même face à une propriété runtime étrangère au contrat', async () => {
+    const http = new FauxHttp();
+    const resend = creerEnvoisResend('cle-secrete', 'support@messagingme.app', (url, init) => http.appeler(url, init));
+    const messageInjecte = { to: 'client@example.com', subject: 'Sujet', text: 'Corps', from: 'intrus@example.com' };
+
+    await resend.produit(messageInjecte);
+    await resend.support(messageInjecte);
+
+    const expediteurs = http.appels.map((appel) => (JSON.parse(appel.init.body as string) as { from: string }).from);
+    expect(expediteurs).toEqual(['Messaging Me <support@messagingme.app>', 'support@messagingme.app']);
+  });
+
+  it('interdit un second client Resend dans le code de production', () => {
+    const racine = fileURLToPath(new URL('../src', import.meta.url));
+    const fichiers = (dossier: string): string[] => readdirSync(dossier, { withFileTypes: true }).flatMap((entree) => {
+      const chemin = join(dossier, entree.name);
+      return entree.isDirectory() ? fichiers(chemin) : chemin.endsWith('.ts') ? [chemin] : [];
+    });
+    const horsModule = fichiers(racine)
+      .filter((chemin) => !chemin.endsWith(join('support', 'resend.ts')))
+      .filter((chemin) => /\bResendClient\b|api\.resend\.com/.test(readFileSync(chemin, 'utf8')))
+      .map((chemin) => relative(racine, chemin));
+    expect(horsModule).toEqual([]);
   });
 });
 
