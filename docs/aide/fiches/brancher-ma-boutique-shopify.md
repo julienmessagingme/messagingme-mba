@@ -6,12 +6,30 @@ publique: oui
 rubrique: parler-aux-clients
 rang: 6
 prerequis: connecter-mon-numero-whatsapp
+claude_code: oui
+bouton_claude: Brancher Shopify depuis Claude Code, gratuitement
+bouton_console: Brancher Shopify dans la console
+ancre_console: integration-shopify
 ---
 # Brancher ma boutique Shopify
 
 Vos clients Shopify reçoivent sur WhatsApp la **confirmation de leur commande payée**, l'**avis d'expédition** avec le
-transporteur et le lien de suivi, et une **relance s'ils abandonnent leur panier**. Depuis la console, la carte Shopify
-vous guide de bout en bout.
+transporteur et le lien de suivi, et une **relance s'ils abandonnent leur panier**. Le plus simple : le demander à
+**Claude Code**.
+
+## Depuis Claude Code, avec l'offre Free
+
+Installez le plugin Messaging Me dans Claude Code, puis demandez « branche ma boutique Shopify ». Claude crée l'app
+dans votre propre organisation Shopify (aucune validation de Shopify n'est nécessaire) ; vous n'avez qu'à vous
+connecter à Shopify et à cliquer « Installer ». Il vous propose ensuite le texte de chaque message, le fait approuver
+par Meta, et le branche. Il importe aussi vos clients abonnés à votre marketing, si vous le lui demandez.
+
+Les règles décrites plus bas (la relance, le consentement, STOP, la limite de contacts) sont les mêmes que depuis la
+console : les deux chemins passent par la même gestion.
+
+## Depuis la console, avec l'offre Pro
+
+Sans Claude Code, la carte Shopify de la console vous guide de bout en bout, en sept gestes.
 
 **1. Ouvrir la carte Shopify.** Dans Paramètres > Général, descendez jusqu'aux intégrations : la carte Shopify dit ce
 qu'elle fait et vous guide en deux étapes, la première chez Shopify, la seconde dans la console.
@@ -87,10 +105,3 @@ couper.
 Une demande d'effacement d'un client transmise par Shopify efface sa fiche ; une demande d'accès vous est signalée par
 e-mail, et c'est à vous de lui répondre. Une boutique branchée depuis la console ne nous transmet pas ces demandes :
 quand Shopify vous en transmet une, supprimez vous-même la fiche du client dans Contacts.
-
-## Depuis Claude Code
-
-Avec le plugin Messaging Me (toutes les offres, Free comprise), demandez « branche ma boutique Shopify ». Claude crée
-l'app dans votre propre organisation Shopify (aucune validation de Shopify n'est nécessaire) ; vous n'avez qu'à vous
-connecter à Shopify et à cliquer « Installer ». Il vous propose ensuite le texte de chaque message, le fait approuver
-par Meta, et le branche.

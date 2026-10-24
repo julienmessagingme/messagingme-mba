@@ -26,6 +26,8 @@ import { ACCUEIL_AIDE, NOMS_RUBRIQUES, pagesDuCentre, type Langue, type PageAide
 
 const ORIGINE = 'https://app.messagingme.fr';
 const CONSOLE = 'https://console.messagingme.app';
+/** La page qui installe le plugin et relie l'espace : là où mène le premier bouton d'une fiche `claude_code: oui`. */
+const PLUGIN: Readonly<Record<Langue, string>> = { fr: '/developpeurs/installer-le-plugin/', en: '/en/developers/install-the-plugin/' };
 const SITE = (p: string) => fileURLToPath(new URL(`../../site/${p}`, import.meta.url));
 const WEB = (p: string) => fileURLToPath(new URL(`../../web/${p}`, import.meta.url));
 const ORGANISATION = { '@id': 'https://www.messagingme.fr/#organisation' };
@@ -39,6 +41,8 @@ const T = {
     detail: 'En détail',
     bonASavoir: 'Bon à savoir',
     offre: `Avec l’offre Pro, ou pendant l’essai Pro de ${ESSAI_PRO_JOURS} jours.`,
+    offreClaude: `Gratuit depuis Claude Code, avec l’offre Free. Dans la console, avec l’offre Pro ou pendant l’essai Pro de ${ESSAI_PRO_JOURS} jours.`,
+    claudeCode: 'Le faire depuis Claude Code, gratuitement',
     ouvrir: (ecran: string) => `Ouvrir « ${ecran} » dans la console`,
     ouvrirConsole: 'Ouvrir la console',
     avant: 'D’abord :',
@@ -72,6 +76,8 @@ const T = {
     detail: 'In detail',
     bonASavoir: 'Good to know',
     offre: `With the Pro plan, or during the ${ESSAI_PRO_JOURS}-day Pro trial.`,
+    offreClaude: `Free from Claude Code, with the Free plan. In the console, with the Pro plan or during the ${ESSAI_PRO_JOURS}-day Pro trial.`,
+    claudeCode: 'Do it from Claude Code, for free',
     ouvrir: (ecran: string) => `Open “${ecran}” in the console`,
     ouvrirConsole: 'Open the console',
     avant: 'First:',
@@ -223,9 +229,12 @@ function pageAide(pages: PageAide[], p: PageAide, langue: Langue): { chemin: str
     `    <p class="aide-fil"><a href="${ACCUEIL_AIDE[langue]}">${T[langue].aide}</a> › <a href="${ACCUEIL_AIDE[langue]}#${p.publication.rubrique}">${rubrique}</a> › ${texte(v.titre, langue)}</p>`,
     `    <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg>${T[langue].aide}</span> ${texte(v.titre, langue)}</h1>`,
     `    <p class="chapeau">${enLigne(s.chapeau, langue)}</p>`,
-    ...(p.publication.offre ? [`    <p class="aide-offre">${langue === 'fr' ? insecables(T.fr.offre) : T.en.offre}</p>`] : []),
+    ...(p.publication.offre ? [`    <p class="aide-offre">${texte(p.publication.claudeCode ? T[langue].offreClaude : T[langue].offre, langue)}</p>`] : []),
     '    <div class="appels">',
-    `      <a class="bouton bouton-plein" href="${CONSOLE}${ecran?.href ?? '/'}${suffixeConsole}">${ecran ? texte(T[langue].ouvrir(ecran[langue]), langue) : T[langue].ouvrirConsole}</a>`,
+    // Un geste qui se fait aussi depuis Claude Code mène d'abord au plugin, gratuit ; la console vient en second.
+    ...(p.publication.claudeCode
+      ? [`      <a class="bouton bouton-plein" href="${PLUGIN[langue]}">${texte(v.boutonClaude ?? T[langue].claudeCode, langue)}</a>`] : []),
+    `      <a class="bouton ${p.publication.claudeCode ? 'bouton-trait' : 'bouton-plein'}" href="${CONSOLE}${ecran?.href ?? '/'}${suffixeConsole}${p.ancreConsole ? `#${p.ancreConsole}` : ''}">${v.boutonConsole ? texte(v.boutonConsole, langue) : ecran ? texte(T[langue].ouvrir(ecran[langue]), langue) : T[langue].ouvrirConsole}</a>`,
     ...(prerequis ? [`      <a class="bouton bouton-texte" href="${prerequis[langue].adresse}">${texte(`${T[langue].avant} ${prerequis[langue].titre}`, langue)} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`] : []),
     '    </div>',
     '  </div>',

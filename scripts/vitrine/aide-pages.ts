@@ -26,12 +26,18 @@ export interface VersionPage {
   adresse: string;
   titre: string;
   corps: string;
+  /** Le libellé du bouton de la console (`bouton_console` de l'en-tête), à la place de « Ouvrir « <écran> » ». */
+  boutonConsole: string | null;
+  /** Le libellé du bouton vers le plugin d'une fiche `claude_code: oui` (`bouton_claude`), à la place du libellé commun. */
+  boutonClaude: string | null;
 }
 
 /** Une page du centre d'aide : sa fiche, sa publication, et ses deux langues. */
 export interface PageAide {
   cle: string;
   ecran: string | null;
+  /** L'ancre de l'écran où mène le bouton de la console (`ancre_console`), une carte de Paramètres par exemple. */
+  ancreConsole: string | null;
   publication: PublicationFiche;
   fr: VersionPage;
   en: VersionPage;
@@ -54,12 +60,21 @@ export function pagesDuCentre(dossier: string = DOSSIER): PageAide[] {
       const en = lireFicheDuDepot(nom, texteEn);
       const slug = champDeFiche(texteEn, 'slug');
       if (slug === null) throw new Error(`docs/aide/fiches/en/${nom} : sans slug`);
+      const ancreConsole = champDeFiche(texte, 'ancre_console');
+      if (ancreConsole !== null && !/^[a-z0-9-]+$/.test(ancreConsole)) throw new Error(`${nom} : ancre_console « ${ancreConsole} »`);
       return [{
         cle: fr.cle,
         ecran: fr.ecran,
+        ancreConsole,
         publication,
-        fr: { adresse: `${ACCUEIL_AIDE.fr}${fr.cle}/`, titre: fr.titre, corps: fr.corps },
-        en: { adresse: `${ACCUEIL_AIDE.en}${slug}/`, titre: en.titre, corps: en.corps },
+        fr: {
+          adresse: `${ACCUEIL_AIDE.fr}${fr.cle}/`, titre: fr.titre, corps: fr.corps,
+          boutonConsole: champDeFiche(texte, 'bouton_console'), boutonClaude: champDeFiche(texte, 'bouton_claude'),
+        },
+        en: {
+          adresse: `${ACCUEIL_AIDE.en}${slug}/`, titre: en.titre, corps: en.corps,
+          boutonConsole: champDeFiche(texteEn, 'bouton_console'), boutonClaude: champDeFiche(texteEn, 'bouton_claude'),
+        },
       }];
     })
     .sort((a, b) => RUBRIQUES.indexOf(a.publication.rubrique) - RUBRIQUES.indexOf(b.publication.rubrique)

@@ -1272,6 +1272,8 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .aide-fil{font-size:.85rem;color:var(--muted);margin:0 0 .6rem}
 .aide-fil a{color:inherit}
 .aide-une .bouton-texte{white-space:normal;text-align:left}
+/* Le second chemin d'une page qui se fait aussi depuis Claude Code (la console) : la taille du premier, en trait. */
+.aide-une .bouton-trait{padding:.85em 1.45em;font-size:1rem}
 .aide-offre{font-size:.95rem;color:var(--muted);margin:-18px 0 30px;max-width:34em}
 .aide-grille{display:grid;grid-template-columns:250px minmax(0,1fr);gap:40px;align-items:start}
 .aide-nav{position:sticky;top:90px;font-size:.92rem}

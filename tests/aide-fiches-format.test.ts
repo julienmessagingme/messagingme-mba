@@ -246,8 +246,11 @@ describe('les fiches publiques', () => {
     expect(() => publicationDe(fiche('rubrique: demarrer\nrang: 0'))).toThrow(/rang/);
     expect(() => publicationDe(fiche('rubrique: demarrer\nrang: 2\ncaptures: peut-etre'))).toThrow(/captures/);
     expect(publicationDe('---\necran: offre\n---\n# T\n\nC.')).toBeNull();
+    expect(() => publicationDe(fiche('rubrique: demarrer\nrang: 2\nclaude_code: si'))).toThrow(/claude_code/);
     expect(publicationDe(fiche('rubrique: demarrer\nrang: 2'))).toEqual({
       rubrique: 'demarrer', rang: 2, commentFaire: false, captures: true, video: false, prerequis: null, offre: true,
+      claudeCode: false,
     });
+    expect(publicationDe(fiche('rubrique: demarrer\nrang: 2\nclaude_code: oui'))?.claudeCode).toBe(true);
   });
 });

@@ -168,6 +168,11 @@ export interface PublicationFiche {
   prerequis: string | null;
   /** La page dit l'offre qu'elle demande (le Pro) ; `offre: non` pour une page qui n'en demande pas. */
   offre: boolean;
+  /**
+   * Le geste se fait aussi depuis Claude Code, avec l'offre Free (`claude_code: oui`) : la page mène d'abord au plugin,
+   * et dit que la console demande le Pro.
+   */
+  claudeCode: boolean;
 }
 
 /** Un champ de l'en-tête `---` d'une fiche ; un champ vide vaut absent. */
@@ -204,6 +209,7 @@ export function publicationDe(texte: string): PublicationFiche | null {
     video: oui('video', false),
     prerequis: champDeFiche(texte, 'prerequis'),
     offre: oui('offre', true),
+    claudeCode: oui('claude_code', false),
   };
 }
 

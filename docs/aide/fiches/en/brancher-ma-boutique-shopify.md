@@ -1,12 +1,28 @@
 ---
 slug: connect-my-shopify-store
-traduit_de: 22448c
+traduit_de: 28f662
+bouton_claude: Connect Shopify from Claude Code, for free
+bouton_console: Connect Shopify in the console
 ---
 # Connect my Shopify store
 
 Your Shopify customers get on WhatsApp the **confirmation of their paid order**, the **shipping notice** with the
-carrier and the tracking link, and a **reminder if they abandon their checkout**. From the console, the Shopify card
-guides you from start to finish.
+carrier and the tracking link, and a **reminder if they abandon their checkout**. The simplest way: ask **Claude
+Code**.
+
+## From Claude Code, with the Free plan
+
+Install the Messaging Me plugin in Claude Code, then ask “connect my Shopify store”. Claude creates the app in your own
+Shopify organization (no Shopify review is needed); all you have to do is sign in to Shopify and click “Install”. It
+then suggests the text of each message, has it approved by Meta, and connects it. It also imports your customers
+subscribed to your marketing, if you ask it to.
+
+The rules described below (the reminder, consent, STOP, the contact limit) are the same as from the console: both paths
+go through the same management.
+
+## From the console, with the Pro plan
+
+Without Claude Code, the Shopify card of the console guides you from start to finish, in seven steps.
 
 **1. Open the Shopify card.** In Settings > General, scroll down to the integrations: the Shopify card says what it
 does and guides you in two steps, the first at Shopify, the second in the console.
@@ -80,9 +96,3 @@ message goes out even when the agent or your team holds the conversation, withou
 An erasure request from a customer forwarded by Shopify erases their record; an access request is reported to you by
 email, and it is up to you to answer it. A store connected from the console does not forward these requests to us:
 when Shopify forwards one to you, delete the customer’s record yourself in Contacts.
-
-## From Claude Code
-
-With the Messaging Me plugin (every plan, Free included), ask “connect my Shopify store”. Claude creates the app in your
-own Shopify organization (no Shopify review is needed); all you have to do is sign in to Shopify and click “Install”.
-It then suggests the text of each message, has it approved by Meta, and connects it.

@@ -73,6 +73,10 @@ export function ReglageShopify({ tenantId }: { tenantId: string }) {
     .catch((e: unknown) => setLecture(routeInconnue(e) ? 'absente' : 'echec')), [tenantId]);
 
   useEffect(() => { void recharger(); }, [recharger]);
+  // La page d'aide publique renvoie ici par `#integration-shopify` ; la carte n'existe qu'après sa propre lecture.
+  useEffect(() => {
+    if (lecture !== 'en_cours' && window.location.hash === '#integration-shopify') document.getElementById('integration-shopify')?.scrollIntoView();
+  }, [lecture]);
   // Un message en validation chez Meta s'active seul : la carte se relit tant qu'il y en a un, pour le montrer.
   const enValidation = (vue?.attentes.length ?? 0) > 0;
   useEffect(() => {

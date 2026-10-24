@@ -2046,7 +2046,7 @@ scénario, comment importer des contacts.
   - Chaque étape a sa **capture de la vraie console** (avec des données inventées), qui s'ouvre en grand d'un clic ;
     la suite de l'étape se déplie sous « En détail ».
   - Un menu à gauche, avec une recherche qui ignore les accents ; la page dit l'offre qu'elle demande, mène à l'écran
-    de la console, et son lien « Une question sans réponse ? » ouvre le formulaire de contact en citant la page.
+    de la console (d'abord au plugin de Claude Code, gratuit, quand le geste s'y fait aussi : Shopify), et son lien « Une question sans réponse ? » ouvre le formulaire de contact en citant la page.
   - **Les mêmes textes que l'aide de la console** : une page est une fiche du mode d'emploi publiée, corriger l'une
     corrige l'autre.
 - ✅ **Depuis Claude Code** : quatre pages développeurs (installer le plugin et relier son espace, connecter son
