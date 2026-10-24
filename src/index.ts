@@ -32,7 +32,7 @@ import { journaliser } from './lib/journal';
 import { PgUserAuthStore } from './auth/store';
 import { PgMfaStore } from './auth/mfa-store.pg';
 import { estAdresseOps } from './auth/middleware';
-import type { ActionMfa } from './auth/mfa-routes';
+import type { ActionMfa } from './auth/mfa';
 import { PgUserStore } from './user/store.pg';
 import { PgAuthTokenStore } from './auth/token-store.pg';
 import { verifyGoogleIdToken } from './auth/google';

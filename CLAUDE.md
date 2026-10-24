@@ -459,6 +459,11 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
 - 🔴 **Sous un verrou consultatif, toute requête de l'opération passe par le client qui tient le verrou, jamais
   par `this.pool`** : N appels concurrents tenant chacun une connexion et en attendant une seconde gèlent le pool,
   et un faux pool de test n'a pas de limite. Revenu en revue le 2026-10-15 (`utilisations(tenant, code, q)`).
+- 🔴 **UNE MÉTHODE D'UN STORE INJECTÉ S'APPELLE SUR SON OBJET, JAMAIS DÉTACHÉE** (2026-10-22). Le vrai store est
+  une classe dont les méthodes lisent `this.pool` ou une autre propriété d'instance : `const f = store.methode` et
+  `{ methode: store.methode }` perdent ce `this`, même si TypeScript accepte le câblage. Passer le store entier reste
+  le défaut ; une flèche ou `.bind(store)` n'est utilisée que si l'interface exige une fonction. Le test de câblage
+  emploie alors une classe dont la méthode lit `this`, jamais seulement un objet de `vi.fn` qui masquerait la panne.
 - 🔴 **AVANT DE COMMITER, ÉNUMÉRER LES DÉPENDANTS DE CE QU'ON A CHANGÉ** (2026-09-04). La seule des règles de
   ce bloc qui soit VÉRIFIABLE de l'extérieur : Julien peut réclamer la liste. Pour chaque symbole, constante ou
   requête touchée : qui la LIT, qui suppose son ancienne valeur, quelle constante d'un AUTRE fichier doit lui
