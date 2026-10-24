@@ -5,6 +5,30 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-24 : la marche arrière des outils MCP, lot 7 (le fil que l'agent de Meta tient en veille)
+
+Le lot 7 (`ae0b3c36`) traite le seul jaune 1 de la relecture du lot 6 (décision de Julien), après un essai réel qui
+l'a cerné, et il est déployé le même jour sur `mba-api`, `mba-worker` et `mba-worker-analyse`.
+
+- **Le défaut** : sur un fil que notre colonne donne à l'agent de Meta alors qu'il n'est pas le répondeur (en veille,
+  confié par un bloc « Envoyer au MBA »), rendre la main écrivait `app_workflow` sans rien demander à Meta. L'agent
+  gardait le fil et répondait au message suivant, et `control_conversation` annonçait « personne ne répondra seul ».
+- **Ce que l'essai a montré avant le code** (« Messaging Me Tech SANDBOX ») : la console n'y mène pas, l'Inbox n'offre
+  que « Reprendre la main » sur un fil `mba` ; seul l'outil de Claude, qui ne regarde pas le détenteur, y menait. Un
+  mot-clé ne démarre pas sur un fil tenu par l'équipe, et une automation a un anti-rebond d'une heure par défaut
+  (`AUTOMATION_COOLDOWN_SECONDS`) : deux pièges de l'essai, pas des défauts.
+- **Le correctif** : `rendre` (`src/inbox/fil.ts`) REPREND le fil à l'agent en veille, comme « Reprendre la main »
+  (retrait de la liste, puis `app_workflow`, la frise dit `prise_mba`) ; Meta qui refuse le retrait lève
+  `AgentDeMetaGardeLeFil`, rien n'est écrit, et l'outil comme la route `/release` le disent. En mode `mba`, rien ne
+  change. Relecture indépendante sans rouge (sept jaunes au `todo.md`), 5 mutations dans les deux sens.
+- ⚠️ **Le lot B de la session Shopify touchait deux des mêmes fichiers** (`src/mcp/outils.ts`, `src/http/inbox.ts`) :
+  l'arbre FUSIONNÉ a été extrait et vérifié (typecheck, lint, 391 tests) avant le push, pas seulement la copie du lot.
+- ⚠️ **Les dépendances du dossier partagé sont restées en zod 4.4.3** après la montée à 4.6.7 : `sdk-contrat` y échoue
+  en local (contrat régénéré avec 4.6), sans lien avec un lot ; la CI installe les bonnes versions.
+- **Essai réel après le déploiement**, Claude connecté à la SANDBOX : ESSAI17 confie le fil, `hand_back` par Claude le
+  reprend (`prise_mba`, hors de la liste), la question suivante n'a aucune réponse de l'agent et entre dans « À
+  traiter ». La SANDBOX est remise sur l'agent de Meta.
+
 ## 2026-10-24 : écrire en premier sur un numéro relié par QR code, et Shopify dessus (lots A et B)
 
 Conception `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md`, plan
