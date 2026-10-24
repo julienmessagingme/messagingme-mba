@@ -352,3 +352,24 @@ tient, il répond).
 vérifiée dans les deux sens, sur le vrai contrôle du fil (`bancDuFil`). Pas de câblage partagé, aucune migration.
 **Déploiement** : API et workers, avec l'accord de Julien. **Essai réel** : Claude connecté à la SANDBOX (mode
 « équipe », agent de Meta en veille) : ESSAI17, puis `hand_back` par Claude, puis une question : l'agent de Meta se tait.
+
+## Suite : les jaunes qui touchent un client, et les textes faux (2026-10-24, lot 8)
+
+Un lot court (décision de Julien) : les trois jaunes qui peuvent atteindre un client, et les textes que les lots 6 et 7
+ont rendus faux. Le reste attend dans `todo.md`.
+
+1. **La confirmation des liens tracés (`src/templates/gestion.ts`)** : après une soumission acceptée, elle est retentée
+   (trois essais) puis, si elle échoue encore, journalisée en ERREUR (`liens_traces_non_confirmes`) : sans elle, chaque
+   envoi du modèle part sans son suffixe (131008), et rien ne le disait.
+2. **Un contact STOP ou bloqué que l'agent de Meta tient en veille** : le refus de `hand_back` nomme `take_over`, qui
+   le lui reprend sans rien écrire au contact.
+3. **`restaurer` ne remet que les liens confirmés** : écrit comme limite connue (le point 1 rend son préalable rare ; le
+   corriger demande une lecture neuve du store et son test d'intégration).
+4. **Les textes** : la puce « Rendre la main » de `features.md` (et l'empreinte de sa fiche), `rendAgentDeMeta`
+   (`fil.ts`, `store.pg.ts`, manuel), la doc de `releaseControl` et le journal de `/release`, deux phrases du manuel.
+
+**Méthode de livraison** : en direct, dans une copie à part de `main`, puis une relecture indépendante ; chaque garde
+vérifiée dans les deux sens. Pas de câblage partagé, aucune migration, aucune route neuve. **Déploiement** : API et
+workers, avec l'accord de Julien, puis `aide:charger` (l'empreinte d'une fiche publique change). **Essai réel** : aucun
+geste client nouveau à cliquer ; la journalisation de l'échec de confirmation ne se provoque pas en production sans
+casser la base, elle est tenue par son test vérifié dans les deux sens.

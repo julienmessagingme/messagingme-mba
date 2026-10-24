@@ -196,7 +196,9 @@ export interface InboxRouteDeps extends DepsRepondre {
    * Meta (le contact sur la liste de l'agent, puis `release`) pour que l'agent de Meta redevienne le répondeur
    * principal, au prochain message du client. Un ajout à la liste refusé remonte (409 lisible) et notre état local
    * ne bouge pas : il ne doit pas annoncer ce que Meta n'a pas fait. Un `release` refusé n'en est pas un : l'agent
-   * tenait déjà le fil (`ControleDuFil.rendreLaMain`).
+   * tenait déjà le fil (`ControleDuFil.rendreLaMain`). Sur un fil que l'agent tient alors qu'il n'est pas le
+   * répondeur (en veille), le geste le lui REPREND (retrait de la liste) pour le rendre à nos robots ; un retrait
+   * refusé lève `AgentDeMetaGardeLeFil` (409 lisible), rien n'est écrit.
    * `'aucun_numero'` : l'agent de Meta est allumé mais aucun numéro n'est connecté, il ne peut rien reprendre, et
    * rien n'est écrit.
    */
@@ -1048,8 +1050,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const ctx = await deps.inbox.getConversationContext(conversationId, tenant);
     if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
     /**
-     * Un échec chez Meta sort en 4xx, pas en 500 : rendre la main met le contact sur la liste de l'agent avant
-     * d'écrire notre état, et l'opérateur doit le savoir. Notre état local n'a alors pas bougé (`releaseControl`
+     * Un échec chez Meta sort en 4xx, pas en 500 : rendre la main met le contact sur la liste de l'agent (ou l'en
+     * retire, quand l'agent est en veille) avant d'écrire notre état, et l'opérateur doit le savoir. Notre état local n'a alors pas bougé (`releaseControl`
      * écrit après Meta) : l'écran continue d'annoncer que l'opérateur tient le fil, ce qui est vrai.
      */
     let owner: 'app_workflow' | 'mba' | 'aucun_numero';
@@ -1057,7 +1059,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       owner = await deps.releaseControl(tenant, ctx.waId, parLaSession(req));
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error(`release: l’agent de Meta n’a pas pu prendre la conversation (${tenant}/${ctx.waId}):`, messageDe(err));
+      console.error(`release: Meta a refusé le changement de main (${tenant}/${ctx.waId}):`, messageDe(err));
       // Un fil que l'agent de Meta tient en veille : Meta a refusé de le lui reprendre (`rendreLaMain`), il le garde.
       if (err instanceof AgentDeMetaGardeLeFil) {
         return reply.code(409).send({ error: 'L’agent de Meta garde la conversation : Meta a refusé de la lui reprendre. Réessayez dans un instant.' });

@@ -1417,8 +1417,10 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
     « automatique : scénario Bienvenue », « automatique : délai de reprise écoulé ». Un geste fait par une clé
     d'API porte « par une clé d'API ». Seul un collaborateur supprimé depuis s'affiche « ancien collaborateur ».
   - **Une prise** (un collaborateur qui prend la conversation pour lui) se lit « Prise en charge », par lui.
-  - **« Rendre la main » se lit toujours « Rendue à l'agent de Meta »**, y compris sur un fil que la console
-    croyait déjà à l'agent.
+  - **« Rendre la main » se lit selon où va le fil** : « Rendue à l'agent de Meta » quand il est le répondeur, y
+    compris sur un fil que la console croyait déjà à l'agent ; « Rendue au scénario » quand l'équipe le rend aux
+    robots ; « Prise à l'agent de Meta » quand le geste reprend à l'agent, en veille, un fil qu'un scénario lui avait
+    confié.
   - **Un geste sans effet n'apparaît pas** : réassigner à la même personne, archiver une conversation déjà
     archivée. Les réponses de l'agent de Meta et des collaborateurs n'y sont pas non plus : le fil les montre.
   - **Lecture seule** : les gestes restent dans l'en-tête du fil, et le panneau se relit après chacun d'eux,

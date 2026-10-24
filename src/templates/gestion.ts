@@ -5,6 +5,7 @@ import { porteDesChamps, refusChampsUrl } from '../links/champs-url';
 import { appliquerLiens, boutonsTracables, cleBouton, codeDuLienTrace, rehabillerBoutons } from '../links/rewrite';
 import type { CibleLien, DestinationLien, LienTrace } from '../links/tracked-links.pg';
 import { messageDe } from '../lib/erreur';
+import { journaliser } from '../lib/journal';
 import type { ClientModeles, CreateTemplateInput, TemplateButton, TemplateSummary, StatutModele } from '../meta/templates';
 
 /** Les écritures et lectures nécessaires au cycle de vie d'un modèle WhatsApp. */
@@ -136,6 +137,34 @@ async function liensConfirmes(deps: DepsGestionModeles, tenant: string, name: st
   }
 }
 
+/** Les essais de la confirmation des liens après une soumission acceptée, et la pause entre deux (multipliée par l'essai). */
+const ESSAIS_CONFIRMATION = 3;
+const PAUSE_CONFIRMATION_MS = 100;
+
+/**
+ * Confirme les liens d'un modèle que le fournisseur vient d'accepter. 🔴 Sans confirmation, l'envoi ne lit pas ces liens
+ * (`listByTemplates` ne rend que les confirmés) : chaque envoi du modèle partirait sans la partie variable de leur
+ * adresse, et Meta le refuserait (131008), sans que rien ne le dise. Retentée (un raté passager de la base passe au
+ * second essai), puis journalisée en ERREUR avec l'espace, le modèle et les codes, pour réparer à la main ; jamais un
+ * échec du geste : le modèle est accepté chez le fournisseur. ⚠️ Limite connue : si Meta refuse plus tard une édition de
+ * ce modèle, `restaurer` ne remet que les liens confirmés, et la destination d'un lien resté non confirmé garde celle de
+ * l'édition refusée.
+ */
+async function confirmerLesLiens(deps: DepsGestionModeles, tenant: string, input: CreateTemplateInput, codes: string[]): Promise<void> {
+  for (let essai = 1; ; essai += 1) {
+    try {
+      await deps.tracking.liens.confirm(tenant, codes);
+      return;
+    } catch (err) {
+      if (essai >= ESSAIS_CONFIRMATION) {
+        journaliser('error', 'liens_traces_non_confirmes', { tenantId: tenant, nom: input.name, langue: input.language, codes, erreur: messageDe(err) });
+        return;
+      }
+      await new Promise((r) => setTimeout(r, PAUSE_CONFIRMATION_MS * essai));
+    }
+  }
+}
+
 /**
  * Soumet une création ou une édition en gardant `tracked_links` aligné sur ce que porte réellement le fournisseur.
  * Les compensations sont best-effort : un modèle accepté ne redevient jamais un échec HTTP à cause de la mesure.
@@ -174,14 +203,7 @@ async function soumettreAvecLiens<T>(
     await restaurer();
     throw err;
   }
-  if (prep.codes.length > 0) {
-    try {
-      await deps.tracking.liens.confirm(tenant, prep.codes);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('confirmation des liens tracés ignorée:', messageDe(err));
-    }
-  }
+  if (prep.codes.length > 0) await confirmerLesLiens(deps, tenant, input, prep.codes);
   const soumis = new Set([...(prep.aSoumettre.buttons ?? []), ...(prep.aSoumettre.carousel?.cards ?? []).flatMap((c) => c.buttons ?? [])]
     .map((b) => (b.type === 'URL' ? codeDuLienTrace(b.url ?? '') : null)));
   const perimes = avant.map((l) => l.code).filter((c) => !prep.codes.includes(c) && !soumis.has(c));

@@ -106,7 +106,8 @@ export interface EcritureDuFil {
   ouvreUneDemande?: boolean;
   /**
    * Ce geste REND le fil à l'agent de Meta, quelle que soit la valeur écrite : l'événement est `rendue_mba`. Seul
-   * « Rendre la main » sur un fil que notre colonne croit déjà à l'agent le pose, parce qu'il y écrit `app_workflow`
+   * « Rendre la main » sur un fil que notre colonne croit déjà à l'agent, QUAND il est le répondeur (mode `mba`), le
+   * pose (en veille, le geste le lui reprend : `prise_mba`, la règle des colonnes), parce qu'il y écrit `app_workflow`
    * et que la règle des colonnes lirait alors un fil qui QUITTE l'agent (`prise_mba`), l'inverse du geste.
    */
   rendAgentDeMeta?: boolean;

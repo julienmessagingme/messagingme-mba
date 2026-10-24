@@ -968,12 +968,13 @@ export const OUTILS: OutilMcp[] = [
       const stop = await deps.estDesabonne(tenantId, ctx.waId);
       if (stop && !sansRepondeur) {
         throw new RefusOutil('ce contact a demandé à ne plus recevoir de messages (STOP) : aucun robot ne reprendra sa '
-          + 'conversation');
+          + 'conversation. Si l’agent de Meta la tient encore, take_over la lui reprend, sans rien écrire au contact');
       }
       const bloque = !stop && await deps.contacts.isBlockedByWaId(tenantId, ctx.waId);
       if (bloque && !sansRepondeur) {
-        throw new RefusOutil('ce contact est bloqué : aucun robot ne reprendra sa conversation. Une personne connectée peut '
-          + 'le débloquer d’abord (block_contact, blocked false), si c’est sa décision');
+        throw new RefusOutil('ce contact est bloqué : aucun robot ne reprendra sa conversation. Si l’agent de Meta la tient '
+          + 'encore, take_over la lui reprend, sans rien écrire au contact. Une personne connectée peut le débloquer d’abord '
+          + '(block_contact, blocked false), si c’est sa décision');
       }
       let detenteur: IssueRendreLaMain | 'contact_muet';
       try {

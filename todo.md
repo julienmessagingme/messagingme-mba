@@ -1,28 +1,29 @@
 # todo.md : backlog
 
-## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 7 (2026-10-24)
+## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 8 (2026-10-24)
 
 Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`).
 
-1. **Un contact STOP ou bloqué dont l'agent de Meta tient le fil en veille, en mode `agent` ou `scenario`** :
-   `hand_back` le refuse AVANT `rendre` (`src/mcp/outils.ts`), et l'agent garde le fil et peut lui répondre. Laisser
-   passer la reprise sur un fil `mba` (elle ne fait que retirer de la liste, nos robots relisent STOP), ou faire pointer
-   le refus vers `take_over`. Rare (un contact confié puis devenu STOP).
-2. **`features.md` (section Inbox, « Rendre la main » se lit toujours « Rendue à l'agent de Meta »)** : faux en veille,
-   où la frise dit « Prise à l'agent de Meta » (et déjà faux depuis RC6 pour équipe vers scénario). Réécrire la puce,
-   `aide-proposer` avant de pousser.
-3. **Commentaires et doc** : `rendAgentDeMeta` (`fil.ts`, `store.pg.ts`, `documentation.md`) « quand il est le
-   répondeur (mode `mba`) » ; la doc de `releaseControl` et son commentaire (« rendre la main met le contact sur la
-   liste ») ; le journal de `/release` (« n'a pas pu prendre ») pour le refus inverse ; la phrase ajoutée au manuel
-   (« Hors du mode `mba` ») : `/release` n'atteint une colonne `mba` que depuis un écran périmé, dans tous les modes.
-4. **Une panne de notre table sur la reprise** se lit comme un refus de Meta (« elle reste à l'équipe », « de votre
+1. **Le refus STOP ou bloqué de `hand_back` nomme `take_over` comme un outil** (`src/mcp/outils.ts`), alors que c'est
+   une action de `control_conversation` : écrire « control_conversation (action take_over) », et la regex du test.
+2. **`take_over` sur un contact STOP ou bloqué, en mode `agent` ou `scenario`**, écrit `app_human` : en Free, sans
+   Inbox, la conversation n'en sort qu'au délai de reprise (`hand_back` reste refusé). Pas une régression (l'agent de
+   Meta gardait le fil) ; une demi-phrase dans le refus le dirait.
+3. **`src/http/inbox.ts`**, commentaire de la route `/release` : une ligne réécrite dépasse le gabarit du fichier.
+
+## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 7 (2026-10-24)
+
+Relecture sans rouge. Le lot 8 a traité le refus STOP ou bloqué (il nomme `take_over`), la puce de `features.md` et
+les textes ; restent ces points (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`).
+
+1. **Une panne de notre table sur la reprise** se lit comme un refus de Meta (« elle reste à l'équipe », « de votre
    côté »), faux sur un fil `mba`. Un message neutre, ou une erreur qui ne vient pas de Meta en 500.
-5. **Pas de garde `only` sur l'écriture qui suit la reprise** : un opérateur qui écrit pendant le retrait (jusqu'à 2 s
+2. **Pas de garde `only` sur l'écriture qui suit la reprise** : un opérateur qui écrit pendant le retrait (jusqu'à 2 s
    de rejeu) voit son `app_human` écrasé. Cohérent avec les autres branches (le dernier gagne) ; `only: ['mba']` et une
    issue honnête si l'on veut le protéger.
-6. **Deux cas qui changent sans test** : agent de Meta éteint (`mbaEnabled: false`, fil `mba`, contact sur la liste) et
+3. **Deux cas qui changent sans test** : agent de Meta éteint (`mbaEnabled: false`, fil `mba`, contact sur la liste) et
    mode `application`, ajouter à la boucle de `tests/repondeur-modes.test.ts`.
-7. **Ergonomie** : après le 409 « l'agent de Meta garde la conversation », l'écran garde « Rendre la main » ; la route
+4. **Ergonomie** : après le 409 « l'agent de Meta garde la conversation », l'écran garde « Rendre la main » ; la route
    pourrait rendre le détenteur courant.
 
 ## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 6 (2026-10-24)
@@ -32,20 +33,15 @@ Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowe
 1. **La phrase « équipe » de `hand_back` sur un mode relu autrement** (le cas du fil tenu par l'agent de Meta en veille
    est traité au lot 7) : l'outil lit « équipe », le fil relit `agent` ou `scenario` (le mode a changé entre les deux
    lectures), et la phrase « personne ne répondra seul » sort quand même. Rare.
-2. **`restaurer` (`gestion.ts`) ne remet que les liens confirmés** (préexistant, désormais atteignable par l'outil) : si
-   Meta refuse la correction d'un modèle dont la ligne n'était pas confirmée, la destination réécrite par `allocate`
-   reste, et le modèle en service redirige vers l'adresse de la correction refusée. Relire aussi les lignes non
-   confirmées de ce nom et de cette langue, ou l'écrire comme limite.
-3. **Un lien tracé non confirmé casse l'envoi** (préexistant) : `suffixesPourUnEnvoi` et la campagne ne lisent que les
-   liens confirmés ; après une confirmation ratée, chaque envoi part sans `{{1}}` (131008), et rien ne le signale.
-   Retenter la confirmation, ou l'alerter.
-4. **`documentation.md`** « Aucun robot n'y reçoit le contact » : à limiter à nos robots (scénario, agent IA), comme la
-   phrase de l'outil.
-5. **`getByCode` est entré dans le contrat de la gestion**, qui ne l'appelle pas (seul l'outil le lit) : chaque faux de
+2. **`restaurer` (`gestion.ts`) ne remet que les liens confirmés**, écrit comme limite au lot 8 (commentaire de
+   `confirmerLesLiens`) : la confirmation, désormais retentée trois fois puis journalisée en erreur
+   (`liens_traces_non_confirmes`), rend son préalable rare. Le corriger demande une lecture neuve du store (les lignes
+   non confirmées de ce nom et de cette langue) et son test d'intégration.
+3. **`getByCode` est entré dans le contrat de la gestion**, qui ne l'appelle pas (seul l'outil le lit) : chaque faux de
    la gestion doit l'écrire. Une dépendance propre à `DepsModelesMcp` coûterait un câblage dans `src/index.ts`. Mineur.
-6. **`features.md`** (section Modèles) ne cite pas le modèle sans corps parmi les blocages de l'édition (empreinte des
+4. **`features.md`** (section Modèles) ne cite pas le modèle sans corps parmi les blocages de l'édition (empreinte des
    deux fiches à mettre à jour avec). Facultatif.
-7. À savoir : le test « lien non confirmé » de `tests/mcp-modeles.test.ts` équivaut au cas « tracé » (le faux ignore la
+5. À savoir : le test « lien non confirmé » de `tests/mcp-modeles.test.ts` équivaut au cas « tracé » (le faux ignore la
    confirmation) ; la propriété est tenue par `tests/integration/stores.integration.test.ts` (`getByCode` avant `confirm`).
 
 ## 🟡 Le choix des fonctions HubSpot : ce que la relecture du lot 1bis laisse (2026-10-23)

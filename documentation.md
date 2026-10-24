@@ -1857,8 +1857,9 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   PUIS `escaladee`. Une escalade qui sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`,
   `non_traitee`, avec sa cause). Le type se lit sur
   les colonnes (le fil quitte `mba` : prise ; il y va : rendu), SAUF quand l'écriture le dit
-  (`EcritureDuFil.rendAgentDeMeta`) : « Rendre la main » sur un fil que notre colonne croit déjà `mba` écrit
-  `app_workflow`, et les colonnes y liraient une prise. La rétention est
+  (`EcritureDuFil.rendAgentDeMeta`) : « Rendre la main » sur un fil que notre colonne croit déjà `mba`, quand l'agent
+  est le répondeur, écrit `app_workflow`, et les colonnes y liraient une prise (en veille, c'en est une : le geste le
+  lui reprend, `prise_mba`). La rétention est
   celle de la conversation (`on delete cascade`). La migration amorce le journal depuis l'état réel (cause
   `CAUSE_AMORCAGE`), une ligne par fait daté.
   ⚠️ **L'en-tête de la migration 0192 est inexact sur deux points** (relecture du 2026-09-29 ; le fichier est
@@ -3362,7 +3363,7 @@ l'activer, et d'ouvrir une recharge du crédit.
   l'agent de Meta sans la garde du consentement, et l'outil s'ouvre derrière une clé d'API). En mode « équipe » (lu
   sous l'offre, `sousLOffre`, comme le contrôle du fil), il la rend, pour tout contact, et le DIT (`repondeur`,
   `a_savoir`, qui nomme aussi le STOP ou le blocage) : le geste sort la conversation d'« À traiter » et rend un
-  parcours qui attendait le contact, seul moyen d'une Free sans Inbox. Aucun robot n'y reçoit le contact : l'outil
+  parcours qui attendait le contact, seul moyen d'une Free sans Inbox. Aucun de nos robots n'y écrit au contact : l'outil
   passe par `rendreLaMainSousConsentement`, qui refuse de confier un contact STOP ou bloqué à l'agent de Meta
   (`contact_muet`, rien n'est écrit) sur le mode qu'il relit LUI-MÊME au moment de confier (un mode passé à `mba`
   après la lecture de l'outil ne passe donc pas), et les robots relisent STOP ou bloqué avant d'écrire
@@ -3370,8 +3371,10 @@ l'activer, et d'ouvrir une recharge du crédit.
   Sur un fil que l'agent de Meta tient sans être le répondeur (en veille, confié par un bloc « Envoyer au MBA »),
   rendre la main le lui REPREND (retrait de la liste, comme « Reprendre la main ») avant de le rendre aux robots, par
   l'outil comme par la console (lot 7) : sinon il gardait le fil chez Meta et répondait au message suivant. Meta qui
-  refuse le retrait : `AgentDeMetaGardeLeFil`, un refus lisible, rien n'est écrit. Hors du mode `mba`, l'Inbox n'offre
-  d'ailleurs que « Reprendre la main » sur un tel fil ; l'outil, qui ne regarde pas le détenteur, y menait seul.
+  refuse le retrait : `AgentDeMetaGardeLeFil`, un refus lisible, rien n'est écrit. Sur un fil `mba`, l'Inbox n'offre que
+  « Reprendre la main », dans tous les modes : la route `/release` ne l'atteint que depuis un écran périmé, et l'outil,
+  qui ne regarde pas le détenteur, y menait seul. Un contact STOP ou bloqué reste refusé par l'outil hors du mode
+  « équipe », et le refus nomme `take_over`, qui reprend le fil à l'agent de Meta sans rien écrire au contact (lot 8).
   `prepare_resume` rend le motif de la pause et sa phrase (`pauseDe`, lu hors de l'empreinte du code, et
   `messageDePause`), et refuse une pause qu'un autre geste lève (numéro délié, abonnement impayé). `update_template`
   refuse un bouton Flow ou un lien qui prend une variable sans être l'un de nos liens tracés (`/r/<code>/{{1}}` sous

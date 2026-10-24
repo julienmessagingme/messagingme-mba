@@ -685,8 +685,9 @@ export class PgInboxStore implements InboxStore {
     // sort la conversation d'Archivé ou de Traité le dit aussi (`desarchivee`, `non_traitee`), sans quoi la frise la
     // montrerait encore rangée. L'état d'avant est lu dans un sous-select VERROUILLÉ.
     // ⚠️ `rendAgentDeMeta` passe AVANT la lecture des colonnes : « Rendre la main » sur un fil que notre colonne
-    // croit déjà `mba` écrit `app_workflow` (on ne rouvre que notre côté), et la règle des colonnes y lisait un fil
-    // qui QUITTE l'agent, donc `prise_mba` signée de l'opérateur, l'inverse de son geste (relecture du 2026-09-29).
+    // croit déjà `mba`, quand l'agent est le répondeur, écrit `app_workflow` (on ne rouvre que notre côté), et la règle
+    // des colonnes y lisait un fil qui QUITTE l'agent, donc `prise_mba` signée de l'opérateur, l'inverse de son geste
+    // (relecture du 2026-09-29). En veille, le geste le lui reprend vraiment : pas de drapeau, `prise_mba` est juste.
     const res = await this.pool.query(
       `with maj as (
          update conversations c set control_owner = $3, control_changed_at = now(),

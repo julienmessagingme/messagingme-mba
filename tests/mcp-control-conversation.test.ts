@@ -112,6 +112,8 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
       for (const personne of [MOI, null]) {
         const { d, appels } = deps(cas);
         await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, personne)).rejects.toThrow(cas.motif);
+        // L'agent de Meta peut tenir ce fil en veille : le refus dit le geste qui le lui reprend (lot 8).
+        await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, personne)).rejects.toThrow(/take_over la lui reprend/);
         expect(appels).toHaveLength(0);
       }
     }

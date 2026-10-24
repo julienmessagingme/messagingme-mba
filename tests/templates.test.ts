@@ -779,9 +779,10 @@ describe('MetaTemplateClient.list — relecture des cartes de CAROUSEL (pour l e
 
 describe('traçage des liens : la route substitue à la soumission et ré-habille à la relecture', () => {
   /** Un faux traçage qui note l'ORDRE des opérations : c'est lui qui compte, pas seulement le résultat. */
-  function tracage() {
+  function tracage(o: { echecsConfirmation?: number } = {}) {
     const journal: string[] = [];
     const destinations = new Map<string, string>();
+    let echecs = o.echecsConfirmation ?? 0;
     return {
       journal,
       dep: {
@@ -792,7 +793,10 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
           return code;
         },
         liens: { getByCode: async () => null,
-          confirm: async (_t: string, codes: readonly string[]) => { journal.push(`confirm:${codes.join(',')}`); },
+          confirm: async (_t: string, codes: readonly string[]) => {
+            if (echecs > 0) { echecs -= 1; journal.push('confirm:raté'); throw new Error('base injoignable'); }
+            journal.push(`confirm:${codes.join(',')}`);
+          },
           deconfirmer: async (_t: string, codes: readonly string[]) => { journal.push(`deconfirmer:${codes.join(',')}`); },
           listByTemplates: async () => [],
         },
@@ -827,6 +831,44 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
 
     // Réservation AVANT la soumission, confirmation APRÈS.
     expect(t.journal).toEqual(['allocate:1:https://client.fr/promo', 'confirm:code1aaaaaaa']);
+    await server.close();
+  });
+
+  it('🔴 une confirmation ratée après la soumission est retentée : un raté passager ne laisse pas un lien non confirmé (lot 8)', async () => {
+    // Non confirmé, le lien n'est pas lu par l'envoi : chaque message du modèle partirait sans la partie variable de son
+    // adresse, et Meta le refuserait (131008), sans que rien ne le dise.
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+    const t = tracage({ echecsConfirmation: 1 });
+    const server = buildServer({
+      queue: new FakeQueue(),
+      auth: { users: noUsers, secret: SECRET },
+      templates: { ...modelesInertes, meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fn) }, repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive }, tracking: t.dep },
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: corps });
+    expect(res.statusCode).toBe(201);
+    expect(t.journal).toEqual(['allocate:1:https://client.fr/promo', 'confirm:raté', 'confirm:code1aaaaaaa']);
+    await server.close();
+  });
+
+  it('🔴 une confirmation qui échoue encore est journalisée en ERREUR avec de quoi réparer, sans faire échouer le geste (lot 8)', async () => {
+    const { fn } = makeFetch([{ ok: true, status: 200, json: { id: 'tpl-1', status: 'PENDING' } }]);
+    const t = tracage({ echecsConfirmation: 10 });
+    const erreurs: string[] = [];
+    const espion = vi.spyOn(console, 'error').mockImplementation((l: unknown) => { erreurs.push(String(l)); });
+    const server = buildServer({
+      queue: new FakeQueue(),
+      auth: { users: noUsers, secret: SECRET },
+      templates: { ...modelesInertes, meta: { templateClientForTenant: async () => new MetaTemplateClient('tok', 'v23.0', fn) }, repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive }, tracking: t.dep },
+    });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/templates', ...h(token), payload: corps });
+    // Le modèle est accepté chez Meta : le geste réussit.
+    expect(res.statusCode).toBe(201);
+    expect(t.journal.filter((l) => l === 'confirm:raté')).toHaveLength(3);
+    const ligne = erreurs.find((l) => l.includes('liens_traces_non_confirmes'));
+    expect(ligne, 'une ligne d’erreur qui nomme le modèle et les codes').toBeDefined();
+    expect(ligne).toContain('promo_lien');
+    expect(ligne).toContain('code1aaaaaaa');
+    espion.mockRestore();
     await server.close();
   });
 
