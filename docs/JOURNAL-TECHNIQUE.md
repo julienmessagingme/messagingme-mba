@@ -26,6 +26,44 @@ téléphone, deux langues, avant le push ; une relecture indépendante, un rouge
   4.6.7 depuis `727fae24` ; la CI, qui fait un `npm ci`, est verte. Le banc des captures aurait capturé la console d'une
   autre session qui tenait le port 3000 : lancé sur un port libre.
 
+## 2026-10-24 : le choix des fonctions HubSpot (lot 1bis de la reprise humaine), et zod 4.6.7 avec undici 7.30.1
+
+**Le lot 1bis** (plan : `~/mm-hubspot/docs/2026-10-23-lot1bis-choix-des-fonctions-plan.md`) : le client choisit ce qu'il
+branche entre Messaging Me et HubSpot. Fait par l'auteur seul, connecteur puis API puis console, et UN relecteur : Julien
+a refusé un workflow de seize agents pour son coût. Commits : `4bb12d3f` (la migration seule), `36e66eeb` (l'API),
+`80a1acf8` (la console, poussée après le déploiement de l'API), connecteur `eaffa2c`.
+
+- **La relecture** : un rouge. « Créer des tâches » était renvoyé à chaque bascule depuis un mode lu, ou deviné quand la
+  lecture du portail échouait, et réécrivait le mode du PORTAIL pour tous ses espaces. Le champ est devenu facultatif,
+  et la console ne l'envoie qu'à la validation (s'il est connu) ou quand c'est sa ligne. Six jaunes corrigés, un reporté
+  au `todo.md` (un numéro branché après la validation n'est pas synchronisé).
+- **Migration 0251** : image construite à `4bb12d3f`, 0251 seule en attente, ni transaction longue ni verrou sur
+  `tenant_settings` ; appliquée, puis relue point par point : cinq colonnes, types, nullabilité et défauts conformes,
+  0251 dans `schema_migrations`, les cinq lignes aux défauts, la reprise a daté exactement l'espace synchronisé (aucun
+  synchronisé sans date, aucune date sans numéro synchronisé) ; puis `lireChoixHubspot` et `get` exécutés par le VRAI
+  code de l'image `36e66eeb`, en lecture seule.
+- **Déploiement** dans l'ordre du plan : la migration, le connecteur (`deploy-scaleway.yml`, sa route en 401 sans
+  signature), `mba-api` et `mba-worker` puis `mba-worker-analyse` à `36e66eeb` (fumée et fiches OAuth conformes), la
+  console, puis `aide:charger` (145 lignes) depuis une image qui porte les fiches relues.
+- ⚠️ **Un croisement de déploiement, sans dégât** : la session MCP déployait son lot 5 pendant que ce lot avançait le
+  dépôt du VPS et construisait l'image de la migration. `pgrep` ne voyait aucun compose à cet instant précis : un
+  déploiement est une SUITE de commandes, et il était entre deux. Le conteneur recréé par l'autre session tournait sur
+  sa propre image (construite une demi-minute avant), et l'écart de code était nul (la migration et son test).
+- **Essai réel** sur le portail cobaye : « Tâche immédiate » décochée, aucune tâche (`push_handoff_non_branche`) ;
+  recochée, la tâche arrive avec son lien. Vu au passage : les tâches immédiates d'une même conversation s'empilent
+  (lot 2b, plan du lot 2 du connecteur).
+
+**zod 4.6.7 et undici 7.30.1** (`727fae24`) : deux avis hauts publiés le 2026-10-23 (GHSA-mrhx-c7xc-m3w5,
+GHSA-xjj6-f33q-929c) rendaient le job `securite` rouge sur tout commit. La montée a fait tomber trois tests, mais le
+changement le plus grave n'en a fait tomber aucun : **zod 4.6 refuse une date ISO sans secondes**, mesuré sur dix cas,
+l'ancienne version installée à côté. `horodatageIso()` (`src/lib/horodatage-iso.ts`) rend l'ancien domaine aux trois
+entrées qui valident une date reçue, et son test refuse tout `.datetime(` hors de l'aide. Le contrat OpenAPI change de
+notation (nullables en `"type": [..., "null"]`), régénéré, SDK non republié. La branche Resend (PR #16) avait monté les
+mêmes versions dans le verrou seul : la fusion `9f8a62b0` garde ce commit entier, CI verte job par job. En production
+par `9f8a62b0` puis `c83414fd` (le lot 6 MCP) pour l'API et les workers ; `mba-application`, resté sur `53f443bd`, a été
+reconstruit seul à `eee09091` (aucun code de `src/application` ne change, 32 s de coupure, le compte relié reconnecté,
+« messages en attente remis »).
+
 ## 2026-10-24 : la marche arrière des outils MCP, lot 6 (les jaunes de la relecture du lot 5)
 
 Le lot 6 (`c83414fd`) traite les huit jaunes de la relecture du lot 5. Une relecture indépendante, sans rouge (sept
