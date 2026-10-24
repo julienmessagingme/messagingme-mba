@@ -1272,8 +1272,8 @@ async function main(): Promise<void> {
     premiers: new PgPremiersMessages(pool),
     comptes: comptesApplication,
     fiches: {
-      resoudreFiche: depsEnvois.resoudreFiche,
-      appliquerConsentement: depsEnvois.appliquerConsentement,
+      resoudreFiche: (tenant, cles, o) => depsEnvois.resoudreFiche(tenant, cles, o),
+      appliquerConsentement: (tenant, contactId, consent, source) => depsEnvois.appliquerConsentement(tenant, contactId, consent, source),
       listContactsPourEnvoiApi: repo.listContactsPourEnvoiApi.bind(repo),
     },
     contacts: contactStore,
