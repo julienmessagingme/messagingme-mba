@@ -30,6 +30,7 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/fonctionnalites/pilotage-des-couts/': '/en/features/cost-control/',
   '/industries/': '/en/industries/',
   '/tarifs/': '/en/pricing/',
+  '/integrations/': '/en/integrations/',
   '/developpeurs/': '/en/developers/',
   '/developpeurs/compte-meta-business/': '/en/developers/meta-business-account/',
   '/solutions/saas-et-app-builders/': '/en/solutions/saas-and-app-builders/',

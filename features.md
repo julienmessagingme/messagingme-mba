@@ -2368,10 +2368,11 @@ l'app dans SON organisation Shopify (aucune validation de Shopify n'est nécessa
 « Installer », et la boutique est branchée. Ouvert à toutes les offres, Free comprise. En Pro et Entreprise, il peut
 aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte ci-dessous).
 
-- **Deux messages** : à la commande payée (« commande confirmée ») et à l'expédition (avec le transporteur et le lien
-  de suivi). Chacun est un modèle WhatsApp de service (utility) approuvé par Meta ; les données de la commande (prénom,
-  numéro, montant payé, lien de la commande, suivi) remplissent ses variables. Un message par événement : le rebrancher
-  le remplace.
+- **Trois messages** : à la commande payée (« commande confirmée »), à l'expédition (avec le transporteur et le lien
+  de suivi), et la relance du panier abandonné (plus bas). Les deux premiers sont des modèles WhatsApp de service
+  (utility), la relance un modèle marketing, tous approuvés par Meta ; les données de la commande ou du panier (prénom,
+  numéro, montant payé, lien de la commande, suivi, lien du panier) remplissent leurs variables. Un message par
+  événement : le rebrancher le remplace.
 - **Les règles des envois s'appliquent** : STOP, consentement, modèles du mois, limite de contacts de l'offre (la
   fiche d'un nouveau client compte). Chaque message fait une ligne dans Campagnes (« Shopify · commande payée ·
   #1002 ») ; un client écarté (STOP, limite) n'en fait aucune. Le message part même quand l'agent ou un opérateur tient

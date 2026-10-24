@@ -174,7 +174,10 @@ describe('lireFicheDuDepot', () => {
  * vitrine : elle suit la grammaire de `src/aide/structure.ts`, et la première vague est celle que Julien a validée.
  */
 describe('les fiches publiques', () => {
-  /** La première vague (plan, « Global Constraints ») : rubrique et rang. */
+  /**
+   * La première vague (plan, « Global Constraints ») : rubrique et rang. Puis la boutique Shopify, rendue publique le
+   * 2026-10-24 (conception `2026-10-23-vitrine-shopify-design.md`, lot 1).
+   */
   const VAGUE: Record<string, [Rubrique, number]> = {
     'choisir-mon-offre': ['demarrer', 1],
     'ce-qu-il-faut-chez-meta': ['demarrer', 2],
@@ -185,6 +188,7 @@ describe('les fiches publiques', () => {
     'faire-approuver-un-modele': ['parler-aux-clients', 3],
     'importer-mes-contacts': ['parler-aux-clients', 4],
     'lancer-une-campagne': ['parler-aux-clients', 5],
+    'brancher-ma-boutique-shopify': ['parler-aux-clients', 6],
   };
   /** Les six écrans qui portent « Comment faire », et leur page. */
   const COMMENT_FAIRE: Record<string, string> = {

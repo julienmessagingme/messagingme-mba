@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://app.messagingme.fr/</loc><lastmod>2026-10-20</lastmod></url>
+  <url><loc>https://app.messagingme.fr/</loc><lastmod>2026-10-24</lastmod></url>
   <url><loc>https://app.messagingme.fr/fonctionnalites/campagnes-et-scenarios/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/fonctionnalites/publicites-click-to-whatsapp/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/fonctionnalites/chaines-whatsapp/</loc><lastmod>2026-10-20</lastmod></url>
@@ -9,9 +9,10 @@
   <url><loc>https://app.messagingme.fr/fonctionnalites/pilotage-des-couts/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/developpeurs/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/developpeurs/compte-meta-business/</loc><lastmod>2026-10-20</lastmod></url>
-  <url><loc>https://app.messagingme.fr/tarifs/</loc><lastmod>2026-10-20</lastmod></url>
+  <url><loc>https://app.messagingme.fr/tarifs/</loc><lastmod>2026-10-24</lastmod></url>
+  <url><loc>https://app.messagingme.fr/integrations/</loc><lastmod>2026-10-24</lastmod></url>
   <url><loc>https://app.messagingme.fr/contact/</loc><lastmod>2026-10-20</lastmod></url>
-  <url><loc>https://app.messagingme.fr/en/</loc><lastmod>2026-10-20</lastmod></url>
+  <url><loc>https://app.messagingme.fr/en/</loc><lastmod>2026-10-24</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/features/campaigns-and-scenarios/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/features/click-to-whatsapp-ads/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/features/whatsapp-channels/</loc><lastmod>2026-10-20</lastmod></url>
@@ -20,7 +21,8 @@
   <url><loc>https://app.messagingme.fr/en/features/cost-control/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/developers/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/developers/meta-business-account/</loc><lastmod>2026-10-20</lastmod></url>
-  <url><loc>https://app.messagingme.fr/en/pricing/</loc><lastmod>2026-10-20</lastmod></url>
+  <url><loc>https://app.messagingme.fr/en/pricing/</loc><lastmod>2026-10-24</lastmod></url>
+  <url><loc>https://app.messagingme.fr/en/integrations/</loc><lastmod>2026-10-24</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/contact/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/solutions/saas-et-app-builders/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/cas-d-usage/rappels-rendez-vous/</loc><lastmod>2026-10-20</lastmod></url>
@@ -56,6 +58,7 @@
   <url><loc>https://app.messagingme.fr/aide/faire-approuver-un-modele/</loc></url>
   <url><loc>https://app.messagingme.fr/aide/importer-mes-contacts/</loc></url>
   <url><loc>https://app.messagingme.fr/aide/lancer-une-campagne/</loc></url>
+  <url><loc>https://app.messagingme.fr/aide/brancher-ma-boutique-shopify/</loc></url>
   <url><loc>https://app.messagingme.fr/developpeurs/installer-le-plugin/</loc></url>
   <url><loc>https://app.messagingme.fr/developpeurs/connecter-son-numero/</loc></url>
   <url><loc>https://app.messagingme.fr/developpeurs/repondre-a-une-conversation/</loc></url>
@@ -70,6 +73,7 @@
   <url><loc>https://app.messagingme.fr/en/help/get-a-template-approved/</loc></url>
   <url><loc>https://app.messagingme.fr/en/help/import-my-contacts/</loc></url>
   <url><loc>https://app.messagingme.fr/en/help/launch-a-campaign/</loc></url>
+  <url><loc>https://app.messagingme.fr/en/help/connect-my-shopify-store/</loc></url>
   <url><loc>https://app.messagingme.fr/en/developers/install-the-plugin/</loc></url>
   <url><loc>https://app.messagingme.fr/en/developers/connect-your-number/</loc></url>
   <url><loc>https://app.messagingme.fr/en/developers/reply-to-a-conversation/</loc></url>
