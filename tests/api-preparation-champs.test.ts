@@ -102,7 +102,8 @@ describe('raisonDeValidation : les clés de l’API des fiches', () => {
     const s = z.object({ addTags: schemaTags(3).optional(), removeTags: schemaTags(3).optional(), tags: schemaTags(3).optional() });
     expect(echec(s, { addTags: ['a', 'b', 'c', 'd'] })).toBe('« addTags » : 3 étiquettes au plus par fiche');
     expect(echec(s, { tags: 'vip' })).toBe('« tags » : une liste d’étiquettes en texte est attendue');
-    expect(echec(s, { addTags: ['ok', 'ok', 'ok', {}] })).toBe('« addTags.3 » : une étiquette est un texte ou un nombre');
+    // Trois éléments, sous le plafond : à quatre, la liste est AUSSI trop longue, et zod 4.6 dit d'abord la longueur.
+    expect(echec(s, { addTags: ['ok', 'ok', {}] })).toBe('« addTags.2 » : une étiquette est un texte ou un nombre');
     expect(echec(s, { removeTags: [[]] })).toBe('« removeTags.0 » : une étiquette est un texte ou un nombre');
     expect(echec(s, { tags: [null] })).toBe('« tags.0 » : une étiquette est un texte ou un nombre');
   });

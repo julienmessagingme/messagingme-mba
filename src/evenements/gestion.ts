@@ -5,6 +5,7 @@ import { urlRecuperable } from '../lib/page-distante';
 import type { VerdictResolution } from '../lib/adresse-privee';
 import { LimiteOffreError, corpsRefusLimite } from '../offres/refus';
 import { enTetesSignes, genererSecret, secretsQuiSignent } from './signature';
+import { horodatageIso } from '../lib/horodatage-iso';
 import {
   TYPES_ABONNABLES, TYPES_DECOCHES_PAR_DEFAUT, TYPE_ESSAI, donneesEssai, enveloppe, idEssai, type TypeAbonnable,
 } from './types';
@@ -68,7 +69,7 @@ export const saisieModification = z.object({
   active: z.boolean().optional(),
 }).strict();
 
-const saisieRejeu = z.object({ depuis: z.string().datetime({ offset: true }) }).strict();
+const saisieRejeu = z.object({ depuis: horodatageIso() }).strict();
 
 function premiereFaute(e: z.ZodError): string {
   const i = e.issues[0];

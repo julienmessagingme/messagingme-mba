@@ -3,6 +3,7 @@ import { USER_FIELD_TYPES } from '../crm/fields';
 import { JOURNAL_PAGE_MAX } from '../evenements/gestion';
 import { TEXTE_MAX_CARACTERES } from '../traduction/traduire';
 import { RCS_TEXTE_MAX } from '../../web/lib/partage/rcs';
+import { horodatageIso } from '../lib/horodatage-iso';
 import { schemaContactLotV1 } from './contacts-v1';
 import { schemaClesFiche } from './fiche';
 
@@ -42,8 +43,8 @@ export const schemaMessageRcs = z.strictObject({
 export const requeteStatutModele = z.object({ language: z.string().max(20).optional() });
 
 export const requeteJournal = z.strictObject({
-  before: z.string().datetime({ offset: true }).optional(),
+  before: horodatageIso().optional(),
   limit: z.coerce.number().int().min(1).max(JOURNAL_PAGE_MAX).optional(),
 });
 
-export const corpsRejeu = z.strictObject({ since: z.string().datetime({ offset: true }) });
+export const corpsRejeu = z.strictObject({ since: horodatageIso() });

@@ -2367,7 +2367,7 @@ export interface operations {
                 "application/json": {
                     name?: string | null;
                     fields?: {
-                        [key: string]: (string | number | boolean) | null;
+                        [key: string]: string | number | boolean | null;
                     };
                     addTags?: (string | number)[];
                     removeTags?: (string | number)[];
@@ -4670,7 +4670,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
-                    /** Format: date-time */
                     since: string;
                 };
             };
