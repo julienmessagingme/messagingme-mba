@@ -5,7 +5,8 @@ import { signSession, signChoice, verifyChoice, signMfa, signEnrolement, signSes
 import { refuserTropDeRequetes } from './rate-limit';
 import { PlafondPartage } from './plafond-partage';
 import type { CompteurDebit } from '../db/debit';
-import { registerMfa, type MfaRouteDeps, type OptionsSuite } from './mfa-routes';
+import { registerMfa } from './mfa-routes';
+import type { MfaDeps, OptionsSuite } from './mfa';
 import type { UserAuthStore } from './store';
 import { estAdresseOps, type UserStateLoader, type Guard } from './middleware';
 import type { GoogleIdentity } from './google';
@@ -16,7 +17,7 @@ import { marquerConnexion, type ComptesAuthDep } from './comptes';
 import { entrerParGoogle } from './entree-google';
 import { empreinteTentative, verifierTentative } from './tentatives';
 
-export interface AuthRouteDeps extends MfaRouteDeps {
+export interface AuthRouteDeps extends MfaDeps {
   /**
    * Journal d'audit des connexions échouées ; absent : aucune trace. Écrit seulement pour un compte qui existe :
    * `audit_log.tenant_id` est NOT NULL, une tentative sur une adresse inconnue n'a nulle part où s'écrire, et

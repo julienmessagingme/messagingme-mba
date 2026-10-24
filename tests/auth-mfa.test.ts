@@ -10,7 +10,7 @@ import {
 import { codeAuPas, pasDe, empreinteCodeSecours } from '../src/auth/totp';
 import type { AuthUser } from '../src/auth/store';
 import type { AuthRouteDeps } from '../src/auth/routes';
-import type { ActionMfa } from '../src/auth/mfa-routes';
+import type { ActionMfa } from '../src/auth/mfa';
 import { MfaEnMemoire, UtilisateursFaux, comptesDe, connecter, identiteDe, passerLeSecondFacteur } from './mfa';
 
 /**
