@@ -3,6 +3,7 @@ import { OUTILS, RefusOutil, type DepsMcp } from '../src/mcp/outils';
 import { parCause, type AuteurDuChangement } from '../src/inbox/evenements';
 import type { ConversationMessage } from '../src/inbox/store.pg';
 import { bancDuFil } from './banc-du-fil';
+import { AgentDeMetaGardeLeFil } from '../src/inbox/fil';
 
 /**
  * `control_conversation` (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`, tâche 1) : prendre et rendre la
@@ -159,6 +160,11 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
       await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, personne)).rejects.toThrow(/n’est confiée à aucun robot/);
       expect(appels.map((a) => a.geste)).toEqual(['rendre']);
     }
+  });
+
+  it('🔴 Meta refuse de reprendre le fil à son agent en veille : un refus qui dit que l’agent le garde (lot 7)', async () => {
+    const { d } = deps({ mode: 'equipe', remise: new AgentDeMetaGardeLeFil() });
+    await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI)).rejects.toThrow(/il la garde/);
   });
 
   it('take_over reste ouvert sur ce contact : prendre le fil n’écrit rien', async () => {

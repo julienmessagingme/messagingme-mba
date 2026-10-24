@@ -1169,6 +1169,28 @@ describe('rendre la main après un modèle : le `release` refusé n’est pas un
   });
 });
 
+describe('rendre la main sur un fil que l’agent de Meta tient en veille (lot 7)', () => {
+  it('🔴 le fil lui est repris : retrait de la liste, puis les robots ; un refus de Meta est un 409 qui le dit', async () => {
+    const b = bancDuFil({ mode: 'equipe', mbaEnabled: true, surLaListe: ['33611'], conversations: { '33611': { owner: 'mba' } } });
+    const a = app({ releaseControl: b.fil.rendreLaMain });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/release', ...auth() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ controlOwner: 'app_workflow' });
+    expect(b.appels).toEqual(['retrait:33611']);
+    await a.close();
+    const refuse = bancDuFil({ mode: 'equipe', mbaEnabled: true, surLaListe: ['33611'], retrait: ['refuse'], conversations: { '33611': { owner: 'mba' } } });
+    const r = app({ releaseControl: refuse.fil.rendreLaMain });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const non = await r.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/release', ...auth() });
+    expect(non.statusCode).toBe(409);
+    expect(non.json().error).toContain('L’agent de Meta garde la conversation');
+    expect(refuse.etat('33611')?.owner).toBe('mba');
+    vi.restoreAllMocks();
+    await r.close();
+  });
+});
+
 describe('rendre la main : un agent sans numéro ne s’annonce pas', () => {
   it('🔴 agent allumé, aucun numéro connecté : 409 qui le dit, et RIEN n’est écrit', async () => {
     // Même règle que le balayage et la fin de parcours : un agent de Meta qui ne peut pas répondre ne s'annonce

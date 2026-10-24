@@ -1,15 +1,37 @@
 # todo.md : backlog
 
+## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 7 (2026-10-24)
+
+Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`).
+
+1. **Un contact STOP ou bloqué dont l'agent de Meta tient le fil en veille, en mode `agent` ou `scenario`** :
+   `hand_back` le refuse AVANT `rendre` (`src/mcp/outils.ts`), et l'agent garde le fil et peut lui répondre. Laisser
+   passer la reprise sur un fil `mba` (elle ne fait que retirer de la liste, nos robots relisent STOP), ou faire pointer
+   le refus vers `take_over`. Rare (un contact confié puis devenu STOP).
+2. **`features.md` (section Inbox, « Rendre la main » se lit toujours « Rendue à l'agent de Meta »)** : faux en veille,
+   où la frise dit « Prise à l'agent de Meta » (et déjà faux depuis RC6 pour équipe vers scénario). Réécrire la puce,
+   `aide-proposer` avant de pousser.
+3. **Commentaires et doc** : `rendAgentDeMeta` (`fil.ts`, `store.pg.ts`, `documentation.md`) « quand il est le
+   répondeur (mode `mba`) » ; la doc de `releaseControl` et son commentaire (« rendre la main met le contact sur la
+   liste ») ; le journal de `/release` (« n'a pas pu prendre ») pour le refus inverse ; la phrase ajoutée au manuel
+   (« Hors du mode `mba` ») : `/release` n'atteint une colonne `mba` que depuis un écran périmé, dans tous les modes.
+4. **Une panne de notre table sur la reprise** se lit comme un refus de Meta (« elle reste à l'équipe », « de votre
+   côté »), faux sur un fil `mba`. Un message neutre, ou une erreur qui ne vient pas de Meta en 500.
+5. **Pas de garde `only` sur l'écriture qui suit la reprise** : un opérateur qui écrit pendant le retrait (jusqu'à 2 s
+   de rejeu) voit son `app_human` écrasé. Cohérent avec les autres branches (le dernier gagne) ; `only: ['mba']` et une
+   issue honnête si l'on veut le protéger.
+6. **Deux cas qui changent sans test** : agent de Meta éteint (`mbaEnabled: false`, fil `mba`, contact sur la liste) et
+   mode `application`, ajouter à la boucle de `tests/repondeur-modes.test.ts`.
+7. **Ergonomie** : après le 409 « l'agent de Meta garde la conversation », l'écran garde « Rendre la main » ; la route
+   pourrait rendre le détenteur courant.
+
 ## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 6 (2026-10-24)
 
 Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`).
 
-1. **`hand_back` sur un fil que l'agent de Meta tient déjà** (préexistant, lot 4, à confirmer par un essai réel) : en
-   mode « équipe », agent de Meta allumé en veille, fil confié par le bloc « Envoyer au MBA » (colonne `mba`), `rendre`
-   écrit `app_workflow` sans retirer le contact de la liste : l'agent de Meta peut encore lui répondre, y compris s'il a
-   dit STOP ou est bloqué, et l'outil dit « personne ne répondra seul ». Une issue distincte de `rendre` (l'agent garde le
-   contact), ou le retrait de la liste sous consentement. Même famille, plus rare : l'outil lit « équipe », le fil relit
-   `agent` ou `scenario`, et la phrase « équipe » sort quand même.
+1. **La phrase « équipe » de `hand_back` sur un mode relu autrement** (le cas du fil tenu par l'agent de Meta en veille
+   est traité au lot 7) : l'outil lit « équipe », le fil relit `agent` ou `scenario` (le mode a changé entre les deux
+   lectures), et la phrase « personne ne répondra seul » sort quand même. Rare.
 2. **`restaurer` (`gestion.ts`) ne remet que les liens confirmés** (préexistant, désormais atteignable par l'outil) : si
    Meta refuse la correction d'un modèle dont la ligne n'était pas confirmée, la destination réécrite par `allocate`
    reste, et le modèle en service redirige vers l'adresse de la correction refusée. Relire aussi les lignes non

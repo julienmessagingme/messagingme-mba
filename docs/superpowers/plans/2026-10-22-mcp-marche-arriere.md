@@ -333,3 +333,22 @@ vérifiée dans les deux sens. Pas de câblage partagé (les liens tracés passe
 entier), aucune migration ; la console (`web/`) se publie au push, un texte. **Déploiement** : API et workers, avec
 l'accord de Julien. **Essai réel** : `hand_back` en mode « équipe » sur un contact bloqué (la phrase nomme scénario et
 agent IA), et sous l'agent le refus.
+
+## Suite : le fil que l'agent de Meta tient en veille (2026-10-24, lot 7)
+
+Le jaune 1 de la relecture du lot 6, seul (décision de Julien). L'essai réel sur « Messaging Me Tech SANDBOX » l'a
+cerné : la console n'y mène pas (sur un fil que l'agent de Meta tient hors du mode `mba`, l'Inbox n'offre que
+« Reprendre la main », qui retire le contact de sa liste) ; l'outil `control_conversation` (`hand_back`), qui ne regarde
+pas le détenteur, écrivait `app_workflow` sans rien demander à Meta, et l'agent gardait le fil (essai : tant qu'il le
+tient, il répond).
+
+1. **`rendre` (`src/inbox/fil.ts`)** : sur un fil `mba` alors que l'agent n'est pas le répondeur, le lui reprendre
+   (retrait de la liste, comme « Reprendre la main »), puis écrire `app_workflow` (la frise dit `prise_mba`) ; Meta qui
+   refuse le retrait lève `AgentDeMetaGardeLeFil`, rien n'est écrit. En mode `mba`, rien ne change. Vaut pour l'outil et
+   pour la console (décision de Julien : « le reprendre à l'agent »).
+2. **Les refus lisibles** : l'outil et la route `/release` de la console disent que l'agent garde la conversation.
+
+**Méthode de livraison** : en direct, dans une copie à part de `main`, puis une relecture indépendante ; chaque garde
+vérifiée dans les deux sens, sur le vrai contrôle du fil (`bancDuFil`). Pas de câblage partagé, aucune migration.
+**Déploiement** : API et workers, avec l'accord de Julien. **Essai réel** : Claude connecté à la SANDBOX (mode
+« équipe », agent de Meta en veille) : ESSAI17, puis `hand_back` par Claude, puis une question : l'agent de Meta se tait.

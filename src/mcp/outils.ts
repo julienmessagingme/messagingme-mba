@@ -25,7 +25,7 @@ import type { WorkflowResumeRow } from '../workflow/store.pg';
 import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, dateAvecFuseau, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { decoderCurseur, encoderCurseur, idPublic, type DepotConversationsV1 } from '../api/conversations-v1';
-import type { ControleDuFil, IssueRendreLaMain } from '../inbox/fil';
+import { AgentDeMetaGardeLeFil, type ControleDuFil, type IssueRendreLaMain } from '../inbox/fil';
 import { modeEffectif, sousLOffre } from '../repondeur/mode';
 import { OUTILS_AGENT, signataire, type DepsAgentMcp } from './outils-agent';
 import { estUuid } from '../http/scope';
@@ -979,8 +979,12 @@ export const OUTILS: OutilMcp[] = [
       try {
         detenteur = await deps.fil.rendreLaMainSousConsentement(tenantId, ctx.waId, par);
       } catch (err) {
-        // Comme la route de la console : Meta a refusé de reprendre le contact, et notre état n'a pas bougé.
+        // Comme la route de la console : Meta a refusé le geste, et notre état n'a pas bougé.
         console.error(`mcp: control_conversation, Meta n’a pas repris la conversation (${tenantId}/${id}):`, err instanceof Error ? err.message : err);
+        if (err instanceof AgentDeMetaGardeLeFil) {
+          throw new RefusOutil('l’agent de Meta tient cette conversation, et Meta a refusé de la lui reprendre : il la garde, '
+            + 'réessayez dans un instant.');
+        }
         throw new RefusOutil('Meta n’a pas repris la conversation : elle reste à l’équipe, réessayez dans un instant.');
       }
       if (detenteur === 'contact_muet') {

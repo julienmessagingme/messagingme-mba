@@ -3367,6 +3367,11 @@ l'activer, et d'ouvrir une recharge du crédit.
   (`contact_muet`, rien n'est écrit) sur le mode qu'il relit LUI-MÊME au moment de confier (un mode passé à `mba`
   après la lecture de l'outil ne passe donc pas), et les robots relisent STOP ou bloqué avant d'écrire
   (`machineSeTaitParWaId`). Le bouton de la console garde `rendreLaMain`, sans cette garde : un geste humain délibéré.
+  Sur un fil que l'agent de Meta tient sans être le répondeur (en veille, confié par un bloc « Envoyer au MBA »),
+  rendre la main le lui REPREND (retrait de la liste, comme « Reprendre la main ») avant de le rendre aux robots, par
+  l'outil comme par la console (lot 7) : sinon il gardait le fil chez Meta et répondait au message suivant. Meta qui
+  refuse le retrait : `AgentDeMetaGardeLeFil`, un refus lisible, rien n'est écrit. Hors du mode `mba`, l'Inbox n'offre
+  d'ailleurs que « Reprendre la main » sur un tel fil ; l'outil, qui ne regarde pas le détenteur, y menait seul.
   `prepare_resume` rend le motif de la pause et sa phrase (`pauseDe`, lu hors de l'empreinte du code, et
   `messageDePause`), et refuse une pause qu'un autre geste lève (numéro délié, abonnement impayé). `update_template`
   refuse un bouton Flow ou un lien qui prend une variable sans être l'un de nos liens tracés (`/r/<code>/{{1}}` sous

@@ -6,6 +6,7 @@ import { aucunRepondeur, bancDuFil, type OptionsBanc } from './banc-du-fil';
 import { creerDemarreurScenario, type DemarreurScenario } from '../src/repondeur/scenario';
 import { leMbaRepond, modeEffectif, standbyPourNous, MODES_REPONDEUR, type ModeRepondeur } from '../src/repondeur/mode';
 import { runControlSweep } from '../src/inbox/control-sweep';
+import { AgentDeMetaGardeLeFil } from '../src/inbox/fil';
 import { evenementMessageSansSuite } from '../src/mba/evenement';
 import { WorkflowExecutor } from '../src/workflow/executor';
 import { walk } from '../src/workflow/engine';
@@ -204,6 +205,37 @@ describe('🔴 le MBA allumé en veille ne reçoit RIEN tout seul (remise, « Re
     });
     expect(sweep.etat(W)?.owner).toBe('mba');
     expect(sweep.appels).toContain(`ajout:${W}`);
+  });
+
+  it('🔴 « Rendre la main » sur un fil que l’agent de Meta tient EN VEILLE le lui reprend : retrait de la liste, puis les robots (lot 7)', async () => {
+    // Un bloc « Envoyer au MBA » lui a confié le contact alors que l'espace répond autrement : sans le retrait, il le
+    // garde chez Meta et répond au prochain message pendant que notre colonne dit `app_workflow` (décision de Julien).
+    for (const [mode, cibles] of [['equipe', {}], ['agent', { repondeurAgentId: AG }], ['scenario', { repondeurWorkflowId: WF }]] as const) {
+      for (const geste of ['rendreLaMain', 'rendreLaMainSousConsentement'] as const) {
+        const b = bancDuFil({ mode, mbaEnabled: true, ...cibles, surLaListe: [W], conversations: { [W]: { owner: 'mba', changedAt: null } } });
+        expect(await b.fil[geste](T, W, { collaborateur: 'u1' }), `${mode} ${geste}`).toBe('app_workflow');
+        expect(b.appels, `${mode} ${geste}`).toEqual([`retrait:${W}`]);
+        expect(b.table.has(W), 'plus sur la liste').toBe(false);
+        expect(b.etat(W)?.owner).toBe('app_workflow');
+        // Une prise, pas un rendu à l'agent : la frise dit que le fil a QUITTÉ l'agent de Meta.
+        expect(b.ecritures.at(-1)?.opts).not.toHaveProperty('rendAgentDeMeta', true);
+      }
+    }
+  });
+
+  it('🔴 Meta refuse de reprendre le fil à son agent en veille : une erreur lisible, et rien n’est écrit (lot 7)', async () => {
+    const b = bancDuFil({ mode: 'equipe', mbaEnabled: true, surLaListe: [W], retrait: ['refuse'], conversations: { [W]: { owner: 'mba', changedAt: null } } });
+    await expect(b.fil.rendreLaMainSousConsentement(T, W, { collaborateur: 'u1' })).rejects.toBeInstanceOf(AgentDeMetaGardeLeFil);
+    expect(b.etat(W)?.owner, 'l’agent garde le fil').toBe('mba');
+    expect(b.table.has(W), 'toujours sur la liste').toBe(true);
+  });
+
+  it('en mode `mba`, « Rendre la main » sur un fil que l’agent tient ne le lui reprend pas : il est le répondeur (lot 7)', async () => {
+    const b = bancDuFil({ mode: 'mba', mbaEnabled: true, surLaListe: [W], conversations: { [W]: { owner: 'mba', changedAt: null } } });
+    expect(await b.fil.rendreLaMainSousConsentement(T, W, { collaborateur: 'u1' })).toBe('app_workflow');
+    expect(b.appels, 'aucun retrait').toEqual([]);
+    expect(b.table.has(W)).toBe(true);
+    expect(b.ecritures.at(-1)?.opts).toMatchObject({ rendAgentDeMeta: true });
   });
 
   it('🔴 « Rendre la main » sous consentement (l’outil MCP) ne confie JAMAIS un contact STOP ou bloqué à l’agent de Meta (lot 5)', async () => {

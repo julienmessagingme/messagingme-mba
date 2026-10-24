@@ -246,6 +246,17 @@ export interface EntreeDuContact {
 export type IssueRendreLaMain = 'app_workflow' | 'mba' | 'aucun_numero';
 
 /**
+ * « Rendre la main » sur un fil que l'agent de Meta tient en veille : Meta a refusé de retirer le contact de la liste de
+ * son agent, qui garde donc la conversation. Rien n'est écrit chez nous.
+ */
+export class AgentDeMetaGardeLeFil extends Error {
+  constructor() {
+    super('Meta a refusé de reprendre la conversation à son agent, qui la garde');
+    this.name = 'AgentDeMetaGardeLeFil';
+  }
+}
+
+/**
  * Ce que le bloc « Envoyer au MBA » a fait. `confie` : l'agent de Meta tient le contact et a été prévenu ;
  * `mba_eteint` : la frise le dit et l'équipe le tient ; `non_confie` : contact muet, fil de test, aucun numéro, ou
  * Meta a refusé l'ajout, et l'équipe le tient.
@@ -279,9 +290,11 @@ export interface ControleDuFil {
    */
   reprendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<'pris' | 'refuse'>;
   /**
-   * « Rendre la main » / « Passer à l'agent Meta ». Sur un fil que notre colonne donne déjà à l'agent, on ne rouvre
-   * que notre côté (`release` sans tenir le fil est hors contrat) ; l'agent de Meta n'est pas le répondeur (éteint, ou
-   * en veille hors du mode `mba`) : `app_workflow`, et le prochain message relance le répondeur du mode ; sinon on
+   * « Rendre la main » / « Passer à l'agent Meta ». Sur un fil que notre colonne donne déjà à l'agent : s'il est le
+   * répondeur, on ne rouvre que notre côté (`release` sans tenir le fil est hors contrat) ; s'il ne l'est pas (en veille,
+   * le fil lui vient d'un bloc « Envoyer au MBA »), on le lui REPREND (retrait de la liste, `AgentDeMetaGardeLeFil` si
+   * Meta refuse, rien n'est écrit) et le fil revient aux robots. Sur un autre fil : l'agent de Meta n'est pas le
+   * répondeur (éteint, ou en veille hors du mode `mba`) : `app_workflow`, et le prochain message relance le répondeur du mode ; sinon on
    * confie (liste, puis `release`) et on écrit `mba`. Aucun événement : l'agent parle au prochain message du client. Lève si
    * Meta refuse l'ajout à la liste (un `release` refusé n'en est pas un, `confier`). Efface l'escalade. Avec sa variante
    * sous consentement, seul geste qui confie un fil de test.
@@ -541,6 +554,15 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     // Sur un fil que notre colonne donne déjà à l'agent, le geste reste un rendu : la frise le dit comme tel
     // (`rendAgentDeMeta`), et pas comme une prise, que la seule lecture des colonnes y aurait vue.
     if ((await depot.getControlOwner(tenantId, waId)) === 'mba') {
+      // L'agent de Meta tient ce fil sans être le répondeur de l'espace (en veille, un bloc « Envoyer au MBA » le lui a
+      // confié) : le rendre au répondeur, c'est le lui REPRENDRE, comme « Reprendre la main » (le retrait de la liste).
+      // Sinon il le garde chez Meta et répond au prochain message pendant que notre colonne dit l'inverse (relecture du
+      // lot 6, décision de Julien du 2026-10-24). La frise écrit alors `prise_mba`, signée de l'auteur du geste.
+      if (!leMbaRepond(await reglagesDe(tenantId))) {
+        if (!(await deps.liste.retirer(tenantId, waId))) throw new AgentDeMetaGardeLeFil();
+        await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true });
+        return 'app_workflow';
+      }
       await depot.setControlOwner(tenantId, waId, 'app_workflow', { par, effacerEscalade: true, rendAgentDeMeta: true });
       return 'app_workflow';
     }

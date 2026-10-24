@@ -19,6 +19,7 @@ import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type CauseSansTr
 import type { FilTraduit } from '../traduction/fil';
 import { messageDe } from '../lib/erreur';
 import type { AuteurDuChangement, DetailConversation } from '../inbox/evenements';
+import { AgentDeMetaGardeLeFil } from '../inbox/fil';
 
 /**
  * Durée de vie du micro-cache des compteurs de l'Inbox : 5 secondes, ce qui mutualise les utilisateurs d'un même
@@ -1057,6 +1058,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error(`release: l’agent de Meta n’a pas pu prendre la conversation (${tenant}/${ctx.waId}):`, messageDe(err));
+      // Un fil que l'agent de Meta tient en veille : Meta a refusé de le lui reprendre (`rendreLaMain`), il le garde.
+      if (err instanceof AgentDeMetaGardeLeFil) {
+        return reply.code(409).send({ error: 'L’agent de Meta garde la conversation : Meta a refusé de la lui reprendre. Réessayez dans un instant.' });
+      }
       return reply.code(409).send({ error: 'Meta n’a pas repris la conversation. Elle reste de votre côté, réessayez dans un instant.' });
     }
     // Même règle que le balayage : un agent qui ne peut pas répondre ne s'annonce pas, et « Automatique » sortirait
