@@ -33,8 +33,9 @@ export interface NumeroFourniRouteDeps {
    * Le numéro WhatsApp connecté à l'espace, en chiffres (`''` si son affichage est inconnu), `null` s'il n'en a pas.
    * 🔴 Un espace qui a déjà un numéro n'en reçoit pas d'autre (un seul numéro par espace), et le numéro fourni ne
    * retourne pas à la réserve s'il EST celui qui est connecté ; un espace qui a connecté le sien le rend, lui.
+   * `coexistence` : relié en coexistence (migration 0253), que l'état de la connexion transmet à la page du lien.
    */
-  numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean } | null>;
+  numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean; coexistence?: true } | null>;
   /** Un remplacement par heure et par espace : « En obtenir un autre » ne vide pas la réserve partagée. */
   verrous: Pick<VerrousCourts, 'prendre'>;
   /** Prévenir Julien. Ne lèvent jamais (le câblage borne leur fréquence). */

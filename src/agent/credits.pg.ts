@@ -199,10 +199,11 @@ export const NUMERO_AFFICHE_SQL = `'+' || regexp_replace(pn.display_phone_number
 export const NUMERO_AFFICHE_VALIDE_SQL = `pn.display_phone_number is not null and length(regexp_replace(pn.display_phone_number, '[^0-9]', '', 'g')) >= 8`;
 
 /**
- * Le crédit offert au premier numéro WhatsApp d'un espace, pour un numéro que Meta dit VÉRIFIÉ (décision de Julien du
- * 2026-09-29). L'appelant sait que Meta l'a dit, le dépôt non : `PgEmbeddedSignupStore.offrirCredit`, appelé par la
- * route de l'inscription et par celle de l'activation, jamais par la liaison elle-même. Rend le montant offert, 0 si
- * rien ne l'a été.
+ * Le crédit offert au premier numéro WhatsApp d'un espace, pour un numéro que Meta dit VÉRIFIÉ, ou dans l'application
+ * WhatsApp Business en coexistence (décision de Julien du 2026-09-29, plan 2026-10-24) : toujours un signal de Meta,
+ * jamais l'événement de la fenêtre seul. L'appelant sait que Meta l'a dit, le dépôt non : `PgEmbeddedSignupStore.offrirCredit`,
+ * appelé par la route de l'inscription et par celle de l'activation, jamais par la liaison elle-même. Rend le montant
+ * offert, 0 si rien ne l'a été.
  *
  * 🔴 L'OFFRE D'ABORD, LE CRÉDIT ENSUITE, ET SEULEMENT SI L'OFFRE A PRIS. `credits_offerts` tient TROIS bornes par ses
  * contraintes : une offre par espace (clé primaire), jamais deux pour le même identifiant Meta (unique, 0191), jamais

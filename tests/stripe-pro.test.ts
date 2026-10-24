@@ -61,6 +61,9 @@ describe('ouvrirPro', () => {
     const r = await ouvrirPro(d, T1, 'mois', 'u1', 'claude');
     expect(r).toMatchObject({ ok: false, statut: 409, details: { code: 'filiere_application' } });
     expect(r.ok ? '' : r.erreur).toMatch(/API WhatsApp/);
+    // La coexistence (plan 2026-10-24, tâche 4) : le même numéro passe au Pro, l'application gardée.
+    expect(r.ok ? '' : r.erreur).toMatch(/Pour le Pro, reliez ce numéro en coexistence, depuis l’Accueil de la console ou depuis Claude\.$/);
+    expect(r.ok ? '' : r.erreur).not.toMatch(/pour l’instant/);
     expect([transport.posts, transport.lus]).toEqual([[], []]);
   });
 

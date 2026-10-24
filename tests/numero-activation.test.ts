@@ -333,6 +333,39 @@ describe('ce que la revue a corrigé', () => {
 });
 
 /**
+ * UN NUMÉRO EN COEXISTENCE N'A RIEN À ACTIVER (relecture du lot 1 de la coexistence, plan 2026-10-24) : l'application
+ * WhatsApp Business l'a déjà enregistré, et un `/register` y est interdit. Les deux gestes refusent en 409 avant toute
+ * lecture chez Meta, même si Meta rendait pour lui un statut autre que `CONNECTED`.
+ */
+describe('un numéro relié en coexistence', () => {
+  const PHRASE = 'Ce numéro est relié en coexistence : il sert déjà dans l’application WhatsApp Business, il n’y a rien à activer.';
+  const enCoexistence = () => {
+    const lus: string[] = [];
+    return { lus, over: { enCoexistence: async () => true, etatNumero: async (_t: string, pn: string) => { lus.push(pn); return { status: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED' }; } } };
+  };
+
+  it('🔴 « Activer le numéro » : 409 avec la phrase, et ni l’état chez Meta, ni code, ni register, ni crédit', async () => {
+    const c = enCoexistence();
+    const { server, cap } = app(c.over);
+    for (const payload of [{}, { code: '123456' }]) {
+      const res = await server.inject({ method: 'POST', url: ACTIVER_URL, ...h(adminTok), payload });
+      expect([res.statusCode, res.json()], JSON.stringify(payload)).toEqual([409, { error: PHRASE }]);
+    }
+    expect([c.lus, cap.verifies, cap.registres, cap.pins, cap.offerts]).toEqual([[], [], [], [], []]);
+    await server.close();
+  });
+
+  it('🔴 « Recevoir le code » : 409 avec la phrase, et aucun essai consommé chez Meta', async () => {
+    const c = enCoexistence();
+    const { server, cap } = app(c.over);
+    const res = await server.inject({ method: 'POST', url: CODE_URL, ...h(adminTok), payload: {} });
+    expect([res.statusCode, res.json()]).toEqual([409, { error: PHRASE }]);
+    expect([c.lus, cap.codes]).toEqual([[], []]);
+    await server.close();
+  });
+});
+
+/**
  * « DÉLIER » ET « RELIER » LE NUMÉRO (migration 0180, bloc « Canaux et services » de l'Accueil).
  *
  * 🔴 CE QUE CES TESTS PROTÈGENT : les deux gestes ne parlent JAMAIS à Meta (le numéro reste relié à son compte

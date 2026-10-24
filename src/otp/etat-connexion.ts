@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { PgNumerosFournisStore } from './store.pg';
 import type { PgAbonnementsNumeroStore, StatutAbonnement } from '../stripe/abonnements.pg';
 import type { ComptesApplication, StatutCompte } from '../application/comptes';
+import type { PhoneNumberRecord } from '../account/types';
 
 /**
  * OÙ EN EST LA CONNEXION DU NUMÉRO D'UN ESPACE (lot 3c, livraison A). Une seule lecture, pour la page `/brancher`
@@ -17,8 +18,9 @@ export interface EtatConnexion {
    * Le numéro WhatsApp relié à l'espace, en chiffres (`''` si son affichage est inconnu). `aActiver` : relié, mais Meta
    * ne l'a pas encore activé (`status` lu et différent de `CONNECTED`, la règle de l'Accueil) ; il n'est pas « connecté ».
    * `paiementBloque` : Meta bloque le compte pour son moyen de paiement (migration 0231, relevé du balayage des statuts).
+   * `coexistence` : relié en coexistence, le numéro restant dans l'application WhatsApp Business (migration 0253).
    */
-  connecte: { chiffres: string; aActiver: boolean; paiementBloque?: boolean } | null;
+  connecte: { chiffres: string; aActiver: boolean; paiementBloque?: boolean; coexistence?: true } | null;
   /** L'abonnement du numéro fourni (livraison B) : son statut et la fin de la période payée, `null` sans abonnement. */
   abonnement: { statut: StatutAbonnement; periodeFin: string | null } | null;
   /** Un Pro vivant couvre l'espace (lot 6, B2b) : le numéro fourni y est inclus, la page l'obtient sans payer. */
@@ -32,12 +34,32 @@ export interface EtatConnexion {
 
 export interface DepsEtatConnexion {
   numeros: Pick<PgNumerosFournisStore, 'numeroDeLEspace' | 'codeDeLEspace'>;
-  numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean; paiementBloque?: boolean } | null>;
+  /** Le numéro de Meta de l'espace (`numeroConnecteDe`). */
+  numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean; paiementBloque?: boolean; coexistence?: true } | null>;
   abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace'>;
   /** Le Pro de l'espace (lot 6, B2b, `PgAbonnementsOffreStore.vivant`). */
   pro: { vivant(tenantId: string): Promise<boolean> };
   /** Le compte de la filière application. Requis : sans lui, un compte relié ne serait jamais dit connecté. */
   application: { comptes: Pick<ComptesApplication, 'parEspace'> };
+}
+
+/**
+ * Le numéro de Meta d'un espace tel que la page du lien, sa garde (qui meurt à la connexion) et Claude le lisent, depuis
+ * sa ligne (`PgPhoneStatusStore.getPhoneNumber`) : ses chiffres, « à activer » (un statut lu et différent de
+ * `CONNECTED`, la règle de l'Accueil), sa carte bloquée chez Meta (migration 0231) et la coexistence (migration 0253),
+ * dite seulement quand elle est vraie. 🔴 Un numéro en coexistence n'est jamais « à activer » : rien ne doit pousser vers
+ * un `/register`, que les gestes d'activation refusent d'ailleurs (`NUMERO_EN_COEXISTENCE`). `null` sans numéro.
+ */
+export function numeroConnecteDe(
+  pn: Pick<PhoneNumberRecord, 'displayPhoneNumber' | 'status' | 'wabaPaiementBloque' | 'coexistence'> | null,
+): { chiffres: string; aActiver: boolean; paiementBloque: boolean; coexistence?: true } | null {
+  if (!pn) return null;
+  return {
+    chiffres: (pn.displayPhoneNumber ?? '').replace(/[^0-9]/g, ''),
+    aActiver: pn.coexistence !== true && pn.status != null && pn.status !== 'CONNECTED',
+    paiementBloque: pn.wabaPaiementBloque === true,
+    ...(pn.coexistence === true ? { coexistence: true as const } : {}),
+  };
 }
 
 export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: string): Promise<EtatConnexion> {
@@ -69,6 +91,8 @@ export function empreinteEtat(e: EtatConnexion): string {
   const forme = JSON.stringify([
     e.fourni, e.code?.recuLe ?? null, e.code?.code ?? null, e.connecte?.chiffres ?? null, e.connecte?.aActiver ?? null,
     e.abonnement?.statut ?? null, e.application?.statut ?? null,
+    // La coexistence (migration 0253), ajoutée seulement quand elle est vraie : l'empreinte de tout autre état ne bouge pas.
+    ...(e.connecte?.coexistence === true ? ['coexistence'] : []),
   ]);
   return createHash('sha256').update(forme).digest('hex').slice(0, 16);
 }

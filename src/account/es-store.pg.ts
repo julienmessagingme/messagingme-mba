@@ -65,6 +65,10 @@ export class PgEmbeddedSignupStore {
    * 🔴 ELLE N'OFFRE PLUS RIEN (relecture du 2026-09-29). L'offre y était écrite, dans sa transaction, et la liaison
    * tourne AVANT que la route ne sache si Meta a vérifié le numéro : un numéro que Meta dit `NOT_VERIFIED` recevait
    * donc son crédit offert. L'offre vit dans `offrirCredit`, que la route appelle quand Meta dit le numéro vérifié.
+   *
+   * `coexistence` (migration 0253) s'écrit à l'insertion ET sur un numéro déjà là : un espace relié par QR code passe en
+   * coexistence sur le même numéro, et un numéro rattaché de nouveau par la fenêtre ordinaire en sort. Requise : un
+   * appelant qui l'oublierait effacerait la coexistence d'un numéro sans le dire.
    */
   async linkTenant(input: {
     tenantId: string;
@@ -72,6 +76,7 @@ export class PgEmbeddedSignupStore {
     phoneNumberId: string;
     displayPhoneNumber: string | null;
     verifiedName: string | null;
+    coexistence: boolean;
   }): Promise<void> {
     await enTransaction(this.pool, async (client) => {
       // Conflit d'id avec un autre espace : l'update ne s'exécute pas, rowCount 0, refus.
@@ -93,15 +98,16 @@ export class PgEmbeddedSignupStore {
       if (existant) throw new SecondNumeroRefuseError(existant.id, input.phoneNumberId);
       // display/verified fournis quand le GET du numéro a réussi, sinon on garde l'existant (coalesce).
       const phoneRes = await client.query(
-        `insert into phone_numbers (id, waba_id, tenant_id, display_phone_number, verified_name)
-         values ($1, $2, $3, $4, $5)
+        `insert into phone_numbers (id, waba_id, tenant_id, display_phone_number, verified_name, coexistence)
+         values ($1, $2, $3, $4, $5, $6)
          on conflict (id) do update set
            waba_id = excluded.waba_id,
            tenant_id = excluded.tenant_id,
            display_phone_number = coalesce(excluded.display_phone_number, phone_numbers.display_phone_number),
-           verified_name = coalesce(excluded.verified_name, phone_numbers.verified_name)
+           verified_name = coalesce(excluded.verified_name, phone_numbers.verified_name),
+           coexistence = excluded.coexistence
          where phone_numbers.tenant_id = excluded.tenant_id`,
-        [input.phoneNumberId, input.wabaId, input.tenantId, input.displayPhoneNumber, input.verifiedName],
+        [input.phoneNumberId, input.wabaId, input.tenantId, input.displayPhoneNumber, input.verifiedName, input.coexistence],
       );
       if ((phoneRes.rowCount ?? 0) === 0) throw new TenantConflictError('phone_number', input.phoneNumberId);
       await client.query(RETIRER_COMPTE_SANS_NUMERO, [input.tenantId, input.wabaId]);
@@ -133,9 +139,11 @@ export class PgEmbeddedSignupStore {
   }
 
   /**
-   * Offre le crédit de bienvenue pour ce numéro, que Meta vient de dire VÉRIFIÉ (`CONNECTED`, `VERIFIED`, ou un code
-   * accepté). C'est la ROUTE qui le sait, pas ce dépôt : il ne l'appelle jamais de lui-même. Rend le montant offert (0
-   * si rien), pour que le câblage remonte le plafond d'une clé de modèle déjà ouverte.
+   * Offre le crédit de bienvenue pour ce numéro, sur un signal de Meta : `CONNECTED`, `VERIFIED`, un code ou un register
+   * accepté, ou le numéro dans l'application WhatsApp Business (`is_on_biz_app`, la coexistence). 🔴 Jamais sur l'événement
+   * de la fenêtre seul, une chaîne que le navigateur envoie librement. C'est la ROUTE qui sait ce que Meta a dit, pas ce
+   * dépôt : il ne l'appelle jamais de lui-même. Rend le montant offert (0 si rien), pour que le câblage remonte le plafond
+   * d'une clé de modèle déjà ouverte.
    *
    * Les bornes sont celles de `offrirAuNumeroVerifie` (une par espace, jamais deux pour un numéro, par son identifiant
    * ni par son numéro affiché) : rappeler ce geste sur un numéro déjà servi n'offre rien de plus. Une transaction :

@@ -111,7 +111,7 @@ import { PgChannelsMePostStore } from './channels-me/post-store.pg';
 import { ChannelsMeClient } from './channels-me/client';
 import { PgWidgetStore } from './widgets/store.pg';
 import { qrSvg } from './widgets/qr';
-import { servirLeCreditSiRelie, type DepsConnexionApplication } from './application/connexion';
+import { retirerLeCompteApplication, servirLeCreditSiRelie, type DepsConnexionApplication } from './application/connexion';
 import { conflitDansLEspace } from './widgets/phrases';
 import { gestionDesWidgetsEnBase, type DepsWidgets } from './widgets/gestion';
 import { etatDuScenario } from './workflow/store.pg';
@@ -126,7 +126,7 @@ import type { DepsReglageRepondeur } from './repondeur/reglage';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fetchUrlBorne } from './lib/page-distante';
 import { signSession, signLienNumero } from './auth/token';
-import { lireEtatConnexion } from './otp/etat-connexion';
+import { lireEtatConnexion, numeroConnecteDe } from './otp/etat-connexion';
 import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
 import { ouvrirAbonnement, ouvrirPortail, programmerFinDuNumero, type DepsAbonnement } from './stripe/abonnement';
 import { reglerModeHandoff } from './mba/handoff';
@@ -593,7 +593,8 @@ async function main(): Promise<void> {
    */
   const rattachement360: DepsRattachement360 = {
     config: (cle) => new Config360dialogClient(cle),
-    lierNumero: (input) => esCredentialsStore.linkTenant(input),
+    // Un numéro relié par 360dialog n'est jamais en coexistence chez nous : le relier en sort un numéro qui y était.
+    lierNumero: (input) => esCredentialsStore.linkTenant({ ...input, coexistence: false }),
     saveCredentials: (waba, tenant, enc, pin, fournisseur) => esCredentialsStore.saveCredentials(waba, tenant, enc, pin, fournisseur),
     chiffrer: (cle) => encryptSecret(cle, config.ENCRYPTION_KEY),
     destination: (phoneNumberId) => config.D360_WEBHOOK_SECRET ? {
@@ -755,18 +756,10 @@ async function main(): Promise<void> {
   const abonnementsNumero = new PgAbonnementsNumeroStore(pool);
   /**
    * Le numéro WhatsApp connecté à un espace, en chiffres (`''` si son affichage est inconnu). Le MÊME pour la page du
-   * numéro fourni, la garde du lien de Claude Code (qui meurt à la connexion) et son outil d'attente (lot 3c).
+   * numéro fourni, la garde du lien de Claude Code (qui meurt à la connexion) et son outil d'attente (lot 3c). « À
+   * activer », la carte bloquée chez Meta (dite par get_setup_state) et la coexistence : `numeroConnecteDe`.
    */
-  const numeroConnecte = async (tenant: string): Promise<{ chiffres: string; aActiver: boolean; paiementBloque: boolean } | null> => {
-    const pn = await phoneStatusStore.getPhoneNumber(tenant);
-    if (!pn) return null;
-    // « À activer » : la règle de l'Accueil, un statut lu et différent de `CONNECTED`.
-    // `paiementBloque` : Meta bloque le compte pour sa carte (migration 0231), dit par get_setup_state.
-    return {
-      chiffres: (pn.displayPhoneNumber ?? '').replace(/[^0-9]/g, ''), aActiver: pn.status != null && pn.status !== 'CONNECTED',
-      paiementBloque: pn.wabaPaiementBloque === true,
-    };
-  };
+  const numeroConnecte = async (tenant: string) => numeroConnecteDe(await phoneStatusStore.getPhoneNumber(tenant));
   const transcrireAppelOtp = async (audio: Buffer): Promise<string> => {
     if (!config.AI_GATEWAY_API_KEY || !config.TRANSCRIPTION_MODELE) throw new Error('transcription non configurée');
     const r = await transcrire(new FetchTransport(HTTP_TIMEOUT_MODELE_MS), {
@@ -1011,7 +1004,7 @@ async function main(): Promise<void> {
     offreDe: async (tenant) => (await offres.offreDe(tenant)).offre,
     // L'essai de 14 jours, une fois par espace (spec offres v2) : un Pro, même fini, l'a consommé.
     dejaEuUnPro: async (tenant) => (await abonnementsOffre.deLEspace(tenant)) !== null,
-    // La filière application (2026-10-22) : le Pro y est refusé tant que la coexistence n'est pas construite.
+    // La filière application (2026-10-22) : le Pro y est refusé, et le refus renvoie vers la coexistence (plan 2026-10-24).
     filiereDe: (tenant) => comptesApplication.filiereDe(tenant),
   };
   /**
@@ -2324,11 +2317,16 @@ async function main(): Promise<void> {
         saveCredentials: (waba: string, tenant: string, token: string, pin: string | null) =>
           esCredentialsStore.saveCredentials(waba, tenant, encryptSecret(token, config.ENCRYPTION_KEY), pin === null ? null : encryptSecret(pin, config.ENCRYPTION_KEY)),
         fournisseurDeLEspace: (tenant: string) => esCredentialsStore.fournisseurDeLEspace(tenant),
+        // Le passage en coexistence d'un espace relié par QR code (plan 2026-10-24) : son appareil lié se retire par le
+        // client du service de connexions, celui de la page du lien (`connexionApplication`).
+        retirerCompteApplication: (tenant: string) => retirerLeCompteApplication(connexionApplication, tenant),
 
         // ----- « Activer le numéro » -----
         // 🔴 Le jeton ne sort pas d'ici : ces fonctions ne prennent qu'un `tenantId`, la route ne voit jamais
         // un secret.
         numeroDuTenant: async (tenant: string) => (await phoneStatusStore.getPhoneNumber(tenant))?.id ?? null,
+        // Un numéro relié en coexistence (migration 0253) n'a rien à activer : les deux gestes le refusent avant Meta.
+        enCoexistence: async (tenant: string) => (await phoneStatusStore.getPhoneNumber(tenant))?.coexistence === true,
         // Relu chez Meta à chaque geste, jamais dans notre base : notre copie date du dernier pull, et c'est
         // Meta qui décide si un code est encore nécessaire.
         etatNumero: async (tenant: string, phoneNumberId: string) => {

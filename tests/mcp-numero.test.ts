@@ -313,7 +313,107 @@ describe('les deux outils dans le catalogue', () => {
     const p = outil('watch_whatsapp_connection').entree.properties.etat_connu!;
     expect(p.maxLength).toBe(16);
     expect(p.pattern).toBe('^[0-9a-f]{16}$');
-    expect(outil('start_whatsapp_connection').entree.properties.mode!.enum).toEqual(['fourni', 'apporte']);
+    expect(outil('start_whatsapp_connection').entree.properties.mode!.enum).toEqual(['fourni', 'apporte', 'coexistence']);
+  });
+});
+
+/**
+ * LA COEXISTENCE PAR CLAUDE (plan `docs/superpowers/plans/2026-10-24-coexistence.md`, tâche 4) : le numéro de
+ * l'application WhatsApp Business de la personne, gardé dans l'application. Le seul mode accepté sur un espace relié par
+ * QR code : c'est son passage à l'API, sur le même numéro.
+ */
+describe('start_whatsapp_connection en coexistence', () => {
+  /** Un espace relié par QR code : son compte de l'application vaut « connecté », sous son numéro. */
+  const QR_CODE: EtatConnexion = {
+    ...VIDE, connecte: { chiffres: '441555479304', aActiver: false }, application: { statut: 'relie', numero: '441555479304' },
+  };
+  const demarrer = (etat: EtatConnexion, args: Record<string, unknown>) =>
+    outil('start_whatsapp_connection').executer(monter(() => etat).deps, 't1', args, PERSONNE) as Promise<Record<string, string>>;
+
+  it('🔴 accepté sur un espace relié par QR code : le jeton porte le mode, sans filière', async () => {
+    const r = await demarrer(QR_CODE, { mode: 'coexistence' });
+    expect(await verifyLienNumero(r.url!.split('#')[1]!, SECRET)).toEqual({ tenantId: 't1', userId: 'u-admin', mode: 'coexistence' });
+  });
+
+  it('accepté sur un espace sans rien, et avec la filière « api » dite', async () => {
+    expect((await demarrer(VIDE, { mode: 'coexistence' })).url).toMatch(/\/brancher#/);
+    expect((await demarrer(VIDE, { mode: 'coexistence', filiere: 'api' })).url).toMatch(/\/brancher#/);
+  });
+
+  it('🔴 la consigne : le lien en entier, la fenêtre de Meta et l’application, ce qui est facturé, et l’attente en coexistence', async () => {
+    const { consigne } = await demarrer(VIDE, { mode: 'coexistence' });
+    expect(consigne).toMatch(/en entier/i);
+    expect(consigne).toMatch(/bloc de code/);
+    expect(consigne).toContain('Dans la fenêtre de Meta, elle saisit le numéro de son application WhatsApp Business et confirme dans '
+      + 'l’application, sur son téléphone. Son numéro y reste : les messages qu’elle y tape restent gratuits, ceux qui partent par '
+      + 'Messaging Me sont des modèles facturés par Meta. Pas encore de compte Meta Business ? La fenêtre le crée en chemin, avec un '
+      + 'profil Facebook ; avant le premier modèle, Meta demandera un moyen de paiement sur le compte WhatsApp.');
+    expect(consigne).toMatch(/watch_whatsapp_connection avec mode égal à « coexistence »/);
+    // Le prérequis d'un numéro hors de l'application contredirait ce mode : il n'est pas dit.
+    expect(consigne).not.toContain('Un numéro qui ne sert pas dans l’application WhatsApp');
+  });
+
+  it('🔴 refusé avec la filière application : la coexistence est l’API officielle', async () => {
+    await expect(demarrer(QR_CODE, { mode: 'coexistence', filiere: 'application' })).rejects.toThrow('coexistence : la filière est « api »');
+  });
+
+  it('🔴 refusé quand un numéro de Meta est relié, activé ou non (le message d’aujourd’hui)', async () => {
+    await expect(demarrer({ ...VIDE, connecte: { chiffres: '33600000000', aActiver: false } }, { mode: 'coexistence' }))
+      .rejects.toThrow('Cet espace a déjà un numéro WhatsApp connecté : il n’y a rien à brancher.');
+    await expect(demarrer({ ...VIDE, connecte: { chiffres: '33600000000', aActiver: true } }, { mode: 'coexistence' }))
+      .rejects.toThrow(/Activer le numéro/);
+  });
+
+  it('🔴 fourni et apporte restent refusés sur un espace relié par QR code', async () => {
+    for (const mode of ['fourni', 'apporte'] as const) {
+      await expect(demarrer(QR_CODE, { mode }), mode).rejects.toThrow('Cet espace a déjà un numéro WhatsApp connecté');
+    }
+  });
+
+  it('la description le dit, en anglais comme les autres modes', () => {
+    const d = outil('start_whatsapp_connection');
+    expect(d.description).toContain('`coexistence`: the person\'s own number, kept in the WhatsApp Business app on their phone; '
+      + 'messages sent through Messaging Me are official templates billed by Meta, those typed in the app stay free');
+    expect(d.entree.properties.mode!.description).toMatch(/coexistence/);
+  });
+});
+
+describe('watch_whatsapp_connection en coexistence', () => {
+  const EN_COEXISTENCE: EtatConnexion = { ...VIDE, connecte: { chiffres: '441555479304', aActiver: false, coexistence: true } };
+  const QR_CODE: EtatConnexion = {
+    ...VIDE, connecte: { chiffres: '441555479304', aActiver: false }, application: { statut: 'relie', numero: '441555479304' },
+  };
+  const attendre = (etat: EtatConnexion, args: Record<string, unknown> = {}) =>
+    outil('watch_whatsapp_connection').executer(monter(() => etat).deps, 't1', args, PERSONNE) as Promise<{ etat: Record<string, unknown>; suite: string }>;
+
+  it('🔴 relié en coexistence : l’état le rend (coexistence: true), et la suite est celle d’un numéro connecté', async () => {
+    const r = await attendre(EN_COEXISTENCE, { mode: 'coexistence' });
+    expect(r.etat).toMatchObject({ connecte: true, coexistence: true, numero_connecte: '+441555479304' });
+    expect(r.suite).toMatch(/get_setup_state/);
+    // Sans le mode aussi : c'est l'état, pas la question.
+    expect((await attendre(EN_COEXISTENCE)).etat).toMatchObject({ coexistence: true });
+  });
+
+  it('🔴 en mode coexistence, encore relié par QR code : ni « fini », ni la suite du QR code', async () => {
+    const r = await attendre(QR_CODE, { mode: 'coexistence' });
+    expect(r.etat).toMatchObject({ coexistence: false });
+    expect(r.suite).not.toMatch(/fini/);
+    expect(r.suite).toMatch(/coexistence vaut true/);
+    expect(r.suite).toMatch(/etat_connu/);
+    // L'appareil que WhatsApp vient de délier en chemin ne fait pas redonner un QR code.
+    const delie = await attendre({ ...QR_CODE, connecte: null, application: { statut: 'deconnecte', numero: '441555479304' } }, { mode: 'coexistence' });
+    expect(delie.suite).not.toMatch(/filiere « application »/);
+    expect(delie.suite).toMatch(/coexistence vaut true/);
+  });
+
+  it('hors mode coexistence, la suite du QR code est celle d’aujourd’hui', async () => {
+    expect((await attendre(QR_CODE)).suite).toMatch(/branchement est fini/);
+  });
+
+  it('🔴 l’empreinte change quand la coexistence arrive, et pas autrement', () => {
+    const ordinaire: EtatConnexion = { ...VIDE, connecte: { chiffres: '441555479304', aActiver: false } };
+    expect(empreinteEtat(EN_COEXISTENCE)).not.toBe(empreinteEtat(ordinaire));
+    expect(empreinteEtat({ ...ordinaire })).toBe(empreinteEtat(ordinaire));
   });
 });
 

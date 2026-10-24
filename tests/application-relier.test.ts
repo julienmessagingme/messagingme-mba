@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { signLienNumero, verifyLienNumero } from '../src/auth/token';
 import { empreinteEtat, lireEtatConnexion, type EtatConnexion } from '../src/otp/etat-connexion';
-import { numeroFourniAGarder, qrApplication, relierApplication, servirLeCreditSiRelie, type DepsConnexionApplication } from '../src/application/connexion';
+import {
+  numeroFourniAGarder, qrApplication, relierApplication, retirerLeCompteApplication, servirLeCreditSiRelie, type DepsConnexionApplication,
+} from '../src/application/connexion';
 import type { CompteApplication, StatutCompte } from '../src/application/comptes';
 import type { ClientApplication } from '../src/application/client';
 import { OUTILS, type DepsMcp, type OutilMcp } from '../src/mcp/outils';
@@ -134,6 +136,40 @@ describe('relier depuis la page du lien', () => {
     const relie = banc({ compte: compte('relie') });
     expect(await qrApplication(relie.d, T)).toEqual({ statut: 'relie', qr: null, relie: true });
     expect(relie.traces).toEqual([`credit:${T}`]);
+  });
+});
+
+/**
+ * LE PASSAGE EN COEXISTENCE (plan 2026-10-24, tâche 2) : le numéro relié par QR code passe sur l'API, et son compte de la
+ * filière application se retire par le service de connexions, comme à la libération d'un numéro fourni.
+ */
+describe('retirer le compte de l’application au passage en coexistence', () => {
+  const retraits = (o: NonNullable<Parameters<typeof banc>[0]>) => {
+    const vus: string[] = [];
+    const b = banc({ ...o, client: o.client === null ? null : { retirer: async (id) => { vus.push(id); return { ok: true }; }, ...o.client } });
+    return { d: b.d, vus };
+  };
+
+  it('🔴 un compte vivant (relié, déconnecté par WhatsApp, endormi) se retire par le service', async () => {
+    for (const statut of ['relie', 'deconnecte', 'sommeil', 'en_attente'] as const) {
+      const { d, vus } = retraits({ compte: compte(statut) });
+      expect(await retirerLeCompteApplication(d, T), statut).toBe('retire');
+      expect(vus, statut).toEqual([COMPTE]);
+    }
+  });
+
+  it('aucun compte, ou déjà retiré : rien à retirer, le service n’est pas appelé', async () => {
+    for (const c of [null, compte('retire')]) {
+      const { d, vus } = retraits({ compte: c });
+      expect(await retirerLeCompteApplication(d, T)).toBe('aucun');
+      expect(vus).toEqual([]);
+    }
+  });
+
+  it('🔴 un refus du service, ou un service non configuré : un échec, jamais une exception', async () => {
+    const refus = retraits({ compte: compte('relie'), client: { retirer: async () => ({ ok: false, raison: 'service_injoignable' }) } });
+    expect(await retirerLeCompteApplication(refus.d, T)).toBe('echec');
+    expect(await retirerLeCompteApplication(banc({ compte: compte('relie'), client: null }).d, T)).toBe('echec');
   });
 });
 

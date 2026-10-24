@@ -272,9 +272,10 @@ describe('un message Shopify sur un numéro relié par QR code', () => {
         expect([journal.branches, journal.consentements, journal.attentesRetirees, journal.lecturesModele], evenement).toEqual([[], [], [], 0]);
       }
     }
+    // La coexistence (plan 2026-10-24, tâche 4) : le même numéro, l'application gardée, et les messages partent en modèles.
     expect(PHRASE_SHOPIFY_QR_CODE).toBe('Sur un numéro relié par QR code, les messages Shopify ne peuvent pas partir : WhatsApp ne '
-      + 'laisse pas écrire en premier à un client. Reliez votre numéro par Meta (avec un compte Meta Business) pour les '
-      + 'confirmations, les expéditions et les relances.');
+      + 'laisse pas écrire en premier à un client. Pour écrire en premier tout en gardant l’application WhatsApp Business, '
+      + 'reliez ce numéro en coexistence, depuis l’Accueil de la console ou depuis Claude.');
   });
 
   it('🔴 l’arrêter reste permis : active false, avec son texte, sans lecture de modèle chez Meta ni oubli, sans accord exigé', async () => {

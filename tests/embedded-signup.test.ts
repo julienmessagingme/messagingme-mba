@@ -29,6 +29,10 @@ interface Cap {
   offerts: Array<{ tenantId: string; phoneNumberId: string }>;
   /** Les comptes WhatsApp reliés SANS numéro (fin de fenêtre sans numéro, lot 3b). */
   sansNumero: Array<{ tenantId: string; wabaId: string }>;
+  /** Le marquage de coexistence de chaque rattachement (plan 2026-10-24, tâche 2). */
+  coexistences: boolean[];
+  /** Les espaces dont l'appareil lié par QR code a été retiré (passage en coexistence). */
+  retraits: string[];
 }
 
 function app(
@@ -38,7 +42,7 @@ function app(
   lierCompteSansNumero?: EmbeddedSignupRouteDeps['inscriptions']['lierCompteSansNumero'],
   fournisseurDeLEspace?: EmbeddedSignupRouteDeps['fournisseurDeLEspace'],
 ) {
-  const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [], offerts: [], sansNumero: [] };
+  const cap: Cap = { exchanged: [], verifiedWaba: [], linked: [], subscribed: [], registered: [], saved: [], offerts: [], sansNumero: [], coexistences: [], retraits: [] };
   const { configId = 'cfg-123', numeroDuTenant, ...meta } = over;
   const deps: EmbeddedSignupRouteDeps = {
     ...signupInerte,
@@ -55,12 +59,16 @@ function app(
       ...meta,
     },
     inscriptions: {
-      linkTenant: linkTenant ?? (async (input) => { cap.linked.push({ tenantId: input.tenantId, wabaId: input.wabaId, phoneNumberId: input.phoneNumberId, displayPhoneNumber: input.displayPhoneNumber }); }),
+      linkTenant: linkTenant ?? (async (input) => {
+        cap.linked.push({ tenantId: input.tenantId, wabaId: input.wabaId, phoneNumberId: input.phoneNumberId, displayPhoneNumber: input.displayPhoneNumber });
+        cap.coexistences.push(input.coexistence);
+      }),
       lierCompteSansNumero: lierCompteSansNumero ?? (async (input) => { cap.sansNumero.push({ tenantId: input.tenantId, wabaId: input.wabaId }); }),
     },
     saveCredentials: async (wabaId, tenantId, token, pin) => { cap.saved.push({ wabaId, tenantId, token, pin }); },
     fournisseurDeLEspace: fournisseurDeLEspace ?? (async () => null),
     offrirCredit: offrirCredit ?? (async (tenantId, phoneNumberId) => { cap.offerts.push({ tenantId, phoneNumberId }); }),
+    retirerCompteApplication: async (tenantId) => { cap.retraits.push(tenantId); return 'retire'; },
     // L'activation du numéro a son propre fichier (`tests/numero-activation.test.ts`). Ici, ces dépendances
     // LÈVENT au lieu de ne rien faire : si un chemin d'inscription se mettait à les appeler, il faut le voir,
     // pas le laisser passer sous un faux silence.
@@ -565,6 +573,39 @@ describe('POST /embedded-signup/complete : le crédit de bienvenue', () => {
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
     expect(res.statusCode).toBe(409);
     expect(cap.offerts).toEqual([]);
+    await server.close();
+  });
+});
+
+/**
+ * LA COEXISTENCE PAR LA ROUTE (plan 2026-10-24, tâche 2) : la fenêtre de Meta l'annonce par son événement, que la console
+ * transmet tel quel ; la réponse ne porte `coexistence: true` que lorsque c'est vrai.
+ */
+describe('POST /embedded-signup/complete : la coexistence', () => {
+  const PENDING = { getPhone: async () => ({ displayPhoneNumber: '+441555479304', verifiedName: 'Maison', status: 'PENDING', codeVerificationStatus: 'VERIFIED' }) };
+
+  it('🔴 l’événement de la fenêtre : rattaché en coexistence, sans register, appareil lié retiré, et la réponse le dit', async () => {
+    const { server, cap } = app(PENDING);
+    const res = await server.inject({
+      method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok),
+      payload: { ...BODY, evenement: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ connected: true, wabaId: 'waba-1', phoneNumberId: 'pn-1', displayPhoneNumber: '+441555479304', coexistence: true });
+    expect(cap.coexistences).toEqual([true]);
+    expect(cap.registered).toEqual([]);
+    expect(cap.saved[0]).toMatchObject({ pin: null });
+    expect(cap.retraits).toEqual(['t1']);
+    expect(cap.offerts).toEqual([{ tenantId: 't1', phoneNumberId: 'pn-1' }]);
+    await server.close();
+  });
+
+  it('hors coexistence : aucune clé `coexistence` dans la réponse, et rien n’est retiré', async () => {
+    const { server, cap } = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/embedded-signup/complete', ...h(adminTok), payload: BODY });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).not.toHaveProperty('coexistence');
+    expect([cap.coexistences, cap.retraits]).toEqual([[false], []]);
     await server.close();
   });
 });

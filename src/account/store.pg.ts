@@ -15,7 +15,7 @@ export class PgPhoneStatusStore {
       waba_health_status: string | null; account_review_status: string | null; business_verification_status: string | null;
       marketing_messages_lite_api_status: string | null; owner_business_name: string | null; hubspot_connected: boolean;
       hubspot_paused_at: string | null; delie_le: Date | null; waba_paiement_bloque: boolean | null;
-      fournisseur: Fournisseur; token_status: string | null;
+      fournisseur: Fournisseur; token_status: string | null; coexistence: boolean;
     }>(
       // Le fournisseur et l'état de l'identifiant viennent de `waba_credentials`, joints sur le compte ET l'espace : une
       // lecture SQL, rien n'est déchiffré. Sans ligne (numéro branché à la main) : `meta`.
@@ -23,7 +23,7 @@ export class PgPhoneStatusStore {
               pn.name_status, pn.code_verification_status, pn.throughput_level, pn.verified_name,
               pn.waba_health_status, pn.account_review_status, pn.business_verification_status,
               pn.marketing_messages_lite_api_status, pn.owner_business_name, pn.hubspot_connected,
-              pn.hubspot_paused_at::text as hubspot_paused_at, pn.delie_le, pn.waba_paiement_bloque,
+              pn.hubspot_paused_at::text as hubspot_paused_at, pn.delie_le, pn.waba_paiement_bloque, pn.coexistence,
               coalesce(wc.fournisseur, 'meta') as fournisseur, wc.token_status
          from phone_numbers pn
          left join waba_credentials wc on wc.waba_id = pn.waba_id and wc.tenant_id = pn.tenant_id
@@ -53,6 +53,7 @@ export class PgPhoneStatusStore {
           wabaPaiementBloque: r.waba_paiement_bloque,
           fournisseur: r.fournisseur,
           identifiantRefuse: r.token_status === 'invalid',
+          coexistence: r.coexistence === true,
         }
       : null;
   }

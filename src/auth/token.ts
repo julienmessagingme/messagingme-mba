@@ -307,7 +307,11 @@ export const DUREE_LIEN_NUMERO_MS = 3_600_000;
 const lienNumero = z.object({
   tenantId: z.string().min(1),
   userId: z.string().min(1),
-  mode: z.enum(['fourni', 'apporte']),
+  /**
+   * `coexistence` (plan 2026-10-24) : le numéro de l'application WhatsApp Business de la personne, gardé dans
+   * l'application ; la page ouvre la fenêtre de Meta en coexistence. Un jeton d'avant (`fourni`, `apporte`) reste valide.
+   */
+  mode: z.enum(['fourni', 'apporte', 'coexistence']),
   /**
    * La filière application WhatsApp Business (2026-10-22) : la page montre le QR code au lieu de la fenêtre de Meta.
    * Absente : la filière API, et le jeton est exactement celui d'avant.

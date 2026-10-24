@@ -44,7 +44,7 @@ function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean; ori
   return { pool, surLePool, surLaConnexion };
 }
 
-const LIAISON = { tenantId: 't1', wabaId: 'waba-1', phoneNumberId: 'pn-1', displayPhoneNumber: '+33600000000', verifiedName: 'Démo' };
+const LIAISON = { tenantId: 't1', wabaId: 'waba-1', phoneNumberId: 'pn-1', displayPhoneNumber: '+33600000000', verifiedName: 'Démo', coexistence: false };
 const UN_EURO = { creditOffertMicroEur: 1_000_000 };
 const indexDe = (b: ReturnType<typeof fausseBase>, re: RegExp) => b.surLaConnexion.findIndex((q) => re.test(q.sql));
 const premiersMots = (b: ReturnType<typeof fausseBase>) => b.surLaConnexion.map((q) => q.sql.trim().split(/\s+/)[0]!.toLowerCase());

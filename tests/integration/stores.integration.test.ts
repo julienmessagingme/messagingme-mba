@@ -1915,6 +1915,10 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
         [wId, tId],
       );
       expect((await store.getPhoneNumber(tId))!).toMatchObject({ fournisseur: '360dialog', identifiantRefuse: true });
+      // 0253 : la coexistence, fausse par défaut, se lit avec le numéro (la page du lien et Claude la disent).
+      expect((await store.getPhoneNumber(tId))!.coexistence).toBe(false);
+      await pool.query('update phone_numbers set coexistence = true where id = $1', [pId]);
+      expect((await store.getPhoneNumber(tId))!.coexistence).toBe(true);
     } finally {
       await pool.query('delete from waba_credentials where waba_id = $1', [wId]);
       await pool.query('delete from phone_numbers where id = $1', [pId]);
@@ -2000,28 +2004,31 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const wabaId = 'waba-es-conflict';
     const pnId = 'pn-es-conflict';
     try {
-      // Tenant A rattache le numéro : OK.
-      await es.linkTenant({ tenantId: a, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33500000000', verifiedName: 'A' });
+      // Tenant A rattache le numéro, en coexistence (migration 0253) : OK.
+      await es.linkTenant({ tenantId: a, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33500000000', verifiedName: 'A', coexistence: true });
       // Tenant B tente de le réclamer : REFUS (pas de réaffectation silencieuse).
       await expect(
-        es.linkTenant({ tenantId: other, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33511111111', verifiedName: 'B' }),
+        es.linkTenant({ tenantId: other, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33511111111', verifiedName: 'B', coexistence: false }),
       ).rejects.toBeInstanceOf(TenantConflictError);
-      // La ligne reste au tenant A (aucune bascule, aucun écrasement du display par B).
-      const row = (await pool.query<{ tenant_id: string; display_phone_number: string }>(
-        `select tenant_id, display_phone_number from phone_numbers where id = $1`, [pnId],
+      // La ligne reste au tenant A (aucune bascule, aucun écrasement du display ni de la coexistence par B).
+      const row = (await pool.query<{ tenant_id: string; display_phone_number: string; coexistence: boolean }>(
+        `select tenant_id, display_phone_number, coexistence from phone_numbers where id = $1`, [pnId],
       )).rows[0]!;
       expect(row.tenant_id).toBe(a);
       expect(row.display_phone_number).toBe('+33500000000');
+      expect(row.coexistence).toBe(true);
       // Ré-onboarding LÉGITIME (même tenant A, MÊME numéro) : conflit d'id mais même tenant -> la garde laisse
       // passer (rowCount 1), pas de TenantConflictError, et le display est bien mis à jour. C'est le point
       // subtil de la garde `where`. La règle « un seul numéro » ne s'y oppose pas non plus : elle ignore le
       // numéro en cours de rattachement, sinon recommencer l'embarquement serait impossible.
-      await es.linkTenant({ tenantId: a, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33522222222', verifiedName: 'A2' });
-      const reonboard = (await pool.query<{ tenant_id: string; display_phone_number: string }>(
-        `select tenant_id, display_phone_number from phone_numbers where id = $1`, [pnId],
+      await es.linkTenant({ tenantId: a, wabaId, phoneNumberId: pnId, displayPhoneNumber: '+33522222222', verifiedName: 'A2', coexistence: false });
+      const reonboard = (await pool.query<{ tenant_id: string; display_phone_number: string; coexistence: boolean }>(
+        `select tenant_id, display_phone_number, coexistence from phone_numbers where id = $1`, [pnId],
       )).rows[0]!;
       expect(reonboard.tenant_id).toBe(a);
       expect(reonboard.display_phone_number).toBe('+33522222222');
+      // Rattaché de nouveau par la fenêtre ordinaire : il sort de la coexistence.
+      expect(reonboard.coexistence).toBe(false);
       // saveCredentials refuse aussi pour un autre tenant.
       await es.saveCredentials(wabaId, a, 'enc-A', null);
       await expect(es.saveCredentials(wabaId, other, 'enc-B', null)).rejects.toBeInstanceOf(TenantConflictError);
@@ -2043,10 +2050,10 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-mono') returning id`)).rows[0]!.id;
     const wabaId = 'waba-es-mono';
     try {
-      await es.linkTenant({ tenantId: t, wabaId, phoneNumberId: 'pn-mono-1', displayPhoneNumber: '+33500000201', verifiedName: 'Un' });
+      await es.linkTenant({ tenantId: t, wabaId, phoneNumberId: 'pn-mono-1', displayPhoneNumber: '+33500000201', verifiedName: 'Un', coexistence: false });
 
       const err = await es
-        .linkTenant({ tenantId: t, wabaId, phoneNumberId: 'pn-mono-2', displayPhoneNumber: '+33500000202', verifiedName: 'Deux' })
+        .linkTenant({ tenantId: t, wabaId, phoneNumberId: 'pn-mono-2', displayPhoneNumber: '+33500000202', verifiedName: 'Deux', coexistence: false })
         .then(() => null, (e: unknown) => e);
       expect(err).toBeInstanceOf(SecondNumeroRefuseError);
       expect((err as SecondNumeroRefuseError).dejaRattache).toBe('pn-mono-1');
@@ -2104,7 +2111,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       expect((await pool.query(`select tenant_id from waba where id = 'waba-sn-1'`)).rows).toEqual([{ tenant_id: t }]);
 
       // Un espace qui a déjà son numéro : refusé, aucun second compte.
-      await es.linkTenant({ tenantId: autre, wabaId: 'waba-sn-autre', phoneNumberId: 'pn-sn-autre', displayPhoneNumber: '+33500000301', verifiedName: 'Autre' });
+      await es.linkTenant({ tenantId: autre, wabaId: 'waba-sn-autre', phoneNumberId: 'pn-sn-autre', displayPhoneNumber: '+33500000301', verifiedName: 'Autre', coexistence: false });
       await expect(es.lierCompteSansNumero({ tenantId: autre, wabaId: 'waba-sn-2' })).rejects.toBeInstanceOf(SecondNumeroRefuseError);
       expect((await pool.query(`select id from waba where tenant_id = $1`, [autre])).rows).toEqual([{ id: 'waba-sn-autre' }]);
     } finally {
@@ -2141,7 +2148,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       await es.lierCompteSansNumero({ tenantId: t, wabaId: 'waba-orph-vide' });
       expect((await pool.query(`select id from waba where tenant_id = $1`, [t])).rows).toEqual([{ id: 'waba-orph-vide' }]);
       await es.saveCredentials('waba-orph-vide', t, 'jeton-vide', null);
-      await es.linkTenant({ tenantId: t, wabaId: 'waba-orph-plein', phoneNumberId: 'pn-orph', displayPhoneNumber: '+33500000401', verifiedName: 'Plein' });
+      await es.linkTenant({ tenantId: t, wabaId: 'waba-orph-plein', phoneNumberId: 'pn-orph', displayPhoneNumber: '+33500000401', verifiedName: 'Plein', coexistence: false });
       expect((await pool.query(`select id from waba where tenant_id = $1 order by id`, [t])).rows).toEqual([{ id: 'waba-orph-plein' }]);
       expect((await pool.query(`select 1 from waba_credentials where waba_id = 'waba-orph-vide'`)).rows).toHaveLength(0);
 
@@ -2149,7 +2156,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
       const u = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-es-orphelin-2') returning id`)).rows[0]!.id;
       try {
         await es.lierCompteSansNumero({ tenantId: u, wabaId: 'waba-orph-fourni' });
-        await es.linkTenant({ tenantId: u, wabaId: 'waba-orph-fourni', phoneNumberId: 'pn-orph-fourni', displayPhoneNumber: '+441235000001', verifiedName: 'Fourni' });
+        await es.linkTenant({ tenantId: u, wabaId: 'waba-orph-fourni', phoneNumberId: 'pn-orph-fourni', displayPhoneNumber: '+441235000001', verifiedName: 'Fourni', coexistence: false });
         expect((await pool.query(`select id from waba where tenant_id = $1`, [u])).rows).toEqual([{ id: 'waba-orph-fourni' }]);
       } finally {
         await pool.query('delete from waba where tenant_id = $1', [u]);

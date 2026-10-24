@@ -29,6 +29,8 @@ export interface PhoneNumberRecord {
   fournisseur?: Fournisseur;
   /** La clé ou le jeton du compte a été refusé (`token_status = 'invalid'`). Absent : non. */
   identifiantRefuse?: boolean;
+  /** Relié en coexistence, le numéro restant dans l'application WhatsApp Business (migration 0253). Absent : non. */
+  coexistence?: boolean;
 }
 
 /**

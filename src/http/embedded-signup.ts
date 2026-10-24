@@ -89,8 +89,10 @@ const MESSAGE_ECHEC_DECONNEXION: Record<'purge' | 'detachement' | 'deja_detache'
  *  - GET  /embedded-signup/config   : de quoi le front lance la popup (appId + configId publics, pas de secret).
  *  - POST /embedded-signup/complete : reçoit { code, wabaId, phoneNumberId } de la popup (code TTL 30 s),
  *    échange le code contre un business token, rattache WABA et numéro à l'espace, abonne les webhooks, register
- *    un numéro neuf (jamais un numéro déjà CONNECTED ni non vérifié), stocke le token chiffré, et offre le crédit
- *    de bienvenue si Meta dit le numéro vérifié. Les étapes non bloquantes qui échouent remontent en `warnings`.
+ *    un numéro neuf (jamais un numéro déjà CONNECTED, non vérifié ni en coexistence), stocke le token chiffré, et
+ *    offre le crédit de bienvenue si Meta dit le numéro vérifié ou dans l'application WhatsApp Business : jamais sur
+ *    l'événement de la fenêtre seul, que le corps porte. Les étapes non bloquantes qui échouent remontent en
+ *    `warnings`.
  *  - POST /numero/code              : Meta envoie le code de vérification du numéro (appel par défaut, ou SMS).
  *  - POST /numero/activer           : vérifie le code s'il le faut (le crédit de bienvenue part alors), puis
  *    enregistre le numéro sur la Cloud API.
@@ -140,6 +142,7 @@ export function registerEmbeddedSignup(
         await journal(tenant, req, trace.action, { kind: 'phone_number', id: trace.phoneNumberId }, {
           wabaId: trace.wabaId,
           avertissements: trace.avertissements,
+          coexistence: trace.coexistence,
         });
       }
     });
@@ -153,6 +156,8 @@ export function registerEmbeddedSignup(
       phoneNumberId: r.phoneNumberId,
       displayPhoneNumber: r.displayPhoneNumber,
       ...(r.aActiver ? { aActiver: true } : {}),
+      // Seulement quand c'est vrai : la réponse d'un rattachement ordinaire reste celle d'avant la coexistence.
+      ...(r.coexistence ? { coexistence: true } : {}),
       ...(r.warnings.length > 0 ? { warnings: r.warnings } : {}),
     });
   });

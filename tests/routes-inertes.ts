@@ -243,17 +243,24 @@ export const historiqueContactInerte: Pick<ContactsRouteDeps['contactHistory'], 
   resumeContact: async () => null,
 };
 
-export const signupInerte: Pick<EmbeddedSignupRouteDeps, 'audit' | 'bilanDeconnexion' | 'deconnecterNumero'> = {
+export const signupInerte: Pick<EmbeddedSignupRouteDeps, 'audit' | 'bilanDeconnexion' | 'deconnecterNumero' | 'retirerCompteApplication' | 'enCoexistence'> = {
   audit: journalMuet,
   // « Déconnecter le numéro » a son propre fichier (`tests/numero-deconnexion.test.ts`) : ailleurs, ces deux-là LÈVENT,
   // pour qu'un chemin d'inscription qui se mettrait à les appeler se voie.
   bilanDeconnexion: async () => { throw new Error('non attendu dans ce test'); },
   deconnecterNumero: async () => { throw new Error('non attendu dans ce test'); },
+  // Le passage en coexistence a ses tests (`tests/connexion-numero-protocole.test.ts`) : aucun compte de l'application
+  // WhatsApp Business à retirer dans ces montages.
+  retirerCompteApplication: async () => 'aucun',
+  // Aucun numéro en coexistence : l'activation d'avant la coexistence (`tests/numero-activation.test.ts` porte le refus).
+  enCoexistence: async () => false,
 };
 
-export const metaInscriptionInerte: Pick<MetaInscriptionDep, 'wabasForToken' | 'listPhones'> = {
+export const metaInscriptionInerte: Pick<MetaInscriptionDep, 'wabasForToken' | 'listPhones' | 'surApplication'> = {
   wabasForToken: async () => [],
   listPhones: async () => [],
+  // Le numéro n'est pas dans l'application WhatsApp Business : le parcours d'avant la coexistence (plan 2026-10-24).
+  surApplication: async () => false,
 };
 
 export const champsInertes: Pick<FieldsRouteDeps, 'tenantCode' | 'contacts'> = {

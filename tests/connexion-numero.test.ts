@@ -5,7 +5,7 @@ import { signSession, signLienNumero } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { NumeroFourniRouteDeps } from '../src/http/numero-fourni';
 import type { NumeroFourni } from '../src/otp/store.pg';
-import { lireEtatConnexion, empreinteEtat, type EtatConnexion } from '../src/otp/etat-connexion';
+import { lireEtatConnexion, empreinteEtat, numeroConnecteDe, type EtatConnexion } from '../src/otp/etat-connexion';
 import { aucunCompteApplication } from './gardes';
 
 /**
@@ -63,10 +63,37 @@ describe('lireEtatConnexion', () => {
     expect((await lireEtatConnexion(etatDe({ pro: true }).deps, 't1')).inclusDansLePro).toBe(true);
   });
 
+  it('🔴 un numéro relié en coexistence (plan 2026-10-24) : l’état le dit, pour la page du lien comme pour Claude', async () => {
+    const { deps } = etatDe({});
+    const enCoexistence = { ...deps, numeroConnecte: async () => ({ chiffres: '441555479304', aActiver: false, coexistence: true as const }) };
+    expect((await lireEtatConnexion(enCoexistence, 't1')).connecte).toEqual({ chiffres: '441555479304', aActiver: false, coexistence: true });
+  });
+
   it('chaque lecture est filtrée sur l’espace demandé', async () => {
     const { deps, lus } = etatDe({ attribue: '441235619343' });
     await lireEtatConnexion(deps, 't-42');
     expect(lus.every((l) => l.endsWith(':t-42'))).toBe(true);
+  });
+});
+
+describe('numeroConnecteDe : le numéro de l’espace, tel que la page du lien et Claude le lisent', () => {
+  const PN = { displayPhoneNumber: '+44 1555 479304', status: 'CONNECTED', wabaPaiementBloque: null, coexistence: false };
+
+  it('ses chiffres, « à activer » sur un statut lu autre que CONNECTED, et la carte bloquée chez Meta', () => {
+    expect(numeroConnecteDe(null)).toBeNull();
+    expect(numeroConnecteDe(PN)).toEqual({ chiffres: '441555479304', aActiver: false, paiementBloque: false });
+    expect(numeroConnecteDe({ ...PN, status: 'PENDING', wabaPaiementBloque: true })).toEqual({ chiffres: '441555479304', aActiver: true, paiementBloque: true });
+    // Un statut pas encore lu n'est pas « à activer » (la règle de l'Accueil).
+    expect(numeroConnecteDe({ ...PN, status: null, displayPhoneNumber: null })).toEqual({ chiffres: '', aActiver: false, paiementBloque: false });
+  });
+
+  it('🔴 relié en coexistence (migration 0253) : `coexistence: true`, et seulement alors', () => {
+    expect(numeroConnecteDe({ ...PN, coexistence: true })).toEqual({ chiffres: '441555479304', aActiver: false, paiementBloque: false, coexistence: true });
+    expect(numeroConnecteDe({ ...PN, coexistence: undefined })).not.toHaveProperty('coexistence');
+  });
+
+  it('🔴 en coexistence, jamais « à activer », quel que soit le statut que Meta rend : il n’y a pas de /register à pousser', () => {
+    expect(numeroConnecteDe({ ...PN, status: 'PENDING', coexistence: true })).toEqual({ chiffres: '441555479304', aActiver: false, paiementBloque: false, coexistence: true });
   });
 });
 

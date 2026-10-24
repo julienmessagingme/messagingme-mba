@@ -4,10 +4,11 @@
  *  2. GET du numéro avec ce token -> display, verified, status ;
  *  3. POST /{waba_id}/subscribed_apps -> webhooks du WABA branchés sur notre app (idempotent) ;
  *  4. POST /{phone_number_id}/register (pin) : numéro neuf uniquement, un numéro déjà CONNECTED se
- *     re-sélectionne dans la popup sans OTP ni register.
+ *     re-sélectionne dans la popup sans OTP ni register, et un numéro en coexistence jamais (`surApplication`).
  */
 
 import { ClientGraph } from './graph';
+import { journaliser } from '../lib/journal';
 
 export interface EsPhoneInfo {
   id: string;
@@ -81,6 +82,25 @@ export class MetaEmbeddedSignupClient extends ClientGraph {
       status: typeof b['status'] === 'string' ? b['status'] : null,
       codeVerificationStatus: typeof b['code_verification_status'] === 'string' ? b['code_verification_status'] : null,
     };
+  }
+
+  /**
+   * Le numéro vit-il aussi dans l'application WhatsApp Business, en coexistence (`is_on_biz_app`, plan
+   * `docs/superpowers/plans/2026-10-24-coexistence.md`) ? 🔴 UN APPEL À PART de `getPhone`, dont la chaîne `fields` ne
+   * bouge pas : un champ que Meta ne connaîtrait pas y ferait échouer TOUTES les connexions (erreur 100). Ici, un refus,
+   * une panne ou une réponse sans le champ rendent `null`, journalisé : ne lève jamais, et le parcours ordinaire continue.
+   */
+  async surApplication(phoneNumberId: string, businessToken: string): Promise<boolean | null> {
+    try {
+      const b = await this.call(`${this.baseUrl}/${this.version}/${encodeURIComponent(phoneNumberId)}?fields=is_on_biz_app`, {
+        headers: { Authorization: `Bearer ${businessToken}` },
+      });
+      const sur = b['is_on_biz_app'];
+      return typeof sur === 'boolean' ? sur : null;
+    } catch (err) {
+      journaliser('warn', 'coexistence_illisible', { phoneNumberId, err });
+      return null;
+    }
   }
 
   /** Abonne notre app aux webhooks du WABA du client (messages, statuts...). Idempotent côté Meta. */

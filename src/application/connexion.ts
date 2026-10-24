@@ -64,6 +64,23 @@ export async function qrApplication(d: DepsConnexionApplication, tenantId: strin
   return { statut: compte.statut, qr: texte ? await d.qrEnImage(texte) : null, relie: false };
 }
 
+/**
+ * LE PASSAGE EN COEXISTENCE (plan 2026-10-24, tâche 2) : le numéro relié par QR code passe sur l'API Cloud, le même numéro
+ * restant dans l'application WhatsApp Business. La coexistence délie tous les appareils liés, le nôtre compris : ce
+ * retrait efface sa session chez le service de connexions et marque le compte `retire`, comme à la libération d'un numéro
+ * fourni (`retirerApplication`, `src/worker.ts`). `aucun` : pas de compte, ou déjà retiré ; `echec` : le service a
+ * refusé, ou il n'est pas configuré. Une panne de la base lève : l'appelant la traite comme un échec.
+ */
+export async function retirerLeCompteApplication(
+  d: { comptes: Pick<ComptesApplication, 'parEspace'>; client: Pick<ClientApplication, 'retirer'> | null },
+  tenantId: string,
+): Promise<'retire' | 'aucun' | 'echec'> {
+  const compte = await d.comptes.parEspace(tenantId);
+  if (!compte || compte.statut === 'retire') return 'aucun';
+  if (!d.client) return 'echec';
+  return (await d.client.retirer(compte.id)).ok ? 'retire' : 'echec';
+}
+
 /** Ce qu'un refus de préparation dit à la personne (la page) ou à Claude (l'outil). */
 export function phraseDuRefusDePreparation(raison: RefusPreparation): string {
   switch (raison) {

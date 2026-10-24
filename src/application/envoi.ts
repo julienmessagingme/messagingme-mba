@@ -1,6 +1,6 @@
 import { DROITS } from '../offres/offres';
 import type { ClientApplication, RaisonClient, Resultat } from './client';
-import type { ComptesApplication, Filiere } from './comptes';
+import { RELIER_EN_COEXISTENCE, type ComptesApplication, type Filiere } from './comptes';
 import { idDuMessage, jidDuWaId } from './message';
 import { GEL_MS, type RefusPremier } from './premier-message';
 
@@ -79,11 +79,11 @@ export function phraseMessageEnFile(prevuLe: Date): string {
 
 /**
  * 🔴 Un numéro relié par QR code ne fait que RÉPONDRE (mesuré le 2026-10-24, `src/application/premier-message.ts`) : ce que
- * dit le refus `premier_contact`, à Claude comme à l'API.
+ * dit le refus `premier_contact`, à Claude comme à l'API. La suite, depuis le plan 2026-10-24 : la coexistence.
  */
 export const PHRASE_PREMIER_CONTACT = 'Sur un numéro relié par QR code, WhatsApp ne laisse pas écrire en premier à quelqu’un qui '
   + 'ne vous a pas écrit (il coupe ou bloque le numéro) : vous pouvez seulement répondre aux clients qui vous écrivent. '
-  + 'Pour écrire en premier, reliez votre numéro par Meta (avec un compte Meta Business).';
+  + `Pour écrire en premier tout en gardant l’application WhatsApp Business, ${RELIER_EN_COEXISTENCE}`;
 
 /**
  * Ce qu'un refus de la porte « écrire en premier » dit à qui a voulu écrire. `pour` : l'outil à nommer quand la phrase

@@ -26,6 +26,13 @@ export interface CompteApplication {
 
 export type Filiere = 'api' | 'application';
 
+/**
+ * La fin des refus d'un numéro relié par QR code qui voudrait écrire en premier (le premier contact, les messages Shopify,
+ * le Pro) : la coexistence, sur le même numéro, l'application WhatsApp Business gardée (plan 2026-10-24, tâche 4). Écrite
+ * une fois pour les trois.
+ */
+export const RELIER_EN_COEXISTENCE = 'reliez ce numéro en coexistence, depuis l’Accueil de la console ou depuis Claude.';
+
 /** Pourquoi un compte ne peut pas être préparé. */
 export type RefusPreparation =
   | 'numero_pris' // relié dans un autre espace

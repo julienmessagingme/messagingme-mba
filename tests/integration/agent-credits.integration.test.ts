@@ -226,7 +226,7 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
       wabas.push(waba);
       numeros.push(numero);
       const es = new PgEmbeddedSignupStore(pool, CINQ);
-      await es.linkTenant({ tenantId, wabaId: waba, phoneNumberId: numero, displayPhoneNumber: numeroAffiche, verifiedName: null });
+      await es.linkTenant({ tenantId, wabaId: waba, phoneNumberId: numero, displayPhoneNumber: numeroAffiche, verifiedName: null, coexistence: false });
       return { numero, affiche: numeroAffiche, offert: await es.offrirCredit(tenantId, numero) };
     }
     afterAll(async () => {
@@ -343,7 +343,7 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
       const waba = `waba-offre-${suffixe()}`;
       numeros.push(numero);
       wabas.push(waba);
-      await new PgEmbeddedSignupStore(pool, CINQ).linkTenant({ tenantId: t, wabaId: waba, phoneNumberId: numero, displayPhoneNumber: affiche(), verifiedName: null });
+      await new PgEmbeddedSignupStore(pool, CINQ).linkTenant({ tenantId: t, wabaId: waba, phoneNumberId: numero, displayPhoneNumber: affiche(), verifiedName: null, coexistence: false });
       expect(await credits.solde(t)).toBe(0);
       expect((await pool.query('select 1 from credits_offerts where tenant_id = $1', [t])).rowCount).toBe(0);
     });

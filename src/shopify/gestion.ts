@@ -4,7 +4,7 @@ import type { AccesClients, ClientAbonne, LectureClients } from './clients';
 import type { IssueAbonnement } from './abonnements';
 // Le ménage des modèles remplacés : la préparation n'importe de la gestion que des TYPES, aucun cycle à l'exécution.
 import { oublierPlusTard, validerTexteShopify, type ProgrammerOubli } from './preparation';
-import type { Filiere } from '../application/comptes';
+import { RELIER_EN_COEXISTENCE, type Filiere } from '../application/comptes';
 import type { ImportInput } from '../crm/import';
 import type { ImportReport } from '../crm/types';
 import { LimiteOffreError } from '../offres/refus';
@@ -46,10 +46,12 @@ export interface DepsGestionShopify {
   filiere(tenantId: string): Promise<Filiere | null>;
 }
 
-/** Le refus d'un message Shopify actif sur un numéro relié par QR code (2026-10-24, `brancherMessage`). */
+/**
+ * Le refus d'un message Shopify actif sur un numéro relié par QR code (2026-10-24, `brancherMessage`), et sa suite : la
+ * coexistence, après laquelle les messages se règlent en modèles (plan 2026-10-24, tâche 4).
+ */
 export const PHRASE_SHOPIFY_QR_CODE = 'Sur un numéro relié par QR code, les messages Shopify ne peuvent pas partir : WhatsApp ne '
-  + 'laisse pas écrire en premier à un client. Reliez votre numéro par Meta (avec un compte Meta Business) pour les '
-  + 'confirmations, les expéditions et les relances.';
+  + `laisse pas écrire en premier à un client. Pour écrire en premier tout en gardant l’application WhatsApp Business, ${RELIER_EN_COEXISTENCE}`;
 
 export type Refus = { ok: false; statut: 400 | 402 | 409 | 422 | 503; message: string };
 export type Issue<T> = { ok: true; valeur: T } | Refus;

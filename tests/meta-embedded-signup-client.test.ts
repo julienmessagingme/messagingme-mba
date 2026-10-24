@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { MetaEmbeddedSignupClient } from '../src/meta/embedded-signup';
 
 /**
@@ -86,6 +86,56 @@ describe('getPhone', () => {
   it('champ absent -> null, et rien ne sera refusé sur cette base', async () => {
     fausseReponse({ id: 'pn-1', status: 'CONNECTED' });
     expect((await client().getPhone('pn-1', 'T')).codeVerificationStatus).toBeNull();
+  });
+
+  it('🔴 la chaîne `fields` ne bouge pas : un champ inconnu de Meta y ferait échouer TOUTES les connexions (erreur 100)', async () => {
+    const urls = fausseReponse({ id: 'pn-1', status: 'CONNECTED' });
+    await client().getPhone('pn-1', 'T');
+    expect(new URL(urls[0]!).searchParams.get('fields')).toBe('id,display_phone_number,verified_name,status,code_verification_status');
+  });
+});
+
+/**
+ * La coexistence (plan 2026-10-24, tâche 2) : `is_on_biz_app` se lit dans un appel À PART, tolérant, pour que son échec
+ * ne touche jamais le parcours ordinaire.
+ */
+describe('surApplication', () => {
+  it('lit is_on_biz_app, et lui seul, sur le numéro, avec le jeton du CLIENT', async () => {
+    const appels: Array<{ url: string; autorisation?: string }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      appels.push({ url: String(url), autorisation: (init?.headers as Record<string, string> | undefined)?.Authorization });
+      return { ok: true, status: 200, json: async () => ({ id: 'pn-1', is_on_biz_app: true }) } as Response;
+    }) as typeof fetch;
+    expect(await client().surApplication('pn-1', 'TOKEN_CLIENT')).toBe(true);
+    const url = new URL(appels[0]!.url);
+    expect(url.pathname).toBe('/v25.0/pn-1');
+    expect(url.searchParams.get('fields')).toBe('is_on_biz_app');
+    expect(appels[0]!.autorisation).toBe('Bearer TOKEN_CLIENT');
+  });
+
+  it('faux -> false ; champ absent ou d’une autre forme -> null (on ne sait pas)', async () => {
+    fausseReponse({ id: 'pn-1', is_on_biz_app: false });
+    expect(await client().surApplication('pn-1', 'T')).toBe(false);
+    fausseReponse({ id: 'pn-1' });
+    expect(await client().surApplication('pn-1', 'T')).toBeNull();
+    fausseReponse({ id: 'pn-1', is_on_biz_app: 'true' });
+    expect(await client().surApplication('pn-1', 'T')).toBeNull();
+  });
+
+  it('🔴 un refus de Meta ou une panne réseau -> null, journalisé, et rien ne lève', async () => {
+    const lignes: string[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation((l: unknown) => { lignes.push(String(l)); });
+    try {
+      fausseReponse({ error: { message: '(#100) Tried accessing nonexisting field (is_on_biz_app)', code: 100 } }, false);
+      expect(await client().surApplication('pn-1', 'T')).toBeNull();
+      globalThis.fetch = (async () => { throw new Error('ECONNRESET'); }) as typeof fetch;
+      expect(await client().surApplication('pn-1', 'T')).toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+    expect(lignes).toHaveLength(2);
+    expect(lignes[0]).toContain('nonexisting field');
+    expect(lignes[1]).toContain('ECONNRESET');
   });
 });
 

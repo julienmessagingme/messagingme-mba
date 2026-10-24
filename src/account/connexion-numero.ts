@@ -4,6 +4,13 @@ import type { Prise, VerrousCourts } from '../db/verrous-courts';
 import { CompteChez360dialog, type Fournisseur } from '../meta/credentials';
 import { SecondNumeroRefuseError, TenantConflictError } from './es-store.pg';
 
+/**
+ * La fin de la fenêtre de Meta en coexistence (`WA_EMBEDDED_SIGNUP`, ouverte avec `featureType:
+ * 'whatsapp_business_app_onboarding'`) : le numéro reste dans l'application WhatsApp Business et passe AUSSI sur l'API
+ * Cloud (plan `docs/superpowers/plans/2026-10-24-coexistence.md`).
+ */
+export const EVENEMENT_COEXISTENCE = 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
+
 /** Les appels Graph de l'inscription, faits avec le business token que le parcours vient d'obtenir. */
 export interface MetaInscriptionDep {
   exchangeCode(code: string): Promise<string>;
@@ -18,6 +25,12 @@ export interface MetaInscriptionDep {
     status: string | null;
     codeVerificationStatus?: string | null;
   }>;
+  /**
+   * Le numéro vit-il aussi dans l'application WhatsApp Business (`is_on_biz_app`) ? Lu À PART de `getPhone`, dont la
+   * chaîne `fields` ne bouge pas : un champ que Meta ne connaîtrait pas y ferait échouer toutes les connexions. `null`
+   * sur toute erreur, journalisée : ne lève jamais.
+   */
+  surApplication(phoneNumberId: string, businessToken: string): Promise<boolean | null>;
   subscribeApp(wabaId: string, businessToken: string): Promise<void>;
   register(phoneNumberId: string, businessToken: string, pin: string): Promise<void>;
 }
@@ -31,6 +44,8 @@ export interface DepsConnexionNumero {
       phoneNumberId: string;
       displayPhoneNumber: string | null;
       verifiedName: string | null;
+      /** Le numéro est relié en coexistence (`phone_numbers.coexistence`, migration 0253). */
+      coexistence: boolean;
     }): Promise<void>;
     lierCompteSansNumero(input: { tenantId: string; wabaId: string }): Promise<void>;
   };
@@ -38,10 +53,21 @@ export interface DepsConnexionNumero {
   saveCredentials(wabaId: string, tenantId: string, businessToken: string, pin: string | null): Promise<void>;
   fournisseurDeLEspace(tenantId: string): Promise<Fournisseur | null>;
   numeroDuTenant(tenantId: string): Promise<string | null>;
+  /**
+   * Retire le compte de la filière application de l'espace s'il n'est pas déjà retiré (`retirerLeCompteApplication`, le
+   * service de connexions) : un espace relié par QR code qui passe en coexistence ne garde pas deux filières vivantes.
+   * `aucun` : pas de compte, ou déjà retiré.
+   */
+  retirerCompteApplication(tenantId: string): Promise<'retire' | 'aucun' | 'echec'>;
 }
 
 export interface DepsDemandeCodeNumero {
   numeroDuTenant(tenantId: string): Promise<string | null>;
+  /**
+   * Le numéro de l'espace est-il relié en coexistence (`phone_numbers.coexistence`, migration 0253) ? Alors il n'y a rien
+   * à activer : l'application WhatsApp Business l'a déjà enregistré, et un `/register` y est interdit.
+   */
+  enCoexistence(tenantId: string): Promise<boolean>;
   etatNumero(tenantId: string, phoneNumberId: string): Promise<{ status: string | null; codeVerificationStatus: string | null }>;
   demanderCode(tenantId: string, phoneNumberId: string, methode: 'VOICE' | 'SMS'): Promise<void>;
   verrous: Pick<VerrousCourts, 'prendre'>;
@@ -49,6 +75,8 @@ export interface DepsDemandeCodeNumero {
 
 export interface DepsActivationNumero {
   numeroDuTenant(tenantId: string): Promise<string | null>;
+  /** Comme pour la demande de code : un numéro en coexistence n'a rien à activer. */
+  enCoexistence(tenantId: string): Promise<boolean>;
   etatNumero(tenantId: string, phoneNumberId: string): Promise<{ status: string | null; codeVerificationStatus: string | null }>;
   verifierCode(tenantId: string, phoneNumberId: string, code: string): Promise<void>;
   enregistrerNumero(tenantId: string, phoneNumberId: string, pin: string): Promise<void>;
@@ -58,7 +86,7 @@ export interface DepsActivationNumero {
 
 export type TraceConnexionNumero =
   | { action: 'compte.relie_sans_numero'; wabaId: string; avertissements: number }
-  | { action: 'numero.connecte'; wabaId: string; phoneNumberId: string; avertissements: number }
+  | { action: 'numero.connecte'; wabaId: string; phoneNumberId: string; avertissements: number; coexistence: boolean }
   | { action: 'numero.active'; phoneNumberId: string; verificationFaite: boolean };
 
 export type TracerConnexionNumero = (trace: TraceConnexionNumero) => Promise<void>;
@@ -78,6 +106,8 @@ export type IssueConnexionNumero = RefusConnexion | {
   phoneNumberId: string;
   displayPhoneNumber: string | null;
   aActiver: boolean;
+  /** Le numéro est relié en coexistence : il reste dans l'application WhatsApp Business. */
+  coexistence: boolean;
   warnings: string[];
 };
 
@@ -87,7 +117,13 @@ export type IssueDemandeCodeNumero =
 
 export type IssueActivationNumero =
   | { ok: true; actif: true; deja: boolean }
-  | { ok: false; statut: 400 | 404 | 422; error: string };
+  | { ok: false; statut: 400 | 404 | 409 | 422; error: string };
+
+/**
+ * Le refus des deux gestes d'activation sur un numéro relié en coexistence (relecture du lot 1, plan 2026-10-24) : rien à
+ * activer, et jamais de `/register`, même si Meta rendait pour lui un statut autre que `CONNECTED`.
+ */
+export const NUMERO_EN_COEXISTENCE = 'Ce numéro est relié en coexistence : il sert déjà dans l’application WhatsApp Business, il n’y a rien à activer.';
 
 /** Délai minimal entre deux demandes : Meta ne permet que dix essais par numéro sur 72 heures. */
 export const DELAI_ENTRE_CODES_MS = 60_000;
@@ -128,6 +164,24 @@ async function offrir(deps: Pick<DepsConnexionNumero, 'offrirCredit'>, tenantId:
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error(`credit offert: non ecrit (tenant ${tenantId}, numéro ${phoneNumberId}) : ${texteDe(err)}`);
+  }
+}
+
+/** Ce que dit le rattachement en coexistence quand l'appareil lié par QR code n'a pas pu être retiré. */
+const APPAREIL_NON_RETIRE = 'L’appareil lié par QR code n’a pas pu être retiré de notre côté : WhatsApp l’a déjà délié, et l’espace passe par l’API.';
+
+/**
+ * Retire l'appareil lié par QR code d'un espace qui vient de passer en coexistence. Une panne ne transforme jamais le
+ * rattachement en erreur : WhatsApp a déjà délié l'appareil, l'API prime sur la filière (`filiereDe`), et la session qui
+ * resterait chez nous n'agit plus.
+ */
+async function retirerLAppareil(deps: Pick<DepsConnexionNumero, 'retirerCompteApplication'>, tenantId: string): Promise<'retire' | 'aucun' | 'echec'> {
+  try {
+    return await deps.retirerCompteApplication(tenantId);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`embedded-signup: appareil lié non retiré (tenant ${tenantId}) : ${texteDe(err)}`);
+    return 'echec';
   }
 }
 
@@ -260,6 +314,18 @@ export async function connecterNumero(
     return { ok: false, statut: 422, error: `le compte Meta connecté ne donne pas accès à ce numéro/WABA : ${msg}` };
   }
 
+  // 🔴 La coexistence (plan 2026-10-24). Meta est TOUJOURS interrogé sur le numéro, une fois, dans un appel à part qui ne
+  // lève jamais (`null` : illisible). L'événement de la fenêtre suffit à sauter `/register` et à retirer l'appareil lié
+  // par QR code, des effets qui ne touchent que l'espace du demandeur ; sans lui (un parcours rejoué n'annonce rien), le
+  // signal de Meta les déclenche. Le crédit, lui, n'est ouvert que par Meta (plus bas) : l'événement est une chaîne que
+  // le navigateur envoie librement.
+  const surApplication = await deps.meta.surApplication(phoneNumberId, businessToken);
+  const coexistence = input.evenement === EVENEMENT_COEXISTENCE || surApplication === true;
+  if (input.evenement === EVENEMENT_COEXISTENCE && surApplication === false) {
+    // eslint-disable-next-line no-console
+    console.warn(`embedded-signup: événement de coexistence reçu, mais Meta rend is_on_biz_app faux (tenant ${tenant}, waba ${wabaId}, numéro ${phoneNumberId})`);
+  }
+
   const warnings: string[] = [];
   try {
     await deps.inscriptions.linkTenant({
@@ -268,6 +334,7 @@ export async function connecterNumero(
       phoneNumberId,
       displayPhoneNumber: phone.displayPhoneNumber,
       verifiedName: phone.verifiedName,
+      coexistence,
     });
   } catch (err) {
     if (err instanceof TenantConflictError) {
@@ -286,12 +353,14 @@ export async function connecterNumero(
   }
 
   let pin: string | null = null;
-  const aActiver = phone.status !== 'CONNECTED' && phone.codeVerificationStatus === 'NOT_VERIFIED';
+  // 🔴 Jamais `/register` sur un numéro en coexistence : l'application l'a déjà enregistré. Ni PIN à tirer, ni
+  // vérification à finir : le numéro sert déjà dans l'application.
+  const aActiver = !coexistence && phone.status !== 'CONNECTED' && phone.codeVerificationStatus === 'NOT_VERIFIED';
   if (aActiver) {
     // eslint-disable-next-line no-console
     console.warn(`embedded-signup: numéro non vérifié, register non tenté (tenant ${tenant}, waba ${wabaId}, numéro ${phoneNumberId})`);
     warnings.push("ce numéro n'a pas encore été vérifié chez Meta : il est rattaché mais ne peut pas encore envoyer. Termine avec « Activer le numéro » sur l'Accueil.");
-  } else if (phone.status !== 'CONNECTED') {
+  } else if (!coexistence && phone.status !== 'CONNECTED') {
     pin = String(randomInt(100000, 1000000));
     try {
       await deps.meta.register(phoneNumberId, businessToken, pin);
@@ -305,8 +374,16 @@ export async function connecterNumero(
   }
 
   await deps.saveCredentials(wabaId, tenant, businessToken, pin);
-  await tracer({ action: 'numero.connecte', wabaId, phoneNumberId, avertissements: warnings.length });
-  if (phone.status === 'CONNECTED' || phone.codeVerificationStatus === 'VERIFIED' || pin !== null) {
+  // Un espace relié par QR code passe en coexistence sur le même numéro : son appareil lié se retire, APRÈS le
+  // rattachement (l'API prime alors déjà), et avant la trace, qui compte son avertissement.
+  if (coexistence && (await retirerLAppareil(deps, tenant)) === 'echec') warnings.push(APPAREIL_NON_RETIRE);
+  await tracer({ action: 'numero.connecte', wabaId, phoneNumberId, avertissements: warnings.length, coexistence });
+  // 🔴 LE CRÉDIT EXIGE UN SIGNAL DE META, JAMAIS L'ÉVÉNEMENT DE LA FENÊTRE SEUL : le numéro dans l'application WhatsApp
+  // Business (`is_on_biz_app`), `CONNECTED`, `VERIFIED`, ou un register accepté. Sinon la fenêtre ordinaire, un numéro
+  // laissé `NOT_VERIFIED` et un corps qui annonce la coexistence récolteraient l'offre fermée le 2026-09-29. Elle reste
+  // bornée à une par espace et par numéro affiché (`offrirAuNumeroVerifie`) : un espace déjà servi par son compte QR code
+  // n'en reçoit pas une seconde.
+  if (surApplication === true || phone.status === 'CONNECTED' || phone.codeVerificationStatus === 'VERIFIED' || pin !== null) {
     await offrir(deps, tenant, phoneNumberId);
   }
   return {
@@ -316,6 +393,7 @@ export async function connecterNumero(
     phoneNumberId,
     displayPhoneNumber: phone.displayPhoneNumber,
     aActiver,
+    coexistence,
     warnings,
   };
 }
@@ -328,6 +406,8 @@ export async function demanderCodeNumero(
   const { tenantId: tenant, methode } = input;
   const phoneNumberId = await deps.numeroDuTenant(tenant);
   if (phoneNumberId === null) return { ok: false, statut: 404, error: 'aucun numéro rattaché à cet espace' };
+  // Avant Meta et avant le délai : un numéro en coexistence n'a pas de code à recevoir.
+  if (await deps.enCoexistence(tenant)) return { ok: false, statut: 409, error: NUMERO_EN_COEXISTENCE };
 
   let etat: { status: string | null; codeVerificationStatus: string | null };
   try {
@@ -377,6 +457,8 @@ export async function activerNumero(
   const tenant = input.tenantId;
   const phoneNumberId = await deps.numeroDuTenant(tenant);
   if (phoneNumberId === null) return { ok: false, statut: 404, error: 'aucun numéro rattaché à cet espace' };
+  // Avant Meta : un numéro en coexistence n'a ni vérification à finir, ni `/register` à recevoir.
+  if (await deps.enCoexistence(tenant)) return { ok: false, statut: 409, error: NUMERO_EN_COEXISTENCE };
 
   let etat: { status: string | null; codeVerificationStatus: string | null };
   try {
