@@ -53,8 +53,8 @@ export const corpsEnvoi = schemaCorps.extend({
 const RESOLUTION: readonly CodeApi[] = ['invalid_recipient', 'invalid_phone', 'unknown_contact', 'identity_conflict'];
 const NUMERO: readonly CodeApi[] = ['no_whatsapp_number', 'number_unlinked', 'number_suspended'];
 const MESSAGE_WHATSAPP: readonly CodeApi[] = ['invalid_body', ...RESOLUTION, 'blocked_contact', 'window_closed', 'opted_out', ...NUMERO, 'meta_rejected', 'meta_auth_failed'];
-/** Le texte écrit aussi en premier sur un numéro relié par QR code : consentement, numéro, limites de l'offre. */
-const TEXTE_WHATSAPP: readonly CodeApi[] = [...MESSAGE_WHATSAPP, 'no_consent', 'no_phone', 'plan_limit_reached'];
+/** Le texte, sur un numéro relié par QR code, répond aussi hors des 24 heures à qui a écrit : numéro, messages du mois. */
+const TEXTE_WHATSAPP: readonly CodeApi[] = [...MESSAGE_WHATSAPP, 'no_phone', 'plan_limit_reached'];
 
 const C = 'Contacts';
 const M = 'Messages';
@@ -143,9 +143,9 @@ export const ROUTES_V1: readonly RouteOpenapi[] = [
     succes: { statut: 200, schema: reponseMessageSimple },
     autreSucces: {
       statut: 202, schema: reponseMessageEnFile,
-      quand: 'Queued, nothing sent yet: on a number linked by QR code, a text to someone with no conversation, or outside the '
-        + '24-hour window, is written first. It leaves spaced out, counts in the month\'s messages, and needs a record that '
-        + 'is opted_in or the consent declared in the call.',
+      quand: 'Queued, nothing sent yet: on a number linked by QR code, a text outside the 24-hour window to someone who wrote '
+        + 'to the number. It leaves spaced out and counts in the month\'s messages. Such a number never writes first: to '
+        + 'someone who never wrote, the answer is 422 window_closed.',
     },
     erreurs: TEXTE_WHATSAPP,
   },

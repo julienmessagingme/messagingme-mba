@@ -66,25 +66,22 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
     ...ficheOutilMcp('set_shopify_message'),
     fonction: null,
     description:
-      'Sends a WhatsApp message when a Shopify event happens, or stops it. Two ways, set by the workspace number '
-      + '(numero.filiere in get_setup_state): on an official API number, an approved template (template, language, '
-      + 'variables: the Shopify data of {{1}}, {{2}}... in order, as many as the template has); on a number linked by QR '
-      + `code, a plain text (text, language, 1 to ${TEXTE_SHOPIFY_MAX} characters) with the Shopify data written in double `
-      + 'braces ({{first_name}}, {{order_number}}...), active at once, with no template, no Meta and no wait. '
+      'Sends a WhatsApp message when a Shopify event happens, or stops it, from an official API number (numero.filiere '
+      + 'api in get_setup_state): an approved template (template, language, variables: the Shopify data of {{1}}, {{2}}... '
+      + 'in order, as many as the template has). On a number linked by QR code (numero.filiere application), Shopify '
+      + 'messages cannot go out: WhatsApp does not let a linked device write first to a customer, so an active message is '
+      + 'refused there; only stopping one set before is allowed (active false, with its text). Link the number through '
+      + 'Meta (with a Meta Business account) for order confirmations, shipping updates and reminders. '
       + `Events and their data: ${evenements}. `
-      + 'On the API, an order message must be a utility template, approved at Meta (create_template, then '
-      + 'get_template_status), and a checkout_abandoned reminder a marketing template. A checkout_abandoned reminder is '
-      + 'sent once, delay_minutes after the checkout last changed and only if no order came out of it; it requires the '
-      + 'merchant to affirm customer consent, and on a number linked by QR code all three messages require it, the '
-      + 'reminder text then ending with the line asking to reply STOP. A missing first name is replaced by a neutral word. '
-      + 'Links go in the body (a URL button takes no variable; a text has no button). One message per event: setting it '
-      + 'again replaces it. customers_consented: true records that the merchant affirms its customers agreed to receive '
-      + 'WhatsApp messages; the customers\' records then become opted in everywhere, campaigns included, and the merchant '
-      + 'is responsible for it; false withdraws it (records already opted in stay so), and every new connect_shopify '
-      + 'clears it. Every message goes through the sends rules (STOP, consent, monthly messages, contact limit). On an API '
-      + 'number it appears in Campaigns; on a number linked by QR code, it counts in the plan\'s monthly messages and waits '
-      + 'its turn, at least 30 seconds after the previous message written first (outcome en_file, then its final outcome '
-      + 'in get_shopify_state).',
+      + 'An order message must be a utility template, approved at Meta (create_template, then get_template_status), and a '
+      + 'checkout_abandoned reminder a marketing template. A checkout_abandoned reminder is sent once, delay_minutes after '
+      + 'the checkout last changed and only if no order came out of it; it requires the merchant to affirm customer '
+      + 'consent. A missing first name is replaced by a neutral word. Links go in the body (a URL button takes no '
+      + 'variable). One message per event: setting it again replaces it. customers_consented: true records that the '
+      + 'merchant affirms its customers agreed to receive WhatsApp messages; the customers\' records then become opted in '
+      + 'everywhere, campaigns included, and the merchant is responsible for it; false withdraws it (records already opted '
+      + 'in stay so), and every new connect_shopify clears it. Every message goes through the sends rules (STOP, consent, '
+      + 'monthly templates, contact limit) and appears in Campaigns.',
     annotations: { title: 'Set a Shopify message', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     entree: {
       type: 'object',
@@ -93,7 +90,8 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
         template: { type: 'string', minLength: 1, maxLength: 512, description: 'The template name (an official API number only).' },
         text: {
           type: 'string', minLength: 1, maxLength: TEXTE_SHOPIFY_MAX,
-          description: 'The plain text (a number linked by QR code only), with the event data in double braces ({{first_name}}).',
+          description: 'A number linked by QR code only, to stop a message set before (with active false): its plain text, '
+            + 'the event data in double braces ({{first_name}}). Such a number cannot send Shopify messages.',
         },
         language: { type: 'string', minLength: 1, maxLength: 20, description: 'The template or text language (fr, en_US...).' },
         variables: {
@@ -134,7 +132,9 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
       'The Shopify store connected to the workspace: its state (connected or cut), the messages set on its events, the last '
       + 'event received, whether the merchant affirmed customer consent, and the last 30 days of events by outcome (sent, '
       + 'opted out, without consent, contact limit, monthly templates limit, without phone...; on a number linked by QR code '
-      + 'also en_file, pas_sur_whatsapp, gele, numero_coupe, refuse_whatsapp, filiere_differente), and the abandoned checkouts: '
+      + 'also premier_contact: such a number never writes first, so its Shopify messages cannot go out; and for a message '
+      + 'queued before that rule, en_file, pas_sur_whatsapp, gele, numero_coupe, refuse_whatsapp, filiere_differente), and '
+      + 'the abandoned checkouts: '
       + 'their delay and, over the last 7 days, the reminders sent, those closed in time by an order, those waiting.',
     annotations: { title: 'Get the Shopify connection', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {} },

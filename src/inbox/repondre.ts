@@ -6,9 +6,9 @@
  * L'ordre des gestes compte :
  *   1. la conversation existe et appartient à cet espace (sinon rien de plus, IDOR) ;
  *   2. la fenêtre est ouverte (Meta refuse le texte libre en dehors : on refuse avant d'appeler). Sur la filière
- *      application, répondre reste toujours possible, par le service de connexions ; mais hors des 24 heures, une
- *      réponse qu'une machine écrit est un message écrit en premier : elle part par la porte (`ecrirePremier`), comptée
- *      et espacée (plan 2026-10-23, tâche 3) ;
+ *      application, répondre à qui a écrit reste toujours possible, par le service de connexions ; mais hors des
+ *      24 heures, une réponse qu'une machine écrit part par la porte (`ecrirePremier`), comptée et espacée (plan
+ *      2026-10-23, tâche 3), et seulement à un contact qui nous a écrit (2026-10-24) ;
  *   3. l'envoi ;
  *   4. la prise du fil et le journal, après l'envoi et en best-effort : un échec d'état ne doit jamais faire
  *      croire à un message perdu.
@@ -109,6 +109,8 @@ export type ResultatReponse =
  * Ce qui part par la porte quand une réponse sort des 24 heures, sur la filière application. Absent : une réponse
  * (`reponse`), la fiche déjà consentante, et la clé de `cleDeReponse`. L'API publique passe le sien : son origine, le
  * consentement déclaré dans l'appel, et la clé de l'appel, la même qu'à une personne sans fil (`src/http/v1-messages.ts`).
+ * Le consentement ne sert qu'à un fil sans message reçu, que la porte refuse : un contact qui a écrit passe en mode
+ * `conversation` (`repondreAvec`).
  */
 export interface HorsFenetre {
   origine: OriginePremier;
@@ -217,11 +219,11 @@ async function repondreAvec(
   }
 
   /**
-   * 🔴 HORS DES 24 HEURES, UNE MACHINE ÉCRIT EN PREMIER (conception 2026-10-23, § 5.1) : la même règle que l'API, la
-   * fenêtre de 24 heures. Sans ce détour, un premier message Shopify créerait le fil, et tout ce qu'une machine enverrait
-   * ensuite par une porte de réponse contournerait la limite du mois, l'espacement et le consentement. Dans les
-   * 24 heures, rien ne change : la réponse part tout de suite, et rien n'est compté. Un opérateur répond toujours
-   * directement, comme sur un fil qu'il tient. Le message en file ne prend pas le fil : le job le trace sans le prendre.
+   * 🔴 HORS DES 24 HEURES, UNE MACHINE PASSE PAR LA PORTE (conception 2026-10-23, § 5.1) : la même règle que l'API, la
+   * fenêtre de 24 heures. Sans ce détour, ce qu'une machine enverrait par une porte de réponse contournerait la limite du
+   * mois, l'espacement et la règle du 2026-10-24 (ce numéro ne fait que répondre à qui lui a écrit). Dans les 24 heures,
+   * rien ne change : la réponse part tout de suite, et rien n'est compté. Un opérateur répond toujours directement, comme
+   * sur un fil qu'il tient. Le message en file ne prend pas le fil : le job le trace sans le prendre.
    */
   const texte = envoi.texteApplication;
   if (application && texte !== undefined && !ctx.windowOpen && origine !== 'humain') {
@@ -230,9 +232,10 @@ async function repondreAvec(
     const h: HorsFenetre = horsFenetre
       ?? { origine: 'reponse', consentement: { mode: 'exige_opt_in' }, cle: cleDeReponse(conversationId, texte, new Date()) };
     // Décision de Julien (2026-10-24) : un contact qui nous a écrit a donné son accord pour qu'on lui réponde, même plus
-    // tard. Sans accord déclaré, la réponse différée part donc à qui a écrit ; seul un STOP l'arrête (la porte le relit).
-    const consentement: DemandePremierMessage['consentement'] =
-      h.consentement.mode === 'exige_opt_in' && ctx.lastInboundAt !== null ? { mode: 'conversation' } : h.consentement;
+    // tard, et c'est la seule chose que ce numéro fait encore hors des 24 heures (la porte refuse d'écrire en premier).
+    // Qui a écrit reçoit donc la réponse différée, avec ou sans accord déclaré (rien ne s'écrit sur la fiche) ; seul un
+    // STOP l'arrête (la porte le relit). Un fil sans message reçu va à la porte tel que l'appelant le demande : refusé.
+    const consentement: DemandePremierMessage['consentement'] = ctx.lastInboundAt !== null ? { mode: 'conversation' } : h.consentement;
     return reponseDuPremier(await deps.ecrirePremier({
       tenantId, cle: h.cle, telephone, texte, origine: h.origine, reference: null, consentement,
     }));

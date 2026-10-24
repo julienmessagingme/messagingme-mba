@@ -151,21 +151,34 @@ saisi relu comme un mobile français par la porte) est corrigé dans le lot. Res
   elle n'est pas urgente.
 - **Un STOP dit depuis un fil masqué** (`@lid` sans numéro) est rangé sous l'identifiant masqué : écrire en premier au
   numéro ne le voit pas. Relire aussi le STOP de l'identifiant masqué que la vérification trouve.
-- **L'accès** : `reply_in_open_window` (sans personne exigée) écrit en premier hors des 24 heures, alors que
-  `write_first_message` exige une personne ; `/v1` le fait avec une clé d'API. À aligner.
 - **`ORIGINE_DU_MESSAGE.reponse = 'api'`** : une réponse différée de Claude est tracée `api` au lieu de `mcp` (la
   statistique « qui a répondu » s'en trouve faussée).
 - **La ligne STOP de la relance** s'ajoute après la validation : un texte proche de 4 096 caractères finit toujours en
   `texte_trop_long` sans que le réglage l'ait dit. Valider avec la ligne STOP comprise au branchement.
 - **Détails** : `identity_conflict` rendu sous `sans_telephone` (phrase fausse) ; la clé « à la minute » met deux fois en
   file un rejeu qui chevauche la minute ; une unité du mois perdue si l'insertion échoue après `consommer`.
-- **La fin de la tâche 6** : `features.md` § Boutique Shopify, la fiche `brancher-ma-boutique-shopify` (voie par QR code)
-  et son empreinte, une entrée de FAQ du plugin (`scripts/plugin/faq.ts`). La fiche est PUBLIQUE depuis la session
-  « Vitrine Shopify » : grammaire publique, version anglaise et `traduit_de` recalés, `npm run vitrine:aide` dans le même
-  commit, `aide:charger` après le push ; ses captures se refont par `web/e2e/captures/brancher-ma-boutique-shopify.capture.ts`.
-- **La page Boutiques Shopify** (`/solutions/shopify/`, conception de la vitrine du 2026-10-23), après l'essai 157 : la
-  carte Shopify de `/integrations/` (`site/integrations/index.html`, `id="shopify"`) mène pour l'instant à la fiche d'aide
-  publique ; la rebrancher sur la page le jour où elle existe (le bandeau de l'accueil pointe sur `/integrations/#shopify`).
+
+## 🟡 Lot C, le numéro QR code ne fait que répondre : ce que sa relecture laisse (2026-10-24)
+
+Aucun rouge. En production au déploiement, vérifié en lecture seule : aucune ligne dans `application_premiers_messages`,
+aucun texte Shopify actif.
+
+- **`src/shopify/envoi.ts:139`** : sur la filière application, un texte actif sans accord du marchand rend
+  `sans_consentement` avant la porte (« écartés : sans consentement »), alors que la vraie cause est `premier_contact` ;
+  son commentaire (l. 137-138) est devenu sans objet. Inatteignable tant que l'activation est refusée sur cette filière.
+- **`web/components/ReglageShopify.tsx`** : aucun libellé pour `premier_contact` (ni pour `en_file`, `gele` depuis le
+  lot B), la carte afficherait la clé brute.
+- **Le courriel du gel** (`application_premiers_geles`, `src/emails-produit/catalogue.ts`, en-tête de
+  `src/application/avis.ts`) dit encore « Shopify, Claude, l'API » : il ne gèle plus que des réponses différées.
+- **Le chemin `humain` contourne la porte** (`src/inbox/repondre.ts`, `origine !== 'humain'`) : un appel direct avec un
+  jeton de console, sur un fil ouvert depuis le mini-CRM sans message reçu, écrirait en premier. La console masque la
+  saisie fenêtre fermée, donc hors de l'écran seulement.
+- **Restes** : le commentaire de `DepsPremierMessage.quota` (« un message écrit en premier y compte ») ; le chemin 202 de
+  `/v1/messages/whatsapp` pour une personne sans fil, code mort gardé pour le contrat ; un commentaire d'une seule ligne
+  très longue dans `tests/aide/porte-premier.ts`.
+- **`features.md`, la page Intégrations** : « la page Boutiques Shopify attend le numéro relié par QR code » est
+  périmé ; la session Vitrine le réécrit avec la page (règles de Julien du 2026-10-24 : le numéro QR code ne fait que
+  répondre, les messages Shopify partent d'un numéro relié par Meta, bientôt en coexistence).
 
 ## 🟡 Shopify : ce qui attend après les conceptions du 2026-10-23
 
@@ -181,8 +194,10 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   vraiment.
 - **L'essai de la bulle WhatsApp sur un thème Shopify** (la balise collée dans le thème de la boutique de test, visible et
   cliquable sur un téléphone) : la carte « bulle » de la page Boutiques Shopify n'apparaît qu'après.
-- **La page « Boutiques Shopify » (`/solutions/shopify/`) et son film** (lots 1 et 3 de la conception vitrine) : ils
-  attendent le produit QR code. À leur sortie, rebrancher sur elle la carte Shopify de `/integrations/`
+- **La page « Boutiques Shopify » (`/solutions/shopify/`) et son film** (lots 1 et 3 de la conception vitrine) : en
+  construction par la session Vitrine ; depuis le lot C, le numéro QR code ne fait que répondre, et les messages Shopify
+  partent d'un numéro relié par Meta (bientôt en coexistence, plan `2026-10-24-coexistence.md`). À leur sortie,
+  rebrancher sur elle la carte Shopify de `/integrations/`
   (`site/integrations/index.html`, `id="shopify"`), qui mène en attendant à la page d'aide (décision de Julien du
   2026-10-24). Le reste de la conception est en ligne depuis `5cae9de1` (plan `2026-10-24-vitrine-shopify-integrations.md`).
 - **Les jaunes de la relecture du 2026-10-24 (vitrine)** : (1) un visiteur Free arrive, depuis la carte Shopify et la

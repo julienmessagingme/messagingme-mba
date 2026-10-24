@@ -24,6 +24,8 @@ import { cleIdempotence } from '../src/api/idempotence';
 import { modelesInertes, aucuneCampagneActive } from './routes-inertes';
 import { filiereApiSeule, aucunPremierMessage } from './gardes';
 import { porteEnMemoire } from './aide/porte-premier';
+import { PHRASE_PREMIER_CONTACT } from '../src/application/envoi';
+import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
 
 /**
  * Le serveur MCP : `POST /mcp`, du JSON-RPC 2.0 sans état, autorisé par une clé d'API.
@@ -284,7 +286,7 @@ describe('serveur MCP : autorisation', () => {
       });
       const lu = JSON.parse(contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('get_conversation', { conversation_id: 'cv1' }) })).texte);
       expect(lu.window_open).toBe(windowOpen);
-      expect(lu.note).toMatch(/outside it, it is written first/);
+      expect(lu.note).toMatch(/outside it, it is queued, .* never writes first to someone who did not write to it/);
       const envoi = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('reply_in_open_window', { conversation_id: 'cv1', text: 'Bonjour' }) }));
       expect(envoi.isError, envoi.texte).toBeFalsy();
       expect(envoisApplication).toEqual(windowOpen ? ['33600000001:Bonjour'] : []);
@@ -798,9 +800,6 @@ describe('serveur MCP : cohérence du catalogue', () => {
     ]));
     expect(ecritures).toEqual({
       reply_in_open_window: [true, false, true],
-      // Écrire en premier (plan 2026-10-23, tâche 4) : un message part chez une personne ; le même appel une minute plus
-      // tard repart.
-      write_first_message: [true, false, true],
       // Comme reply_in_open_window : un message part chez une personne, et prend le fil (lot 13, domaine 2).
       send_message: [true, false, true],
       tag_conversation: [true, true, false],
@@ -1287,94 +1286,16 @@ describe('serveur MCP : envoyer un modèle à un contact (lot 13, domaine 3, liv
 });
 
 /**
- * 🔴 ÉCRIRE EN PREMIER DEPUIS UN NUMÉRO RELIÉ PAR QR CODE (plan 2026-10-23, tâche 4) : `write_first_message`, sur la VRAIE
- * porte (`enfilerPremierMessage`, sur des faux). Ce que l'outil décide : l'origine, la clé, le consentement selon
- * `consent_source`, et la phrase de chaque refus. La porte décide du reste (`tests/application-premier-message.test.ts`).
+ * 🔴 `write_first_message` EST RETIRÉ (décision de Julien du 2026-10-24) : un numéro relié par QR code n'écrit plus en
+ * premier, l'outil ne pouvait plus jamais réussir. Ni au catalogue, ni dans la liste d'une personne connectée.
  */
-describe('serveur MCP : write_first_message', () => {
-  const outil = OUTILS.find((o) => o.nom === 'write_first_message')!;
-  const monter = (porte: ReturnType<typeof porteEnMemoire>) => ({ ecrirePremier: porte.ecrirePremier }) as unknown as DepsMcp;
-  const PERSONNE = { userId: 'u1' };
-
-  it('🔴 réservé à une PERSONNE : une clé d’API, même mcp:write, ne le voit pas', () => {
-    expect(outilsPour({ scopes: ['mcp:read', 'mcp:write'], personne: null }).map((o) => o.nom)).not.toContain('write_first_message');
-    expect(outilsPour({ scopes: ['mcp:read', 'mcp:write'], personne: PERSONNE }).map((o) => o.nom)).toContain('write_first_message');
-    expect(outil.fonction).toBeNull();
-  });
-
-  it('🔴 sur la filière API, il refuse avec la phrase qui renvoie aux modèles approuvés, et rien n’est mis en file', async () => {
-    const porte = porteEnMemoire({ filiere: 'api' });
-    await expect(outil.executer(monter(porte), 't1', { phone: '+33612345678', text: 'Bonjour' }, PERSONNE))
-      .rejects.toThrow('sur l’API, un premier message est un modèle approuvé : send_template_to_contact');
-    expect(porte.lignes).toEqual([]);
-  });
-
-  it('🔴 avec consent_source, la fiche passe opted_in avant l’envoi, et le message est en file avec son heure de départ', async () => {
-    const porte = porteEnMemoire({ optIn: 'unknown' });
-    const res = await outil.executer(monter(porte), 't1', { phone: '+33612345678', text: 'Votre panier vous attend', consent_source: 'formulaire du site' }, PERSONNE);
-    const ligne = porte.lignes[0]!;
-    expect(res).toEqual({
-      queued_id: ligne.id, scheduled_at: ligne.prevuLe.toISOString(), already_queued: false,
-      message: expect.stringMatching(/^message en file : il part vers 12:00 \(heure de Paris\), hors des 24 heures il compte dans les 1\s000 messages du mois$/),
-    });
-    expect(porte.demandes).toEqual([{
-      tenantId: 't1', cle: expect.stringMatching(/^mcp:[0-9a-f]{16}:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/), telephone: '33612345678',
-      texte: 'Votre panier vous attend', origine: 'mcp', reference: null, consentement: { mode: 'declare', source: 'formulaire du site' },
-    }]);
-    const i = porte.gestes.findIndex((g) => g.startsWith('consentement:'));
-    expect(porte.gestes[i]).toMatch(/:opted_in:formulaire du site$/);
-    expect(i, 'le consentement est écrit avant que le message ne soit compté').toBeLessThan(porte.gestes.indexOf('quota'));
-    expect(porte.consentementDeLaFiche()).toBe('opted_in');
-  });
-
-  it('🔴 sans consent_source, une fiche qui n’a pas accepté WhatsApp est refusée, avec la phrase qui dit comment le déclarer', async () => {
-    const porte = porteEnMemoire({ optIn: 'unknown' });
-    await expect(outil.executer(monter(porte), 't1', { phone: '+33612345678', text: 'Bonjour' }, PERSONNE))
-      .rejects.toThrow('ce contact n’a pas accepté WhatsApp : hors des 24 heures, un premier message exige son accord ; write_first_message avec consent_source le déclare');
-    expect(porte.demandes[0]!.consentement).toEqual({ mode: 'exige_opt_in' });
-    expect(porte.gestes).not.toContain('quota');
-    // Une fiche déjà consentante n'a rien à déclarer.
-    const consentante = porteEnMemoire({ optIn: 'opted_in' });
-    expect(await outil.executer(monter(consentante), 't1', { phone: '+33612345678', text: 'Bonjour' }, PERSONNE)).toMatchObject({ already_queued: false });
-  });
-
-  it('le même numéro et le même texte dans la minute ne sont mis en file qu’une fois, et comptés une fois', async () => {
-    const porte = porteEnMemoire({ optIn: 'opted_in' });
-    const args = { phone: '+33612345678', text: 'Bonjour' };
-    const un = await outil.executer(monter(porte), 't1', args, PERSONNE) as { queued_id: string };
-    const deux = await outil.executer(monter(porte), 't1', args, PERSONNE) as { queued_id: string; already_queued: boolean };
-    expect([deux.queued_id, deux.already_queued]).toEqual([un.queued_id, true]);
-    expect(porte.lignes).toHaveLength(1);
-    expect(porte.gestes.filter((g) => g === 'quota')).toHaveLength(1);
-  });
-
-  it('un numéro hors du format E.164, ou une clé inconnue, est refusé avant la porte', async () => {
-    const porte = porteEnMemoire({ optIn: 'opted_in' });
-    for (const phone of ['0612345678', '33612345678', '+0612345678', '+33-612345678']) {
-      await expect(outil.executer(monter(porte), 't1', { phone, text: 'Bonjour' }, PERSONNE), phone).rejects.toThrow(/E\.164/);
+describe('serveur MCP : plus d’outil pour écrire en premier', () => {
+  it('🔴 write_first_message n’est plus listé, ni pour une clé, ni pour une personne', () => {
+    expect(OUTILS.map((o) => o.nom)).not.toContain('write_first_message');
+    expect(Object.keys(CATALOGUE_MCP)).not.toContain('write_first_message');
+    for (const personne of [null, { userId: 'u1' }]) {
+      expect(outilsPour({ scopes: ['mcp:read', 'mcp:write'], personne }).map((o) => o.nom)).not.toContain('write_first_message');
     }
-    await expect(outil.executer(monter(porte), 't1', { phone: '+33612345678', text: 'Bonjour', consent: 'opted_in' }, PERSONNE))
-      .rejects.toThrow(/« consent » inconnu/);
-    expect(porte.demandes).toEqual([]);
-  });
-
-  it('🔴 le schéma annoncé porte chaque borne que l’outil applique, avec la même valeur', async () => {
-    const p = outil.entree.properties;
-    expect(outil.entree).toMatchObject({ required: ['phone', 'text'], additionalProperties: false });
-    expect(p.phone).toMatchObject({ type: 'string', minLength: 1, maxLength: 16, pattern: catalogue.MOTIF_E164.source });
-    expect(p.text).toMatchObject({ type: 'string', minLength: 1, maxLength: 4096 });
-    expect(p.consent_source).toMatchObject({ type: 'string', minLength: 1, maxLength: 100 });
-    // Le motif annoncé est celui que l'outil applique : il accepte et refuse les mêmes numéros.
-    const annonce = new RegExp(p.phone!.pattern!);
-    for (const n of ['+33612345678', '+447911123456', '+123456789012345', '+1234567', '33612345678', '+0612345678']) {
-      expect(annonce.test(n), n).toBe(catalogue.MOTIF_E164.test(n));
-    }
-    // Et les longueurs, à la borne et un cran au-delà.
-    const porte = porteEnMemoire({ optIn: 'opted_in' });
-    await expect(outil.executer(monter(porte), 't1', { phone: '+33612345678', text: 'x'.repeat(4097) }, PERSONNE)).rejects.toThrow(/trop long/);
-    await expect(outil.executer(monter(porte), 't1', { phone: '+33612345678', text: 'x', consent_source: 's'.repeat(101) }, PERSONNE)).rejects.toThrow(/trop long/);
-    expect(await outil.executer(monter(porte), 't1', { phone: '+33612345678', text: 'x'.repeat(4096), consent_source: 's'.repeat(100) }, PERSONNE))
-      .toMatchObject({ already_queued: false });
   });
 });
 
@@ -1402,11 +1323,13 @@ describe('serveur MCP : reply_in_open_window hors des 24 heures sur un numéro r
     await server.close();
   });
 
-  it('un contact qui ne nous a jamais écrit et n’a pas accepté WhatsApp : un refus lisible, qui propose write_first_message', async () => {
-    const { server } = surApplication(porteEnMemoire({ optIn: 'unknown' }), null);
+  it('🔴 un contact qui ne nous a jamais écrit, même consentant : refusé avec la phrase du QR code, rien en file (2026-10-24)', async () => {
+    const porte = porteEnMemoire({ optIn: 'opted_in' });
+    const { server } = surApplication(porte, null);
     const c = contenu(await server.inject({ method: 'POST', url: '/mcp', ...auth(CLE_TOUT), payload: appeler('reply_in_open_window', { conversation_id: 'cv1', text: 'Bonjour' }) }));
     expect(c.isError).toBe(true);
-    expect(c.texte).toMatch(/write_first_message avec consent_source le déclare/);
+    expect(c.texte).toContain(PHRASE_PREMIER_CONTACT);
+    expect([porte.lignes, porte.gestes]).toEqual([[], []]);
     await server.close();
   });
 });

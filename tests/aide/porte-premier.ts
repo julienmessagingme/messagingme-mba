@@ -6,9 +6,8 @@ import type { ContactEnvoi } from '../../src/campaign/build';
 import type { ResolutionFiche } from '../../src/api/fiche';
 
 /**
- * LA VRAIE PORTE « ÉCRIRE EN PREMIER », SUR DES FAUX (plan 2026-10-23, tâches 3 et 4) : les portes de réponse, l'outil de
- * Claude et l'API publique y passent, et ce qu'elles lui demandent (origine, clé, consentement) n'a de sens que jugé par
- * elle. `enfilerPremierMessage` est celle de la production ; seuls ses dépôts sont en mémoire. Chaque geste est noté.
+ * LA VRAIE PORTE « ÉCRIRE EN PREMIER », SUR DES FAUX (plan 2026-10-23, tâches 3 et 4) : les portes de réponse et l'API
+ * publique y passent, et ce qu'elles lui demandent (origine, clé, consentement) n'a de sens que jugé par elle. `enfilerPremierMessage` est celle de la production ; seuls ses dépôts sont en mémoire. Chaque geste est noté.
  * Les tests de la porte elle-même : `tests/application-premier-message.test.ts`.
  */
 export const FICHE_PORTE = 'cccccccc-0000-4000-8000-0000000000f1';
@@ -30,7 +29,7 @@ export function porteEnMemoire(r: ReglagesPorte = {}) {
   const demandes: DemandePremierMessage[] = [];
   const gestes: string[] = [];
   const lignes: PremierMessage[] = [];
-  let optIn: ContactEnvoi['optInStatus'] = r.optIn ?? 'unknown';
+  const optIn: ContactEnvoi['optInStatus'] = r.optIn ?? 'unknown';
   const deps: DepsPremierMessage = {
     premiers: {
       existant: async (t, cle) => lignes.find((l) => l.tenantId === t && l.cle === cle) ?? null,
@@ -58,11 +57,6 @@ export function porteEnMemoire(r: ReglagesPorte = {}) {
         gestes.push(`fiche:${cles.phone}:${o.creer}`);
         return r.fiche ?? { ok: true, contactId: FICHE_PORTE, cree: false };
       },
-      appliquerConsentement: async (_t, id, consent, source) => {
-        gestes.push(`consentement:${id}:${consent}:${source}`);
-        optIn = consent;
-        return 'change';
-      },
       listContactsPourEnvoiApi: async (_t, ids) => ids.map((id) => ({ id, phone_e164: '+33612345678', optInStatus: optIn, bloque: false, rcsDesabonne: false })),
     },
     contacts: {
@@ -78,5 +72,5 @@ export function porteEnMemoire(r: ReglagesPorte = {}) {
     demandes.push(d);
     return enfilerPremierMessage(deps, d);
   };
-  return { ecrirePremier, demandes, gestes, lignes, consentementDeLaFiche: () => optIn };
+  return { ecrirePremier, demandes, gestes, lignes };
 }

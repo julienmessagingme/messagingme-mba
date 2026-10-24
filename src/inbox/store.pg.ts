@@ -295,7 +295,7 @@ const CIBLE_DU_CONTACT_SQL = `cible as (
 /**
  * Le fil d'un contact, cherché sans être créé (`PgInboxStore.filDuContact`). `injoignable` : fiche inconnue de
  * l'espace, supprimée, bloquée, ou sans identité WhatsApp. `sans_fil` : joignable, mais aucun fil n'existe. `waId` : la
- * clé du fil (`CIBLE_DU_CONTACT_SQL`), à laquelle la filière application écrit en premier (plan 2026-10-23, tâche 4).
+ * clé du fil (`CIBLE_DU_CONTACT_SQL`), que la filière application passe à la porte « écrire en premier » (plan 2026-10-23, tâche 4).
  */
 export type FilDuContact =
   | { etat: 'fil'; conversationId: string; waId: string }

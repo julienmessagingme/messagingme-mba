@@ -32,11 +32,11 @@ export const corpsChamp = z.strictObject({
 });
 
 /**
- * `consent` et `consentSource` (plan 2026-10-23, tâche 4), facultatifs : sur un numéro relié par QR code, un message
- * écrit en premier (une personne sans fil, ou hors des 24 heures) exige une fiche `opted_in`, ou ce consentement
- * déclaré, écrit sur la fiche avant l'envoi, comme `POST /v1/sends` (source absente : `api`). Sans effet ailleurs : dans
- * les 24 heures, ou sur l'API de WhatsApp, qui n'écrit pas en premier par cette route. Seul `opted_in` se déclare ici :
- * un désabonnement passe par `PATCH /v1/contacts/{contactId}`.
+ * `consent` et `consentSource` (plan 2026-10-23, tâche 4), facultatifs, et SANS EFFET depuis le 2026-10-24 : ils
+ * déclaraient le consentement d'un message écrit en premier depuis un numéro relié par QR code, qui n'écrit plus en
+ * premier (`src/application/premier-message.ts`) ; sa réponse à qui a écrit n'en demande pas. Gardés, validés comme
+ * `POST /v1/sends`, pour ne pas rompre le contrat publié. Seul `opted_in` se déclare ici : un désabonnement passe par
+ * `PATCH /v1/contacts/{contactId}`.
  */
 export const schemaMessageWhatsapp = z.strictObject({
   ...schemaClesFiche.shape,

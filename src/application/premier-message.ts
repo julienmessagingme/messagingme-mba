@@ -16,8 +16,14 @@ import { idDuMessage, jidDuWaId } from './message';
  * ÉCRIRE EN PREMIER PAR LA FILIÈRE APPLICATION (plan 2026-10-23, tâche 2 ; conception
  * `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md`, § 5.1). Une porte unique pour tout message qu'un
  * espace relié par QR code écrit sans répondre : Shopify, Claude, l'API, une réponse hors des 24 heures. Elle garde
- * (filière, compte, gel, fiche, consentement, STOP, blocage, messages du mois), réserve un créneau espacé par espace et
+ * (filière, compte, premier contact, gel, fiche, STOP, blocage, messages du mois), réserve un créneau espacé par espace et
  * enfile ; le job (`traiterPremierMessage`) relit tout ce qui a pu changer, vérifie l'adresse, envoie et inscrit l'issue.
+ *
+ * 🔴 RÉSERVÉE AUX RÉPONSES DEPUIS LE 2026-10-24 (décision de Julien, sur deux mesures) : un appareil lié qui écrit en
+ * premier à quelqu'un qui ne lui a pas écrit est sanctionné par WhatsApp. Premier essai, le message arrive et l'appareil
+ * est déconnecté (401) 2,8 s après ; second essai, le message est refusé dans l'accusé (erreur 463, « reachout
+ * timelock ») et n'arrive jamais. Seule une réponse différée à un contact qui NOUS A ÉCRIT (mode `conversation`) passe
+ * encore ; Shopify, Claude et l'API qui écriraient en premier sont refusés (`premier_contact`), avant toute écriture.
  *
  * 🔴 AU PLUS UNE FOIS. La route d'envoi du service n'a aucune idempotence : ce qui empêche un second envoi, c'est la clé
  * unique de la file (un rejeu ne crée rien) et la RÉCLAMATION de la ligne par le job (`en_file` -> `envoi`, une seule
@@ -48,18 +54,19 @@ export interface DemandePremierMessage {
   /** La clé d'événement Shopify ou le jeton du panier : rendue à `noterIssue`. */
   reference: string | null;
   /**
-   * `exige_opt_in` : la fiche doit déjà être consentante. `declare` (Claude, l'API) et `marchand` (Shopify) : le
-   * consentement affirmé par l'appelant s'écrit sur la fiche avant tout, avec sa source. `conversation` : une réponse
-   * différée à un contact qui NOUS A ÉCRIT (décision de Julien, 2026-10-24 : il a donné son accord pour qu'on lui
-   * réponde, même plus tard) ; seul un STOP l'arrête, et rien ne s'écrit sur la fiche (elle ne devient pas consentante
-   * aux campagnes).
+   * `conversation` : une réponse différée à un contact qui NOUS A ÉCRIT (décision de Julien, 2026-10-24 : il a donné son
+   * accord pour qu'on lui réponde, même plus tard) ; seul un STOP l'arrête, et rien ne s'écrit sur la fiche. C'est le
+   * SEUL mode qui passe : `exige_opt_in` (une fiche consentante), `declare` (Claude, l'API) et `marchand` (Shopify)
+   * écriraient en premier, et la porte les refuse (`premier_contact`). Gardés dans le type pour que chaque appelant dise
+   * encore ce qu'il demande, et reçoive le refus de la porte plutôt qu'une erreur.
    */
   consentement: { mode: 'exige_opt_in' } | { mode: 'conversation' } | { mode: 'declare'; source: string } | { mode: 'marchand'; source: string };
 }
 
+/** `premier_contact` : la demande écrirait en premier à quelqu'un qui ne nous a pas écrit (tout mode sauf `conversation`). */
 export type RefusPremier =
-  | 'filiere_api' | 'numero_coupe' | 'numero_indisponible' | 'gele' | 'desabonne' | 'bloque' | 'sans_consentement'
-  | 'limite_contacts' | 'limite_modeles' | 'sans_telephone';
+  | 'filiere_api' | 'numero_coupe' | 'numero_indisponible' | 'premier_contact' | 'gele' | 'desabonne' | 'bloque'
+  | 'limite_modeles' | 'sans_telephone';
 
 export type ResultatPremier = { ok: true; id: string; prevuLe: Date; dejaEnFile: boolean } | { ok: false; refus: RefusPremier };
 
@@ -130,8 +137,8 @@ export function enfileurPremier(queue: Pick<Queue, 'enqueue'>): EnfilerPremier {
 export interface DepsPremierMessage {
   premiers: Pick<PremiersMessages, 'existant' | 'inserer' | 'geleJusqua'>;
   comptes: Pick<ComptesApplication, 'parEspace' | 'filiereDe'>;
-  /** La fiche (`resoudreFiche`), le consentement (`appliquerConsentement`) et sa lecture à l'envoi, comme l'envoi public. */
-  fiches: Pick<DepsEnvoiPublic, 'resoudreFiche' | 'appliquerConsentement'> & Pick<DepsEnvoiPublic['repo'], 'listContactsPourEnvoiApi'>;
+  /** La fiche (`resoudreFiche`, jamais créée) et sa lecture avant le tri, comme l'envoi public. */
+  fiches: Pick<DepsEnvoiPublic, 'resoudreFiche'> & Pick<DepsEnvoiPublic['repo'], 'listContactsPourEnvoiApi'>;
   contacts: Pick<PgContactStore, 'estDesabonneParWaId' | 'machineSeTaitParWaId'>;
   /** Les messages du mois de l'offre : un message écrit en premier y compte, comme un modèle sur l'API. */
   quota: Pick<QuotaModeles, 'consommer'>;
@@ -177,9 +184,9 @@ async function dejaLa(d: Pick<DepsPremierMessage, 'enfiler'>, l: PremierMessage,
 }
 
 /**
- * La porte, dans cet ordre : la clé, la filière, le compte, le gel, la fiche, le consentement, le STOP et le blocage,
- * les messages du mois, puis le créneau et la file. Rien n'est écrit avant la fiche, rien n'est compté avant le dernier
- * refus possible. Une demande hors des bornes de la migration est une faute de l'appelant : elle lève.
+ * La porte, dans cet ordre : la filière, le compte, le premier contact, la clé, le gel, la fiche, le STOP et le blocage,
+ * les messages du mois, puis le créneau et la file. Rien n'est écrit, rien n'est compté avant le dernier refus possible.
+ * Une demande hors des bornes de la migration est une faute de l'appelant : elle lève.
  */
 export async function enfilerPremierMessage(d: DepsPremierMessage, demande: DemandePremierMessage): Promise<ResultatPremier> {
   const lu = schemaDemande.safeParse(demande);
@@ -187,15 +194,18 @@ export async function enfilerPremierMessage(d: DepsPremierMessage, demande: Dema
   const m = lu.data;
   const maintenant = d.maintenant ?? (() => new Date());
 
-  const deja = await d.premiers.existant(m.tenantId, m.cle);
-  if (deja) return dejaLa(d, deja, maintenant());
-
   // Sans filière (aucun compte, ou un compte retiré), le compte ci-dessous le dit : numéro indisponible.
   if ((await d.comptes.filiereDe(m.tenantId)) === 'api') return refus('filiere_api');
   const compte = await d.comptes.parEspace(m.tenantId);
   if (compte?.statut === 'banni') return refus('numero_coupe');
   // Relié, ou endormi : le job réveille un compte endormi avant d'envoyer.
   if (compte?.statut !== 'relie' && compte?.statut !== 'sommeil') return refus('numero_indisponible');
+  // 🔴 Réservée aux réponses (2026-10-24, voir l'en-tête). Avant la fiche et les messages du mois, rien n'est touché ; et
+  // avant la clé : aucune demande qui écrirait en premier ne rend une ligne, pas même celle d'avant cette règle.
+  if (m.consentement.mode !== 'conversation') return refus('premier_contact');
+
+  const deja = await d.premiers.existant(m.tenantId, m.cle);
+  if (deja) return dejaLa(d, deja, maintenant());
   const gel = await d.premiers.geleJusqua(compte.id);
   if (gel !== null && gel.getTime() > maintenant().getTime()) return refus('gele');
 
@@ -206,27 +216,14 @@ export async function enfilerPremierMessage(d: DepsPremierMessage, demande: Dema
   const e164 = /^[0-9]{8,15}$/.test(m.telephone) ? (normalizePhone(`+${m.telephone}`).e164 ?? null) : null;
   const waId = e164 && e164 === `+${m.telephone}` ? waIdOf(e164, null) : null;
   if (!e164 || !waId || jidDuWaId(waId) === null) return refus('sans_telephone');
-  // Un accord EXIGÉ, ou une conversation, suppose une fiche qui existe déjà : la créer userait une place de l'offre.
-  const creer = m.consentement.mode === 'exige_opt_in' || m.consentement.mode === 'conversation' ? 'jamais' : 'phone';
-  const fiche = await d.fiches.resoudreFiche(m.tenantId, { phone: e164 }, { creer });
-  if (!fiche.ok) {
-    if (fiche.code === 'plan_limit_reached') return refus('limite_contacts');
-    // Inconnue alors que l'accord est exigé : personne n'a pu le donner.
-    return refus(fiche.code === 'unknown_contact' ? 'sans_consentement' : 'sans_telephone');
-  }
+  // Le contact a écrit, sa fiche existe : elle n'est jamais créée ici (une place de l'offre). Aucune fiche à ce numéro,
+  // c'est que personne ne nous a écrit d'ici : ce serait écrire en premier.
+  const fiche = await d.fiches.resoudreFiche(m.tenantId, { phone: e164 }, { creer: 'jamais' });
+  if (!fiche.ok) return refus(fiche.code === 'unknown_contact' ? 'premier_contact' : 'sans_telephone');
 
-  if (m.consentement.mode === 'exige_opt_in' || m.consentement.mode === 'conversation') {
-    // La lecture de la fiche que fait l'envoi public avant son tri (`listContactsPourEnvoiApi`).
-    const [lue] = await d.fiches.listContactsPourEnvoiApi(m.tenantId, [fiche.contactId]);
-    if (lue?.optInStatus === 'opted_out') return refus('desabonne');
-    if (m.consentement.mode === 'exige_opt_in' && lue?.optInStatus !== 'opted_in') return refus('sans_consentement');
-  } else {
-    // 🔴 Avant le tri, comme `/v1/sends` : un STOP ne se lève pas par machine (`refuse`), il reste un STOP.
-    const issue = await d.fiches.appliquerConsentement(m.tenantId, fiche.contactId, 'opted_in', m.consentement.source);
-    if (issue === 'refuse') return refus('desabonne');
-    // La fiche a été effacée entre-temps : plus personne à qui écrire.
-    if (issue === 'absente') return refus('sans_telephone');
-  }
+  // La lecture de la fiche que fait l'envoi public avant son tri (`listContactsPourEnvoiApi`).
+  const [lue] = await d.fiches.listContactsPourEnvoiApi(m.tenantId, [fiche.contactId]);
+  if (lue?.optInStatus === 'opted_out') return refus('desabonne');
 
   if (await d.contacts.estDesabonneParWaId(m.tenantId, waId)) return refus('desabonne');
   if (await d.contacts.machineSeTaitParWaId(m.tenantId, waId)) return refus('bloque');

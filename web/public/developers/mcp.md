@@ -80,7 +80,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | create_field | mcp:write connexion OAuth requise | Créer un champ personnalisé, comme dans la console : sa clé vient du libellé. |
 | set_contact_field | mcp:write connexion OAuth requise | Remplir un champ sur les contacts d’une cible ou d’une liste de conversations, comme l’action en masse de la console, sans déclencher d’automation. |
 | connect_shopify | mcp:write connexion OAuth requise | Brancher la boutique Shopify du marchand avec l’app que la skill shopify a créée dans son organisation ; la connexion est vérifiée chez Shopify avant de garder le secret, chiffré. |
-| set_shopify_message | mcp:write connexion OAuth requise | Envoyer un message quand une commande est payée ou expédiée, ou relancer une fois un panier abandonné : un modèle approuvé sur l’API, un texte simple sur un numéro relié par QR code, avec les données Shopify, par les règles des envois (STOP, consentement, messages du mois, limite de contacts). |
+| set_shopify_message | mcp:write connexion OAuth requise | Envoyer un message quand une commande est payée ou expédiée, ou relancer une fois un panier abandonné : un modèle approuvé, avec les données Shopify, par les règles des envois (STOP, consentement, modèles du mois, limite de contacts). Un numéro relié par QR code ne peut pas les envoyer : il n’écrit jamais en premier. |
 | get_shopify_state | mcp:read connexion OAuth requise | La boutique Shopify branchée : son état, ses messages, le dernier événement reçu, les issues des 30 derniers jours et les paniers des 7 derniers. |
 | preview_shopify_customers | mcp:read connexion OAuth requise | Compter, sans rien écrire, les clients Shopify abonnés au marketing (e-mail ou SMS) qui ont un téléphone : déjà dans l’espace, nouveaux, places libres de l’offre, importables. |
 | import_shopify_customers | mcp:write connexion OAuth requise | Importer les clients Shopify abonnés que le marchand a choisis, les plus récents d’abord : des fiches étiquetées Shopify, sans consentement WhatsApp, dans la limite de l’offre. |
@@ -89,8 +89,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |
 | block_contact | mcp:write connexion OAuth requise | Bloquer ou débloquer un contact : plus rien ne lui part, ses messages restent enregistrés. |
 | list_members | mcp:read | Les membres de l’espace, pour pouvoir leur confier un fil. |
-| reply_in_open_window | mcp:write | Répondre, uniquement si la fenêtre de 24 h est ouverte ; sur un numéro relié par QR code, hors de la fenêtre, le message part en file comme un premier message. |
-| write_first_message | mcp:write connexion OAuth requise | Écrire en premier à un numéro depuis un numéro relié par QR code : un texte en file, espacé, compté dans les 1 000 messages du mois, avec l’accord du contact. |
+| reply_in_open_window | mcp:write | Répondre, uniquement si la fenêtre de 24 h est ouverte ; sur un numéro relié par QR code, hors de la fenêtre, la réponse à un client qui a écrit part en file ; ce numéro n’écrit jamais en premier. |
 | tag_conversation | mcp:write | Poser des tags sur le contact d’un fil. |
 | assign_conversation | mcp:write | Confier un fil à un membre, ou le libérer. |
 | control_conversation | mcp:write | Prendre la main sur un fil, ou la rendre au répondeur automatique, qui répondra au message suivant. |

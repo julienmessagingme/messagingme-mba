@@ -176,8 +176,8 @@ export const CHAMPS = {
       {
         nom: 'consent', type: 'string', obligatoire: 'non', valeurs: ['opted_in'], voir: VOIR_CONSENTEMENT,
         quoi: [
-          'Sur un numéro relié par QR code, un message écrit en premier (personne sans conversation, ou hors des 24 h) exige une fiche opted_in : opted_in le déclare, écrit sur la fiche avant l’envoi. Sans effet ailleurs.',
-          'On a number linked by QR code, a message written first (someone with no conversation, or outside the 24 h window) requires an opted_in record: opted_in declares it, written on the record before the send. No effect otherwise.',
+          'Accepté, sans effet : un numéro relié par QR code n’écrit jamais en premier (une personne qui n’a jamais écrit est refusée, window_closed), et sa réponse à qui a écrit n’en demande pas.',
+          'Accepted, no effect: a number linked by QR code never writes first (someone who never wrote is refused, window_closed), and its reply to someone who wrote needs none.',
         ],
       },
       CONSENT_SOURCE,

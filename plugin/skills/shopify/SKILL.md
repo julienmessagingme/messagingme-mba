@@ -14,8 +14,11 @@ you give. A link exists for the user only once you write it, in full, as plain t
 
 - Call `get_shopify_state`. If a store is already connected, say which one and go straight to the messages.
 - The workspace needs its WhatsApp number connected (`get_setup_state`); without it, nothing can be sent. Read its track
-  (`numero.filiere`): `api` (the official API, templates approved by Meta) or `application` (the WhatsApp Business app
-  linked by QR code, without a Meta Business account, plain texts). The messages are set differently on each, below.
+  (`numero.filiere`): `api` is the official API, with templates approved by Meta, and everything below applies. On
+  `application`, a number linked by QR code, Shopify messages cannot go out: WhatsApp does not let a linked device write
+  first to a customer (it cuts or blocks the number), and an order confirmation, a shipping update or a checkout
+  reminder writes first. Say it plainly before going on: to send them, the number must be linked through Meta, with a
+  Meta Business account. `set_shopify_message` refuses them on such a number.
 - Node.js must be installed (`node --version`). On Windows, call the CLI with `npx.cmd`, not `npx`: PowerShell blocks
   `npx` by its execution policy.
 
@@ -71,27 +74,6 @@ redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
 3. Call `connect_shopify` with `store`, `client_id` (SHOPIFY_API_KEY) and `client_secret` (SHOPIFY_API_SECRET). A refusal
    says what to do: the app is not installed yet (give the link again), it is not in the store's organization, or the
    keys are wrong.
-
-## On a number linked by QR code (track `application`)
-
-There are no templates on this track: the three messages are plain texts, and the sections below about templates do
-not apply.
-
-- Do not call `create_template`. Propose a short text for each event, then call `set_shopify_message` with `event`,
-  `language` and `text`: the message itself, its data written between double braces (`{{first_name}}`,
-  `{{order_number}}`, `{{order_total}}`, `{{order_status_url}}`, `{{carrier}}`, `{{tracking_number}}`, `{{tracking_url}}`,
-  `{{checkout_url}}`, each only for its event). It is active at once: there is no approval to wait for.
-- Links go in the text as they are: there are no buttons. The checkout reminder gets "Répondez STOP pour ne plus
-  recevoir ces messages" (or its English version) added as its last line.
-- The merchant's consent answer (`customers_consented`, below) is required for ALL THREE messages on this track, not
-  only the reminder: ask it before setting the first one.
-- Say it once, plainly: this is not the official WhatsApp API, and WhatsApp can cut a number that writes first to many
-  people. Each message counts in the plan's 1,000 messages a month, and they leave spaced, about one every 30 to 60
-  seconds.
-- `get_shopify_state` says, for each message that did not leave yet or did not leave at all, why: queued (it leaves
-  within minutes), the customer's number is not on WhatsApp, the month's 1,000 messages are used, first messages paused
-  for 72 hours after WhatsApp refused one (replies to customers who write go on), the number cut by WhatsApp, or a message
-  set for the other track. Say it in plain words.
 
 ## Set the order messages
 

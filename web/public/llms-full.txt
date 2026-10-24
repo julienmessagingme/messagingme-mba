@@ -1002,7 +1002,7 @@ Droit : `sends:create`
 | `phone` : string | Une clé au moins | Le numéro, au format international (+33…). |
 | `bsuid` : string | Une clé au moins | L’identifiant WhatsApp d’une personne sans numéro visible. |
 | `text` : string | Oui | Le texte, 4096 caractères au plus. |
-| `consent` : string | Non | Sur un numéro relié par QR code, un message écrit en premier (personne sans conversation, ou hors des 24 h) exige une fiche opted_in : opted_in le déclare, écrit sur la fiche avant l’envoi. Sans effet ailleurs. Valeurs : `opted_in`. [Consentement et STOP](https://console.messagingme.app/developers/api/concepts.md#consentement) |
+| `consent` : string | Non | Accepté, sans effet : un numéro relié par QR code n’écrit jamais en premier (une personne qui n’a jamais écrit est refusée, window_closed), et sa réponse à qui a écrit n’en demande pas. Valeurs : `opted_in`. [Consentement et STOP](https://console.messagingme.app/developers/api/concepts.md#consentement) |
 | `consentSource` : string | Non | D’où vient le consentement, 100 caractères au plus. Absent : api. |
 
 Une clé inconnue est refusée : 400 `invalid_body`.
@@ -1034,7 +1034,7 @@ _JSON_
 
 Dans la réponse 200, conversationId est toujours renseigné.
 
-Sur un numéro relié par QR code (application WhatsApp Business), un texte à une personne sans conversation, ou hors des 24 h, est écrit en premier : la réponse est 202, status vaut queued, id est celui du message en file et scheduledAt son départ prévu ; conversationId vaut null tant que la personne n’a pas de conversation. Le message part espacé, compte dans les messages du mois, et exige une fiche opted_in, ou consent à opted_in dans l’appel. Une personne sans fiche, désignée par phone, reçoit sa fiche au passage. Le même texte au même numéro, rejoué dans la minute, n’est mis en file qu’une fois.
+Sur un numéro relié par QR code (application WhatsApp Business), un texte hors des 24 h à une personne qui a écrit est mis en file : la réponse est 202, status vaut queued, id est celui du message en file et scheduledAt son départ prévu. Le message part espacé et compte dans les messages du mois. Ce numéro n’écrit jamais en premier : à une personne qui n’a jamais écrit (sans conversation, ou sans fiche), la réponse est 422 window_closed, quel que soit consent. Le même texte au même numéro, rejoué dans la minute, n’est mis en file qu’une fois.
 
 Après acceptation par le fournisseur, journal vaut unrecorded si l’écriture dans l’Inbox échoue encore après une reprise. Le statut reste 200 et messageId identifie le message : ne rejouez pas cet appel.
 
@@ -1046,19 +1046,18 @@ Dans l’ordre où elles sont vérifiées :
 | --- | --- | --- |
 | 404 | `unknown_contact` | Fiche inconnue. |
 | 409 | `blocked_contact` | Fiche bloquée, ou sans adresse WhatsApp. |
-| 422 | `window_closed` | Fenêtre de 24 h fermée. |
+| 422 | `window_closed` | Fenêtre de 24 h fermée ; sur un numéro relié par QR code, la personne n’a jamais écrit. |
 | 409 | `opted_out` | Fiche désabonnée. |
 | 409 | `no_whatsapp_number` | Espace sans numéro WhatsApp. |
 | 409 | `number_unlinked` | Numéro délié depuis l’Accueil. |
 | 409 | `number_suspended` | Abonnement du numéro fourni impayé ou terminé. |
-| 409 | `no_consent` | Numéro relié par QR code : message écrit en premier à une fiche qui n’est pas opted_in, sans consent. |
-| 422 | `no_phone` | Numéro relié par QR code : message écrit en premier à une personne sans numéro connu. |
-| 402 | `plan_limit_reached` | Numéro relié par QR code : messages du mois, ou contacts de l’offre, atteints. |
+| 422 | `no_phone` | Numéro relié par QR code : réponse hors des 24 h à une personne sans numéro connu. |
+| 402 | `plan_limit_reached` | Numéro relié par QR code : messages du mois atteints. |
 | 400, 409 | `invalid_recipient` `invalid_phone` `identity_conflict` | Clés de fiche absentes, illisibles ou contradictoires : [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification) |
 
 ### Notes
 
-Fenêtre fermée : seul un template peut partir (sur un numéro relié par QR code, le texte est écrit en premier). [La fenêtre de 24 h](https://console.messagingme.app/developers/api/concepts.md#fenetre-24h)
+Fenêtre fermée : seul un template peut partir (sur un numéro relié par QR code, la réponse à qui a écrit part en file). [La fenêtre de 24 h](https://console.messagingme.app/developers/api/concepts.md#fenetre-24h)
 
 <a id="message-meta"></a>
 
@@ -4133,7 +4132,7 @@ Que faire : Ne plus écrire à cette personne : elle a dit STOP. L’API ne la r
 
 ### `no_consent` 409, aussi motif d’écart
 
-Consentement manquant : envoi marketing vers qui n’est pas opted_in, RCS libre vers qui n’a ni consenti ni écrit, ou message écrit en premier depuis un numéro relié par QR code vers qui n’est pas opted_in.
+Consentement manquant : envoi marketing vers qui n’est pas opted_in, ou RCS libre vers qui n’a ni consenti ni écrit.
 
 Que faire : Poser sur la fiche le consentement recueilli (consent, consentSource) avant un envoi marketing.
 
@@ -4141,7 +4140,7 @@ Que faire : Poser sur la fiche le consentement recueilli (consent, consentSource
 
 ### `window_closed` 422, aussi motif d’écart
 
-Fenêtre de 24 h fermée : seul un template peut partir.
+Fenêtre de 24 h fermée : seul un template peut partir. Sur un numéro relié par QR code, qui n’écrit jamais en premier : la personne n’a jamais écrit.
 
 Que faire : Envoyer un modèle approuvé (POST /v1/sends) : un message libre ne part que dans les 24 h qui suivent le dernier message de la personne.
 
@@ -4157,7 +4156,7 @@ Que faire : Remplir la variable sur la fiche, ou donner une valeur de repli (fal
 
 ### `no_phone` 422, aussi motif d’écart
 
-Fiche sans numéro, alors que le RCS, ou un message écrit en premier depuis un numéro relié par QR code, l’exige.
+Fiche sans numéro, alors que le RCS, ou une réponse hors des 24 h depuis un numéro relié par QR code, l’exige.
 
 Que faire : Ajouter un numéro à la fiche.
 
@@ -4900,7 +4899,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | create_field | mcp:write connexion OAuth requise | Créer un champ personnalisé, comme dans la console : sa clé vient du libellé. |
 | set_contact_field | mcp:write connexion OAuth requise | Remplir un champ sur les contacts d’une cible ou d’une liste de conversations, comme l’action en masse de la console, sans déclencher d’automation. |
 | connect_shopify | mcp:write connexion OAuth requise | Brancher la boutique Shopify du marchand avec l’app que la skill shopify a créée dans son organisation ; la connexion est vérifiée chez Shopify avant de garder le secret, chiffré. |
-| set_shopify_message | mcp:write connexion OAuth requise | Envoyer un message quand une commande est payée ou expédiée, ou relancer une fois un panier abandonné : un modèle approuvé sur l’API, un texte simple sur un numéro relié par QR code, avec les données Shopify, par les règles des envois (STOP, consentement, messages du mois, limite de contacts). |
+| set_shopify_message | mcp:write connexion OAuth requise | Envoyer un message quand une commande est payée ou expédiée, ou relancer une fois un panier abandonné : un modèle approuvé, avec les données Shopify, par les règles des envois (STOP, consentement, modèles du mois, limite de contacts). Un numéro relié par QR code ne peut pas les envoyer : il n’écrit jamais en premier. |
 | get_shopify_state | mcp:read connexion OAuth requise | La boutique Shopify branchée : son état, ses messages, le dernier événement reçu, les issues des 30 derniers jours et les paniers des 7 derniers. |
 | preview_shopify_customers | mcp:read connexion OAuth requise | Compter, sans rien écrire, les clients Shopify abonnés au marketing (e-mail ou SMS) qui ont un téléphone : déjà dans l’espace, nouveaux, places libres de l’offre, importables. |
 | import_shopify_customers | mcp:write connexion OAuth requise | Importer les clients Shopify abonnés que le marchand a choisis, les plus récents d’abord : des fiches étiquetées Shopify, sans consentement WhatsApp, dans la limite de l’offre. |
@@ -4909,8 +4908,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |
 | block_contact | mcp:write connexion OAuth requise | Bloquer ou débloquer un contact : plus rien ne lui part, ses messages restent enregistrés. |
 | list_members | mcp:read | Les membres de l’espace, pour pouvoir leur confier un fil. |
-| reply_in_open_window | mcp:write | Répondre, uniquement si la fenêtre de 24 h est ouverte ; sur un numéro relié par QR code, hors de la fenêtre, le message part en file comme un premier message. |
-| write_first_message | mcp:write connexion OAuth requise | Écrire en premier à un numéro depuis un numéro relié par QR code : un texte en file, espacé, compté dans les 1 000 messages du mois, avec l’accord du contact. |
+| reply_in_open_window | mcp:write | Répondre, uniquement si la fenêtre de 24 h est ouverte ; sur un numéro relié par QR code, hors de la fenêtre, la réponse à un client qui a écrit part en file ; ce numéro n’écrit jamais en premier. |
 | tag_conversation | mcp:write | Poser des tags sur le contact d’un fil. |
 | assign_conversation | mcp:write | Confier un fil à un membre, ou le libérer. |
 | control_conversation | mcp:write | Prendre la main sur un fil, ou la rendre au répondeur automatique, qui répondra au message suivant. |

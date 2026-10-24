@@ -48,7 +48,7 @@ Droit : `sends:create`
 | `phone` : string | Une clé au moins | Le numéro, au format international (+33…). |
 | `bsuid` : string | Une clé au moins | L’identifiant WhatsApp d’une personne sans numéro visible. |
 | `text` : string | Oui | Le texte, 4096 caractères au plus. |
-| `consent` : string | Non | Sur un numéro relié par QR code, un message écrit en premier (personne sans conversation, ou hors des 24 h) exige une fiche opted_in : opted_in le déclare, écrit sur la fiche avant l’envoi. Sans effet ailleurs. Valeurs : `opted_in`. [Consentement et STOP](https://console.messagingme.app/developers/api/concepts.md#consentement) |
+| `consent` : string | Non | Accepté, sans effet : un numéro relié par QR code n’écrit jamais en premier (une personne qui n’a jamais écrit est refusée, window_closed), et sa réponse à qui a écrit n’en demande pas. Valeurs : `opted_in`. [Consentement et STOP](https://console.messagingme.app/developers/api/concepts.md#consentement) |
 | `consentSource` : string | Non | D’où vient le consentement, 100 caractères au plus. Absent : api. |
 
 Une clé inconnue est refusée : 400 `invalid_body`.
@@ -80,7 +80,7 @@ _JSON_
 
 Dans la réponse 200, conversationId est toujours renseigné.
 
-Sur un numéro relié par QR code (application WhatsApp Business), un texte à une personne sans conversation, ou hors des 24 h, est écrit en premier : la réponse est 202, status vaut queued, id est celui du message en file et scheduledAt son départ prévu ; conversationId vaut null tant que la personne n’a pas de conversation. Le message part espacé, compte dans les messages du mois, et exige une fiche opted_in, ou consent à opted_in dans l’appel. Une personne sans fiche, désignée par phone, reçoit sa fiche au passage. Le même texte au même numéro, rejoué dans la minute, n’est mis en file qu’une fois.
+Sur un numéro relié par QR code (application WhatsApp Business), un texte hors des 24 h à une personne qui a écrit est mis en file : la réponse est 202, status vaut queued, id est celui du message en file et scheduledAt son départ prévu. Le message part espacé et compte dans les messages du mois. Ce numéro n’écrit jamais en premier : à une personne qui n’a jamais écrit (sans conversation, ou sans fiche), la réponse est 422 window_closed, quel que soit consent. Le même texte au même numéro, rejoué dans la minute, n’est mis en file qu’une fois.
 
 Après acceptation par le fournisseur, journal vaut unrecorded si l’écriture dans l’Inbox échoue encore après une reprise. Le statut reste 200 et messageId identifie le message : ne rejouez pas cet appel.
 
@@ -92,19 +92,18 @@ Dans l’ordre où elles sont vérifiées :
 | --- | --- | --- |
 | 404 | `unknown_contact` | Fiche inconnue. |
 | 409 | `blocked_contact` | Fiche bloquée, ou sans adresse WhatsApp. |
-| 422 | `window_closed` | Fenêtre de 24 h fermée. |
+| 422 | `window_closed` | Fenêtre de 24 h fermée ; sur un numéro relié par QR code, la personne n’a jamais écrit. |
 | 409 | `opted_out` | Fiche désabonnée. |
 | 409 | `no_whatsapp_number` | Espace sans numéro WhatsApp. |
 | 409 | `number_unlinked` | Numéro délié depuis l’Accueil. |
 | 409 | `number_suspended` | Abonnement du numéro fourni impayé ou terminé. |
-| 409 | `no_consent` | Numéro relié par QR code : message écrit en premier à une fiche qui n’est pas opted_in, sans consent. |
-| 422 | `no_phone` | Numéro relié par QR code : message écrit en premier à une personne sans numéro connu. |
-| 402 | `plan_limit_reached` | Numéro relié par QR code : messages du mois, ou contacts de l’offre, atteints. |
+| 422 | `no_phone` | Numéro relié par QR code : réponse hors des 24 h à une personne sans numéro connu. |
+| 402 | `plan_limit_reached` | Numéro relié par QR code : messages du mois atteints. |
 | 400, 409 | `invalid_recipient` `invalid_phone` `identity_conflict` | Clés de fiche absentes, illisibles ou contradictoires : [Désigner une personne](https://console.messagingme.app/developers/api/concepts.md#identification) |
 
 ### Notes
 
-Fenêtre fermée : seul un template peut partir (sur un numéro relié par QR code, le texte est écrit en premier). [La fenêtre de 24 h](https://console.messagingme.app/developers/api/concepts.md#fenetre-24h)
+Fenêtre fermée : seul un template peut partir (sur un numéro relié par QR code, la réponse à qui a écrit part en file). [La fenêtre de 24 h](https://console.messagingme.app/developers/api/concepts.md#fenetre-24h)
 
 <a id="message-meta"></a>
 

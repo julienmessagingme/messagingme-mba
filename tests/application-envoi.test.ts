@@ -151,14 +151,24 @@ describe('répondre sur la filière application', () => {
     expect(porte.gestes.filter((g) => g === 'quota')).toHaveLength(1);
   });
 
-  it('🔴 hors des 24 heures, un contact qui ne nous a JAMAIS écrit et n’a pas accepté WhatsApp : refus sans_consentement', async () => {
-    const porte = porteEnMemoire({ optIn: 'unknown' });
+  it('🔴 hors des 24 heures, un contact qui ne nous a JAMAIS écrit : refus premier_contact, même consentant (2026-10-24)', async () => {
+    const porte = porteEnMemoire({ optIn: 'opted_in' });
     const { traces, deps } = banc({ filiere: 'application', windowOpen: false, ecrirePremier: porte.ecrirePremier, lastInboundAt: null });
     expect(await repondreDansLaFenetre(deps, T, 'conv-1', 'Bonjour', null, 'api'))
-      .toEqual({ refus: { motif: 'premier_message', refus: 'sans_consentement' } });
+      .toEqual({ refus: { motif: 'premier_message', refus: 'premier_contact' } });
+    expect(porte.demandes[0]!.consentement).toEqual({ mode: 'exige_opt_in' });
     expect(traces).toEqual([]);
-    expect(porte.gestes).not.toContain('quota');
+    expect(porte.gestes).toEqual([]);
     expect(porte.lignes).toEqual([]);
+  });
+
+  it('🔴 hors des 24 heures, un contact qui a écrit reçoit la réponse en mode conversation, même quand l’appelant déclare un accord', async () => {
+    const porte = porteEnMemoire({ optIn: 'unknown' });
+    const { deps } = banc({ filiere: 'application', windowOpen: false, ecrirePremier: porte.ecrirePremier });
+    const horsFenetre = { origine: 'api' as const, consentement: { mode: 'declare' as const, source: 'formulaire' }, cle: 'api:0123456789abcdef:2026-10-23T10:00' };
+    const res = await repondreDansLaFenetre(deps, T, 'conv-1', 'Bonjour', null, 'api', null, horsFenetre);
+    expect(res).toEqual({ differe: { id: porte.lignes[0]!.id, prevuLe: porte.lignes[0]!.prevuLe.toISOString() } });
+    expect(porte.demandes[0]).toMatchObject({ origine: 'api', cle: horsFenetre.cle, consentement: { mode: 'conversation' } });
   });
 
   it('🔴 hors des 24 heures, un contact qui nous a écrit puis a dit STOP : rien ne part, même par la conversation', async () => {

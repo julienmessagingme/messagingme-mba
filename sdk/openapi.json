@@ -3931,7 +3931,7 @@
             }
           },
           "202": {
-            "description": "Queued, nothing sent yet: on a number linked by QR code, a text to someone with no conversation, or outside the 24-hour window, is written first. It leaves spaced out, counts in the month's messages, and needs a record that is opted_in or the consent declared in the call.",
+            "description": "Queued, nothing sent yet: on a number linked by QR code, a text outside the 24-hour window to someone who wrote to the number. It leaves spaced out and counts in the month's messages. Such a number never writes first: to someone who never wrote, the answer is 422 window_closed.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3950,7 +3950,7 @@
                       "description": "When the message is due to leave (ISO 8601 date-time)."
                     },
                     "conversationId": {
-                      "description": "null while the person has no conversation yet: the send opens it.",
+                      "description": "The conversation of the person who wrote.",
                       "type": [
                         "string",
                         "null"
@@ -4023,7 +4023,7 @@
             }
           },
           "409": {
-            "description": "Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed, no_consent.",
+            "description": "Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed.",
             "content": {
               "application/json": {
                 "schema": {

@@ -361,14 +361,17 @@ coupure du service n'arrive qu'à la remise en ligne du téléphone de l'entrepr
 **Écrire en premier sur la filière application** (plan `docs/superpowers/plans/2026-10-23-shopify-numero-qr.md`). Tout
 message qui ne répond pas à un message reçu du contact dans les 24 heures (même règle que l'API, `FENETRE_SERVICE_MS`)
 passe par UNE porte, `enfilerPremierMessage` (`src/application/premier-message.ts`, objet `depsPremier` de
-`src/index.ts`) : Shopify en texte, `write_first_message`, `/v1/messages/whatsapp` sans fil ou hors des 24 heures, et
-les réponses de Claude ou de l'API hors des 24 heures (`repondreAvec` les détourne ; l'opérateur `humain` répond
-toujours directement). Ses gardes, dans l'ordre : une clé déjà vue (idempotence, `application_premiers_messages`,
-migration 0252), la filière, le compte (banni = `numero_coupe`), le gel, la fiche dans la limite de contacts
-(`resoudreFiche`), le consentement (déclaré ou affirmé par le marchand : écrit `opted_in` avant le tri ; une réponse
-différée à un contact qui a écrit, mode `conversation` : seul un STOP l'arrête, rien ne s'écrit ; sinon une fiche
-`opted_in` exigée), STOP puis blocage, puis UNE unité de `envoisModelesMois` (`QuotaModeles`, la même limite que les
-modèles de l'API, sans remboursement). Le créneau se réserve sous un verrou consultatif par espace : au moins 30 s plus un
+`src/index.ts`) : Shopify en texte, `/v1/messages/whatsapp` sans fil ou hors des 24 heures, et les réponses de Claude ou
+de l'API hors des 24 heures (`repondreAvec` les détourne ; l'opérateur `humain` répond toujours directement). 🔴 **La
+porte n'accepte plus que le mode `conversation`** (décision de Julien du 2026-10-24) : une réponse différée à un contact
+qui a écrit (le fil a un `lastInboundAt`), avec ou sans accord déclaré, rien ne s'écrit sur la fiche. Tout autre mode
+écrirait en premier et rend `premier_contact`, avant la clé, la fiche et le compte des messages du mois : un appareil lié
+qui écrit en premier à un inconnu est sanctionné par WhatsApp (mesuré : déconnecté en 401 2,8 s après, puis message
+refusé dans l'accusé, erreur 463). `brancherMessage` refuse donc tout message Shopify actif sur cette filière, et l'outil
+`write_first_message` n'existe plus. Ses gardes, dans l'ordre : la filière, le compte (banni = `numero_coupe`), le premier
+contact, une clé déjà vue (idempotence, `application_premiers_messages`, migration 0252), le gel, la fiche (jamais créée ;
+absente = `premier_contact`), STOP puis blocage, puis UNE unité de `envoisModelesMois` (`QuotaModeles`, la même limite
+que les modèles de l'API, sans remboursement). Le créneau se réserve sous un verrou consultatif par espace : au moins 30 s plus un
 aléa entre deux premiers messages d'un espace ; jamais un refus. Le job `application-premier-message` (groupe =
 l'espace, un envoi à la fois par numéro) RÉCLAME la ligne (`en_file` -> `envoi`) : un job en double ne fait rien, et un
 crash après la réclamation laisse `envoi`, donc au plus une fois. Il relit STOP, blocage, compte, gel et filière,

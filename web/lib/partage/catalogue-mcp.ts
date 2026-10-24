@@ -16,11 +16,6 @@ export const CATALOGUE_MCP = {
   block_contact: { scope: 'mcp:write', exigePersonne: true },
   list_members: { scope: 'mcp:read' },
   reply_in_open_window: { scope: 'mcp:write' },
-  /**
-   * Écrire en premier depuis un numéro relié par QR code (plan 2026-10-23, tâche 4) : un message part chez quelqu'un qui
-   * n'a rien demandé et compte dans les messages du mois, donc une personne OAuth, comme `send_template_to_contact`.
-   */
-  write_first_message: { scope: 'mcp:write', exigePersonne: true },
   send_message: { scope: 'mcp:write' },
   tag_conversation: { scope: 'mcp:write' },
   assign_conversation: { scope: 'mcp:write' },

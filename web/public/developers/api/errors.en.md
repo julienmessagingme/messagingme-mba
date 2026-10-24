@@ -123,7 +123,7 @@ What to do: Stop writing to this person: they said STOP. The API does not resubs
 
 ### `no_consent` 409, also a skip reason
 
-Missing consent: a marketing send to someone not opted_in, a free RCS to someone who neither consented nor wrote, or a message written first from a number linked by QR code to someone not opted_in.
+Missing consent: a marketing send to someone not opted_in, or a free RCS to someone who neither consented nor wrote.
 
 What to do: Set the collected consent on the record (consent, consentSource) before a marketing send.
 
@@ -131,7 +131,7 @@ What to do: Set the collected consent on the record (consent, consentSource) bef
 
 ### `window_closed` 422, also a skip reason
 
-24-hour window closed: only a template can go out.
+24-hour window closed: only a template can go out. On a number linked by QR code, which never writes first: the person never wrote.
 
 What to do: Send an approved template (POST /v1/sends): a free-form message only goes out within 24 hours of the person’s last message.
 
@@ -147,7 +147,7 @@ What to do: Fill the variable on the record, or give the parameter a fallback va
 
 ### `no_phone` 422, also a skip reason
 
-Record without a phone number, which RCS, or a message written first from a number linked by QR code, requires.
+Record without a phone number, which RCS, or a reply outside the 24 h window from a number linked by QR code, requires.
 
 What to do: Add a phone number to the record.
 

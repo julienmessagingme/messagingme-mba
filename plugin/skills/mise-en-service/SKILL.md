@@ -45,11 +45,11 @@ First the track (`filiere`), unless `numero.filiere` from `get_setup_state` alre
 - **Yes**: the official WhatsApp API (`filiere` `api`, the default), steps 1 to 4 below.
 - **No, or "I don't know"**: the WhatsApp Business app track (`filiere` `application`), for a workspace without a Meta
   Business account: the number is a WhatsApp Business app account linked by a QR code, like a linked device. Say it in
-  one sentence before going on: this is not the official API, WhatsApp can cut a number (all the more if it writes
-  first to many people, as Shopify order messages and checkout reminders do), and Pro needs the API. Then let the user
-  choose the number: their own (free, but it is the one WhatsApp would cut) or a number we provide (3.50 EUR excl. tax a
-  month, their own stays safe; recommended for a trial). On this track the number can also write first, in plain text
-  (`write_first_message`, Shopify messages), within the plan's 1,000 messages a month. Then `start_whatsapp_connection` with `filiere` `application` and mode `fourni`,
+  one sentence before going on: this is not the official API, WhatsApp can cut a number, and on this track the number
+  can only REPLY to customers who write to it, never write first (so no Shopify messages, no campaigns, no first
+  message); Pro needs the API too. Then let the user choose the number: their own (free, but it is the one WhatsApp
+  would cut) or a number we provide (3.50 EUR excl. tax a month, their own stays safe; recommended for a trial). Then
+  `start_whatsapp_connection` with `filiere` `application` and mode `fourni`,
   or mode `apporte` with `numero` (the phone number of their WhatsApp Business app account, country code included).
   The user sees nothing of a tool result: your message itself must contain the full `url`, on its own line, in plain
   text (never in a code block, never "I gave you the link" without it), then the steps of `consigne`, one per line.

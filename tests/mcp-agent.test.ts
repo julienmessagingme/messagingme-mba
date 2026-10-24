@@ -478,15 +478,14 @@ async function lister(server: Serveur, bearer: string): Promise<string[]> {
 
 /**
  * Les outils de la connexion du numéro (lot 3c), des webhooks sortants (lot 12), la création d'un modèle (lot 13), la clé
- * et le Pro d'une Free (offres v2), les campagnes depuis l'assistant (2026-10-20), le blocage d'un contact (2026-10-22) et
- * l'écriture en premier (2026-10-23) exigent aussi une personne : ils ont leur fichier, `tests/mcp-numero.test.ts`,
- * `tests/mcp-evenements.test.ts`, `tests/mcp-serveur.test.ts` (les modèles et `write_first_message`), `tests/mcp-offre.test.ts`,
+ * et le Pro d'une Free (offres v2), les campagnes depuis l'assistant (2026-10-20) et le blocage d'un contact (2026-10-22)
+ * exigent aussi une personne : ils ont leur fichier, `tests/mcp-numero.test.ts`,
+ * `tests/mcp-evenements.test.ts`, `tests/mcp-serveur.test.ts` (les modèles), `tests/mcp-offre.test.ts`,
  * `tests/mcp-tag-contacts.test.ts` (et ses voisins) et `tests/mcp-block-contact.test.ts`.
  */
 const OUTILS_DU_NUMERO = new Set([
   ...[...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES, ...OUTILS_OFFRE, ...OUTILS_CAMPAGNES, ...OUTILS_CHAMPS, ...OUTILS_SHOPIFY].map((o) => o.nom),
   'block_contact',
-  'write_first_message',
 ]);
 const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true && !OUTILS_DU_NUMERO.has(o.nom)).map((o) => o.nom);
 

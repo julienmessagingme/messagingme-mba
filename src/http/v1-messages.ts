@@ -29,13 +29,13 @@ import type { EtatJournalSortant } from '../inbox/journal-sortant';
  * Elle ne crée jamais de fiche (`creer: 'jamais'`), mais rattache une clé neuve à la fiche trouvée même quand le
  * message est ensuite refusé (figé par `tests/v1-messages.test.ts`). Aucune clé d'idempotence, comme la barre de
  * réponse de l'Inbox.
- * 🔴 SUR LA FILIÈRE APPLICATION (numéro relié par QR code, plan 2026-10-23, tâche 4), `POST /v1/messages/whatsapp` ÉCRIT
- * EN PREMIER : une personne sans fil, ou hors des 24 heures, reçoit son texte par la porte « écrire en premier »
- * (`enfilerPremierMessage`), qui le compte dans les messages du mois, le fait partir espacé et exige le consentement ; la route rend
- * alors 202, le message en file. Une personne sans fiche, désignée par son numéro, y reçoit sa fiche par la porte, après
- * les gardes du compte, jamais par cette route. La clé de la porte est le numéro, le texte et la minute : le même appel
- * rejoué dans la minute ne met qu'un message en file, avant comme après la naissance du fil. La filière API ne change
- * pas.
+ * 🔴 SUR LA FILIÈRE APPLICATION (numéro relié par QR code, plan 2026-10-23, tâche 4), une personne sans fil, ou hors des
+ * 24 heures, passe par la porte « écrire en premier » (`enfilerPremierMessage`). Depuis le 2026-10-24, elle ne laisse
+ * passer qu'une RÉPONSE différée à une personne qui nous a écrit (le fil a un message reçu), comptée dans les messages du
+ * mois et espacée : 202, le message en file. Une personne sans fil, ou sans fiche, désignée par son numéro, n'a jamais
+ * écrit : la porte refuse (`premier_contact`, 422 `window_closed` et sa phrase), et `consent` n'y change rien. La clé de la
+ * porte est le numéro, le texte et la minute : le même appel rejoué dans la minute ne met qu'un message en file. La
+ * filière API ne change pas.
  */
 export interface V1MessagesRouteDeps {
   /**
@@ -84,10 +84,10 @@ export interface ReponseMessageSimple {
 }
 
 /**
- * La réponse 202 de `POST /v1/messages/whatsapp` sur un numéro relié par QR code (plan 2026-10-23, tâche 4) : le message
- * écrit en premier est EN FILE, rien n'est encore parti. `id` : celui du message en file, jamais celui de WhatsApp ;
- * `scheduledAt` : son départ prévu ; `conversationId` : le fil, `null` tant que la personne n'en a pas (le premier envoi
- * l'ouvre).
+ * La réponse 202 de `POST /v1/messages/whatsapp` sur un numéro relié par QR code (plan 2026-10-23, tâche 4) : la réponse
+ * hors des 24 heures est EN FILE, rien n'est encore parti. `id` : celui du message en file, jamais celui de WhatsApp ;
+ * `scheduledAt` : son départ prévu ; `conversationId` : le fil. `null` reste dans le contrat publié, mais n'est plus
+ * rendu depuis le 2026-10-24 : sans fil, la personne n'a jamais écrit, et la porte refuse.
  */
 export interface ReponseMessageEnFile {
   status: 'queued';
@@ -114,7 +114,8 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
    * corps malformé n'a demandé aucun travail ; en mode « mon application répond », au plafond d'appels mais jamais au
    * quota du jour), la fiche (jamais créée), puis le fil (cherché, jamais créé). `null` : la réponse est déjà partie.
    * `ecrirePremier` (le texte seulement) : sur la filière application, une personne sans fil, ou sans fiche mais désignée
-   * par son numéro, devient un premier message ; la filière n'est lue que dans ces deux cas, jamais sur le chemin d'un fil.
+   * par son numéro, va à la porte, qui la refuse (elle n'a jamais écrit) ; la filière n'est lue que dans ces deux cas,
+   * jamais sur le chemin d'un fil.
    */
   const surApplication = async (tenantId: string): Promise<boolean> => (await deps.repondre.application.filiere(tenantId)) === 'application';
   const jusquAuFil = async (
@@ -126,8 +127,8 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
     if (!await compterOuRefuser(deps.usage, req, reply, operation)) return null;
     const fiche = await deps.resoudreFiche(tenantId, cles, { creer: 'jamais' });
     if (!fiche.ok) {
-      // Une personne sans fiche, nommée par son numéro et sans `contactId` (un identifiant inconnu reste inconnu) : sa
-      // fiche naît par la porte, par ce numéro, après les gardes du compte, comme pour Shopify.
+      // Une personne sans fiche, nommée par son numéro et sans `contactId` (un identifiant inconnu reste inconnu) : la
+      // porte la juge, et dit pourquoi elle refuse, avec la phrase de ce numéro.
       const numero = n.cles.contactId === undefined ? n.cles.phoneE164 : undefined;
       if (ecrirePremier && fiche.code === 'unknown_contact' && numero !== undefined && await surApplication(tenantId)) {
         return { etat: 'premier', telephone: numero.replace(/[^0-9]/g, '') };
@@ -168,7 +169,7 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
       throw err;
     }
     if ('refus' in res) return refuserLaReponse(reply, res.refus);
-    // En file (filière application, écrit en premier) : rien n'est parti, le job l'enverra à `scheduledAt`.
+    // En file (filière application, hors des 24 heures) : rien n'est parti, le job l'enverra à `scheduledAt`.
     if ('differe' in res) {
       return reply.code(202).send({
         status: 'queued', id: res.differe.id, scheduledAt: res.differe.prevuLe, conversationId, channel: 'whatsapp',
@@ -186,9 +187,10 @@ export function registerV1Messages(app: FastifyInstance, deps: V1MessagesRouteDe
     const destination = await jusquAuFil(req, reply, tenantId, cles, true);
     if (destination === null) return reply;
     /**
-     * Ce qui part par la porte quand le message est écrit en premier (filière application) : l'origine `api`, le
-     * consentement déclaré dans l'appel (source absente : `api`, comme `POST /v1/sends`), et la clé du numéro, du texte et
-     * de la minute, la même avec ou sans fil.
+     * Ce qui part à la porte (filière application) : l'origine `api`, le consentement déclaré dans l'appel (source
+     * absente : `api`, comme `POST /v1/sends`), et la clé du numéro, du texte et de la minute, la même avec ou sans fil.
+     * Depuis le 2026-10-24, la porte refuse toute demande qui écrirait en premier, déclarée ou non ; une réponse à une
+     * personne qui a écrit y passe en mode `conversation` (`repondreAvec`), sans que le consentement déclaré compte.
      */
     const consentement: DemandePremierMessage['consentement'] = consent === 'opted_in'
       ? { mode: 'declare', source: consentSource ?? 'api' }
@@ -284,18 +286,19 @@ function refuserLePremier(reply: FastifyReply, refus: RefusPremier): FastifyRepl
     case 'numero_coupe':
     case 'numero_indisponible':
       return refuser(reply, 409, 'number_unlinked', phrase);
+    // Écrire à quelqu'un qui ne nous a pas écrit : le refus de l'API dans le même cas, une fenêtre fermée, avec la phrase
+    // de ce numéro, qui ne fait que répondre (2026-10-24) et n'a pas de modèle à proposer.
+    case 'premier_contact':
+      return refuser(reply, 422, 'window_closed', phrase);
     case 'gele':
       return refuser(reply, 422, 'meta_rejected', phrase);
     case 'desabonne':
       return refuser(reply, 409, 'opted_out', phrase);
     case 'bloque':
       return refuser(reply, 409, 'blocked_contact', phrase);
-    case 'sans_consentement':
-      return refuser(reply, 409, 'no_consent', phrase);
     case 'sans_telephone':
       return refuser(reply, 422, 'no_phone', phrase);
     // Le corps d'un 402 de l'offre porte la page de l'offre, comme les autres refus d'offre de `/v1`.
-    case 'limite_contacts':
     case 'limite_modeles':
       return reply.code(STATUT_REFUS_OFFRE).send({ error: phrase, code: 'plan_limit_reached' satisfies CodeApi, upgradeUrl: adresseOffre() });
     default: {

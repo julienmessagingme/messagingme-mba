@@ -1002,7 +1002,7 @@ Scope: `sends:create`
 | `phone` : string | At least one key | The phone number, in international format (+33…). |
 | `bsuid` : string | At least one key | The WhatsApp id of a person with no visible number. |
 | `text` : string | Yes | The text, 4096 characters at most. |
-| `consent` : string | No | On a number linked by QR code, a message written first (someone with no conversation, or outside the 24 h window) requires an opted_in record: opted_in declares it, written on the record before the send. No effect otherwise. Values: `opted_in`. [Consent and STOP](https://console.messagingme.app/developers/api/concepts.en.md#consentement) |
+| `consent` : string | No | Accepted, no effect: a number linked by QR code never writes first (someone who never wrote is refused, window_closed), and its reply to someone who wrote needs none. Values: `opted_in`. [Consent and STOP](https://console.messagingme.app/developers/api/concepts.en.md#consentement) |
 | `consentSource` : string | No | Where the consent comes from, 100 characters at most. Missing: api. |
 
 An unknown key is refused: 400 `invalid_body`.
@@ -1034,7 +1034,7 @@ _JSON_
 
 In the 200 response, conversationId is always set.
 
-On a number linked by QR code (WhatsApp Business app), a text to someone with no conversation, or outside the 24 h window, is written first: the response is 202, status is queued, id is the queued message’s id and scheduledAt its planned departure; conversationId is null while the person has no conversation. The message leaves spaced out, counts in the month’s messages, and needs an opted_in record, or consent set to opted_in in the call. Someone with no record, named by phone, gets one on the way. The same text to the same number, replayed within the minute, is queued once.
+On a number linked by QR code (WhatsApp Business app), a text outside the 24 h window to someone who wrote is queued: the response is 202, status is queued, id is the queued message’s id and scheduledAt its planned departure. The message leaves spaced out and counts in the month’s messages. This number never writes first: to someone who never wrote (no conversation, or no record), the response is 422 window_closed, whatever consent says. The same text to the same number, replayed within the minute, is queued once.
 
 After the provider accepts the message, journal is unrecorded if the Inbox write still fails after one retry. The status remains 200 and messageId identifies the message: do not replay this call.
 
@@ -1046,19 +1046,18 @@ In the order they are checked:
 | --- | --- | --- |
 | 404 | `unknown_contact` | Unknown record. |
 | 409 | `blocked_contact` | Record blocked, or without a WhatsApp address. |
-| 422 | `window_closed` | 24-hour window closed. |
+| 422 | `window_closed` | 24-hour window closed; on a number linked by QR code, the person never wrote. |
 | 409 | `opted_out` | Record opted out. |
 | 409 | `no_whatsapp_number` | Workspace without a WhatsApp number. |
 | 409 | `number_unlinked` | Number unlinked from the Home page. |
 | 409 | `number_suspended` | Provided number subscription overdue or ended. |
-| 409 | `no_consent` | Number linked by QR code: a message written first to a record that is not opted_in, without consent. |
-| 422 | `no_phone` | Number linked by QR code: a message written first to someone with no known number. |
-| 402 | `plan_limit_reached` | Number linked by QR code: the month’s messages, or the plan’s contacts, reached. |
+| 422 | `no_phone` | Number linked by QR code: a reply outside the 24 h window to someone with no known number. |
+| 402 | `plan_limit_reached` | Number linked by QR code: the month’s messages reached. |
 | 400, 409 | `invalid_recipient` `invalid_phone` `identity_conflict` | Record keys missing, unreadable or contradictory: [Identifying a person](https://console.messagingme.app/developers/api/concepts.en.md#identification) |
 
 ### Notes
 
-Window closed: only a template can go out (on a number linked by QR code, the text is written first). [The 24-hour window](https://console.messagingme.app/developers/api/concepts.en.md#fenetre-24h)
+Window closed: only a template can go out (on a number linked by QR code, the reply to someone who wrote is queued). [The 24-hour window](https://console.messagingme.app/developers/api/concepts.en.md#fenetre-24h)
 
 <a id="message-meta"></a>
 
@@ -4132,7 +4131,7 @@ What to do: Stop writing to this person: they said STOP. The API does not resubs
 
 ### `no_consent` 409, also a skip reason
 
-Missing consent: a marketing send to someone not opted_in, a free RCS to someone who neither consented nor wrote, or a message written first from a number linked by QR code to someone not opted_in.
+Missing consent: a marketing send to someone not opted_in, or a free RCS to someone who neither consented nor wrote.
 
 What to do: Set the collected consent on the record (consent, consentSource) before a marketing send.
 
@@ -4140,7 +4139,7 @@ What to do: Set the collected consent on the record (consent, consentSource) bef
 
 ### `window_closed` 422, also a skip reason
 
-24-hour window closed: only a template can go out.
+24-hour window closed: only a template can go out. On a number linked by QR code, which never writes first: the person never wrote.
 
 What to do: Send an approved template (POST /v1/sends): a free-form message only goes out within 24 hours of the person’s last message.
 
@@ -4156,7 +4155,7 @@ What to do: Fill the variable on the record, or give the parameter a fallback va
 
 ### `no_phone` 422, also a skip reason
 
-Record without a phone number, which RCS, or a message written first from a number linked by QR code, requires.
+Record without a phone number, which RCS, or a reply outside the 24 h window from a number linked by QR code, requires.
 
 What to do: Add a phone number to the record.
 
@@ -4899,7 +4898,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | create_field | mcp:write OAuth connection required | Create a custom field, as in the console: its key comes from the label. |
 | set_contact_field | mcp:write OAuth connection required | Set a field on the contacts of a target or of a list of conversations, like the console’s bulk action, without starting any automation. |
 | connect_shopify | mcp:write OAuth connection required | Connect the merchant’s Shopify store with the app the shopify skill created in its organization; the connection is checked with Shopify before the secret is kept, encrypted. |
-| set_shopify_message | mcp:write OAuth connection required | Send a message when an order is paid or fulfilled, or remind an abandoned checkout once: an approved template on the API, a plain text on a number linked by QR code, with Shopify data, through the sends rules (STOP, consent, monthly messages, contact limit). |
+| set_shopify_message | mcp:write OAuth connection required | Send a message when an order is paid or fulfilled, or remind an abandoned checkout once: an approved template, with Shopify data, through the sends rules (STOP, consent, monthly templates, contact limit). A number linked by QR code cannot send them: it never writes first. |
 | get_shopify_state | mcp:read OAuth connection required | The connected Shopify store: its state, its messages, the last event received, the last 30 days of outcomes and the last 7 days of checkouts. |
 | preview_shopify_customers | mcp:read OAuth connection required | Count, writing nothing, the Shopify customers subscribed to marketing (email or SMS) who have a phone: already in the workspace, new, free places of the plan, importable. |
 | import_shopify_customers | mcp:write OAuth connection required | Import the subscribed Shopify customers the merchant chose, newest first: records tagged Shopify, without WhatsApp consent, within the plan’s limit. |
@@ -4908,8 +4907,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |
 | block_contact | mcp:write OAuth connection required | Block or unblock a contact: nothing is sent to them anymore, their messages are still recorded. |
 | list_members | mcp:read | Workspace members, to assign threads to them. |
-| reply_in_open_window | mcp:write | Reply, only while the 24 h window is open; on a number linked by QR code, outside the window, the message is queued as a first message. |
-| write_first_message | mcp:write OAuth connection required | Write first to a number from a number linked by QR code: a queued, spaced-out text, counted in the 1,000 messages of the month, with the contact’s consent. |
+| reply_in_open_window | mcp:write | Reply, only while the 24 h window is open; on a number linked by QR code, outside the window, a reply to a customer who wrote is queued; this number never writes first. |
 | tag_conversation | mcp:write | Add tags to a thread’s contact. |
 | assign_conversation | mcp:write | Assign a thread to a member, or release it. |
 | control_conversation | mcp:write | Take over a thread, or hand it back to the automatic responder, which answers the next message. |

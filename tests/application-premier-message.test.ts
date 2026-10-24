@@ -13,7 +13,6 @@ import type { CompteApplication, StatutCompte } from '../src/application/comptes
 import type { Verification } from '../src/application/interne';
 import type { ContactEnvoi } from '../src/campaign/build';
 import type { ResolutionFiche } from '../src/api/fiche';
-import type { IssueConsentement } from '../src/api/consentement';
 import type { Emission } from '../src/emails-produit/emission';
 import { jamaisBloque, jamaisDesabonne, toujoursDesabonne } from './consentement';
 
@@ -80,17 +79,27 @@ function fileEnMemoire(maintenant: () => Date = () => MAINTENANT) {
   return store;
 }
 
+/** Une réponse différée à un contact qui nous a écrit : le seul mode que la porte laisse passer depuis le 2026-10-24. */
 const demande = (o: Partial<DemandePremierMessage> = {}): DemandePremierMessage => ({
-  tenantId: T, cle: 'shopify:boutique:orders/paid:1', telephone: '33612345678', texte: 'Merci pour votre commande',
-  origine: 'shopify_commande', reference: 'orders/paid:1', consentement: { mode: 'marchand', source: 'shopify' }, ...o,
+  tenantId: T, cle: 'reponse:conv-1:0123456789abcdef:2026-10-23T10:00', telephone: '33612345678', texte: 'Merci pour votre message',
+  origine: 'reponse', reference: null, consentement: { mode: 'conversation' }, ...o,
 });
+
+/** Les demandes qui écriraient en premier : chaque mode autre que `conversation`, sous l'origine qui l'emploie. */
+const ECRIRE_EN_PREMIER: ReadonlyArray<Partial<DemandePremierMessage>> = [
+  { origine: 'shopify_commande', cle: 'shopify:b.myshopify.com:orders/paid:1', reference: 'orders/paid:1', consentement: { mode: 'marchand', source: 'shopify' } },
+  { origine: 'shopify_panier', cle: 'shopify:b.myshopify.com:checkouts/abandoned:j1', reference: 'j1', consentement: { mode: 'marchand', source: 'shopify' } },
+  { origine: 'mcp', cle: 'mcp:0123456789abcdef:2026-10-23T10:00', consentement: { mode: 'declare', source: 'formulaire du site' } },
+  { origine: 'api', cle: 'api:0123456789abcdef:2026-10-23T10:00', consentement: { mode: 'declare', source: 'api' } },
+  { origine: 'api', cle: 'api:0123456789abcdef:2026-10-23T10:00', consentement: { mode: 'exige_opt_in' } },
+  { origine: 'reponse', consentement: { mode: 'exige_opt_in' } },
+];
 
 interface Reglages {
   filiere?: 'api' | 'application' | null;
   statut?: StatutCompte | null;
   gelJusqua?: Date | null;
   fiche?: ResolutionFiche;
-  consentement?: IssueConsentement;
   optIn?: ContactEnvoi['optInStatus'] | null;
   desabonne?: boolean;
   bloque?: boolean;
@@ -111,8 +120,7 @@ function porte(r: Reglages = {}) {
       parEspace: async () => (statut ? compte(statut) : null),
     },
     fiches: {
-      resoudreFiche: async (_t, cles, o) => { gestes.push(`fiche:${cles.phone}:${o.creer}`); return r.fiche ?? { ok: true, contactId: FICHE, cree: true }; },
-      appliquerConsentement: async (_t, id, c, source) => { gestes.push(`consentement:${id}:${c}:${source}`); return r.consentement ?? 'change'; },
+      resoudreFiche: async (_t, cles, o) => { gestes.push(`fiche:${cles.phone}:${o.creer}`); return r.fiche ?? { ok: true, contactId: FICHE, cree: false }; },
       listContactsPourEnvoiApi: async (_t, ids) => {
         gestes.push(`lecture:${ids.join(',')}`);
         return r.optIn === null ? [] : [{ id: FICHE, phone_e164: '+33612345678', optInStatus: r.optIn ?? 'unknown', bloque: false, rcsDesabonne: false }];
@@ -140,7 +148,7 @@ describe('la porte « écrire en premier »', () => {
     expect(p.enfiles).toEqual([{ tenantId: T, id: r.id, startAfter: r.prevuLe }]);
     expect(p.gestes.filter((g) => g.startsWith('quota'))).toEqual(['quota:1']);
     const ligne = p.file.lignes.get(r.id)!;
-    expect(ligne).toMatchObject({ waId: '33612345678', texte: 'Merci pour votre commande', origine: 'shopify_commande', reference: 'orders/paid:1', statut: 'en_file' });
+    expect(ligne).toMatchObject({ waId: '33612345678', texte: 'Merci pour votre message', origine: 'reponse', reference: null, statut: 'en_file' });
   });
 
   it('🔴 un rejeu de la même clé ne crée pas un second message', async () => {
@@ -149,7 +157,7 @@ describe('la porte « écrire en premier »', () => {
     const rejeu = await enfilerPremierMessage(p.deps, demande({ texte: 'autre texte' }));
     expect(rejeu).toEqual({ ok: true, id: (premier as { id: string }).id, prevuLe: (premier as { prevuLe: Date }).prevuLe, dejaEnFile: true });
     expect(p.file.lignes.size).toBe(1);
-    // Ni une seconde unité du mois, ni une seconde fiche, ni un second consentement : la clé est lue avant tout.
+    // Ni une seconde unité du mois, ni une seconde lecture de la fiche : la clé est lue avant.
     expect(p.gestes.filter((g) => g.startsWith('quota'))).toEqual(['quota:1']);
     expect(p.gestes.filter((g) => g.startsWith('fiche'))).toHaveLength(1);
     // Encore en file : son job est enfilé de nouveau à son heure (le rattrapage d'un enfilement perdu).
@@ -179,6 +187,29 @@ describe('la porte « écrire en premier »', () => {
   });
 
   /**
+   * 🔴 RÉSERVÉE AUX RÉPONSES (décision de Julien du 2026-10-24) : un appareil lié qui écrit en premier à un inconnu est
+   * déconnecté, ou son message refusé par WhatsApp. Chaque demande qui écrirait en premier est refusée, même à une fiche
+   * consentante, sans lire la fiche, sans écrire de consentement, sans compter ni rien mettre en file.
+   */
+  it('🔴 premier_contact : chaque mode autre que conversation est refusé, sans fiche, sans quota, sans enfilement', async () => {
+    for (const d of ECRIRE_EN_PREMIER) {
+      const p = porte({ optIn: 'opted_in' });
+      expect(await enfilerPremierMessage(p.deps, demande(d)), JSON.stringify(d)).toEqual({ ok: false, refus: 'premier_contact' });
+      expect(p.gestes, JSON.stringify(d)).toEqual([]);
+      expect([p.file.lignes.size, p.enfiles], JSON.stringify(d)).toEqual([0, []]);
+    }
+  });
+
+  it('🔴 premier_contact passe avant la clé : une ligne mise en file avant cette règle n’est ni rendue, ni réenfilée', async () => {
+    const p = porte();
+    const d = demande(ECRIRE_EN_PREMIER[0]);
+    const { ligne } = await p.file.inserer({ tenantId: T, cle: d.cle, waId: '33612345678', texte: d.texte, origine: d.origine, reference: d.reference }, 0);
+    expect(await enfilerPremierMessage(p.deps, d)).toEqual({ ok: false, refus: 'premier_contact' });
+    expect(p.enfiles).toEqual([]);
+    expect(p.file.lignes.get(ligne.id)!.statut).toBe('en_file');
+  });
+
+  /**
    * Les refus, DANS L'ORDRE : pour chaque porte, elle ET toutes les suivantes refuseraient ; c'est la première qui parle.
    * Après chacun, rien n'est inséré ni enfilé, et rien n'est compté (sauf la limite du mois, refusée par `consommer`).
    */
@@ -186,10 +217,11 @@ describe('la porte « écrire en premier »', () => {
     { refus: 'filiere_api', reglages: { filiere: 'api' } },
     { refus: 'numero_coupe', reglages: { statut: 'banni' } },
     { refus: 'numero_indisponible', reglages: { statut: 'deconnecte' } },
+    { refus: 'premier_contact', reglages: {}, demande: ECRIRE_EN_PREMIER[0] },
     { refus: 'gele', reglages: { gelJusqua: new Date(MAINTENANT.getTime() + 60_000) } },
     { refus: 'sans_telephone', reglages: {}, demande: { telephone: '12' } },
-    { refus: 'limite_contacts', reglages: { fiche: { ok: false, code: 'plan_limit_reached' } } },
-    { refus: 'desabonne', reglages: { consentement: 'refuse' } },
+    { refus: 'premier_contact', reglages: { fiche: { ok: false, code: 'unknown_contact' } } },
+    { refus: 'desabonne', reglages: { optIn: 'opted_out' } },
     { refus: 'desabonne', reglages: { desabonne: true } },
     { refus: 'bloque', reglages: { bloque: true } },
     { refus: 'limite_modeles', reglages: { quotaOk: false } },
@@ -233,54 +265,27 @@ describe('la porte « écrire en premier »', () => {
     // Un numéro international valide passe, sous ses chiffres exacts.
     const p = porte();
     expect(await enfilerPremierMessage(p.deps, demande({ telephone: '6591234567' }))).toMatchObject({ ok: true });
-    expect(p.gestes[0]).toBe('fiche:+6591234567:phone');
+    expect(p.gestes[0]).toBe('fiche:+6591234567:jamais');
   });
 
   it('🔴 `conversation` (décision du 2026-10-24) : un contact qui nous a écrit reçoit la réponse sans accord coché, rien ne s’écrit sur sa fiche ; un STOP l’arrête', async () => {
-    const conversation = { consentement: { mode: 'conversation' as const }, origine: 'reponse' as const };
     const p = porte({ optIn: 'unknown' });
-    expect(await enfilerPremierMessage(p.deps, demande(conversation))).toMatchObject({ ok: true });
+    expect(await enfilerPremierMessage(p.deps, demande())).toMatchObject({ ok: true });
     expect(p.gestes).toEqual(['fiche:+33612345678:jamais', `lecture:${FICHE}`, 'stop:33612345678', 'tait:33612345678', 'quota:1']);
-    expect(await enfilerPremierMessage(porte({ optIn: 'opted_out' }).deps, demande(conversation))).toEqual({ ok: false, refus: 'desabonne' });
+    expect(await enfilerPremierMessage(porte({ optIn: 'opted_out' }).deps, demande())).toEqual({ ok: false, refus: 'desabonne' });
   });
 
-  it('un accord exigé ne crée pas de fiche : un inconnu est refusé sans consentement, sans user une place', async () => {
+  it('la fiche n’est jamais créée : sans fiche à ce numéro, personne n’a écrit d’ici, premier_contact, sans user une place', async () => {
     const p = porte({ fiche: { ok: false, code: 'unknown_contact' } });
-    expect(await enfilerPremierMessage(p.deps, demande({ consentement: { mode: 'exige_opt_in' } }))).toEqual({ ok: false, refus: 'sans_consentement' });
-    expect(p.gestes[0]).toBe('fiche:+33612345678:jamais');
+    expect(await enfilerPremierMessage(p.deps, demande())).toEqual({ ok: false, refus: 'premier_contact' });
+    expect(p.gestes).toEqual(['fiche:+33612345678:jamais']);
   });
 
-  it('une fiche que l’on ne peut ni trouver ni créer : sans téléphone', async () => {
+  it('une fiche que l’on ne peut pas trouver : sans téléphone', async () => {
     const p = porte({ fiche: { ok: false, code: 'identity_conflict' } });
     expect(await enfilerPremierMessage(p.deps, demande())).toEqual({ ok: false, refus: 'sans_telephone' });
     // Le numéro part à la fiche en E.164 : `resoudreFiche` le lirait sinon comme un numéro français.
-    expect(p.gestes[0]).toBe('fiche:+33612345678:phone');
-  });
-
-  it('🔴 `declare` écrit `opted_in` avec sa source AVANT le tri STOP et blocage', async () => {
-    const p = porte();
-    await enfilerPremierMessage(p.deps, demande({ origine: 'mcp', consentement: { mode: 'declare', source: 'formulaire du site' } }));
-    expect(p.gestes).toEqual([
-      'fiche:+33612345678:phone', `consentement:${FICHE}:opted_in:formulaire du site`, 'stop:33612345678', 'tait:33612345678', 'quota:1',
-    ]);
-  });
-
-  it('une fiche effacée entre la résolution et le consentement : plus personne à qui écrire', async () => {
-    expect(await enfilerPremierMessage(porte({ consentement: 'absente' }).deps, demande())).toEqual({ ok: false, refus: 'sans_telephone' });
-  });
-
-  it('🔴 `exige_opt_in` refuse une fiche non consentante, sans rien écrire ; une fiche consentante passe', async () => {
-    const exige = { consentement: { mode: 'exige_opt_in' as const }, origine: 'reponse' as const };
-    for (const optIn of ['unknown', null] as const) {
-      const p = porte({ optIn });
-      expect(await enfilerPremierMessage(p.deps, demande(exige)), String(optIn)).toEqual({ ok: false, refus: 'sans_consentement' });
-      expect(p.gestes.some((g) => g.startsWith('consentement'))).toBe(false);
-    }
-    // Une fiche qui a dit STOP le dit, plutôt que « sans consentement ».
-    expect(await enfilerPremierMessage(porte({ optIn: 'opted_out' }).deps, demande(exige))).toEqual({ ok: false, refus: 'desabonne' });
-    const ok = porte({ optIn: 'opted_in' });
-    expect(await enfilerPremierMessage(ok.deps, demande(exige))).toMatchObject({ ok: true });
-    expect(ok.gestes).toEqual(['fiche:+33612345678:jamais', `lecture:${FICHE}`, 'stop:33612345678', 'tait:33612345678', 'quota:1']);
+    expect(p.gestes[0]).toBe('fiche:+33612345678:jamais');
   });
 
   it('une demande hors des bornes de la migration est une faute de l’appelant : elle lève', async () => {

@@ -431,6 +431,8 @@ describe('une commande sur un numéro relié par QR code', () => {
 
   it('un refus de la porte devient son issue (filiere_api lue comme un croisement) ; un rejeu déjà en file reste en_file', async () => {
     for (const [premier, issue] of [
+      // 🔴 Depuis le 2026-10-24, la porte refuse tout message Shopify (il écrirait en premier) : un texte réglé avant.
+      [{ ok: false, refus: 'premier_contact' }, 'premier_contact'],
       [{ ok: false, refus: 'limite_modeles' }, 'limite_modeles'],
       [{ ok: false, refus: 'gele' }, 'gele'],
       [{ ok: false, refus: 'numero_coupe' }, 'numero_coupe'],
@@ -440,11 +442,8 @@ describe('une commande sur un numéro relié par QR code', () => {
       const { deps, journal } = monter({ messages: [TEXTE], filiere: 'application', premier });
       await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', commande());
       expect(journal.issues, issue).toEqual([[CLE, issue]]);
+      expect(journal.emails, issue).toEqual([]);
     }
-    // La limite de contacts de la porte prévient les admins, comme celle de l'envoi public.
-    const limite = monter({ messages: [TEXTE], filiere: 'application', premier: { ok: false, refus: 'limite_contacts' } });
-    await traiterWebhookShopify(limite.deps, AFFIRMEE, 'orders/paid', commande());
-    expect(limite.journal.emails).toMatchObject([{ cle: 'shopify_limite_contacts' }]);
   });
 
   it('un texte qui dépasse ce qu’un message porte, une fois les données remplies, ne part pas', async () => {

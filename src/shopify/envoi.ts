@@ -79,12 +79,14 @@ export async function envoyerShopify(envoyer: EnvoyerPublic, e: EnvoiShopify): P
  * `en_file` : la porte « écrire en premier » a mis le message en file ; le job inscrit ensuite son issue finale
  * (`noterIssueShopify`). `filiere_differente` : le message réglé ne correspond plus à la filière de l'espace (un modèle
  * sur un numéro relié par QR code, un texte sur l'API), rien ne part. `texte_trop_long` : une fois les données
- * remplies, le texte dépasse ce qu'un message WhatsApp porte, rien ne part. Les autres viennent du job
+ * remplies, le texte dépasse ce qu'un message WhatsApp porte, rien ne part. `premier_contact` : la porte refuse depuis le
+ * 2026-10-24 tout message qu'un numéro relié par QR code écrirait en premier, donc chacun des trois (un texte réglé
+ * avant cette règle), et le branchement en refuse un neuf (`brancherMessage`). Les autres viennent du job
  * (`IssueJobPremier`).
  */
 export type IssueTexte =
   | 'en_file' | 'pas_sur_whatsapp' | 'gele' | 'numero_coupe' | 'refuse_whatsapp' | 'filiere_differente' | 'envoi_incertain'
-  | 'expire' | 'abandonne' | 'texte_trop_long';
+  | 'expire' | 'abandonne' | 'texte_trop_long' | 'premier_contact';
 export type IssueShopify = IssueEnvoi | IssueTexte;
 
 /** Un refus de la porte devient l'issue du même nom ; `filiere_api` (l'espace est passé à l'API) est un croisement. */
@@ -123,9 +125,9 @@ export interface MessageShopify {
 }
 
 /**
- * L'AIGUILLAGE D'UN MESSAGE SHOPIFY, à l'envoi : un texte sur la filière application part par la porte « écrire en
- * premier » (comptée dans les messages du mois, espacée, en file) ; un modèle sur la filière API part par l'envoi public,
- * comme avant. Tout croisement rend `filiere_differente`, sans rien envoyer. Un espace sans filière (son numéro retiré)
+ * L'AIGUILLAGE D'UN MESSAGE SHOPIFY, à l'envoi : un texte sur la filière application va à la porte « écrire en premier »,
+ * qui le refuse depuis le 2026-10-24 (`premier_contact` : ce numéro ne fait que répondre, et un message Shopify ne répond
+ * à rien) ; un modèle sur la filière API part par l'envoi public, comme avant. Tout croisement rend `filiere_differente`, sans rien envoyer. Un espace sans filière (son numéro retiré)
  * suit la voie de son réglage, qui le dit (`numero_indisponible`).
  */
 export async function envoyerMessageShopify(d: DepsEnvoiShopify, e: MessageShopify): Promise<IssueShopify> {

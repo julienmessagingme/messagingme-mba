@@ -3043,7 +3043,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Queued, nothing sent yet: on a number linked by QR code, a text to someone with no conversation, or outside the 24-hour window, is written first. It leaves spaced out, counts in the month's messages, and needs a record that is opted_in or the consent declared in the call. */
+            /** @description Queued, nothing sent yet: on a number linked by QR code, a text outside the 24-hour window to someone who wrote to the number. It leaves spaced out and counts in the month's messages. Such a number never writes first: to someone who never wrote, the answer is 422 window_closed. */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -3056,7 +3056,7 @@ export interface operations {
                         id: string;
                         /** @description When the message is due to leave (ISO 8601 date-time). */
                         scheduledAt: string;
-                        /** @description null while the person has no conversation yet: the send opens it. */
+                        /** @description The conversation of the person who wrote. */
                         conversationId: string | null;
                         /** @constant */
                         channel: "whatsapp";
@@ -3108,7 +3108,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed, no_consent. */
+            /** @description Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed. */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -64,8 +64,8 @@ function Messages() {
         <p>{t('Dans la réponse 200, conversationId est toujours renseigné.', 'In the 200 response, conversationId is always set.')}</p>
         <p>
           {t(
-            'Sur un numéro relié par QR code (application WhatsApp Business), un texte à une personne sans conversation, ou hors des 24 h, est écrit en premier : la réponse est 202, status vaut queued, id est celui du message en file et scheduledAt son départ prévu ; conversationId vaut null tant que la personne n’a pas de conversation. Le message part espacé, compte dans les messages du mois, et exige une fiche opted_in, ou consent à opted_in dans l’appel. Une personne sans fiche, désignée par phone, reçoit sa fiche au passage. Le même texte au même numéro, rejoué dans la minute, n’est mis en file qu’une fois.',
-            'On a number linked by QR code (WhatsApp Business app), a text to someone with no conversation, or outside the 24 h window, is written first: the response is 202, status is queued, id is the queued message’s id and scheduledAt its planned departure; conversationId is null while the person has no conversation. The message leaves spaced out, counts in the month’s messages, and needs an opted_in record, or consent set to opted_in in the call. Someone with no record, named by phone, gets one on the way. The same text to the same number, replayed within the minute, is queued once.',
+            'Sur un numéro relié par QR code (application WhatsApp Business), un texte hors des 24 h à une personne qui a écrit est mis en file : la réponse est 202, status vaut queued, id est celui du message en file et scheduledAt son départ prévu. Le message part espacé et compte dans les messages du mois. Ce numéro n’écrit jamais en premier : à une personne qui n’a jamais écrit (sans conversation, ou sans fiche), la réponse est 422 window_closed, quel que soit consent. Le même texte au même numéro, rejoué dans la minute, n’est mis en file qu’une fois.',
+            'On a number linked by QR code (WhatsApp Business app), a text outside the 24 h window to someone who wrote is queued: the response is 202, status is queued, id is the queued message’s id and scheduledAt its planned departure. The message leaves spaced out and counts in the month’s messages. This number never writes first: to someone who never wrote (no conversation, or no record), the response is 422 window_closed, whatever consent says. The same text to the same number, replayed within the minute, is queued once.',
           )}
         </p>
         <p>{t('Après acceptation par le fournisseur, journal vaut unrecorded si l’écriture dans l’Inbox échoue encore après une reprise. Le statut reste 200 et messageId identifie le message : ne rejouez pas cet appel.', 'After the provider accepts the message, journal is unrecorded if the Inbox write still fails after one retry. The status remains 200 and messageId identifies the message: do not replay this call.')}</p>
@@ -76,19 +76,18 @@ function Messages() {
           lignes={[
             ['unknown_contact', t('Fiche inconnue.', 'Unknown record.')],
             ['blocked_contact', t('Fiche bloquée, ou sans adresse WhatsApp.', 'Record blocked, or without a WhatsApp address.')],
-            ['window_closed', t('Fenêtre de 24 h fermée.', '24-hour window closed.')],
+            ['window_closed', t('Fenêtre de 24 h fermée ; sur un numéro relié par QR code, la personne n’a jamais écrit.', '24-hour window closed; on a number linked by QR code, the person never wrote.')],
             ['opted_out', t('Fiche désabonnée.', 'Record opted out.')],
             ['no_whatsapp_number', t('Espace sans numéro WhatsApp.', 'Workspace without a WhatsApp number.')],
             ['number_unlinked', t('Numéro délié depuis l’Accueil.', 'Number unlinked from the Home page.')],
             ['number_suspended', t('Abonnement du numéro fourni impayé ou terminé.', 'Provided number subscription overdue or ended.')],
-            ['no_consent', t('Numéro relié par QR code : message écrit en premier à une fiche qui n’est pas opted_in, sans consent.', 'Number linked by QR code: a message written first to a record that is not opted_in, without consent.')],
-            ['no_phone', t('Numéro relié par QR code : message écrit en premier à une personne sans numéro connu.', 'Number linked by QR code: a message written first to someone with no known number.')],
-            ['plan_limit_reached', t('Numéro relié par QR code : messages du mois, ou contacts de l’offre, atteints.', 'Number linked by QR code: the month’s messages, or the plan’s contacts, reached.')],
+            ['no_phone', t('Numéro relié par QR code : réponse hors des 24 h à une personne sans numéro connu.', 'Number linked by QR code: a reply outside the 24 h window to someone with no known number.')],
+            ['plan_limit_reached', t('Numéro relié par QR code : messages du mois atteints.', 'Number linked by QR code: the month’s messages reached.')],
           ]}
         />
         <Sous>{notes}</Sous>
         <p>
-          {t('Fenêtre fermée : seul un template peut partir (sur un numéro relié par QR code, le texte est écrit en premier).', 'Window closed: only a template can go out (on a number linked by QR code, the text is written first).')}{' '}
+          {t('Fenêtre fermée : seul un template peut partir (sur un numéro relié par QR code, la réponse à qui a écrit part en file).', 'Window closed: only a template can go out (on a number linked by QR code, the reply to someone who wrote is queued).')}{' '}
           <LienDoc page="concepts" ancre="fenetre-24h">{t('La fenêtre de 24 h', 'The 24-hour window')}</LienDoc>
         </p>
       </Route>

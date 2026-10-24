@@ -123,7 +123,7 @@ Que faire : Ne plus écrire à cette personne : elle a dit STOP. L’API ne la r
 
 ### `no_consent` 409, aussi motif d’écart
 
-Consentement manquant : envoi marketing vers qui n’est pas opted_in, RCS libre vers qui n’a ni consenti ni écrit, ou message écrit en premier depuis un numéro relié par QR code vers qui n’est pas opted_in.
+Consentement manquant : envoi marketing vers qui n’est pas opted_in, ou RCS libre vers qui n’a ni consenti ni écrit.
 
 Que faire : Poser sur la fiche le consentement recueilli (consent, consentSource) avant un envoi marketing.
 
@@ -131,7 +131,7 @@ Que faire : Poser sur la fiche le consentement recueilli (consent, consentSource
 
 ### `window_closed` 422, aussi motif d’écart
 
-Fenêtre de 24 h fermée : seul un template peut partir.
+Fenêtre de 24 h fermée : seul un template peut partir. Sur un numéro relié par QR code, qui n’écrit jamais en premier : la personne n’a jamais écrit.
 
 Que faire : Envoyer un modèle approuvé (POST /v1/sends) : un message libre ne part que dans les 24 h qui suivent le dernier message de la personne.
 
@@ -147,7 +147,7 @@ Que faire : Remplir la variable sur la fiche, ou donner une valeur de repli (fal
 
 ### `no_phone` 422, aussi motif d’écart
 
-Fiche sans numéro, alors que le RCS, ou un message écrit en premier depuis un numéro relié par QR code, l’exige.
+Fiche sans numéro, alors que le RCS, ou une réponse hors des 24 h depuis un numéro relié par QR code, l’exige.
 
 Que faire : Ajouter un numéro à la fiche.
 

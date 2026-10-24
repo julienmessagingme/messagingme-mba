@@ -4827,15 +4827,16 @@ numéro.
   réveille. ⚠️ Un message reçu pendant une coupure de notre service n'est pas perdu, mais il n'arrive qu'à la remise en
   ligne du téléphone du compte (mesuré le 2026-10-23, essai 152 : rien en 36 minutes après la reprise, arrivé à
   l'ouverture du téléphone, l'agent a répondu dans la foulée).
-- ✅ **Écrire en premier** (2026-10-24) : Claude (`write_first_message`), l'API (`/v1/messages/whatsapp` sans
-  conversation) et Shopify écrivent à un client qui n'a pas écrit dans les 24 heures, en texte, avec son accord (déclaré
-  ou déjà donné). Un client qui nous a écrit reçoit une réponse plus tardive sans accord coché : il a écrit, il attend une
-  réponse (décision de Julien, 2026-10-24) ; seul un STOP l'arrête, et sa fiche ne devient pas consentante aux campagnes. Chaque message compte dans les 1 000 messages du mois de la Free, part espacé d'au moins 30 secondes et
-  au plus une fois ; une réponse hors des 24 heures suit la même règle. Un message en file depuis plus de 24 heures ne
-  part plus. Un numéro absent de WhatsApp est dit (`pas_sur_whatsapp`).
-- Limites : ni modèles, ni campagnes, ni agent de Meta, qui passent par l'API de Meta ; l'offre Pro est refusée sur cette
-  filière (le passage à l'API d'abord) ; les groupes sont ignorés. Un numéro de Meta connecté prime : l'espace passe alors
-  sur l'API.
+- ✅ **On ne répond qu'aux clients qui écrivent** (décision de Julien, 2026-10-24) : ce numéro n'écrit jamais en premier
+  à quelqu'un qui ne lui a pas écrit, ni par Shopify, ni par Claude, ni par l'API. Mesuré ce jour-là : un premier message
+  à un inconnu a fait déconnecter l'appareil 2,8 secondes après, et le suivant a été refusé par WhatsApp sans jamais
+  arriver. Un message Shopify y est refusé dès son réglage, et toute demande d'écrire en premier l'est avec une phrase qui
+  renvoie vers un numéro relié par Meta. Un client qui a écrit reçoit une réponse plus tardive, même au-delà des 24 heures et sans accord coché ;
+  seul un STOP l'arrête. Cette réponse compte dans les 1 000 messages du mois de la Free, part espacée d'au moins
+  30 secondes et au plus une fois ; en file depuis plus de 24 heures, elle ne part plus.
+- Limites : ni modèles, ni campagnes, ni messages Shopify, ni agent de Meta, qui passent par l'API de Meta ; l'offre Pro
+  est refusée sur cette filière (le passage à l'API d'abord) ; les groupes sont ignorés. Un numéro de Meta connecté prime :
+  l'espace passe alors sur l'API.
 
 ### Construire un agent IA depuis Claude (2026-10-04)
 

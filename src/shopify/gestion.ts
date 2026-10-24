@@ -46,6 +46,11 @@ export interface DepsGestionShopify {
   filiere(tenantId: string): Promise<Filiere | null>;
 }
 
+/** Le refus d'un message Shopify actif sur un numéro relié par QR code (2026-10-24, `brancherMessage`). */
+export const PHRASE_SHOPIFY_QR_CODE = 'Sur un numéro relié par QR code, les messages Shopify ne peuvent pas partir : WhatsApp ne '
+  + 'laisse pas écrire en premier à un client. Reliez votre numéro par Meta (avec un compte Meta Business) pour les '
+  + 'confirmations, les expéditions et les relances.';
+
 export type Refus = { ok: false; statut: 400 | 402 | 409 | 422 | 503; message: string };
 export type Issue<T> = { ok: true; valeur: T } | Refus;
 
@@ -158,6 +163,10 @@ export async function brancherMessage(
   // 🔴 LA FILIÈRE DÉCIDE DE LA VOIE (plan 2026-10-23, tâche 5) : un modèle approuvé chez Meta sur l'API, un texte simple
   // sur un numéro relié par QR code, qui n'a pas de modèles. Lue avant tout : chaque refus dit la voie de l'espace.
   const qrCode = (await deps.filiere(tenantId)) === 'application';
+  // 🔴 Et sur un numéro relié par QR code, AUCUN message Shopify ne s'active (2026-10-24) : ce numéro ne fait que
+  // répondre, la porte refuse tout message qu'il écrirait en premier (`premier_contact`), et un message Shopify ne
+  // répond à rien. Refusé ici, texte ou modèle, plutôt que réglé pour ne jamais partir ; l'arrêter reste permis.
+  if (qrCode && (b.actif === undefined || b.actif === true)) return refus(409, PHRASE_SHOPIFY_QR_CODE);
   if (qrCode && present(b.modele)) {
     return refus(400, 'template : sur un numéro relié par QR code, un message Shopify est un texte simple (text), sans modèle chez Meta.');
   }
@@ -206,11 +215,6 @@ export async function brancherMessage(
   // 🔴 Une relance de panier est un message marketing à des gens qui n'ont rien demandé sur WhatsApp : elle ne s'active
   // que si le marchand a affirmé le consentement de ses clients (décision de Julien), dans cet appel ou avant.
   const consentApres = affirme || (boutique.consentement !== null && b.consentementAffirme !== false);
-  // 🔴 Sur un numéro relié par QR code, les TROIS messages l'exigent (décision de Julien du 2026-10-23) : la politique de
-  // WhatsApp vise tout message d'entreprise, et ce numéro n'est pas celui de l'API officielle.
-  if (qrCode && actif && !consentApres) {
-    return refus(409, 'Sur un numéro relié par QR code, chaque message Shopify (confirmation, expédition, relance) exige que vous affirmiez le consentement de vos clients à recevoir vos messages WhatsApp (customers_consented: true).');
-  }
   if (panier && actif && !consentApres) {
     return refus(409, 'La relance de panier exige que vous affirmiez le consentement de vos clients à recevoir vos messages WhatsApp (customers_consented: true).');
   }
@@ -251,10 +255,10 @@ async function reglerApresBranchement(deps: DepsGestionShopify, tenantId: string
 }
 
 /**
- * Le texte d'un numéro relié par QR code, validé : actif TOUT DE SUITE, sans lecture de modèle chez Meta, sans attente
- * d'approbation, sans oubli de modèle (il n'y en a pas). L'attente d'une préparation de la console pour cet événement
- * (un espace passé de l'API au QR code) est retirée, comme sur l'API : le dernier geste gagne, et son approbation ne
- * remplacera pas ce texte par un modèle que ce numéro ne peut pas envoyer.
+ * Le texte d'un numéro relié par QR code, validé, sans lecture de modèle chez Meta ni oubli de modèle (il n'y en a pas).
+ * Depuis le 2026-10-24, il n'arrive ici qu'ARRÊTÉ (`active: false`) : un message actif est refusé avant. L'attente d'une
+ * préparation de la console pour cet événement (un espace passé de l'API au QR code) est retirée, comme sur l'API : le
+ * dernier geste gagne, et son approbation ne remplacera pas ce texte par un modèle que ce numéro ne peut pas envoyer.
  */
 async function brancherTexte(
   deps: DepsGestionShopify, tenantId: string, b: Branchement,

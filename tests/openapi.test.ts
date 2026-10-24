@@ -64,7 +64,7 @@ const typePage: Meme<Sortie<ReturnType<typeof R.pageV1<typeof R.messageV1>>>, Pa
 const typeSuivi: Meme<Sortie<typeof R.suiviEnvoi>, SuiviEnvoiApi> = true;
 const typeRapport: Meme<Sortie<typeof R.rapportEnvoi>, RapportEnvoi> = true;
 const typeSimple: Meme<Sortie<typeof R.reponseMessageSimple>, ReponseMessageSimple> = true;
-// Le 202 d'un message écrit en premier, en file (plan 2026-10-23, tâche 4).
+// Le 202 d'une réponse hors des 24 heures, en file (plan 2026-10-23, tâche 4).
 const typeEnFile: Meme<Sortie<typeof R.reponseMessageEnFile>, ReponseMessageEnFile> = true;
 const typeChamp: Meme<Sortie<typeof R.champV1>, ChampV1> = true;
 const typeWebhook: Meme<Sortie<typeof R.webhookV1>, WebhookV1> = true;
@@ -300,14 +300,16 @@ describe('le document est un OpenAPI 3.1 bien formé', () => {
     }
   });
 
-  it('POST /v1/messages/whatsapp annonce ses deux succès : 200 parti, 202 écrit en premier et en file (plan 2026-10-23)', () => {
+  it('POST /v1/messages/whatsapp annonce ses deux succès : 200 parti, 202 une réponse hors des 24 heures en file (plan 2026-10-23)', () => {
     const reponses = doc.paths['/v1/messages/whatsapp']!.post!.responses as Record<string, { description: string; content: { 'application/json': { schema: Objet } } }>;
     expect(Object.keys(reponses).filter((s) => s.startsWith('2')).sort()).toEqual(['200', '202']);
     expect(reponses['202']!.description).toMatch(/QR code/);
     expect(Object.keys(reponses['202']!.content['application/json'].schema.properties as Objet).sort())
       .toEqual(['channel', 'conversationId', 'id', 'scheduledAt', 'status']);
-    // Et les codes de la porte, à côté de ceux de la réponse dans la fenêtre.
-    expect(route('POST /v1/messages/whatsapp').erreurs).toEqual(expect.arrayContaining(['no_consent', 'no_phone', 'plan_limit_reached', 'window_closed']));
+    // Et les codes de la porte, à côté de ceux de la réponse dans la fenêtre. Plus de `no_consent` depuis le 2026-10-24 :
+    // la porte ne laisse passer qu'une réponse à qui a écrit, et refuse le reste en `window_closed`.
+    expect(route('POST /v1/messages/whatsapp').erreurs).toEqual(expect.arrayContaining(['no_phone', 'plan_limit_reached', 'window_closed']));
+    expect(route('POST /v1/messages/whatsapp').erreurs).not.toContain('no_consent');
   });
 
   it('chaque référence se résout dans le document, et aucun schéma ne déclare sa propre version', () => {
