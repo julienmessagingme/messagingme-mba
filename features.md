@@ -108,6 +108,15 @@ Fonctionnalités : une section entre deux biais, sur fond blanc (`.bande-claire`
 marche » de la page chapeau, les enjeux de la page Transport, les étapes de la page Développeurs, le premier bloc du guide
 Meta, le détail des Tarifs, les publicités de Pilotage des coûts.
 
+✅ **La vitrine a sa page Intégrations** (2026-10-24) : `app.messagingme.fr/integrations/`, jumelle `/en/integrations/`,
+au menu « Ressources ». Shopify, HubSpot, Salesforce, Claude Code, Codex et « vos autres outils » (API, webhooks, MCP),
+un logo et une ligne chacun, sans offre ni état. Shopify mène à la page d'aide « Brancher ma boutique Shopify » (la page
+« Boutiques Shopify » attend le numéro relié par QR code), HubSpot et Salesforce à « Analyse de conversations », Claude
+Code et Codex aux pages développeurs. Après « Ils nous font confiance », l'accueil porte la rangée « Se branche à vos
+outils », dont chaque logo mène à sa carte ; les tarifs citent Shopify, par Claude Code dans la Free et depuis la console
+dans le Pro. Shopify n'y apparaît qu'en compatibilité (Messaging Me n'est pas Partner) : son logo noir, jamais
+« partenaire », « officiel » ni « certifié ».
+
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton
 présenté n'est jamais écrit nulle part.
@@ -2030,7 +2039,8 @@ scénario, comment importer des contacts.
 - ✅ **Le centre d'aide** (`app.messagingme.fr/aide/`, en anglais `/en/help/`, depuis le 2026-10-21) : un mode
   opératoire par geste, pas à pas. Démarrer : choisir son offre, ce qu'il faut chez Meta, connecter son numéro, se
   repérer dans la console. Parler aux clients : répondre dans l'Inbox, la fenêtre de 24 heures, faire approuver un
-  modèle, importer ses contacts, lancer une campagne.
+  modèle, importer ses contacts, lancer une campagne, brancher sa boutique Shopify (depuis le 2026-10-24 : le chemin
+  de la console, et sa dernière section dit celui de Claude Code).
   - Chaque étape a sa **capture de la vraie console** (avec des données inventées), qui s'ouvre en grand d'un clic ;
     la suite de l'étape se déplie sous « En détail ».
   - Un menu à gauche, avec une recherche qui ignore les accents ; la page dit l'offre qu'elle demande, mène à l'écran

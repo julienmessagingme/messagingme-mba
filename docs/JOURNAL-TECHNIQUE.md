@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-24 : Shopify sur la vitrine, ce qui n'attend pas le produit (lots 1 et 2 de la conception)
+
+`5cae9de1`, plan `docs/superpowers/plans/2026-10-24-vitrine-shopify-integrations.md`, en direct, dans une extraction
+d'origin publiée par plomberie (l'arbre partagé avait 70 commits de retard). Rendu montré à Julien en bureau et en
+téléphone, deux langues, avant le push ; une relecture indépendante, un rouge (corrigé avant le push), sept jaunes
+(au `todo.md`) ; CI racine et web vertes job par job.
+
+- **En ligne** : `/integrations/` et sa jumelle (au menu Ressources), le bandeau « Se branche à vos outils » de
+  l'accueil, Shopify dans les tarifs (Free par Claude Code, Pro par la console), la fiche « Brancher ma boutique
+  Shopify » rendue publique avec sa version anglaise et sept captures ; `features.md` dit « trois messages ».
+- **Le rouge** : la clôture de la page Intégrations disait « Branchez vos outils, gratuitement » sous les cartes HubSpot
+  et Salesforce, qui sont en Entreprise. Remplacée par une invitation sans prix.
+- **La marque** : le logo monochrome noir du kit officiel de Shopify, avec l'accord de Julien (la page de marque de
+  Shopify demande une autorisation écrite pour ses logos, dit à Julien avant le push). `tests/vitrine-marque-shopify.test.ts`
+  vérifié dans les deux sens (une affiliation et un logo de 70 px injectés le font rougir).
+- **Le bot d'aide** : `aide:charger` sans déployer l'API (image `c83414fd`), le `docs/aide` du commit monté dans le
+  conteneur (`DEPLOY.md`) ; 156 lignes, la fiche en 14 morceaux relus en base.
+- **Mesuré** : en local, `tests/sdk-contrat.test.ts` rougit sur un `node_modules` qui a zod 4.4.3 quand origin exige
+  4.6.7 depuis `727fae24` ; la CI, qui fait un `npm ci`, est verte. Le banc des captures aurait capturé la console d'une
+  autre session qui tenait le port 3000 : lancé sur un port libre.
+
 ## 2026-10-24 : la marche arrière des outils MCP, lot 6 (les jaunes de la relecture du lot 5)
 
 Le lot 6 (`c83414fd`) traite les huit jaunes de la relecture du lot 5. Une relecture indépendante, sans rouge (sept

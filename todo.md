@@ -126,6 +126,16 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   vraiment.
 - **L'essai de la bulle WhatsApp sur un thème Shopify** (la balise collée dans le thème de la boutique de test, visible et
   cliquable sur un téléphone) : la carte « bulle » de la page Boutiques Shopify n'apparaît qu'après.
+- **La page « Boutiques Shopify » (`/solutions/shopify/`) et son film** (lots 1 et 3 de la conception vitrine) : ils
+  attendent le produit QR code. À leur sortie, rebrancher sur elle la carte Shopify de `/integrations/`
+  (`site/integrations/index.html`, `id="shopify"`), qui mène en attendant à la page d'aide (décision de Julien du
+  2026-10-24). Le reste de la conception est en ligne depuis `5cae9de1` (plan `2026-10-24-vitrine-shopify-integrations.md`).
+- **Les jaunes de la relecture du 2026-10-24 (vitrine)** : (1) l'accroche de `/integrations/` (« vos conversations, dans
+  les outils que vous utilisez déjà ») s'applique mal à Shopify, où le flux va de la boutique vers WhatsApp, à trancher
+  par Julien ; (2) un visiteur Free arrive, depuis la carte Shopify et la ligne Free des tarifs, sur une page d'aide
+  marquée Pro dont le chemin Claude Code n'est que la dernière section ; (3) la carte Codex mène aux pages développeurs,
+  qui n'expliquent pas encore Codex (essai 121 pas fait) ; (4) le menu du téléphone de l'accueil déborde de 16 px à
+  320 px de large (déjà vrai avant le lot : `.burger-liens` fermé, mesuré).
 - **Remplacer un numéro relié par QR code par un numéro fourni** : `relierApplication` et `preparer` refusent un espace
   déjà relié (`deja_relie`), donc un marchand qui a relié le numéro de sa boutique ne peut pas passer à un numéro fourni
   pour le protéger (sort des conversations, des fiches, du cache `@lid` et du crédit offert à décider).

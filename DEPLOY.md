@@ -180,6 +180,18 @@ SENS au passage suivant du balayage.
 PÉRIME l'empreinte des fiches qui la citent, et `tests/aide-proposer.test.ts` rend la CI rouge tant qu'elles
 n'ont pas été relues. Une fiche relue est une fiche à recharger.
 
+⚠️ **Les fiches vivent DANS L'IMAGE** (`COPY docs/aide`) : une fiche poussée sans déploiement de l'API n'y est pas.
+Pour la charger SANS déployer le code d'autres lots, monter le `docs/aide` du commit voulu dans l'image en service,
+à une condition : `git diff --stat <révision en service> <sha> -- docs/aide src/aide db/charger-aide.ts` ne montre que
+des fiches (si le chargeur ou `src/aide` ont bougé, on déploie ; et si une fiche d'un autre lot y décrit un code pas
+encore déployé, le bot en parlerait trop tôt). Depuis le dépôt du VPS, sans toucher à son arbre :
+
+```bash
+cd /home/ubuntu/mba && git fetch -q origin && mkdir -p /tmp/aide-<sha> && git archive <sha> docs/aide | tar -x -C /tmp/aide-<sha>
+sudo docker compose run --rm --no-deps -v /tmp/aide-<sha>/docs/aide:/app/docs/aide:ro mba-api npm run aide:charger
+rm -rf /tmp/aide-<sha>
+```
+
 ⚠️ **Exception — migration qui DROP (ou renomme) une colonne encore lue par l'ANCIEN code** (ex. `0030_drop_workflow_status.sql`) : **ordre INVERSÉ**, deploy le code D'ABORD, migrate ENSUITE. Sinon la colonne disparaît pendant que l'ancien conteneur (qui la lit encore) tourne toujours -> 500 « column … does not exist » le temps du rebuild. Règle générale : une migration qui AJOUTE une colonne se fait avant le deploy (le code neuf en a besoin) ; une migration qui RETIRE une colonne se fait après (le code neuf a cessé de la lire, l'ancien en a encore besoin).
 
 ```bash
