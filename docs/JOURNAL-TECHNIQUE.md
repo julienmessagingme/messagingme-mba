@@ -5,6 +5,33 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-24 : la machine d'état MFA sort de Fastify
+
+Le premier point de l'audit de simplicité du 22 octobre est livré par la PR
+[#17](https://github.com/julienmessagingme/messagingme-mba/pull/17), fusionnée en `42ac965a` et déployée le même
+jour sur `mba-api`, `mba-worker` et `mba-worker-analyse`.
+
+- **Le nouveau partage** : `src/auth/mfa.ts` possède les transitions MFA (vérification et rejeu du code, blocage,
+  codes de secours, enrôlement, activation, régénération, désactivation, persistance et ordre d'audit).
+  `src/auth/mfa-routes.ts` ne garde que l'adaptation Fastify : normaliser les entrées et traduire les résultats
+  nommés en réponses HTTP. Le comportement public et les codes HTTP restent identiques.
+- **Le filet contre l'incident Google du 21 octobre** : la machine reçoit l'objet store entier et appelle toujours
+  `mfa.methode(...)` ; aucune méthode d'instance n'est détachée. Un faux de test est une classe dont les méthodes
+  lisent `this`, comme le store PostgreSQL de production. La règle est aussi inscrite dans `CLAUDE.md`.
+- **Relecture forte, en trois passes** : à chaque passe, une revue « conformité au dépôt » et une revue « conformité
+  au contrat » ont été menées indépendamment. La première a trouvé une transition d'enrôlement dupliquée ; la
+  deuxième a trouvé une différence de casse possible dans le libellé `otpauth` entre l'adresse signée et celle du
+  store. Les deux ont été corrigées et couvertes par des régressions ; la troisième passe n'a trouvé aucun point.
+- **Preuves avant fusion** : typecheck et lint verts ; 83 tests ciblés Auth/MFA/Ops, 160 tests d'authentification et
+  48 tests MCP verts. La CI GitHub de la PR puis celle du merge sont vertes job par job, y compris l'intégration sur
+  PostgreSQL jetable, la sécurité et CodeQL.
+- **Production** : les trois conteneurs portent `REVISION=42ac965a`, tournent sans redémarrage, la migration est à
+  jour, la fumée publique est verte et les deux fiches OAuth Claude sont conformes. La page de connexion expose bien
+  les entrées mot de passe et Google. Des requêtes factices sur mot de passe, Google et MFA rendent chacune `401`
+  en JSON, sans `TypeError`, erreur de méthode détachée ni erreur d'authentification dans les journaux. Un essai
+  credentialé mot de passe/Google/MFA/OAuth n'a pas été fabriqué : le navigateur isolé ne possède ni compte ni
+  facteur de test, et le contrôle automatique ne saisit pas de secrets d'authentification.
+
 ## 2026-10-24 : la marche arrière des outils MCP, lot 7 (le fil que l'agent de Meta tient en veille)
 
 Le lot 7 (`ae0b3c36`) traite le seul jaune 1 de la relecture du lot 6 (décision de Julien), après un essai réel qui
