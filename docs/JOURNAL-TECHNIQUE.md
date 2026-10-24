@@ -32,6 +32,33 @@ jour sur `mba-api`, `mba-worker` et `mba-worker-analyse`.
   credentialé mot de passe/Google/MFA/OAuth n'a pas été fabriqué : le navigateur isolé ne possède ni compte ni
   facteur de test, et le contrôle automatique ne saisit pas de secrets d'authentification.
 
+## 2026-10-24 : la marche arrière des outils MCP, lot 8 (les jaunes qui touchent un client, et les textes faux)
+
+Le lot 8 (`a22648b6`), un lot court décidé par Julien, est déployé le même jour sur `mba-api`, `mba-worker` et
+`mba-worker-analyse`.
+
+- **La confirmation des liens tracés est retentée** (`src/templates/gestion.ts`) : après une soumission acceptée par
+  Meta, trois essais, puis une ERREUR journalisée (`liens_traces_non_confirmes`, avec le modèle, la langue et les
+  codes). Avant, un raté laissait le lien non confirmé dans un `console.error` : chaque envoi du modèle partait sans
+  son suffixe (131008), et rien ne le disait. `restaurer`, qui ne remet que les liens confirmés, est écrit comme limite
+  connue plutôt que corrigé (une lecture neuve du store et son test d'intégration ; le point précédent rend son
+  préalable rare).
+- **Le refus de `hand_back` pour un contact STOP ou bloqué nomme `take_over`**, qui reprend le fil à l'agent de Meta
+  en veille sans rien écrire au contact.
+- **Les textes que les lots 6 et 7 avaient rendus faux** : la puce « Rendre la main » de `features.md` (trois libellés
+  de frise selon où va le fil) et l'empreinte de la fiche publique de l'Inbox (page inchangée à l'octet), le
+  commentaire de `rendAgentDeMeta`, la doc de `releaseControl` et le journal de `/release`, deux phrases du manuel.
+- Trois mutations dans les deux sens ; relecture indépendante sans rouge, trois jaunes au `todo.md`.
+- 🔴 **`aide:charger` à notre révision a DÉFAIT le chargement plus récent d'un pair** : la session Vitrine avait chargé
+  la fiche Shopify réécrite (`b273525f`) ; le chargeur retirant toute clé absente de ses fiches, notre passage a remis
+  l'ancien texte et retiré un morceau (« 1 retirée »). Diagnostic par comparaison des clés des deux révisions, puis
+  rechargement de `docs/aide` de `b273525f` monté dans l'image en service (seul un champ de publication différait
+  dans `src/aide`) : 157 lignes, 0 retirée, relu en base en lecture seule. La règle : comparer `docs/aide` de sa
+  révision à `origin/main` avant tout `aide:charger`, et charger la plus récente.
+- **Production** : les trois conteneurs portent `REVISION=a22648b6`, `mba-application` inchangé ; fumée publique et
+  fiches OAuth conformes, aucune erreur dans les journaux. Pas d'essai réel : aucun geste client nouveau, et l'échec
+  de confirmation ne se provoque pas en production.
+
 ## 2026-10-24 : la marche arrière des outils MCP, lot 7 (le fil que l'agent de Meta tient en veille)
 
 Le lot 7 (`ae0b3c36`) traite le seul jaune 1 de la relecture du lot 6 (décision de Julien), après un essai réel qui
