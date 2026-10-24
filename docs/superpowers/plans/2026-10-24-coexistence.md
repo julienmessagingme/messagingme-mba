@@ -24,6 +24,19 @@ seul parcours de coexistence (la v5 ne s'essaie que si Meta refuse la v4 à l'es
 `optionsFenetreMeta`) ; le marquage en base par **deux colonnes** de `phone_numbers` ; **deux lots** ; le mode MCP
 s'appelle **`coexistence`**.
 
+**Le questionnaire de Julien (son arbre du 2026-10-24)** : « Avez-vous un compte Meta Business ? une application
+WhatsApp Business ? depuis plus ou moins d'un mois ? un numéro disponible, ou un numéro fourni ? », avec à chaque
+embranchement la différence expliquée (QR code : pas de compte à créer, ne fait que répondre, coexistence possible
+ensuite ; API : un compte Meta Business à créer, écrit en premier). Il vit dans les TEXTES du plugin (skill
+`mise-en-service`, `plugin/README.md`, `scripts/plugin/faq.ts`) et de la vitrine, écrits dès maintenant par la session
+Vitrine avec la coexistence dite « bientôt ». Ce plan les fait passer à « disponible » (tâche 7), et ajoute la
+proposition de passer en coexistence au bout d'un mois de QR code (tâche 8).
+
+**Rien à construire pour le compte Meta Business** : la fenêtre de Meta propose de choisir un portefeuille existant ou
+d'en créer un nouveau (documentation de l'Embedded Signup), avec un simple profil Facebook. Comme nous sommes Tech
+Provider, Meta demande ensuite au client un moyen de paiement sur son compte WhatsApp avant le premier modèle : les
+textes le disent au moment du choix (tâches 3 et 4).
+
 ## Méthode de livraison
 
 **Implémenteur par lot, une relecture indépendante du diff en fin de lot, puis déploiement**, parce que ces chemins
@@ -36,7 +49,7 @@ Chaque lot se clôt par un essai réel :
 - **Lot 1, la connexion** (tâches 1 à 4) : le numéro de test QR code de newCompany (+44 1555 479304) passé en
   coexistence depuis Claude Code (conception § 7). Si Meta refuse ce numéro parce qu'il est neuf, l'essai passe au
   numéro WhatsApp Business de Julien.
-- **Lot 2, ce que Meta envoie ensuite** (tâches 5 à 7), **l'essai réel qui clôt la feature** : le numéro WhatsApp
+- **Lot 2, ce que Meta envoie ensuite** (tâches 5 à 8), **l'essai réel qui clôt la feature** : le numéro WhatsApp
   Business de Julien relié en coexistence depuis Claude Code ; une confirmation Shopify qui part en modèle vers un
   client qui n'a jamais écrit ; une réponse tapée dans l'application qui apparaît chez nous et fait se retirer l'agent.
 
@@ -69,9 +82,10 @@ Ce qu'aucun test d'une tâche ne couvrirait seul ; chaque ligne a son test dans 
    l'API prime déjà (`filiereDe`), la session restante n'agit plus (tâche 2).
 4. **Un numéro coupé par Meta qu'un administrateur « Relie »** depuis l'Accueil enverrait vers un numéro que l'API ne
    sert plus : « Relier » est refusé sur une coupure, seule la fenêtre de coexistence la lève (tâche 6).
-5. **Un écho vers un client inconnu de l'espace** (le marchand écrit en premier depuis son application) : la
-   conversation s'ouvre sans fiche (`recordOutboundByWaId`, comme la filière QR code), donc la limite de contacts de la
-   Free n'est pas touchée, et le fil est à l'équipe quand le client répond (tâche 5).
+5. **Un écho vers un client inconnu de l'espace** (le marchand écrit en premier depuis son application) est un contact
+   AJOUTÉ (règle de Julien du 2026-10-24) : il crée une fiche qui compte dans la limite de l'offre (Free : 100), comme
+   une création à la main. Seuls les gens qui écrivent les premiers restent hors compte. Une conversation sans fiche
+   serait une porte dérobée à la limite (tâche 5).
 
 ---
 
@@ -145,7 +159,10 @@ une phrase : « Votre numéro reste dans l’application, où les messages que v
 par Messaging Me sont facturés par Meta. L’application perd ses listes de diffusion, son catalogue, ses messages
 d’absence et ses étiquettes, et ses appareils liés sont déliés. » (« Your number stays in the app, where the messages you
 type stay free; those sent through Messaging Me are billed by Meta. The app loses its broadcast lists, catalogue, away
-messages and labels, and its linked devices are unlinked. »)
+messages and labels, and its linked devices are unlinked. ») Puis une seconde : « Pas encore de compte Meta Business ?
+La fenêtre de Meta le crée en chemin, avec votre profil Facebook. Avant le premier modèle, Meta vous demandera un moyen
+de paiement sur votre compte WhatsApp. » (« No Meta Business account yet? Meta's window creates one on the way, with
+your Facebook profile. Before the first template, Meta will ask for a payment method on your WhatsApp account. »)
 
 - [ ] Tests :
   - `fenetre-meta` : coexistence, `extras` vaut exactement `{ setup: {}, featureType: 'whatsapp_business_app_onboarding',
@@ -178,7 +195,9 @@ messages and labels, and its linked devices are unlinked. »)
 - La consigne rendue, dans le registre des consignes voisines du fichier : « Donne ce lien à la personne. Dans la
   fenêtre de Meta, elle saisit le numéro de son application WhatsApp Business et confirme dans l’application, sur son
   téléphone. Son numéro y reste : les messages qu’elle y tape restent gratuits, ceux qui partent par Messaging Me sont
-  des modèles facturés par Meta. » suivie de l'appel à `watch_whatsapp_connection`, comme les autres consignes.
+  des modèles facturés par Meta. Pas encore de compte Meta Business ? La fenêtre le crée en chemin, avec un profil
+  Facebook ; avant le premier modèle, Meta demandera un moyen de paiement sur le compte WhatsApp. » suivie de l'appel à
+  `watch_whatsapp_connection`, comme les autres consignes.
 - Les deux phrases du lot C et le refus du Pro pour la filière application se terminent par : « Pour écrire en premier
   tout en gardant l’application WhatsApp Business, reliez ce numéro en coexistence, depuis l’Accueil de la console ou
   depuis Claude. » (le Pro : « Pour le Pro, reliez ce numéro en coexistence... », même fin). Le code `filiere_application`
@@ -199,9 +218,12 @@ messages and labels, and its linked devices are unlinked. »)
 3. Console (tâche 3 et `/brancher`) poussée APRÈS ce `up`.
 4. Gestes de Julien dans le tableau de bord de Meta : abonner l'app à `smb_message_echoes` et `account_update` ;
    vérifier qu'elle est Tech Provider avec la journalisation de session de l'Embedded Signup.
-5. Essai du lot 1 (conception § 7). Pendant l'essai, Julien tape un message depuis l'application : son
-   `smb_message_echoes` brut, lu en base en lecture seule, devient le gabarit des tests de la tâche 5 ; de même pour
-   un `account_update` s'il en arrive un.
+5. Essai du lot 1 (conception § 7). Dans la fenêtre, choisir « créer un nouveau portefeuille », pour éprouver la
+   création du compte Meta Business en chemin. Le numéro de test est dans l'application depuis le 2026-10-21 : moins
+   d'un mois, l'arbre de Julien dirait « QR code, puis coexistence dans un mois » ; l'essai éprouve justement si Meta
+   l'accepte, et passe sinon au numéro WhatsApp Business de Julien. Pendant l'essai, Julien tape un message depuis
+   l'application : son `smb_message_echoes` brut, lu en base en lecture seule, devient le gabarit des tests de la
+   tâche 5 ; de même pour un `account_update` s'il en arrive un.
 
 ---
 
@@ -224,21 +246,29 @@ test le fige pour qu'il le reste.
   `field === 'smb_message_echoes'`, rattaché comme les bascules ; `EchoCoexistence = { tenantId: string | null;
   phoneNumberId?: string; echo: Record<string, unknown>; value: Record<string, unknown> }`.
 - `traiterEchosCoexistence(echos: readonly EchoCoexistence[], deps: DepsEchosCoexistence): Promise<void>`, avec
-  `DepsEchosCoexistence = { dejaRecu(tenantId: string, messageId: string): Promise<boolean>; inbox: { recordOutboundByWaId };
-  reprendreLaMain: ControleDuFil['reprendreLaMain'] }` ; `dejaRecu` est celui de la filière application (`creerDejaRecu`).
+  `DepsEchosCoexistence = { dejaRecu(tenantId: string, messageId: string): Promise<boolean>; ficheDeLEcho(tenantId: string,
+  waId: string): Promise<'existe' | 'creee' | 'limite'>; inbox: { recordOutboundByWaId }; reprendreLaMain:
+  ControleDuFil['reprendreLaMain'] }` ; `dejaRecu` est celui de la filière application (`creerDejaRecu`) ;
+  `ficheDeLEcho` passe par `upsertByPhoneReturningId` SANS la marque de l'entrant, donc une fiche créée compte dans la
+  limite de l'offre, et `LimiteOffreError` rend `'limite'`.
 
-**Règle, par écho** : déjà reçu, rien ; `edit` ou `revoke`, journalisé et rien d'autre ; sinon
+**Règle, par écho** : déjà reçu, rien ; `edit` ou `revoke`, journalisé et rien d'autre ; sinon `ficheDeLEcho` (un
+inconnu devient une fiche qui compte : règle de Julien, point de vigilance 5), puis
 `recordOutboundByWaId(tenant, waId, { body, messageId, type, origine: 'humain' })` (sans texte, `body` vaut le type
 entre crochets, `[image]`, comme la filière QR code) puis
 `reprendreLaMain(tenant, waId, auteurDeLEnvoi('humain', null))`, qui retire aussi le contact de la liste de l'agent de
 Meta s'il y est ; `'refuse'` est journalisé, le message reste. Sans `waId` ou d'un numéro inconnu : journalisé.
+🔴 **`'limite'` (le 101e contact d'une Free) : à trancher par Julien AVANT le lot 2** (question posée le 2026-10-24 :
+rien chez nous et l'administrateur prévenu, ou rien chez nous et l'agent muet pour ce numéro, ou la fiche créée
+quand même) ; le lot 2 ne part pas sans sa réponse.
 
-- [ ] Tests (sur le gabarit relevé à l'essai du lot 1) : écho texte, message sortant `humain` PUIS reprise de la main ;
-  écho redélivré (`dejaRecu` vrai), aucun appel ; `edit` et `revoke` ignorés ; un média enregistré sous `[image]` sans
-  téléchargement ; reprise refusée, le message reste et rien ne lève ; écho vers un numéro jamais vu,
-  `recordOutboundByWaId` seul, aucune fiche créée ; un `smb_message_echoes` ne donne aucune bascule (`lireLesBascules`
-  rend `[]`) ni `recordAgentMessage` ; un numéro délié, l'écho est écarté (le filtre `numeros-delies` couvre déjà
-  `message_echoes`, à prouver par la réception composée).
+- [ ] Tests (sur le gabarit relevé à l'essai du lot 1) : écho texte vers une fiche existante, message sortant `humain`
+  PUIS reprise de la main ; écho vers un numéro jamais vu, `ficheDeLEcho` rend `'creee'` et la fiche n'a pas la marque de
+  l'entrant (elle compte) ; écho à la limite, le comportement tranché par Julien ; écho redélivré (`dejaRecu` vrai),
+  aucun appel ; `edit` et `revoke` ignorés ; un média enregistré sous `[image]` sans téléchargement ; reprise refusée,
+  le message reste et rien ne lève ; un `smb_message_echoes` ne donne aucune bascule (`lireLesBascules` rend `[]`) ni
+  `recordAgentMessage` ; un numéro délié, l'écho est écarté (le filtre `numeros-delies` couvre déjà `message_echoes`, à
+  prouver par la réception composée).
 - [ ] Implémenter ; suites.
 
 ### Tâche 6 : quand Meta coupe
@@ -274,22 +304,44 @@ Créer un test d'intégration (CI seulement) pour le SQL des deux méthodes neuv
   `coexistence` accepté par Claude sur un numéro coupé.
 - [ ] Implémenter ; suites.
 
-### Tâche 7 : les textes et le plugin
+### Tâche 7 : la coexistence « disponible » dans les textes
 
-**Fichiers** : les skills `mise-en-service` et `shopify` de `plugin/skills/` (la coexistence proposée à qui a un numéro
-dans l'application WhatsApp Business et veut écrire en premier, et à un numéro QR code), `scripts/plugin/faq.ts`
-(l'entrée « pas de coexistence »), la version de `plugin.json`, `features.md` (avec `tests/aide-proposer.test.ts` et
-l'empreinte des fiches qui citent la section), `documentation.md`, la fiche d'aide de la connexion du numéro si elle dit
-le contraire (publique : `npm run vitrine:aide` et sa version `en/`), la confirmation de « Déconnecter le numéro » pour
-un numéro en coexistence (une phrase : on quitte aussi la coexistence dans l'application, Réglages, Compte, Business
-Platform), `todo.md`.
+Pas avant le lot 2 : sans lui, ce que le marchand tape dans l'application n'apparaît pas chez nous et l'agent ne se
+retire pas, donc la coexistence ne se recommande pas encore.
+
+**Fichiers** : le questionnaire écrit par la session Vitrine (skill `mise-en-service`, `plugin/README.md`,
+`scripts/plugin/faq.ts`, la vitrine), annoncé à cette session avant d'y toucher : chaque issue « coexistence, bientôt »
+de l'arbre devient le mode `coexistence` de `start_whatsapp_connection`, avec le compte Meta Business créé en chemin et
+le moyen de paiement dits ; la skill `shopify` (un numéro QR code qui veut les messages Shopify : la coexistence) ; la
+version de `plugin.json` ; `features.md` (avec `tests/aide-proposer.test.ts` et l'empreinte des fiches qui citent la
+section) ; `documentation.md` ; la fiche d'aide de la connexion du numéro si elle dit le contraire (publique :
+`npm run vitrine:aide` et sa version `en/`) ; la confirmation de « Déconnecter le numéro » pour un numéro en coexistence
+(une phrase : on quitte aussi la coexistence dans l'application, Réglages, Compte, Business Platform) ; `todo.md`.
 
 - [ ] Tests existants verts (plugin, FAQ, `aide-proposer`, vitrine si une fiche publique change) ; `git grep -i "pas de
   coexistence"` ne rend plus rien hors du journal.
 
+### Tâche 8 : la coexistence proposée au bout d'un mois de QR code
+
+L'arbre de Julien : un numéro dans l'application depuis moins d'un mois commence en QR code et passe en coexistence un
+mois plus tard, si le client le veut. Claude le propose de lui-même, une fois, sans insister.
+
+**Fichiers** : `src/mcp/mise-en-service.ts` (l'état que rend `get_setup_state`) et son test ; la phrase de la skill
+`mise-en-service`, dans le texte de la tâche 7.
+
+**Interface** : `get_setup_state` rend, pour un espace relié par QR code, `numero.coexistence = { possible: boolean;
+a_partir_du: 'AAAA-MM-JJ' }`, où `a_partir_du` est la date de liaison du compte (`comptes_application.relie_le`) plus
+30 jours ; absent sur la filière API et pour un compte non relié.
+
+- [ ] Tests : relié depuis 29 jours, `possible: false` avec la date ; depuis 30 jours, `possible: true` ; filière API,
+  absent ; compte non relié, absent.
+- [ ] La skill propose le passage quand `possible` est vrai et que le client veut écrire en premier (Shopify, campagnes) :
+  une phrase, et la différence dite (le numéro reste dans l'application, les modèles sont facturés par Meta).
+
 ### Déploiement du lot 2
 
-1. Serveur (tâches 5, 6 et 7 hors `web/`) poussé ; CI lue ; `up` de l'API et des workers, garde de révision.
+0. La réponse de Julien sur le 101e contact d'une Free (tâche 5) est écrite dans ce plan.
+1. Serveur (tâches 5, 6, 8 et 7 hors `web/`) poussé ; CI lue ; `up` de l'API et des workers, garde de révision.
 2. Console (l'Accueil d'un numéro coupé) poussée APRÈS ce `up`.
 3. `gh workflow run plugin.yml --ref main` après le `up` ; `aide:charger` si une fiche a changé.
 4. L'essai réel qui clôt (Méthode de livraison).
