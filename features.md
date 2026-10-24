@@ -4810,8 +4810,9 @@ numéro.
   lui rend.
 - ✅ **Ce qui veille** : un numéro coupé par WhatsApp, ou un appareil retiré depuis le téléphone, arrête tout et prévient
   les administrateurs par e-mail ; sans message pendant 30 jours, la connexion se met en sommeil, et un nouveau lien la
-  réveille ; un message reçu pendant une coupure du service n'est pas perdu (mesuré : livré à la reprise, avec quelques
-  minutes de retard).
+  réveille. ⚠️ Un message reçu pendant une coupure de notre service n'est pas perdu, mais il n'arrive qu'à la remise en
+  ligne du téléphone du compte (mesuré le 2026-10-23, essai 152 : rien en 36 minutes après la reprise, arrivé à
+  l'ouverture du téléphone, l'agent a répondu dans la foulée).
 - Limites : ni modèles, ni campagnes, ni agent de Meta, qui passent par l'API de Meta ; l'offre Pro est refusée sur cette
   filière (le passage à l'API d'abord) ; les groupes sont ignorés. Un numéro de Meta connecté prime : l'espace passe alors
   sur l'API.

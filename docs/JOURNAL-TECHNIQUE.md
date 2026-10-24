@@ -5,6 +5,23 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-23 (soir) : l'essai 152 de la filière application, et la trace des messages remis sans contenu
+
+- **L'essai 152** (newCompany, numéro fourni +44 1555 479304) : `mba-application` arrêté de 19 h 08 min 24 s à
+  19 h 10 min 38 s, un seul message envoyé depuis le mobile de Julien à 19 h 09, compte reconnecté à 19 h 10 min 59 s.
+  Rien en base pendant 36 minutes, alors que le message était sur le téléphone du compte ; arrivé à 19 h 46 min 45 s,
+  quand Julien a ouvert ce téléphone, et l'agent a répondu 3 s après. Le message suivant (19 h 47 min 52 s) a eu sa
+  réponse en 2 s. Le matin, le message perdu était revenu avec le message suivant du contact : dans les deux cas, c'est
+  le téléphone qui a débloqué. Aucune ligne du service entre la reprise et l'arrivée (Baileys écrit pourtant en erreur
+  un échec de déchiffrement) : rien ne lui avait été remis.
+- **La trace des messages remis sans contenu** (`53f443bd`, `mba-application` seul, déployé à 20 h 20) : un message
+  indéchiffré ou sans aucune marque se trace, sans numéro ni texte, et la fin de la remise hors ligne aussi (« messages
+  en attente remis », vue 1,3 s après le démarrage). Relecture sans rouge ; elle a trouvé que le journal d'erreurs de
+  Baileys écrit déjà le numéro du contact sur un échec de déchiffrement (préexistant, au `todo.md`). L'essai 158
+  refera la coupure, téléphone fermé, pour lire ces traces.
+- La session Shopify a déployé son lot A (`17b2da2a`) à 19 h 53, après la fin de l'essai. Deux sessions annonçaient
+  chacune une migration 0251 (lot 1bis HubSpot, lot B Shopify) : signalé, 0251 reste à HubSpot.
+
 ## 2026-10-23 : la marche arrière des outils MCP, lot 4 (les jaunes de la relecture du lot 3)
 
 Le lot 4 (`f541083c`) traite les douze jaunes de la relecture du lot 3, dont quatre tranchés par Julien le même jour.
