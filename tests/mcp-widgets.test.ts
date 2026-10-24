@@ -18,7 +18,7 @@ import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
 import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpFilInerte, mcpInerte } from './routes-inertes';
 import { bornesDesChamps, champsDe, muettes as bornesMuettes } from './aide/bornes-zod';
-import { offresToutOuvert, filiereApiSeule } from './gardes';
+import { offresToutOuvert, filiereApiSeule, aucunPremierMessage } from './gardes';
 
 /**
  * Les outils MCP des widgets WhatsApp (lot 5 de docs/superpowers/plans/2026-10-02-widget-whatsapp.md), montés par
@@ -113,6 +113,7 @@ function monter(o: { widgets?: WidgetRow[]; liens?: string[]; scenarios?: Array<
     takeControl: jamais('takeControl'),
     filTenuParLApplication: async () => false,
     application: filiereApiSeule,
+    ecrirePremier: aucunPremierMessage,
     contacts: {
       query: jamais('query'),
       count: jamais('count'),

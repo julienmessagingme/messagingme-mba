@@ -11,7 +11,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { jamaisDesabonne } from './consentement';
 import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpFilInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
-import { filiereApiSeule } from './gardes';
+import { filiereApiSeule, aucunPremierMessage } from './gardes';
 
 /**
  * `/mcp` ET L'OAUTH (tâche 5 du plan `2026-10-03-oauth-mcp.md`).
@@ -69,6 +69,7 @@ function monter(o: { publicApiUrl?: string; apiParMinute?: number } = {}) {
     takeControl: async () => {},
     filTenuParLApplication: async () => false,
     application: filiereApiSeule,
+    ecrirePremier: aucunPremierMessage,
     contacts: {
       query: async () => [],
       count: async () => 0,

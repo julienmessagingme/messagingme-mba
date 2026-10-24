@@ -7,6 +7,8 @@ import { DELAI_PANIER_DEFAUT, DELAI_PANIER_MAX, DELAI_PANIER_MIN, DONNEES_PAR_EV
 import {
   apercuImportClients, brancherMessage, connecterShopify, couperShopify, etatShopify, importerClients, IMPORT_MAX, type Issue,
 } from '../shopify/gestion';
+import { TEXTE_SHOPIFY_MAX } from '../shopify/preparation';
+import type { MessageBranche } from '../shopify/store.pg';
 
 /**
  * LE CONNECTEUR SHOPIFY DEPUIS CLAUDE CODE (plan 2026-10-21, lot 1) : la skill `shopify` du plugin pilote la CLI de
@@ -25,6 +27,11 @@ function valeur<T>(r: Issue<T>): T {
 }
 
 const evenements = EVENEMENTS_DISPONIBLES.map((e) => `${e} (${DONNEES_PAR_EVENEMENT[e].join(', ')})`).join('; ');
+
+/** Un message réglé, tel que les deux outils le rendent : un modèle (l'API) ou un texte (un numéro relié par QR code). */
+const versMessage = (m: MessageBranche) => ({
+  event: m.evenement, template: m.modele, text: m.texte, language: m.langue, variables: m.variables, active: m.actif,
+});
 
 export const OUTILS_SHOPIFY: OutilMcp[] = [
   {
@@ -59,23 +66,36 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
     ...ficheOutilMcp('set_shopify_message'),
     fonction: null,
     description:
-      'Sends an approved WhatsApp template when a Shopify event happens, or stops it: event, template, language, '
-      + `variables (the Shopify data of {{1}}, {{2}}... in order, as many as the template has). Events and their data: ${evenements}. `
-      + 'An order message must be a utility template, approved at Meta (create_template, then get_template_status); a '
-      + 'checkout_abandoned reminder is a marketing template, sent once, delay_minutes after the checkout last changed and '
-      + 'only if no order came out of it; it requires the merchant to affirm customer consent. Links '
-      + 'go in the body, a URL button takes no variable. One message per event: setting it again replaces it. '
-      + 'customers_consented: true records that the merchant affirms its customers agreed to receive WhatsApp messages; the '
-      + 'customers\' records then become opted in everywhere, campaigns included, and the merchant is responsible for it; '
-      + 'false withdraws it (records already opted in stay so), and every new connect_shopify clears it. '
-      + 'Every message goes through the sends rules (STOP, consent, monthly templates, contact limit) and appears in Campaigns.',
+      'Sends a WhatsApp message when a Shopify event happens, or stops it. Two ways, set by the workspace number '
+      + '(numero.filiere in get_setup_state): on an official API number, an approved template (template, language, '
+      + 'variables: the Shopify data of {{1}}, {{2}}... in order, as many as the template has); on a number linked by QR '
+      + `code, a plain text (text, language, 1 to ${TEXTE_SHOPIFY_MAX} characters) with the Shopify data written in double `
+      + 'braces ({{first_name}}, {{order_number}}...), active at once, with no template, no Meta and no wait. '
+      + `Events and their data: ${evenements}. `
+      + 'On the API, an order message must be a utility template, approved at Meta (create_template, then '
+      + 'get_template_status), and a checkout_abandoned reminder a marketing template. A checkout_abandoned reminder is '
+      + 'sent once, delay_minutes after the checkout last changed and only if no order came out of it; it requires the '
+      + 'merchant to affirm customer consent, and on a number linked by QR code all three messages require it, the '
+      + 'reminder text then ending with the line asking to reply STOP. A missing first name is replaced by a neutral word. '
+      + 'Links go in the body (a URL button takes no variable; a text has no button). One message per event: setting it '
+      + 'again replaces it. customers_consented: true records that the merchant affirms its customers agreed to receive '
+      + 'WhatsApp messages; the customers\' records then become opted in everywhere, campaigns included, and the merchant '
+      + 'is responsible for it; false withdraws it (records already opted in stay so), and every new connect_shopify '
+      + 'clears it. Every message goes through the sends rules (STOP, consent, monthly messages, contact limit). On an API '
+      + 'number it appears in Campaigns; on a number linked by QR code, it counts in the plan\'s monthly messages and waits '
+      + 'its turn, at least 30 seconds after the previous message written first (outcome en_file, then its final outcome '
+      + 'in get_shopify_state).',
     annotations: { title: 'Set a Shopify message', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     entree: {
       type: 'object',
       properties: {
         event: { type: 'string', enum: [...EVENEMENTS_DISPONIBLES], description: 'The Shopify event.' },
-        template: { type: 'string', minLength: 1, maxLength: 512, description: 'The template name.' },
-        language: { type: 'string', minLength: 1, maxLength: 20, description: 'The template language (fr, en_US...).' },
+        template: { type: 'string', minLength: 1, maxLength: 512, description: 'The template name (an official API number only).' },
+        text: {
+          type: 'string', minLength: 1, maxLength: TEXTE_SHOPIFY_MAX,
+          description: 'The plain text (a number linked by QR code only), with the event data in double braces ({{first_name}}).',
+        },
+        language: { type: 'string', minLength: 1, maxLength: 20, description: 'The template or text language (fr, en_US...).' },
         variables: {
           type: 'array', maxItems: 10, items: { type: 'string', enum: [...new Set(EVENEMENTS_DISPONIBLES.flatMap((e) => DONNEES_PAR_EVENEMENT[e]))] },
           description: 'The Shopify data of {{1}}, {{2}}..., in order.',
@@ -87,12 +107,12 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
           description: `checkout_abandoned only: minutes after the checkout last changed (default ${DELAI_PANIER_DEFAUT}).`,
         },
       },
-      required: ['event', 'template', 'language'],
+      required: ['event', 'language'],
       additionalProperties: false,
     },
     async executer(deps: DepsMcp, tenantId, args, personne) {
       const messages = valeur(await brancherMessage(deps.shopify, tenantId, {
-        evenement: args.event, modele: args.template, langue: args.language, variables: args.variables, actif: args.active,
+        evenement: args.event, modele: args.template, texte: args.text, langue: args.language, variables: args.variables, actif: args.active,
         delaiMinutes: args.delay_minutes,
         consentementAffirme: args.customers_consented,
       }, personne?.userId ?? null));
@@ -100,7 +120,7 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
         tenantId, userId: personne?.userId ?? null, evenement: args.event, consentementAffirme: args.customers_consented === true,
       });
       return {
-        messages: messages.map((m) => ({ event: m.evenement, template: m.modele, language: m.langue, variables: m.variables, active: m.actif })),
+        messages: messages.map(versMessage),
         ...(args.customers_consented === false
           ? { consentement: 'retiré : plus aucune fiche ne sera écrite consentante ; celles qui le sont déjà le restent' }
           : {}),
@@ -113,7 +133,8 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
     description:
       'The Shopify store connected to the workspace: its state (connected or cut), the messages set on its events, the last '
       + 'event received, whether the merchant affirmed customer consent, and the last 30 days of events by outcome (sent, '
-      + 'opted out, without consent, contact limit, monthly templates limit, without phone...), and the abandoned checkouts: '
+      + 'opted out, without consent, contact limit, monthly templates limit, without phone...; on a number linked by QR code '
+      + 'also en_file, pas_sur_whatsapp, gele, numero_coupe, refuse_whatsapp, filiere_differente), and the abandoned checkouts: '
       + 'their delay and, over the last 7 days, the reminders sent, those closed in time by an order, those waiting.',
     annotations: { title: 'Get the Shopify connection', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {} },
@@ -124,7 +145,7 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
         connected: e.boutique.etat === 'connectee',
         store: e.boutique.domaine, name: e.boutique.nom, state: e.boutique.etat, cut_reason: e.boutique.motifCoupure,
         last_event_at: e.boutique.dernierEvenementLe, customers_consented_at: e.boutique.consentement?.le ?? null,
-        messages: e.messages.map((m) => ({ event: m.evenement, template: m.modele, language: m.langue, variables: m.variables, active: m.actif })),
+        messages: e.messages.map(versMessage),
         last_30_days: e.compteurs,
         checkouts: {
           delay_minutes: e.boutique.delaiPanierMinutes, reminders_last_7_days: e.paniers.relances,

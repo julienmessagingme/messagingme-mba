@@ -1,5 +1,11 @@
 import { compteurEnvoiRefuse, type OptionsEnvoiPublic, type RapportEnvoi, type ResultatEnvoiPublic } from '../api/envoi-public';
-import type { DonneeShopify } from './donnees';
+import type { Filiere } from '../application/comptes';
+import type {
+  DemandePremierMessage, DepsJobPremier, IssueJobPremier, OriginePremier, RefusPremier, ResultatPremier,
+} from '../application/premier-message';
+import type { DonneeShopify, EvenementShopify } from './donnees';
+import { composerTexteShopify, TEXTE_SHOPIFY_MAX } from './preparation';
+import type { MessageBranche, PgShopifyStore } from './store.pg';
 
 /**
  * L'ENVOI D'UN MESSAGE SHOPIFY, troisième adaptateur de `lancerEnvoiPublic` après `POST /v1/sends` et
@@ -66,6 +72,98 @@ export async function envoyerShopify(envoyer: EnvoyerPublic, e: EnvoiShopify): P
   if (r.statut === 422 && c?.code === 'idempotency_key_reused') return 'refuse';
   if (r.statut === 404 || r.statut === 422) return 'modele_refuse';
   return 'refuse';
+}
+
+/**
+ * LES ISSUES DU TEXTE D'UN NUMÉRO RELIÉ PAR QR CODE (plan 2026-10-23, tâche 5), en plus de celles de l'envoi public.
+ * `en_file` : la porte « écrire en premier » a mis le message en file ; le job inscrit ensuite son issue finale
+ * (`noterIssueShopify`). `filiere_differente` : le message réglé ne correspond plus à la filière de l'espace (un modèle
+ * sur un numéro relié par QR code, un texte sur l'API), rien ne part. `texte_trop_long` : une fois les données
+ * remplies, le texte dépasse ce qu'un message WhatsApp porte, rien ne part. Les autres viennent du job
+ * (`IssueJobPremier`).
+ */
+export type IssueTexte =
+  | 'en_file' | 'pas_sur_whatsapp' | 'gele' | 'numero_coupe' | 'refuse_whatsapp' | 'filiere_differente' | 'envoi_incertain'
+  | 'expire' | 'abandonne' | 'texte_trop_long';
+export type IssueShopify = IssueEnvoi | IssueTexte;
+
+/** Un refus de la porte devient l'issue du même nom ; `filiere_api` (l'espace est passé à l'API) est un croisement. */
+export function issueDuRefusPremier(r: RefusPremier): IssueShopify {
+  return r === 'filiere_api' ? 'filiere_differente' : r;
+}
+
+/** L'issue finale du job, inscrite chez Shopify : la même, `filiere_api` lue comme un croisement. */
+export function issueDuJobPremier(i: IssueJobPremier): IssueShopify {
+  return i === 'filiere_api' ? 'filiere_differente' : i;
+}
+
+export interface DepsEnvoiShopify {
+  envoyer: EnvoyerPublic;
+  /** La filière de l'espace, lue à l'envoi (`filiereDe`) : un espace a pu passer de l'une à l'autre depuis le réglage. */
+  filiere(tenantId: string): Promise<Filiere | null>;
+  /** La porte « écrire en premier » de la filière application (`enfilerPremierMessage`, liée par le câblage). */
+  ecrirePremier(demande: DemandePremierMessage): Promise<ResultatPremier>;
+}
+
+export interface MessageShopify {
+  tenantId: string;
+  /** La clé métier de l'envoi public (`shopify:<boutique>:orders/paid:<id>`), clé de la file aussi. */
+  cle: string;
+  origine: Extract<OriginePremier, 'shopify_commande' | 'shopify_panier'>;
+  /** La clé de l'événement ou le jeton du panier : là où le job inscrit l'issue finale. */
+  reference: string;
+  evenement: EvenementShopify;
+  nomLigne: string;
+  message: Pick<MessageBranche, 'modele' | 'texte' | 'langue' | 'variables'>;
+  valeurs: Partial<Record<DonneeShopify, string>>;
+  /** En E.164. */
+  telephone: string;
+  /** La source du consentement affirmé par le marchand, ou `null`. */
+  sourceConsentement: string | null;
+}
+
+/**
+ * L'AIGUILLAGE D'UN MESSAGE SHOPIFY, à l'envoi : un texte sur la filière application part par la porte « écrire en
+ * premier » (comptée dans les messages du mois, espacée, en file) ; un modèle sur la filière API part par l'envoi public,
+ * comme avant. Tout croisement rend `filiere_differente`, sans rien envoyer. Un espace sans filière (son numéro retiré)
+ * suit la voie de son réglage, qui le dit (`numero_indisponible`).
+ */
+export async function envoyerMessageShopify(d: DepsEnvoiShopify, e: MessageShopify): Promise<IssueShopify> {
+  const filiere = await d.filiere(e.tenantId);
+  if (e.message.texte !== null) {
+    if (filiere === 'api') return 'filiere_differente';
+    // 🔴 Sur un numéro relié par QR code, aucun des trois messages ne part sans l'accord affirmé du marchand (décision de
+    // Julien du 2026-10-23) : la politique de WhatsApp vise tout message d'entreprise.
+    if (e.sourceConsentement === null) return 'sans_consentement';
+    const texte = composerTexteShopify(e.message.texte, e.evenement, e.valeurs, e.message.langue);
+    if (texte.length > TEXTE_SHOPIFY_MAX) return 'texte_trop_long';
+    const r = await d.ecrirePremier({
+      tenantId: e.tenantId, cle: e.cle, telephone: e.telephone.replace(/^\+/, ''), texte, origine: e.origine,
+      reference: e.reference, consentement: { mode: 'marchand', source: e.sourceConsentement },
+    });
+    // Déjà en file (un rejeu de la même clé) : la même issue, rien n'est compté deux fois.
+    return r.ok ? 'en_file' : issueDuRefusPremier(r.refus);
+  }
+  // La contrainte de la migration 0252 exige l'un ou l'autre : sans modèle ni texte, rien ne part.
+  if (e.message.modele === null) return 'refuse';
+  if (filiere === 'application') return 'filiere_differente';
+  return envoyerShopify(d.envoyer, {
+    tenantId: e.tenantId, cle: e.cle, nomLigne: e.nomLigne, modele: e.message.modele, langue: e.message.langue,
+    variables: e.message.variables, valeurs: e.valeurs, telephone: e.telephone, sourceConsentement: e.sourceConsentement,
+  });
+}
+
+/**
+ * L'issue finale d'un message Shopify écrit en premier, inscrite par le job de la file (`traiterPremierMessage`, worker) :
+ * celle de l'événement (`reference` = sa clé) ou celle du panier (`reference` = son jeton), dans l'espace. Les autres
+ * origines (Claude, l'API, une réponse) ne gardent aucune issue.
+ */
+export function noterIssueShopify(store: Pick<PgShopifyStore, 'noterIssue' | 'noterIssuePanier'>): DepsJobPremier['noterIssue'] {
+  return async (origine, tenantId, reference, issue) => {
+    if (reference === null) return;
+    if (origine === 'shopify_commande') await store.noterIssue(tenantId, reference, issueDuJobPremier(issue));
+    else if (origine === 'shopify_panier') await store.noterIssuePanier(tenantId, reference, issueDuJobPremier(issue));
+  };
 }
 
 function issueDuRapport(rapport: RapportEnvoi): IssueEnvoi {

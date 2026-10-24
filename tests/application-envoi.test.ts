@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { creerEnvoiApplication, type EnvoiApplication } from '../src/application/envoi';
+import { creerEnvoiApplication, phraseApplicationIndisponible, type EnvoiApplication } from '../src/application/envoi';
 import { jidDuWaId } from '../src/application/message';
 import type { ClientApplication } from '../src/application/client';
 import type { CompteApplication, StatutCompte } from '../src/application/comptes';
 import { repondreAvecUnMessage, repondreDansLaFenetre, type DepsRepondre } from '../src/inbox/repondre';
 import { buildWorkflowRuntime } from '../src/workflow/wiring';
 import { bancDuFil } from './banc-du-fil';
-import { offresToutOuvert } from './gardes';
+import { aucunPremierMessage, offresToutOuvert } from './gardes';
+import { porteEnMemoire } from './aide/porte-premier';
 
 /**
- * RÉPONDRE, FILIÈRE APPLICATION (plan 2026-10-22, tâche 5). Sur l'application, la fenêtre de 24 heures ne s'applique
- * pas : répondre est toujours possible, par le service de connexions. Le STOP, le numéro bloqué et le détenteur du fil
- * restent la loi. La filière API garde exactement ses refus.
+ * RÉPONDRE, FILIÈRE APPLICATION (plan 2026-10-22, tâche 5). Sur l'application, répondre est toujours possible, par le
+ * service de connexions ; hors des 24 heures, la réponse d'une machine est un message écrit en premier, qui passe par la
+ * porte (plan 2026-10-23, tâche 3). Le STOP, le numéro bloqué et le détenteur du fil restent la loi. La filière API
+ * garde exactement ses refus.
  */
 const T = 'bbbbbbbb-0000-4000-8000-000000000002';
 const COMPTE = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -53,14 +55,27 @@ describe('l’envoi par le service de connexions', () => {
     expect(envois).toEqual([`${COMPTE}:33612345678@s.whatsapp.net:Bonjour`]);
   });
 
-  it('un compte absent, banni ou déconnecté n’envoie rien et le dit', async () => {
+  it('un compte absent, banni, endormi ou déconnecté n’envoie rien et le dit, chacun avec sa raison', async () => {
     const envois: string[] = [];
-    for (const statut of [null, 'banni', 'deconnecte', 'sommeil'] as const) {
-      expect(await monter(statut, client(envois)).envoyer(T, '33612345678', 'x')).toEqual({ ok: false, raison: 'non_relie' });
+    const attendu = { banni: 'banni', sommeil: 'sommeil', deconnecte: 'non_relie', en_attente: 'non_relie', retire: 'non_relie' } as const;
+    for (const statut of [null, ...Object.keys(attendu) as (keyof typeof attendu)[]]) {
+      const raison = statut === null ? 'non_relie' : attendu[statut];
+      expect(await monter(statut, client(envois)).envoyer(T, '33612345678', 'x'), String(statut)).toEqual({ ok: false, raison });
       expect(await monter(statut, client(envois)).relie(T)).toBe(false);
     }
     expect(envois).toEqual([]);
     expect(await monter('relie', client(envois)).relie(T)).toBe(true);
+  });
+
+  it('🔴 un numéro banni dit qu’il est coupé, jamais « reliez-le » ; un numéro endormi dit comment le réveiller', () => {
+    const banni = phraseApplicationIndisponible('banni');
+    expect(banni).toContain('coupé par WhatsApp');
+    expect(banni).not.toMatch(/reliez/i);
+    expect(phraseApplicationIndisponible('sommeil')).toBe('le numéro est en sommeil faute de messages : reliez-le de nouveau pour le réveiller (start_whatsapp_connection)');
+    expect(phraseApplicationIndisponible('refuse_whatsapp')).toBe('WhatsApp a refusé ce message');
+    // Les raisons d'avant gardent leur phrase.
+    expect(phraseApplicationIndisponible('non_relie')).toContain('reliez-le de nouveau');
+    expect(phraseApplicationIndisponible('service_injoignable')).toContain('ne répond pas');
   });
 
   it('sans service configuré, la filière est fermée : injoignable', async () => {
@@ -75,11 +90,18 @@ describe('l’envoi par le service de connexions', () => {
 });
 
 /** Un espace, une conversation, et chaque geste noté. */
-function banc(o: { filiere: 'api' | 'application'; windowOpen: boolean; desabonne?: boolean; issue?: Awaited<ReturnType<EnvoiApplication['envoyer']>> }) {
+function banc(o: {
+  filiere: 'api' | 'application'; windowOpen: boolean; desabonne?: boolean; issue?: Awaited<ReturnType<EnvoiApplication['envoyer']>>;
+  /** La porte « écrire en premier » ; absente, y passer lève (`aucunPremierMessage`). */
+  ecrirePremier?: DepsRepondre['ecrirePremier'];
+  waId?: string;
+  /** Le dernier message reçu du contact ; `null` : il ne nous a jamais écrit. */
+  lastInboundAt?: string | null;
+}) {
   const traces: string[] = [];
   const deps: DepsRepondre = {
     inbox: {
-      getConversationContext: async () => ({ waId: '33612345678', lastInboundAt: '2026-10-01T10:00:00Z', windowOpen: o.windowOpen }),
+      getConversationContext: async () => ({ waId: o.waId ?? '33612345678', lastInboundAt: o.lastInboundAt === undefined ? '2026-10-01T10:00:00Z' : o.lastInboundAt, windowOpen: o.windowOpen }),
       async recordOutbound(_c, body, messageId, origine) { traces.push(`trace:${body}:${messageId}:${origine}`); },
     },
     repo: { getTenantPhoneNumberId: async () => (o.filiere === 'api' ? 'pn1' : null) },
@@ -94,16 +116,65 @@ function banc(o: { filiere: 'api' | 'application'; windowOpen: boolean; desabonn
         return o.issue ?? { ok: true, messageId: `app:${COMPTE}:WA9` };
       },
     },
+    ecrirePremier: o.ecrirePremier ?? aucunPremierMessage,
   };
   return { traces, deps };
 }
 
 describe('répondre sur la filière application', () => {
-  it('🔴 une conversation de plus de 24 heures reçoit la réponse : la fenêtre ne s’applique pas', async () => {
+  it('🔴 une conversation de plus de 24 heures reçoit la réponse d’un opérateur, tout de suite : la porte ne sert que les machines', async () => {
     const { traces, deps } = banc({ filiere: 'application', windowOpen: false });
+    const res = await repondreDansLaFenetre(deps, T, 'conv-1', 'Bonjour', 'u1', 'humain');
+    expect(res).toMatchObject({ messageId: `app:${COMPTE}:WA9` });
+    expect(traces).toEqual(['app:33612345678:Bonjour', 'fil:33612345678', `trace:Bonjour:app:${COMPTE}:WA9:humain`]);
+  });
+
+  it('dans les 24 heures, la réponse d’une machine part tout de suite, et rien n’est mis en file ni compté', async () => {
+    // `aucunPremierMessage` lève : passer par la porte ferait échouer ce cas.
+    const { traces, deps } = banc({ filiere: 'application', windowOpen: true });
     const res = await repondreDansLaFenetre(deps, T, 'conv-1', 'Bonjour', null, 'mcp');
     expect(res).toMatchObject({ messageId: `app:${COMPTE}:WA9` });
     expect(traces).toEqual(['app:33612345678:Bonjour', 'fil:33612345678', `trace:Bonjour:app:${COMPTE}:WA9:mcp`]);
+  });
+
+  it('🔴 hors des 24 heures, la réponse d’une machine est différée par la porte : comptée, en file, rien ne part ni ne prend le fil', async () => {
+    // Décision de Julien (2026-10-24) : le contact nous a écrit, la réponse part sans accord coché (mode `conversation`).
+    const porte = porteEnMemoire({ optIn: 'unknown' });
+    const { traces, deps } = banc({ filiere: 'application', windowOpen: false, ecrirePremier: porte.ecrirePremier });
+    const res = await repondreDansLaFenetre(deps, T, 'conv-1', 'Bonjour', null, 'mcp');
+    expect(res).toEqual({ differe: { id: porte.lignes[0]!.id, prevuLe: porte.lignes[0]!.prevuLe.toISOString() } });
+    expect(traces, 'ni envoi direct, ni prise du fil, ni trace : le job s’en charge').toEqual([]);
+    expect(porte.demandes).toEqual([{
+      tenantId: T, cle: expect.stringMatching(/^reponse:conv-1:[0-9a-f]{16}:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/), telephone: '33612345678',
+      texte: 'Bonjour', origine: 'reponse', reference: null, consentement: { mode: 'conversation' },
+    }]);
+    expect(porte.gestes.filter((g) => g === 'quota')).toHaveLength(1);
+  });
+
+  it('🔴 hors des 24 heures, un contact qui ne nous a JAMAIS écrit et n’a pas accepté WhatsApp : refus sans_consentement', async () => {
+    const porte = porteEnMemoire({ optIn: 'unknown' });
+    const { traces, deps } = banc({ filiere: 'application', windowOpen: false, ecrirePremier: porte.ecrirePremier, lastInboundAt: null });
+    expect(await repondreDansLaFenetre(deps, T, 'conv-1', 'Bonjour', null, 'api'))
+      .toEqual({ refus: { motif: 'premier_message', refus: 'sans_consentement' } });
+    expect(traces).toEqual([]);
+    expect(porte.gestes).not.toContain('quota');
+    expect(porte.lignes).toEqual([]);
+  });
+
+  it('🔴 hors des 24 heures, un contact qui nous a écrit puis a dit STOP : rien ne part, même par la conversation', async () => {
+    const porte = porteEnMemoire({ optIn: 'opted_out' });
+    const { traces, deps } = banc({ filiere: 'application', windowOpen: false, ecrirePremier: porte.ecrirePremier });
+    expect(await repondreDansLaFenetre(deps, T, 'conv-1', 'Bonjour', null, 'mcp'))
+      .toEqual({ refus: { motif: 'premier_message', refus: 'desabonne' } });
+    expect(traces).toEqual([]);
+    expect(porte.lignes).toEqual([]);
+  });
+
+  it('hors des 24 heures, un contact masqué (@lid) sans numéro connu : refus sans_telephone, la porte n’est pas appelée', async () => {
+    const { traces, deps } = banc({ filiere: 'application', windowOpen: false, waId: '123456789012345@lid' });
+    expect(await repondreDansLaFenetre(deps, T, 'conv-1', 'Bonjour', null, 'mcp'))
+      .toEqual({ refus: { motif: 'premier_message', refus: 'sans_telephone' } });
+    expect(traces).toEqual([]);
   });
 
   it('🔴 cas 4 : un contact désabonné ne reçoit rien d’une machine, même sans fenêtre', async () => {

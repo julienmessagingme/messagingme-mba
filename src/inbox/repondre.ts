@@ -6,7 +6,9 @@
  * L'ordre des gestes compte :
  *   1. la conversation existe et appartient à cet espace (sinon rien de plus, IDOR) ;
  *   2. la fenêtre est ouverte (Meta refuse le texte libre en dehors : on refuse avant d'appeler). Sur la filière
- *      application, elle ne s'applique pas : répondre y est toujours possible, par le service de connexions ;
+ *      application, répondre reste toujours possible, par le service de connexions ; mais hors des 24 heures, une
+ *      réponse qu'une machine écrit est un message écrit en premier : elle part par la porte (`ecrirePremier`), comptée
+ *      et espacée (plan 2026-10-23, tâche 3) ;
  *   3. l'envoi ;
  *   4. la prise du fil et le journal, après l'envoi et en best-effort : un échec d'état ne doit jamais faire
  *      croire à un message perdu.
@@ -16,6 +18,8 @@ import { auteurDeLEnvoi, type AuteurDuChangement } from './evenements';
 import { journaliserEnvoiAccepte, type EtatJournalSortant } from './journal-sortant';
 import type { EnvoiApplication } from '../application/envoi';
 import type { RaisonClient } from '../application/client';
+import type { DemandePremierMessage, OriginePremier, RefusPremier, ResultatPremier } from '../application/premier-message';
+import { sha256Hex } from '../lib/signature';
 
 /** Ce que la réponse lit et écrit des conversations. */
 export interface ConversationsRepondre {
@@ -68,6 +72,12 @@ export interface DepsRepondre {
    * et une réponse qui l'ignorerait refuserait en silence « aucun numéro ».
    */
   application: Pick<EnvoiApplication, 'filiere' | 'envoyer'>;
+  /**
+   * 🔴 La porte « écrire en premier » de la filière application (`enfilerPremierMessage`, plan 2026-10-23). Requise :
+   * hors des 24 heures, une réponse de machine y passe (limite du mois, espacement, consentement), et un câblage qui
+   * l'oublierait ne doit pas compiler, sinon la réponse contournerait toutes ses gardes.
+   */
+  ecrirePremier(demande: DemandePremierMessage): Promise<ResultatPremier>;
 }
 
 /**
@@ -79,12 +89,52 @@ export type RefusReponse =
   | { motif: 'fenetre_fermee' }
   | { motif: 'aucun_numero' }
   | { motif: 'contact_desabonne' }
-  /** Filière application : le compte n'est pas relié, ou le service de connexions ne répond pas. */
+  /** Filière application : le compte n'est pas relié (coupé, endormi), WhatsApp a refusé, ou le service ne répond pas. */
   | { motif: 'application_indisponible'; raison: RaisonClient }
   /** Filière application : seul le texte part (un média ou des boutons attendent un lot suivant). */
-  | { motif: 'format_non_pris_en_charge' };
+  | { motif: 'format_non_pris_en_charge' }
+  /** Filière application, hors des 24 heures : la porte « écrire en premier » a refusé le message. */
+  | { motif: 'premier_message'; refus: RefusPremier };
 
-export type ResultatReponse = { messageId: string; journal: EtatJournalSortant } | { refus: RefusReponse };
+/**
+ * `differe` : filière application, hors des 24 heures, le message est en file (la porte « écrire en premier ») ; il part
+ * à `prevuLe` (ISO 8601), et il n'est encore ni envoyé, ni tracé, ni le fil pris.
+ */
+export type ResultatReponse =
+  | { messageId: string; journal: EtatJournalSortant }
+  | { differe: { id: string; prevuLe: string } }
+  | { refus: RefusReponse };
+
+/**
+ * Ce qui part par la porte quand une réponse sort des 24 heures, sur la filière application. Absent : une réponse
+ * (`reponse`), la fiche déjà consentante, et la clé de `cleDeReponse`. L'API publique passe le sien : son origine, le
+ * consentement déclaré dans l'appel, et la clé de l'appel, la même qu'à une personne sans fil (`src/http/v1-messages.ts`).
+ */
+export interface HorsFenetre {
+  origine: OriginePremier;
+  consentement: DemandePremierMessage['consentement'];
+  cle: string;
+}
+
+/** Une empreinte courte, assez pour distinguer deux textes d'une même minute, jamais le texte lui-même. */
+export const empreinte = (texte: string): string => sha256Hex(texte).slice(0, 16);
+/** La minute UTC d'un instant (`2026-10-24T13:05`) : la même demande rejouée dans la minute ne part qu'une fois. */
+export const minuteUtc = (d: Date): string => d.toISOString().slice(0, 16);
+
+/** La clé d'une réponse différée : la conversation, le texte, la minute. */
+export const cleDeReponse = (conversationId: string, texte: string, maintenant: Date): string =>
+  `reponse:${conversationId}:${empreinte(texte)}:${minuteUtc(maintenant)}`;
+
+/**
+ * Le numéro qu'on peut écrire en premier depuis un `wa_id` : les chiffres d'un numéro. Un identifiant masqué (`…@lid`)
+ * n'en porte aucun, et la porte n'écrit qu'à un numéro : `null`.
+ */
+export const telephoneDuWaId = (waId: string): string | null => (/^[0-9]{8,15}$/.test(waId) ? waId : null);
+
+/** Ce que rend la porte, dans la forme d'une réponse : en file, ou refusée. */
+export function reponseDuPremier(r: ResultatPremier): ResultatReponse {
+  return r.ok ? { differe: { id: r.id, prevuLe: r.prevuLe.toISOString() } } : { refus: { motif: 'premier_message', refus: r.refus } };
+}
 
 /**
  * `auteur` = l'humain qui écrit, ou `null` (agent tiers via MCP) : il finit dans `sender_user_id` et signe le
@@ -103,13 +153,15 @@ export async function repondreDansLaFenetre(
    * `redactionOrigine` garde ce que l'opérateur avait écrit avant traduction ; `null` pour un envoi non traduit.
    */
   redactionOrigine: string | null = null,
+  /** Filière application, hors des 24 heures : ce qui part par la porte. `null` : une réponse (voir `HorsFenetre`). */
+  horsFenetre: HorsFenetre | null = null,
 ): Promise<ResultatReponse> {
   return repondreAvec(deps, tenantId, conversationId, {
     envoyer: (phoneNumberId, to) => deps.sendReply(tenantId, phoneNumberId, to, texte),
     texteApplication: texte,
     trace: texte,
     type: 'text',
-  }, auteur, origine, redactionOrigine);
+  }, auteur, origine, redactionOrigine, horsFenetre);
 }
 
 /**
@@ -130,7 +182,7 @@ export async function repondreAvecUnMessage(
     envoyer: (phoneNumberId, to) => envoyerMessage(tenantId, phoneNumberId, to, message.corps),
     trace: message.trace,
     type: message.type,
-  }, auteur, origine, null);
+  }, auteur, origine, null, null);
 }
 
 /**
@@ -146,6 +198,7 @@ async function repondreAvec(
   auteur: string | null,
   origine: OrigineMessage,
   redactionOrigine: string | null,
+  horsFenetre: HorsFenetre | null,
 ): Promise<ResultatReponse> {
   const ctx = await deps.inbox.getConversationContext(conversationId, tenantId);
   if (ctx === null) return { refus: { motif: 'conversation_inconnue' } };
@@ -161,6 +214,28 @@ async function repondreAvec(
    */
   if (origine !== 'humain' && await deps.estDesabonne(tenantId, ctx.waId)) {
     return { refus: { motif: 'contact_desabonne' } };
+  }
+
+  /**
+   * 🔴 HORS DES 24 HEURES, UNE MACHINE ÉCRIT EN PREMIER (conception 2026-10-23, § 5.1) : la même règle que l'API, la
+   * fenêtre de 24 heures. Sans ce détour, un premier message Shopify créerait le fil, et tout ce qu'une machine enverrait
+   * ensuite par une porte de réponse contournerait la limite du mois, l'espacement et le consentement. Dans les
+   * 24 heures, rien ne change : la réponse part tout de suite, et rien n'est compté. Un opérateur répond toujours
+   * directement, comme sur un fil qu'il tient. Le message en file ne prend pas le fil : le job le trace sans le prendre.
+   */
+  const texte = envoi.texteApplication;
+  if (application && texte !== undefined && !ctx.windowOpen && origine !== 'humain') {
+    const telephone = telephoneDuWaId(ctx.waId);
+    if (telephone === null) return { refus: { motif: 'premier_message', refus: 'sans_telephone' } };
+    const h: HorsFenetre = horsFenetre
+      ?? { origine: 'reponse', consentement: { mode: 'exige_opt_in' }, cle: cleDeReponse(conversationId, texte, new Date()) };
+    // Décision de Julien (2026-10-24) : un contact qui nous a écrit a donné son accord pour qu'on lui réponde, même plus
+    // tard. Sans accord déclaré, la réponse différée part donc à qui a écrit ; seul un STOP l'arrête (la porte le relit).
+    const consentement: DemandePremierMessage['consentement'] =
+      h.consentement.mode === 'exige_opt_in' && ctx.lastInboundAt !== null ? { mode: 'conversation' } : h.consentement;
+    return reponseDuPremier(await deps.ecrirePremier({
+      tenantId, cle: h.cle, telephone, texte, origine: h.origine, reference: null, consentement,
+    }));
   }
 
   let messageId: string;

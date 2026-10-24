@@ -183,6 +183,26 @@ describe('le gestionnaire des sessions', () => {
     await expect(g.envoyer('c4', 'x@s.whatsapp.net', 'Bonjour')).rejects.toThrow(ErreurApplication);
   });
 
+  it('🔴 un refus 463 de WhatsApp devient `refuse_whatsapp` ; toute autre exception reste une panne', async () => {
+    await g.reprendre();
+    await transport.derniere('c1').rappels.ouverte('x@s.whatsapp.net');
+    const session = transport.derniere('c1').session;
+    // La forme d'un `Boom` de Baileys, lue comme une fermeture, sans `instanceof`.
+    session.envoyer = async () => { throw Object.assign(new Error('refus'), { output: { statusCode: 463 } }); };
+    const boom = await g.envoyer('c1', '33612345678@s.whatsapp.net', 'Bonjour').catch((e: unknown) => e);
+    expect(boom).toBeInstanceOf(ErreurApplication);
+    expect((boom as ErreurApplication).raison).toBe('refuse_whatsapp');
+    session.envoyer = async () => { throw new Error('ack error 463'); };
+    expect(((await g.envoyer('c1', '33612345678@s.whatsapp.net', 'Bonjour').catch((e: unknown) => e)) as ErreurApplication).raison).toBe('refuse_whatsapp');
+    // Une panne ordinaire (un 500, un délai) n'est PAS un refus : on ne gèle jamais sur un doute.
+    const panne = new Error('Connection Closed');
+    session.envoyer = async () => { throw Object.assign(panne, { output: { statusCode: 428 } }); };
+    expect(await g.envoyer('c1', '33612345678@s.whatsapp.net', 'Bonjour').catch((e: unknown) => e)).toBe(panne);
+    session.envoyer = async () => { throw new Error('délai de 4630 ms dépassé'); };
+    expect(await g.envoyer('c1', '33612345678@s.whatsapp.net', 'Bonjour').catch((e: unknown) => e)).not.toBeInstanceOf(ErreurApplication);
+    expect(comptes.touches).toEqual([]);
+  });
+
   it('vérifier un numéro passe par la session ouverte, sans compter comme une activité ; sans session, un refus lisible', async () => {
     await g.reprendre();
     await expect(g.verifier('c1', '33612345678')).rejects.toThrow(ErreurApplication);

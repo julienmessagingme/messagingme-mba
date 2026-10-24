@@ -13,7 +13,8 @@ import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
 import { MetaApiError } from '../src/meta/errors';
-import { filiereApiSeule } from './gardes';
+import { filiereApiSeule, aucunPremierMessage } from './gardes';
+import { porteEnMemoire } from './aide/porte-premier';
 
 /**
  * `POST /v1/messages/whatsapp` : UN SIMPLE TEXTE, À UNE FICHE, DANS LA FENÊTRE DE 24 H (spec 2026-09-24, § 4).
@@ -65,6 +66,11 @@ interface Monde {
   /** Meta refuse le contenu d'un message au format de Meta (lot 13, domaine 2). */
   metaRefuse?: boolean;
   journalEchecs?: number;
+  /**
+   * La filière application (plan 2026-10-23, tâche 4) : la VRAIE porte « écrire en premier », sur des faux. Absente :
+   * la filière API, et y passer lève.
+   */
+  porte?: ReturnType<typeof porteEnMemoire>;
 }
 
 const MONDE: Monde = { fiche: { id: C1 }, conversation: 'conv-1', sansFil: false, fenetreOuverte: true, desabonne: false, numeroDeLEspace: 'pn1', numeroDelie: false };
@@ -104,7 +110,13 @@ function app(over: Partial<Monde> = {}) {
     estDesabonne: async (_t, waId) => { desabonneLu.push(waId); return m.desabonne; },
     takeControl: async (_t, waId) => { prises.push(waId); },
     filTenuParLApplication: async () => m.tenuParLApplication === true,
-    application: filiereApiSeule,
+    application: m.porte
+      ? {
+        filiere: async () => 'application',
+        envoyer: async (_t, waId, texte) => { envois.push({ to: waId, text: texte }); return { ok: true, messageId: 'app:compte:WA1' }; },
+      }
+      : filiereApiSeule,
+    ecrirePremier: m.porte?.ecrirePremier ?? aucunPremierMessage,
   };
 
   const keys = new FakeApiKeys()
@@ -141,7 +153,7 @@ function app(over: Partial<Monde> = {}) {
           filDuContact: async (tenant, contactId) => {
             filsCherches.push(contactId);
             if (tenant !== 't1' || contactId !== C1 || m.conversation === null) return { etat: 'injoignable' };
-            return m.sansFil ? { etat: 'sans_fil' } : { etat: 'fil', conversationId: m.conversation };
+            return m.sansFil ? { etat: 'sans_fil', waId: '33612345678' } : { etat: 'fil', conversationId: m.conversation, waId: '33612345678' };
           },
         },
       },
@@ -530,6 +542,137 @@ describe('POST /v1/messages : les corrections de la relecture', () => {
     expect(res.json().error).toMatch(/Le titre du bouton est invalide/);
     // Le numéro de Meta voyage avec le refus (lot 17) : c'est lui que le catalogue des erreurs explique.
     expect(res.json().metaCode).toBe(131009);
+    await server.close();
+  });
+});
+
+/**
+ * 🔴 SUR UN NUMÉRO RELIÉ PAR QR CODE, LA ROUTE ÉCRIT EN PREMIER (plan 2026-10-23, tâche 4). Une personne sans fil, ou
+ * hors des 24 heures, reçoit son texte par la VRAIE porte (`enfilerPremierMessage`, sur des faux) : 202, le message en
+ * file. Ce qui compte : ce que la route demande à la porte (origine, clé, consentement), et que la filière API n'ait
+ * pas bougé.
+ */
+describe('POST /v1/messages/whatsapp sur un numéro relié par QR code', () => {
+  const CLE_API = /^api:[0-9a-f]{16}:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+  it('🔴 une fiche sans fil : 202, le texte en file par la porte (origine api), rien ne part tout de suite', async () => {
+    const porte = porteEnMemoire({ optIn: 'opted_in' });
+    const { server, envois, enregistres, prises, resolutions } = app({ porte, sansFil: true });
+    const res = await post(server, { contactId: C1, text: 'Votre commande est prête.' });
+    expect(res.statusCode).toBe(202);
+    const ligne = porte.lignes[0]!;
+    expect(res.json()).toEqual({ status: 'queued', id: ligne.id, scheduledAt: ligne.prevuLe.toISOString(), conversationId: null, channel: 'whatsapp' });
+    expect(porte.demandes).toEqual([{
+      tenantId: 't1', cle: expect.stringMatching(CLE_API), telephone: '33612345678', texte: 'Votre commande est prête.',
+      origine: 'api', reference: null, consentement: { mode: 'exige_opt_in' },
+    }]);
+    expect([envois, enregistres, prises]).toEqual([[], [], []]);
+    // La route ne crée toujours rien : la fiche existe, le fil naîtra du premier envoi du job.
+    expect(resolutions.map((r) => r.creer)).toEqual(['jamais']);
+    await server.close();
+  });
+
+  it('🔴 avec consent et consentSource, la fiche passe opted_in AVANT le tri et le compte, puis le message est en file', async () => {
+    const porte = porteEnMemoire({ optIn: 'unknown' });
+    const { server } = app({ porte, sansFil: true });
+    const res = await post(server, { contactId: C1, text: 'Bonjour', consent: 'opted_in', consentSource: 'formulaire-site' });
+    expect(res.statusCode).toBe(202);
+    expect(porte.demandes[0]!.consentement).toEqual({ mode: 'declare', source: 'formulaire-site' });
+    const i = porte.gestes.findIndex((g) => g.startsWith('consentement:'));
+    expect(porte.gestes[i]).toBe('consentement:cccccccc-0000-4000-8000-0000000000f1:opted_in:formulaire-site');
+    expect(i, 'le consentement est écrit avant que le message ne soit compté').toBeLessThan(porte.gestes.indexOf('quota'));
+    expect(porte.consentementDeLaFiche()).toBe('opted_in');
+    // Sans source, celle de `POST /v1/sends` : `api`.
+    const sansSource = porteEnMemoire({ optIn: 'unknown' });
+    const deux = app({ porte: sansSource, sansFil: true });
+    expect((await post(deux.server, { contactId: C1, text: 'Bonjour', consent: 'opted_in' })).statusCode).toBe(202);
+    expect(sansSource.demandes[0]!.consentement).toEqual({ mode: 'declare', source: 'api' });
+    await server.close();
+    await deux.server.close();
+  });
+
+  it('🔴 sans consentement, une fiche qui n’a pas accepté WhatsApp : 409 no_consent, avec la phrase qui dit comment le déclarer', async () => {
+    const porte = porteEnMemoire({ optIn: 'unknown' });
+    const { server, envois } = app({ porte, sansFil: true });
+    const res = await post(server, { contactId: C1, text: 'Bonjour' });
+    expect([res.statusCode, res.json().code]).toEqual([409, 'no_consent']);
+    expect(res.json().error).toMatch(/hors des 24 heures, un premier message exige son accord ; consent à opted_in, avec consentSource, le déclare/);
+    expect(porte.gestes).not.toContain('quota');
+    expect([porte.lignes, envois]).toEqual([[], []]);
+    await server.close();
+  });
+
+  it('une personne sans fiche, désignée par son numéro : 202, sa fiche naît par la porte (par ce numéro), jamais par la route', async () => {
+    const porte = porteEnMemoire({ optIn: 'unknown' });
+    const { server, resolutions } = app({ porte, fiche: null });
+    const res = await post(server, { phone: NUMERO, text: 'Bonjour', consent: 'opted_in', consentSource: 'caisse' });
+    expect(res.statusCode).toBe(202);
+    expect(resolutions.map((r) => r.creer)).toEqual(['jamais']);
+    expect(porte.gestes[0]).toBe('fiche:+33612345678:phone');
+    // Un identifiant inconnu reste inconnu : la porte n'écrit qu'à un numéro.
+    const parId = app({ porte: porteEnMemoire(), fiche: null });
+    const inconnu = await post(parId.server, { contactId: C1, text: 'Bonjour' });
+    expect([inconnu.statusCode, inconnu.json().code]).toEqual([404, 'unknown_contact']);
+    await server.close();
+    await parId.server.close();
+  });
+
+  it('🔴 hors des 24 heures sur un fil : 202 par la porte, avec la clé d’une personne sans fil (le même appel ne part qu’une fois)', async () => {
+    const porte = porteEnMemoire({ optIn: 'opted_in' });
+    const { server, envois } = app({ porte, fenetreOuverte: false });
+    const res = await post(server, { contactId: C1, text: 'Bonjour' });
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toMatchObject({ status: 'queued', conversationId: 'conv-1' });
+    expect(porte.demandes[0]).toMatchObject({ origine: 'api', telephone: '33612345678', consentement: { mode: 'exige_opt_in' } });
+    const sansFil = porteEnMemoire({ optIn: 'opted_in' });
+    const autre = app({ porte: sansFil, sansFil: true });
+    await post(autre.server, { contactId: C1, text: 'Bonjour' });
+    // L'empreinte du numéro et du texte est la même, avec ou sans fil (la minute aussi, sauf à cheval sur deux).
+    expect(porte.demandes[0]!.cle.split(':')[1]).toBe(sansFil.demandes[0]!.cle.split(':')[1]);
+    expect(envois).toEqual([]);
+    await server.close();
+    await autre.server.close();
+  });
+
+  it('dans les 24 heures : 200, la réponse part tout de suite par le service de connexions, rien n’est mis en file', async () => {
+    const porte = porteEnMemoire({ optIn: 'opted_in' });
+    const { server, envois } = app({ porte });
+    const res = await post(server, { contactId: C1, text: 'Bonjour' });
+    expect(res.statusCode).toBe(200);
+    expect(envois).toEqual([{ to: '33612345678', text: 'Bonjour' }]);
+    expect(porte.demandes).toEqual([]);
+    await server.close();
+  });
+
+  it('les messages du mois atteints : 402 plan_limit_reached, avec la page de l’offre', async () => {
+    const porte = porteEnMemoire({ optIn: 'opted_in', quotaOk: false });
+    const { server } = app({ porte, sansFil: true });
+    const res = await post(server, { contactId: C1, text: 'Bonjour' });
+    expect([res.statusCode, res.json().code]).toEqual([402, 'plan_limit_reached']);
+    expect(res.json().error).toMatch(/messages du mois sont atteints/);
+    expect(typeof res.json().upgradeUrl).toBe('string');
+    await server.close();
+  });
+
+  it('🔴 sur la filière API, rien ne change : sans fil, 422 window_closed, et consent n’y fait rien', async () => {
+    const { server, envois, resolutions } = app({ sansFil: true });
+    const res = await post(server, { contactId: C1, text: 'Bonjour', consent: 'opted_in', consentSource: 'formulaire' });
+    expect([res.statusCode, res.json().code]).toEqual([422, 'window_closed']);
+    expect(envois).toEqual([]);
+    expect(resolutions.map((r) => r.creer)).toEqual(['jamais']);
+    const ferme = app({ fenetreOuverte: false });
+    const hors = await post(ferme.server, { contactId: C1, text: 'Bonjour' });
+    expect([hors.statusCode, hors.json().code]).toEqual([422, 'window_closed']);
+    await server.close();
+    await ferme.server.close();
+  });
+
+  it('consent n’accepte que opted_in, et consentSource est borné comme POST /v1/sends', async () => {
+    const { server } = app();
+    for (const corps of [{ consent: 'opted_out' }, { consentSource: 'x'.repeat(101) }]) {
+      const res = await post(server, { contactId: C1, text: 'Bonjour', ...corps });
+      expect([res.statusCode, res.json().code], JSON.stringify(corps)).toEqual([400, 'invalid_body']);
+    }
     await server.close();
   });
 });

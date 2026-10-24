@@ -4825,6 +4825,12 @@ numéro.
   réveille. ⚠️ Un message reçu pendant une coupure de notre service n'est pas perdu, mais il n'arrive qu'à la remise en
   ligne du téléphone du compte (mesuré le 2026-10-23, essai 152 : rien en 36 minutes après la reprise, arrivé à
   l'ouverture du téléphone, l'agent a répondu dans la foulée).
+- ✅ **Écrire en premier** (2026-10-24) : Claude (`write_first_message`), l'API (`/v1/messages/whatsapp` sans
+  conversation) et Shopify écrivent à un client qui n'a pas écrit dans les 24 heures, en texte, avec son accord (déclaré
+  ou déjà donné). Un client qui nous a écrit reçoit une réponse plus tardive sans accord coché : il a écrit, il attend une
+  réponse (décision de Julien, 2026-10-24) ; seul un STOP l'arrête, et sa fiche ne devient pas consentante aux campagnes. Chaque message compte dans les 1 000 messages du mois de la Free, part espacé d'au moins 30 secondes et
+  au plus une fois ; une réponse hors des 24 heures suit la même règle. Un message en file depuis plus de 24 heures ne
+  part plus. Un numéro absent de WhatsApp est dit (`pas_sur_whatsapp`).
 - Limites : ni modèles, ni campagnes, ni agent de Meta, qui passent par l'API de Meta ; l'offre Pro est refusée sur cette
   filière (le passage à l'API d'abord) ; les groupes sont ignorés. Un numéro de Meta connecté prime : l'espace passe alors
   sur l'API.

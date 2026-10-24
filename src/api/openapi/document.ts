@@ -37,6 +37,11 @@ export interface RouteOpenapi {
     /** `null` : aucun corps ; `'binaire'` : un fichier (le média d'un message). */
     readonly schema: z.ZodType | null | 'binaire';
   };
+  /**
+   * Un second succès, quand la route en a deux : le 202 d'un message écrit en premier mis en file, à côté du 200 d'un
+   * message parti (`POST /v1/messages/whatsapp`, plan 2026-10-23, tâche 4). `quand` dit à l'intégrateur lequel il reçoit.
+   */
+  readonly autreSucces?: { readonly statut: 202; readonly schema: z.ZodType; readonly quand: string };
   /** Les codes d'erreur PROPRES à la route ; ceux des gardes communes s'ajoutent à toutes (`ERREURS_COMMUNES`). */
   readonly erreurs: readonly CodeApi[];
 }
@@ -183,7 +188,15 @@ function operation(r: RouteOpenapi): Schema {
     description: `Requires the ${r.droit} scope.`,
     ...(params.length > 0 ? { parameters: params } : {}),
     ...(r.corps ? { requestBody: { required: true, content: { 'application/json': { schema: versJson(r.corps, 'input') } } } } : {}),
-    responses: { [String(r.succes.statut)]: succes, ...reponsesErreur(r.erreurs) },
+    responses: {
+      [String(r.succes.statut)]: succes,
+      ...(r.autreSucces ? {
+        [String(r.autreSucces.statut)]: {
+          description: r.autreSucces.quand, content: { 'application/json': { schema: versJson(r.autreSucces.schema, 'output') } },
+        },
+      } : {}),
+      ...reponsesErreur(r.erreurs),
+    },
   };
 }
 

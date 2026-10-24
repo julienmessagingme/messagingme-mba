@@ -123,7 +123,7 @@ What to do: Stop writing to this person: they said STOP. The API does not resubs
 
 ### `no_consent` 409, also a skip reason
 
-Missing consent: a marketing send to someone not opted_in, or a free RCS to someone who neither consented nor wrote.
+Missing consent: a marketing send to someone not opted_in, a free RCS to someone who neither consented nor wrote, or a message written first from a number linked by QR code to someone not opted_in.
 
 What to do: Set the collected consent on the record (consent, consentSource) before a marketing send.
 
@@ -147,7 +147,7 @@ What to do: Fill the variable on the record, or give the parameter a fallback va
 
 ### `no_phone` 422, also a skip reason
 
-Record without a phone number, which RCS requires.
+Record without a phone number, which RCS, or a message written first from a number linked by QR code, requires.
 
 What to do: Add a phone number to the record.
 

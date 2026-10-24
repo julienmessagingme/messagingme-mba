@@ -54,6 +54,8 @@ import { joignabiliteRcsToutesFormes } from './rcs/reachability';
 import { verdictModele } from './api/modele-envoi';
 import { resoudreFiche } from './api/fiche';
 import { appliquerConsentement, depsConsentementDe } from './api/consentement';
+import { enfilerPremierMessage, enfileurPremier, type DepsPremierMessage } from './application/premier-message';
+import { PgPremiersMessages } from './application/premier-message.pg';
 import { traiterRapportRcs } from './rcs/rapport-livraison';
 import { traiterMessageEntrantRcs } from './rcs/message-entrant';
 import { envoyerRcsLibre, phraseOperateur, type DepsRcsLibre } from './rcs/envoyer-libre';
@@ -702,6 +704,9 @@ async function main(): Promise<void> {
     filTenuParLApplication: fil.tenuParLApplication,
     // La filière application WhatsApp Business : pas de fenêtre, l'envoi par le service de connexions.
     application: envoiApplication,
+    // Hors des 24 heures, la réponse d'une machine sur cette filière passe par la porte « écrire en premier ».
+    // `depsPremier` est déclaré plus bas, et lu au moment de l'appel : toute requête arrive après le démarrage.
+    ecrirePremier: (demande) => enfilerPremierMessage(depsPremier, demande),
   } satisfies DepsRepondre;
 
   /**
@@ -1259,6 +1264,24 @@ async function main(): Promise<void> {
   };
 
   /**
+   * LA PORTE « ÉCRIRE EN PREMIER » DE LA FILIÈRE APPLICATION (plan 2026-10-23, Shopify sur un numéro relié par QR code) :
+   * UN objet, partagé par Shopify, les réponses hors des 24 heures, Claude et l'API. La fiche et le consentement sont ceux
+   * de l'envoi public (`depsEnvois`) ; l'enfilement porte le groupe de l'espace (`enfileurPremier`).
+   */
+  const depsPremier = {
+    premiers: new PgPremiersMessages(pool),
+    comptes: comptesApplication,
+    fiches: {
+      resoudreFiche: depsEnvois.resoudreFiche,
+      appliquerConsentement: depsEnvois.appliquerConsentement,
+      listContactsPourEnvoiApi: repo.listContactsPourEnvoiApi.bind(repo),
+    },
+    contacts: contactStore,
+    quota: quotaModeles,
+    enfiler: enfileurPremier(queue),
+  } satisfies DepsPremierMessage;
+
+  /**
    * Les suppressions de contacts du jour de l'offre (lot 6), sur le compteur partagé des copies : le MÊME objet pour la
    * purge du mini-CRM et `DELETE /v1/contacts/{id}` (lot 13, domaine 5), qui comptent donc dans la même limite.
    */
@@ -1295,10 +1318,15 @@ async function main(): Promise<void> {
     importer: (input) => importContacts(input, { contacts: contactStore, userFields: fieldStore }),
     // Le branchement par la console : les webhooks de la boutique, abonnés par l'API avec le jeton de l'app.
     abonner: (acces) => abonnerWebhooks(acces),
+    // Un modèle sur l'API, un texte sur un numéro relié par QR code (plan 2026-10-23, tâche 5).
+    filiere: (tenant) => comptesApplication.filiereDe(tenant),
   };
   const traitementShopify: DepsTraitementShopify = {
     store: shopifyStore,
     envoyer: (tenant, corps, compter, options) => lancerEnvoiPublic(depsEnvois, tenant, corps, undefined, compter, options),
+    // Un texte sur un numéro relié par QR code part par la porte « écrire en premier », la MÊME que Claude et l'API.
+    filiere: (tenant) => comptesApplication.filiereDe(tenant),
+    ecrirePremier: (demande) => enfilerPremierMessage(depsPremier, demande),
     ficheParTelephone: async (tenant, e164) => (await contactStore.findByPhone(tenant, e164))?.id ?? null,
     /**
      * L'effacement de la purge du mini-CRM (même retrait chez l'agent de Meta, même suivi en fond), HORS limite du jour :
@@ -1317,6 +1345,9 @@ async function main(): Promise<void> {
   /** La relance des paniers abandonnés (lot 2), par le MÊME envoi que les messages de commande. */
   const relancePaniers: DepsRelance = {
     store: shopifyStore, envoyer: traitementShopify.envoyer, emails: emetteurEmails, pageOffre: traitementShopify.pageOffre,
+    filiere: traitementShopify.filiere, ecrirePremier: traitementShopify.ecrirePremier,
+    // Les espaces d'un numéro relié par QR code dont les messages du mois sont épuisés ne sont pas réclamés.
+    quota: quotaModeles,
   };
   let relancePaniersEnCours = false;
 

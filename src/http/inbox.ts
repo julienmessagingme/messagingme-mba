@@ -13,7 +13,7 @@ import { MediaTropGros } from '../meta/media';
 import { MediaExpire, enTetesMedia } from '../inbox/media-entrant';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
-import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible } from '../application/envoi';
+import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible, phrasePremierMessage } from '../application/envoi';
 import { journaliserEnvoiAccepte } from '../inbox/journal-sortant';
 import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type CauseSansTraduction, type LangueConsole, type Traduction } from '../traduction/traduire';
 import type { FilTraduit } from '../traduction/fil';
@@ -862,10 +862,17 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
       if (res.refus.motif === 'format_non_pris_en_charge') {
         return reply.code(422).send({ error: PHRASE_FORMAT_APPLICATION, code: 'unsupported_on_whatsapp_app' });
       }
+      // Inatteignable (un opérateur répond toujours directement, la porte « écrire en premier » ne sert que les machines),
+      // écrit pour la même raison que le refus d'opt-out.
+      if (res.refus.motif === 'premier_message') {
+        return reply.code(409).send({ error: phrasePremierMessage(res.refus.refus, 'api'), code: 'first_message_refused' });
+      }
       // Hors fenêtre 24 h : Meta refuse le texte libre. Le message dit les deux chemins qui restent (template, ou
       // RCS si le contact y est joignable). Le code `window_closed` ne bouge pas, l'écran s'en sert.
       return reply.code(422).send({ error: 'Fenêtre de 24 h fermée : envoie un template, ou un message RCS si le contact y est joignable.', code: 'window_closed' });
     }
+    // Inatteignable pour la même raison : un message en file, que le job enverra sans prendre le fil.
+    if ('differe' in res) return reply.code(202).send({ queuedId: res.differe.id, scheduledAt: res.differe.prevuLe });
     invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
     return reply.code(200).send({ messageId: res.messageId, journal: res.journal });
   });

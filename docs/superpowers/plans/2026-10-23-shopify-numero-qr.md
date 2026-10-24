@@ -109,14 +109,14 @@ la fin, sur un vrai téléphone, dans un espace Free, depuis Claude Code.
 ### Tâche 2 : la porte « écrire en premier », sa file, son espacement, ses raisons
 
 **Fichiers :**
-- Créer : `db/migrations/0251_premiers_messages.sql` (numéro relu par `npm run migrations` au moment d'écrire) :
+- Créer : `db/migrations/0252_premiers_messages.sql` (0251 pris par HubSpot ; numéro relu par `npm run migrations` au moment d'écrire) :
   - table `application_premiers_messages` : `id uuid pk`, `tenant_id uuid not null` FK `tenants` cascade, `cle text not
     null` (idempotence), `wa_id text not null`, `texte text not null check (char_length between 1 and 4096)`, `origine text
     not null check in ('shopify_commande', 'shopify_panier', 'mcp', 'api', 'reponse')`, `reference text null` (clé
     d'événement Shopify ou jeton de panier), `statut text not null default 'en_file' check in ('en_file', 'envoye',
     'abandonne')`, `issue text null`, `prevu_le timestamptz not null`, `essais int not null default 0`, `message_id text
     null`, `cree_le`, `envoye_le` ; `unique (tenant_id, cle)` ;
-  - `comptes_application.prochain_premier_le timestamptz null` et `comptes_application.premiers_geles_jusqu_au
+  - `comptes_application.premiers_geles_jusqu_au
     timestamptz null` ;
   - `shopify_messages` : `alter column modele drop not null`, `add column texte text check (char_length(texte) between 1
     and 4096)`, `add constraint shopify_messages_modele_ou_texte check ((modele is null) <> (texte is null))`.
@@ -144,9 +144,9 @@ la fin, sur un vrai téléphone, dans un espace Free, depuis Claude Code.
   `appliquerConsentement` avant le tri) ; STOP et blocage ; insertion idempotente sur `(tenant_id, cle)` (une clé déjà
   là rend `dejaEnFile: true` sans consommer) ; `QuotaModeles.consommer(tenantId, 1)` ; créneau réservé ; enfilement
   `startAfter: prevuLe`.
-- `reserverCreneau(compteId: string): Promise<Date>` (store) : une seule écriture atomique sur
-  `comptes_application.prochain_premier_le` = `greatest(now(), prochain) + 30 s + aléa(0..30 s)`, rend l'instant de
-  départ ; deux appels concurrents rendent deux instants espacés d'au moins 30 s.
+- Le créneau (livré ainsi) : dans l'insertion, sous un verrou consultatif par espace, `prevu_le` = `greatest(clock_timestamp(),
+  max(prevu_le) de l'espace) + 30 s + aléa(0..30 s)` ; deux insertions concurrentes rendent deux instants espacés d'au
+  moins 30 s (aucune colonne sur `comptes_application`).
 - `FILE_PREMIER_MESSAGE = 'application-premier-message'` (dans `BASE_QUEUES`, polling 5 s, non notifiée, rôle
   `principal`).
 - Relecture du lot A, à reprendre ici : la vérification d'un numéro **lit d'abord `lidDe(numero)`** et ne demande à

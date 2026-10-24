@@ -5,6 +5,32 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-24 : écrire en premier sur un numéro relié par QR code, et Shopify dessus (lots A et B)
+
+Conception `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md`, plan
+`docs/superpowers/plans/2026-10-23-shopify-numero-qr.md`, implémenteur par lot et une relecture indépendante par lot,
+dans des extractions d'origin publiées par plomberie.
+
+- **Lot A** (`17b2da2a`, déployé le 2026-10-23 avec le lot 4 MCP, à l'accord de Julien) : `verifier` sur le service de
+  connexions (`onWhatsApp`), qui retient l'identifiant masqué d'un client qui n'a jamais écrit, seulement sous le numéro
+  que WhatsApp confirme. **Essai 156, point d'arrêt** (2026-10-24) : depuis newCompany vers un téléphone qui n'avait
+  jamais écrit au numéro, adresse `lid`, message lu en clair. L'écoute des accusés n'est donc pas urgente (todo).
+- **Migration 0252** (`410c68d6`), poussée et appliquée SEULE avant le code : la purge RGPD (`purgeMany`) nomme sa table.
+  `application_premiers_messages`, `comptes_application.premiers_geles_jusqu_au`, `shopify_messages.modele` facultatif
+  et `texte`, contrainte « l'un ou l'autre ». 0251 était prise par le lot 1bis HubSpot : renumérotée avant le push.
+- **Lot B** : la porte « écrire en premier » (gardes, une unité des 1 000 messages du mois, créneau de 30 à 60 s sous un
+  verrou par espace, au plus un envoi), sa file `application-premier-message`, la règle des 24 heures sur les portes de
+  réponse, `write_first_message` et `/v1/messages/whatsapp` sans fil (202), Shopify en texte sur cette filière, le plugin
+  0.3.8. Tâches 2 à 5 confiées à trois implémenteurs dans trois extractions, fusionnées sur `9f8a62b0` (zod 4.6.7 :
+  `npm ci` dans l'extraction, ses `node_modules` étant propres).
+- **La relecture** : un rouge, corrigé dans le lot et vérifié dans les deux sens. La porte relisait le numéro par
+  `e164DepuisSaisie`, qui retombe sur le numéro français : un numéro étranger mal saisi (`+65 1234 567`) devenait un
+  mobile français, avec un consentement écrit à tort. Lu désormais en international strict. Les jaunes au `todo.md`.
+- **Décision de Julien en cours de lot** : une réponse hors des 24 heures à un contact qui NOUS A ÉCRIT part sans accord
+  coché (mode `conversation` de la porte : seul un STOP l'arrête, rien ne s'écrit sur la fiche).
+- **Mesuré** : sous la charge de la suite entière, `tests/latence-http.test.ts` et un cas de `tests/mcp-agent.test.ts`
+  dépassent leur délai ; seuls, ils passent (trois fois sur trois pour `mcp-agent`).
+
 ## 2026-10-24 : Shopify sur la vitrine, ce qui n'attend pas le produit (lots 1 et 2 de la conception)
 
 `5cae9de1`, plan `docs/superpowers/plans/2026-10-24-vitrine-shopify-integrations.md`, en direct, dans une extraction

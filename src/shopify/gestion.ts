@@ -3,7 +3,8 @@ import { domaineShopify, pageApps, type IssueJeton, type IssueVerification } fro
 import type { AccesClients, ClientAbonne, LectureClients } from './clients';
 import type { IssueAbonnement } from './abonnements';
 // Le ménage des modèles remplacés : la préparation n'importe de la gestion que des TYPES, aucun cycle à l'exécution.
-import { oublierPlusTard, type ProgrammerOubli } from './preparation';
+import { oublierPlusTard, validerTexteShopify, type ProgrammerOubli } from './preparation';
+import type { Filiere } from '../application/comptes';
 import type { ImportInput } from '../crm/import';
 import type { ImportReport } from '../crm/types';
 import { LimiteOffreError } from '../offres/refus';
@@ -41,6 +42,8 @@ export interface DepsGestionShopify {
   abonner(acces: { domaine: string; jeton: string }): Promise<IssueAbonnement>;
   /** Le ménage (2026-10-23) : programmer l'oubli du modèle de l'assistant que ce branchement remplace. */
   programmerOubli: ProgrammerOubli;
+  /** La filière de l'espace (`filiereDe`) : un modèle sur l'API, un texte sur un numéro relié par QR code. */
+  filiere(tenantId: string): Promise<Filiere | null>;
 }
 
 export type Refus = { ok: false; statut: 400 | 402 | 409 | 422 | 503; message: string };
@@ -132,7 +135,10 @@ export async function connecterShopify(
 
 export interface Branchement {
   evenement: unknown;
+  /** Le modèle approuvé chez Meta : la filière API seulement. */
   modele: unknown;
+  /** Le texte simple, ses données entre doubles accolades : un numéro relié par QR code seulement (plan 2026-10-23). */
+  texte: unknown;
   langue: unknown;
   variables: unknown;
   actif: unknown;
@@ -149,17 +155,42 @@ export async function brancherMessage(
     return refus(400, `event : ${EVENEMENTS_DISPONIBLES.join(', ')}.`);
   }
   const evenement: EvenementShopify = b.evenement;
-  if (typeof b.modele !== 'string' || b.modele.trim() === '' || b.modele.length > 512) return refus(400, 'template : le nom du modèle WhatsApp.');
-  if (typeof b.langue !== 'string' || b.langue.trim() === '' || b.langue.length > 20) return refus(400, 'language : la langue du modèle (fr, en_US...).');
+  // 🔴 LA FILIÈRE DÉCIDE DE LA VOIE (plan 2026-10-23, tâche 5) : un modèle approuvé chez Meta sur l'API, un texte simple
+  // sur un numéro relié par QR code, qui n'a pas de modèles. Lue avant tout : chaque refus dit la voie de l'espace.
+  const qrCode = (await deps.filiere(tenantId)) === 'application';
+  if (qrCode && present(b.modele)) {
+    return refus(400, 'template : sur un numéro relié par QR code, un message Shopify est un texte simple (text), sans modèle chez Meta.');
+  }
+  if (!qrCode && present(b.texte)) {
+    return refus(400, 'text : un texte simple ne part que d’un numéro relié par QR code ; sur l’API, un message Shopify est un modèle approuvé (template).');
+  }
+  // Le modèle, sur l'API seulement : un numéro relié par QR code n'en a pas.
+  let modele: string | null = null;
+  if (!qrCode) {
+    if (typeof b.modele !== 'string' || b.modele.trim() === '' || b.modele.length > 512) return refus(400, 'template : le nom du modèle WhatsApp.');
+    modele = b.modele.trim();
+  }
+  if (typeof b.langue !== 'string' || b.langue.trim() === '' || b.langue.length > 20) {
+    return refus(400, qrCode ? 'language : la langue du message (fr, en_US...).' : 'language : la langue du modèle (fr, en_US...).');
+  }
   const actif = b.actif === undefined ? true : b.actif;
   if (typeof actif !== 'boolean') return refus(400, 'active : vrai ou faux.');
-  const brutes = b.variables === undefined ? [] : b.variables;
-  if (!Array.isArray(brutes) || brutes.length > VARIABLES_MAX) return refus(400, `variables : une liste de ${VARIABLES_MAX} données au plus.`);
-  const permises = DONNEES_PAR_EVENEMENT[evenement];
+  let texte: string | null = null;
   const variables: DonneeShopify[] = [];
-  for (const v of brutes) {
-    if (!estDonneeShopify(v) || !permises.includes(v)) return refus(400, `variables : pour ${evenement}, parmi ${permises.join(', ')}.`);
-    variables.push(v);
+  if (qrCode) {
+    if (present(b.variables)) return refus(400, 'variables : avec un texte, les données Shopify s’écrivent dans le texte, entre doubles accolades ({{first_name}}).');
+    const t = validerTexteShopify(evenement, b.texte);
+    if (!t.ok) return refus(400, t.message);
+    texte = t.texte;
+    variables.push(...t.variables);
+  } else {
+    const brutes = b.variables === undefined ? [] : b.variables;
+    if (!Array.isArray(brutes) || brutes.length > VARIABLES_MAX) return refus(400, `variables : une liste de ${VARIABLES_MAX} données au plus.`);
+    const permises = DONNEES_PAR_EVENEMENT[evenement];
+    for (const v of brutes) {
+      if (!estDonneeShopify(v) || !permises.includes(v)) return refus(400, `variables : pour ${evenement}, parmi ${permises.join(', ')}.`);
+      variables.push(v);
+    }
   }
   const affirme = b.consentementAffirme === true;
   if (b.consentementAffirme !== undefined && typeof b.consentementAffirme !== 'boolean') return refus(400, 'customers_consented : vrai ou faux.');
@@ -175,12 +206,19 @@ export async function brancherMessage(
   // 🔴 Une relance de panier est un message marketing à des gens qui n'ont rien demandé sur WhatsApp : elle ne s'active
   // que si le marchand a affirmé le consentement de ses clients (décision de Julien), dans cet appel ou avant.
   const consentApres = affirme || (boutique.consentement !== null && b.consentementAffirme !== false);
+  // 🔴 Sur un numéro relié par QR code, les TROIS messages l'exigent (décision de Julien du 2026-10-23) : la politique de
+  // WhatsApp vise tout message d'entreprise, et ce numéro n'est pas celui de l'API officielle.
+  if (qrCode && actif && !consentApres) {
+    return refus(409, 'Sur un numéro relié par QR code, chaque message Shopify (confirmation, expédition, relance) exige que vous affirmiez le consentement de vos clients à recevoir vos messages WhatsApp (customers_consented: true).');
+  }
   if (panier && actif && !consentApres) {
     return refus(409, 'La relance de panier exige que vous affirmiez le consentement de vos clients à recevoir vos messages WhatsApp (customers_consented: true).');
   }
 
-  const modele = b.modele.trim();
   const langue = b.langue.trim();
+  if (texte !== null) return brancherTexte(deps, tenantId, b, { evenement, texte, langue, variables, actif, affirme, par });
+
+  if (modele === null) return refus(400, 'template : le nom du modèle WhatsApp.');
   if (actif) {
     const m = await deps.lireModele(tenantId, modele, langue);
     if (m.statut === 'illisible') return refus(503, 'Le modèle n’a pas pu être lu chez Meta : réessayez dans un instant.');
@@ -195,17 +233,42 @@ export async function brancherMessage(
     }
   }
   const actifAvant = (await deps.store.messages(tenantId)).find((m) => m.evenement === evenement) ?? null;
-  await deps.store.brancher(tenantId, { evenement, modele, langue, variables, actif, par });
+  await deps.store.brancher(tenantId, { evenement, modele, texte: null, langue, variables, actif, par });
   // Le dernier geste gagne (conception 2026-10-22) : un message préparé par la console pour cet événement, encore en
   // validation chez Meta, ne remplacera pas celui qu'on branche ici à son approbation.
   const retiree = await deps.store.retirerAttente(tenantId, { evenement });
-  if (typeof b.delaiMinutes === 'number') await deps.store.reglerDelaiPanier(tenantId, b.delaiMinutes);
-  // Trois états : vrai affirme, faux RETIRE (plus aucune fiche n'est écrite consentante), absent ne change rien.
-  if (affirme) await deps.store.affirmerConsentement(tenantId, par);
-  else if (b.consentementAffirme === false) await deps.store.retirerConsentement(tenantId);
+  await reglerApresBranchement(deps, tenantId, b, affirme, par);
   await oublierPlusTard(deps, tenantId, actifAvant?.modele, modele);
   await oublierPlusTard(deps, tenantId, retiree?.modele, modele);
   return { ok: true, valeur: await deps.store.messages(tenantId) };
+}
+
+/** Le délai de la relance, et l'affirmation : vrai affirme, faux RETIRE (plus aucune fiche n'est écrite consentante), absent ne change rien. */
+async function reglerApresBranchement(deps: DepsGestionShopify, tenantId: string, b: Branchement, affirme: boolean, par: string | null): Promise<void> {
+  if (typeof b.delaiMinutes === 'number') await deps.store.reglerDelaiPanier(tenantId, b.delaiMinutes);
+  if (affirme) await deps.store.affirmerConsentement(tenantId, par);
+  else if (b.consentementAffirme === false) await deps.store.retirerConsentement(tenantId);
+}
+
+/**
+ * Le texte d'un numéro relié par QR code, validé : actif TOUT DE SUITE, sans lecture de modèle chez Meta, sans attente
+ * d'approbation, sans oubli de modèle (il n'y en a pas). L'attente d'une préparation de la console pour cet événement
+ * (un espace passé de l'API au QR code) est retirée, comme sur l'API : le dernier geste gagne, et son approbation ne
+ * remplacera pas ce texte par un modèle que ce numéro ne peut pas envoyer.
+ */
+async function brancherTexte(
+  deps: DepsGestionShopify, tenantId: string, b: Branchement,
+  m: { evenement: EvenementShopify; texte: string; langue: string; variables: DonneeShopify[]; actif: boolean; affirme: boolean; par: string | null },
+): Promise<Issue<MessageBranche[]>> {
+  await deps.store.brancher(tenantId, { evenement: m.evenement, modele: null, texte: m.texte, langue: m.langue, variables: m.variables, actif: m.actif, par: m.par });
+  await deps.store.retirerAttente(tenantId, { evenement: m.evenement });
+  await reglerApresBranchement(deps, tenantId, b, m.affirme, m.par);
+  return { ok: true, valeur: await deps.store.messages(tenantId) };
+}
+
+/** Un argument donné : ni absent, ni `null`. */
+function present(v: unknown): boolean {
+  return v !== undefined && v !== null;
 }
 
 export async function couperShopify(deps: DepsGestionShopify, tenantId: string): Promise<Issue<{ dejaCoupee: boolean; pageApps: string | null }>> {

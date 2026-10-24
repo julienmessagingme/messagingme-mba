@@ -3867,6 +3867,17 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 4096
+                  },
+                  "consent": {
+                    "type": "string",
+                    "enum": [
+                      "opted_in"
+                    ]
+                  },
+                  "consentSource": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   }
                 },
                 "required": [
@@ -3919,6 +3930,48 @@
               }
             }
           },
+          "202": {
+            "description": "Queued, nothing sent yet: on a number linked by QR code, a text to someone with no conversation, or outside the 24-hour window, is written first. It leaves spaced out, counts in the month's messages, and needs a record that is opted_in or the consent declared in the call.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "queued"
+                    },
+                    "id": {
+                      "type": "string",
+                      "description": "The queued message id, not a WhatsApp message id."
+                    },
+                    "scheduledAt": {
+                      "type": "string",
+                      "description": "When the message is due to leave (ISO 8601 date-time)."
+                    },
+                    "conversationId": {
+                      "description": "null while the person has no conversation yet: the send opens it.",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "channel": {
+                      "type": "string",
+                      "const": "whatsapp"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "id",
+                    "scheduledAt",
+                    "conversationId",
+                    "channel"
+                  ]
+                }
+              }
+            }
+          },
           "400": {
             "description": "Error: invalid_body, invalid_recipient, invalid_phone.",
             "content": {
@@ -3931,6 +3984,16 @@
           },
           "401": {
             "description": "Error: unauthorized.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Error: plan_limit_reached.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3960,7 +4023,7 @@
             }
           },
           "409": {
-            "description": "Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed.",
+            "description": "Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed, no_consent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3970,7 +4033,7 @@
             }
           },
           "422": {
-            "description": "Error: window_closed, meta_rejected.",
+            "description": "Error: window_closed, meta_rejected, no_phone.",
             "content": {
               "application/json": {
                 "schema": {

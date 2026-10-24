@@ -19,7 +19,7 @@ import type { FicheApi, LastAnalysis, EngagementRisk, ResultatFiche } from '../s
 import type { ConversationV1, MessageV1, PageV1 } from '../src/api/conversations-v1';
 import type { SuiviEnvoiApi } from '../src/api/suivi-envoi';
 import type { RapportEnvoi } from '../src/api/envoi-public';
-import type { ReponseMessageSimple } from '../src/http/v1-messages';
+import type { ReponseMessageEnFile, ReponseMessageSimple } from '../src/http/v1-messages';
 import type { ChampV1 } from '../src/http/v1-contacts-admin';
 import type {
   DeliveryV1, EssaiWebhookV1, JournalWebhookV1, ListeWebhooksV1, RejeuEchecsV1, RejeuV1, SecretTourneV1, WebhookCreeV1, WebhookV1,
@@ -64,6 +64,8 @@ const typePage: Meme<Sortie<ReturnType<typeof R.pageV1<typeof R.messageV1>>>, Pa
 const typeSuivi: Meme<Sortie<typeof R.suiviEnvoi>, SuiviEnvoiApi> = true;
 const typeRapport: Meme<Sortie<typeof R.rapportEnvoi>, RapportEnvoi> = true;
 const typeSimple: Meme<Sortie<typeof R.reponseMessageSimple>, ReponseMessageSimple> = true;
+// Le 202 d'un message écrit en premier, en file (plan 2026-10-23, tâche 4).
+const typeEnFile: Meme<Sortie<typeof R.reponseMessageEnFile>, ReponseMessageEnFile> = true;
 const typeChamp: Meme<Sortie<typeof R.champV1>, ChampV1> = true;
 const typeWebhook: Meme<Sortie<typeof R.webhookV1>, WebhookV1> = true;
 const typeDelivery: Meme<Sortie<typeof R.deliveryV1>, DeliveryV1> = true;
@@ -85,7 +87,7 @@ const typeCatScenarios: Meme<Sortie<typeof R.reponseScenarios>, CatalogueScenari
 const typeCatRcs: Meme<Sortie<typeof R.reponseMessagesRcs>, CatalogueMessagesRcsV1> = true;
 void [
   typeFiche, typeAnalyse, typeRisque, typeResultat, typeConversation, typeMessage, typePage, typeSuivi, typeRapport,
-  typeSimple, typeChamp, typeWebhook, typeDelivery, typeModele, typeLangue, typeTemplate, typeScenario, typeRcs,
+  typeSimple, typeEnFile, typeChamp, typeWebhook, typeDelivery, typeModele, typeLangue, typeTemplate, typeScenario, typeRcs,
   typeListeWebhooks, typeWebhookCree, typeSecret, typeEssai, typeJournal, typeRejeu, typeRejeuEchecs, typeCatTemplates,
   typeCatScenarios, typeCatRcs,
 ];
@@ -296,6 +298,16 @@ describe('le document est un OpenAPI 3.1 bien formé', () => {
         expect(Object.keys(o.responses as Objet), `${m} ${chemin}`).toContain('401');
       }
     }
+  });
+
+  it('POST /v1/messages/whatsapp annonce ses deux succès : 200 parti, 202 écrit en premier et en file (plan 2026-10-23)', () => {
+    const reponses = doc.paths['/v1/messages/whatsapp']!.post!.responses as Record<string, { description: string; content: { 'application/json': { schema: Objet } } }>;
+    expect(Object.keys(reponses).filter((s) => s.startsWith('2')).sort()).toEqual(['200', '202']);
+    expect(reponses['202']!.description).toMatch(/QR code/);
+    expect(Object.keys(reponses['202']!.content['application/json'].schema.properties as Objet).sort())
+      .toEqual(['channel', 'conversationId', 'id', 'scheduledAt', 'status']);
+    // Et les codes de la porte, à côté de ceux de la réponse dans la fenêtre.
+    expect(route('POST /v1/messages/whatsapp').erreurs).toEqual(expect.arrayContaining(['no_consent', 'no_phone', 'plan_limit_reached', 'window_closed']));
   });
 
   it('chaque référence se résout dans le document, et aucun schéma ne déclare sa propre version', () => {

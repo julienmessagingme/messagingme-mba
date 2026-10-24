@@ -173,6 +173,14 @@ export const CHAMPS = {
         nom: 'text', type: 'string', obligatoire: 'oui',
         quoi: [`Le texte, ${BORNES.texteWhatsapp} caractères au plus.`, `The text, ${BORNES.texteWhatsapp} characters at most.`],
       },
+      {
+        nom: 'consent', type: 'string', obligatoire: 'non', valeurs: ['opted_in'], voir: VOIR_CONSENTEMENT,
+        quoi: [
+          'Sur un numéro relié par QR code, un message écrit en premier (personne sans conversation, ou hors des 24 h) exige une fiche opted_in : opted_in le déclare, écrit sur la fiche avant l’envoi. Sans effet ailleurs.',
+          'On a number linked by QR code, a message written first (someone with no conversation, or outside the 24 h window) requires an opted_in record: opted_in declares it, written on the record before the send. No effect otherwise.',
+        ],
+      },
+      CONSENT_SOURCE,
     ],
     inconnues: 'refusees',
   },

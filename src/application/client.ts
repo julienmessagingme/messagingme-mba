@@ -9,7 +9,12 @@ import { PREFIXE, type Verification } from './interne';
  * (`APPLICATION_SERVICE_SECRET`) ; un refus du service ou une panne réseau rendent un résultat lisible, jamais une
  * exception : l'appelant dit au développeur ce qui se passe.
  */
-export type RaisonClient = 'non_relie' | 'statut' | 'compte_inconnu' | 'refuse' | 'service_injoignable';
+/**
+ * Les raisons du service (`RaisonRefus`), plus celles du client (`refuse`, `service_injoignable`) et celles que
+ * l'envoi lit sur le compte (`banni`, `sommeil`, `src/application/envoi.ts`) : un numéro coupé ne se relie pas, un
+ * numéro endormi se réveille, et chacun a sa phrase (plan 2026-10-23, tâche 2).
+ */
+export type RaisonClient = 'non_relie' | 'statut' | 'compte_inconnu' | 'refuse' | 'service_injoignable' | 'refuse_whatsapp' | 'banni' | 'sommeil';
 export type Resultat<T extends object = object> = ({ ok: true } & T) | { ok: false; raison: RaisonClient };
 
 export interface ClientApplication {
@@ -30,7 +35,7 @@ export interface OptionsClient {
   delaiMs?: number;
 }
 
-const refusLu = z.object({ raison: z.enum(['non_relie', 'statut', 'compte_inconnu']) });
+const refusLu = z.object({ raison: z.enum(['non_relie', 'statut', 'compte_inconnu', 'refuse_whatsapp']) });
 const qrLu = z.object({ qr: z.string().nullable(), ouverte: z.boolean(), statut: z.enum(STATUTS_COMPTE).nullable() });
 const envoiLu = z.object({ messageId: z.string().min(1) });
 const verificationLue = z.object({ present: z.boolean(), adresse: z.enum(['lid', 'numero']).nullable() });

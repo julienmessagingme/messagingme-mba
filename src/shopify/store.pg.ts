@@ -7,10 +7,11 @@ import { estDonneeShopify, type DonneeShopify, type EvenementShopify } from './d
  * LE STORE DU CONNECTEUR SHOPIFY (plan 2026-10-21, lot 1), seul à écrire les tables `shopify_*` (migration 0246) ;
  * `purgeMany` y efface aussi les lignes d'une fiche purgée.
  *
- * 🔴 `tenant_id = $1` SUR CHAQUE REQUÊTE, sauf SIX lectures transverses nommées ici : `boutiqueParDomaine` et
- * `couperParDomaine` (ce sont elles qui DONNENT l'espace, à partir du domaine qui signe un webhook), et quatre balayages
+ * 🔴 `tenant_id = $1` SUR CHAQUE REQUÊTE, sauf SEPT lectures transverses nommées ici : `boutiqueParDomaine` et
+ * `couperParDomaine` (ce sont elles qui DONNENT l'espace, à partir du domaine qui signe un webhook), et cinq balayages
  * de toutes les boutiques : `purgerEvenements`, `reclamerPaniersDus` (qui joint chaque panier à SA boutique et à SON
- * message par `tenant_id`), `purgerPaniers` et `attentesAnciennes` (le filet de l'activation, console).
+ * message par `tenant_id`), `espacesAPaniersDusEnTexte` (la même jointure, en lecture), `purgerPaniers` et
+ * `attentesAnciennes` (le filet de l'activation, console).
  *
  * 🔴 LE SECRET NE SORT JAMAIS VERS UN ÉCRAN : `lire` ne le sélectionne pas, et seule `boutiqueParDomaine` le rend
  * déchiffré, pour vérifier une signature.
@@ -51,11 +52,17 @@ export interface VueBoutique {
   origine: OrigineBoutique;
 }
 
+/**
+ * Un message se règle par un modèle approuvé chez Meta (filière API) OU par un texte simple (numéro relié par QR code,
+ * plan 2026-10-23), jamais les deux : la contrainte `shopify_messages_modele_ou_texte` (migration 0252) le tient.
+ */
 export interface MessageBranche {
   evenement: EvenementShopify;
-  modele: string;
+  modele: string | null;
+  /** Le texte, ses données entre doubles accolades ({{first_name}}). */
+  texte: string | null;
   langue: string;
-  /** Les données Shopify de {{1}}, {{2}}... dans l'ordre. */
+  /** Modèle : les données de {{1}}, {{2}}... dans l'ordre. Texte : les données que ses repères citent. */
   variables: DonneeShopify[];
   actif: boolean;
   modifieLe: string;
@@ -102,13 +109,27 @@ export interface PanierDu {
   nom: string | null;
   lien: string;
   domaine: string;
-  modele: string;
+  modele: string | null;
+  texte: string | null;
   langue: string;
   variables: DonneeShopify[];
 }
 
 /** Une issue nulle depuis plus longtemps que ce bail = un traitement mort en route : il se reprend. */
 export const BAIL_EVENEMENT_S = 120;
+
+/**
+ * Ce qui rend un panier DÛ : ouvert, jamais relancé, avec un téléphone et un lien, dont la dernière modification a dépassé
+ * le délai de SA boutique, connectée, au consentement affirmé, et dont le message `checkout_abandoned` est actif. Les
+ * deux lectures de la relance (`reclamerPaniersDus`, `espacesAPaniersDusEnTexte`) le reprennent mot pour mot ; la suite
+ * de la requête commence par `and`.
+ */
+const PANIERS_DUS = `from shopify_paniers p
+           join shopify_boutiques b on b.tenant_id = p.tenant_id
+           join shopify_messages m on m.tenant_id = p.tenant_id and m.evenement = 'checkout_abandoned'
+          where p.ferme_le is null and p.relance_le is null and p.telephone is not null and p.lien is not null
+            and b.etat = 'connectee' and b.consentement_le is not null and m.actif
+            and p.maj_le < now() - make_interval(mins => b.delai_panier_minutes)`;
 
 export type Reservation = 'nouveau' | 'en_cours' | 'servi';
 
@@ -241,12 +262,12 @@ export class PgShopifyStore {
   }
 
   async messages(tenantId: string): Promise<MessageBranche[]> {
-    const res = await this.pool.query<{ evenement: EvenementShopify; modele: string; langue: string; variables: unknown; actif: boolean; modifie_le: Date }>(
-      `select evenement, modele, langue, variables, actif, modifie_le from shopify_messages where tenant_id = $1 order by evenement`,
+    const res = await this.pool.query<{ evenement: EvenementShopify; modele: string | null; texte: string | null; langue: string; variables: unknown; actif: boolean; modifie_le: Date }>(
+      `select evenement, modele, texte, langue, variables, actif, modifie_le from shopify_messages where tenant_id = $1 order by evenement`,
       [tenantId],
     );
     return res.rows.map((r) => ({
-      evenement: r.evenement, modele: r.modele, langue: r.langue, actif: r.actif, modifieLe: r.modifie_le.toISOString(),
+      evenement: r.evenement, modele: r.modele, texte: r.texte, langue: r.langue, actif: r.actif, modifieLe: r.modifie_le.toISOString(),
       // jsonb écrit par ce store seul ; une valeur illisible (version future) est retirée plutôt que de casser l'envoi.
       variables: Array.isArray(r.variables) ? r.variables.filter(estDonneeShopify) : [],
     }));
@@ -256,15 +277,20 @@ export class PgShopifyStore {
     return (await this.messages(tenantId)).find((m) => m.evenement === evenement) ?? null;
   }
 
-  /** Brancher REMPLACE le message de l'événement : jamais deux envois pour un même événement. */
-  async brancher(tenantId: string, m: { evenement: EvenementShopify; modele: string; langue: string; variables: DonneeShopify[]; actif: boolean; par: string | null }): Promise<void> {
+  /**
+   * Brancher REMPLACE le message de l'événement : jamais deux envois pour un même événement. Un modèle OU un texte : la
+   * contrainte de la migration 0252 refuse les deux, et aucun des deux.
+   */
+  async brancher(tenantId: string, m: {
+    evenement: EvenementShopify; modele: string | null; texte: string | null; langue: string; variables: DonneeShopify[]; actif: boolean; par: string | null;
+  }): Promise<void> {
     await this.pool.query(
-      `insert into shopify_messages (tenant_id, evenement, modele, langue, variables, actif, modifie_par, modifie_le)
-       values ($1, $2, $3, $4, $5::jsonb, $6, $7, now())
+      `insert into shopify_messages (tenant_id, evenement, modele, texte, langue, variables, actif, modifie_par, modifie_le)
+       values ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, now())
        on conflict (tenant_id, evenement) do update set
-         modele = excluded.modele, langue = excluded.langue, variables = excluded.variables, actif = excluded.actif,
-         modifie_par = excluded.modifie_par, modifie_le = now()`,
-      [tenantId, m.evenement, m.modele, m.langue, JSON.stringify(m.variables), m.actif, m.par],
+         modele = excluded.modele, texte = excluded.texte, langue = excluded.langue, variables = excluded.variables,
+         actif = excluded.actif, modifie_par = excluded.modifie_par, modifie_le = now()`,
+      [tenantId, m.evenement, m.modele, m.texte, m.langue, JSON.stringify(m.variables), m.actif, m.par],
     );
   }
 
@@ -471,19 +497,17 @@ export class PgShopifyStore {
    * avec un téléphone et un lien, dont la dernière modification a dépassé le délai de SA boutique, connectée, au
    * consentement affirmé, et dont le message `checkout_abandoned` est actif. 🔴 La réclamation POSE `relance_le` dans la
    * même écriture (`for update skip locked`) : deux balayages, de deux copies de l'API, ne relancent jamais le même panier.
+   * Les espaces d'`exclus` ne sont pas examinés : leurs paniers restent dus (la relance y met ceux qui n'ont plus de
+   * messages du mois, plan 2026-10-23, tâche 5).
    */
-  async reclamerPaniersDus(limite: number): Promise<PanierDu[]> {
+  async reclamerPaniersDus(limite: number, exclus: readonly string[]): Promise<PanierDu[]> {
     const res = await this.pool.query<{
       tenant_id: string; jeton: string; telephone: string; nom: string | null; lien: string; domaine: string;
-      modele: string; langue: string; variables: unknown;
+      modele: string | null; texte: string | null; langue: string; variables: unknown;
     }>(
       `with dus as (
-         select p.tenant_id, p.jeton from shopify_paniers p
-           join shopify_boutiques b on b.tenant_id = p.tenant_id
-           join shopify_messages m on m.tenant_id = p.tenant_id and m.evenement = 'checkout_abandoned'
-          where p.ferme_le is null and p.relance_le is null and p.telephone is not null and p.lien is not null
-            and b.etat = 'connectee' and b.consentement_le is not null and m.actif
-            and p.maj_le < now() - make_interval(mins => b.delai_panier_minutes)
+         select p.tenant_id, p.jeton ${PANIERS_DUS}
+            and not (p.tenant_id = any($2::uuid[]))
           order by p.maj_le
           limit $1
           for update of p skip locked
@@ -492,13 +516,38 @@ export class PgShopifyStore {
          from dus, shopify_boutiques b, shopify_messages m
         where p.tenant_id = dus.tenant_id and p.jeton = dus.jeton and p.relance_le is null
           and b.tenant_id = p.tenant_id and m.tenant_id = p.tenant_id and m.evenement = 'checkout_abandoned'
-       returning p.tenant_id, p.jeton, p.telephone, p.nom, p.lien, b.domaine, m.modele, m.langue, m.variables`,
-      [limite],
+       returning p.tenant_id, p.jeton, p.telephone, p.nom, p.lien, b.domaine, m.modele, m.texte, m.langue, m.variables`,
+      [limite, exclus],
     );
     return res.rows.map((r) => ({
       tenantId: r.tenant_id, jeton: r.jeton, telephone: r.telephone, nom: r.nom, lien: r.lien, domaine: r.domaine,
-      modele: r.modele, langue: r.langue, variables: Array.isArray(r.variables) ? r.variables.filter(estDonneeShopify) : [],
+      modele: r.modele, texte: r.texte, langue: r.langue, variables: Array.isArray(r.variables) ? r.variables.filter(estDonneeShopify) : [],
     }));
+  }
+
+  /**
+   * EXCEPTION TRANSVERSE 7 : les espaces qui ont au moins un panier dû et une relance en TEXTE (numéro relié par QR code),
+   * au plus `limite`, sans rien réclamer. La relance y cherche ceux dont les messages du mois sont épuisés, pour les
+   * exclure de la réclamation : sinon leurs paniers seraient réclamés, refusés, libérés, à chaque passage, devant ceux
+   * des autres espaces.
+   */
+  async espacesAPaniersDusEnTexte(limite: number): Promise<string[]> {
+    const res = await this.pool.query<{ tenant_id: string }>(
+      `select distinct p.tenant_id ${PANIERS_DUS} and m.texte is not null limit $1`,
+      [limite],
+    );
+    return res.rows.map((r) => r.tenant_id);
+  }
+
+  /**
+   * Un panier réclamé redevient dû (`relance_le` à null) : sa relance n'est pas partie et ne doit pas se perdre (les
+   * messages du mois épuisés pendant le passage). Un panier qui porte déjà une issue n'est pas touché.
+   */
+  async libererPanier(tenantId: string, jeton: string): Promise<void> {
+    await this.pool.query(
+      `update shopify_paniers set relance_le = null where tenant_id = $1 and jeton = $2 and issue is null`,
+      [tenantId, jeton],
+    );
   }
 
   async noterIssuePanier(tenantId: string, jeton: string, issue: string): Promise<void> {

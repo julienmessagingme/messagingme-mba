@@ -167,7 +167,7 @@ describe('préparer un message', () => {
 
 describe('le ménage des modèles remplacés (2026-10-23)', () => {
   const precedente: AttenteMessage = { evenement: 'checkout_abandoned', modele: nomAssistant('checkout_abandoned', 10), langue: 'fr', variables: ['first_name', 'checkout_url'], delaiMinutes: 60, creeLe: '' };
-  const enPlace: MessageBranche = { evenement: 'checkout_abandoned', modele: nomAssistant('checkout_abandoned', 9), langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, modifieLe: '' };
+  const enPlace: MessageBranche = { evenement: 'checkout_abandoned', modele: nomAssistant('checkout_abandoned', 9), texte: null, langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, modifieLe: '' };
 
   it('🔴 le nom exact de l’assistant ET un horodatage plausible : un nom choisi à la main n’est jamais reconnu', () => {
     expect(estModeleDeLAssistant(nomAssistant('order_paid', 9), MAINTENANT)).toBe(true);
@@ -224,7 +224,7 @@ describe('le travail du ménage (worker)', () => {
     };
     return { deps, journal };
   }
-  const branche = (m: string): MessageBranche => ({ evenement: 'checkout_abandoned', modele: m, langue: 'fr', variables: [], actif: true, modifieLe: '' });
+  const branche = (m: string): MessageBranche => ({ evenement: 'checkout_abandoned', modele: m, texte: null, langue: 'fr', variables: [], actif: true, modifieLe: '' });
 
   it('🔴 un modèle rebranché, ou attendu, entre le geste et le travail n’est PAS supprimé (la course de la relecture)', async () => {
     const rebranche = monterOubli({ messages: [branche(modele)] });
@@ -302,7 +302,7 @@ describe('régler un message sans repasser par Meta', () => {
     expect(await reglerMessage(a.deps, T, { evenement: 'checkout_abandoned', delaiMinutes: 120 }, 'u1')).toEqual({ ok: true, valeur: { relanceArretee: false } });
     expect(a.journal.delais).toEqual([120]);
     expect(await reglerMessage(a.deps, T, { evenement: 'order_paid', delaiMinutes: 120 }, 'u1')).toMatchObject({ ok: false, statut: 400 });
-    const relance: MessageBranche = { evenement: 'checkout_abandoned', modele: 'm', langue: 'fr', variables: [], actif: true, modifieLe: '' };
+    const relance: MessageBranche = { evenement: 'checkout_abandoned', modele: 'm', texte: null, langue: 'fr', variables: [], actif: true, modifieLe: '' };
     const b = monter({ boutique: AFFIRMEE, actif: relance });
     expect(await reglerMessage(b.deps, T, { evenement: 'order_paid', consentementAffirme: false }, 'u1')).toEqual({ ok: true, valeur: { relanceArretee: true } });
     expect(b.journal.retraitsConsentement).toBe(1);
@@ -346,7 +346,7 @@ describe('l’activation au statut tranché par Meta', () => {
   }
 
   const ANCIEN = nomAssistant('checkout_abandoned', 9);
-  const actifRelance = (modele: string): MessageBranche => ({ evenement: 'checkout_abandoned', modele, langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, modifieLe: '' });
+  const actifRelance = (modele: string): MessageBranche => ({ evenement: 'checkout_abandoned', modele, texte: null, langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, modifieLe: '' });
 
   it('🔴 à l’approbation, l’oubli du modèle de l’assistant qu’elle remplace est programmé, une seule fois, dans un quart d’heure', async () => {
     const { deps, journal } = monterActivation(ATTENTE, { actif: actifRelance(ANCIEN) });
@@ -380,7 +380,7 @@ describe('l’activation au statut tranché par Meta', () => {
   it('🔴 APPROVED active le message qui attend CE modèle, avec son délai, et prévient', async () => {
     const { deps, journal } = monterActivation();
     expect(await activerSelonStatut(deps, T, { modele: ATTENTE.modele, langue: 'fr', statut: 'APPROVED', raison: null })).toBe('active');
-    expect(journal.branches).toEqual([{ evenement: 'checkout_abandoned', modele: ATTENTE.modele, langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, par: null }]);
+    expect(journal.branches).toEqual([{ evenement: 'checkout_abandoned', modele: ATTENTE.modele, texte: null, langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, par: null }]);
     expect(journal.delais).toEqual([15]);
     expect(journal.emails).toMatchObject([{ cle: 'shopify_message_actif', a: 'admins', valeurs: { boutique: 'b.myshopify.com', message: 'Relance de panier abandonné', lien_parametres: 'https://console.test/parametres' } }]);
   });

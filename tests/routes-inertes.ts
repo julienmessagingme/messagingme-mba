@@ -33,7 +33,7 @@ import { creerTravauxEnVol } from '../src/lib/en-vol';
 import { DROITS, FONCTIONS } from '../src/offres/offres';
 import { grilleDesOffres } from '../src/offres/vue';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
-import { offresToutOuvert, filiereApiSeule, aucunCompteApplication } from './gardes';
+import { offresToutOuvert, filiereApiSeule, aucunPremierMessage, aucunCompteApplication } from './gardes';
 
 /**
  * LES DÉPENDANCES DE ROUTES DEVENUES REQUISES, EN VALEURS INERTES NOMMÉES (lot 3 de l'audit ponytail, 2026-09-26).
@@ -270,7 +270,7 @@ export const priseDeFilSansEffet = async (): Promise<void> => {};
 export const COMPTEURS_VIDES = { tout: 0, aTraiter: 0, aTraiterNonLues: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
 
 export const inboxInerte: Pick<InboxRouteDeps,
-  'audit' | 'lireMediaMessage' | 'agentsPeuventPrendre' | 'takeControl' | 'filTenuParLApplication' | 'application' | 'reprendreLaMain' | 'releaseControl'
+  'audit' | 'lireMediaMessage' | 'agentsPeuventPrendre' | 'takeControl' | 'filTenuParLApplication' | 'application' | 'ecrirePremier' | 'reprendreLaMain' | 'releaseControl'
   | 'resolveTemplateParams' | 'sendRcsFromInbox' | 'categorieDuModele' | 'prepareCarousel' | 'startWorkflow'> = {
   audit: journalMuet,
   lireMediaMessage: async () => null,
@@ -282,6 +282,8 @@ export const inboxInerte: Pick<InboxRouteDeps,
   filTenuParLApplication: async () => false,
   // Absente : aucun espace sur la filière application, la réponse part par Meta comme avant.
   application: filiereApiSeule,
+  // Absente : aucune réponse hors des 24 heures sur la filière application, rien ne passe par la porte.
+  ecrirePremier: aucunPremierMessage,
   reprendreLaMain: async () => 'pris',
   releaseControl: neDevraitPasEtreAppelee('releaseControl'),
   // Absente : des champs vides à remplir à la main.
@@ -823,6 +825,7 @@ export const mcpShopifyInerte: Pick<DepsMcp, 'shopify'> = {
     importer: neDevraitPasEtreAppelee('shopify.importer'),
     abonner: neDevraitPasEtreAppelee('shopify.abonner'),
     programmerOubli: neDevraitPasEtreAppelee('shopify.programmerOubli'),
+    filiere: async () => null,
   },
 };
 

@@ -169,13 +169,14 @@ describe.skipIf(!url)('Ouvrir la conversation d un contact (Postgres reel)', () 
     const neuf = (await pool.query<{ id: string }>(
       `insert into contacts (tenant_id, phone_e164) values ($1, '+33600000611') returning id`, [tenantId],
     )).rows[0]!.id;
-    expect(await store.filDuContact(tenantId, neuf)).toEqual({ etat: 'sans_fil' });
+    // `waId` : la clé du fil, celle à laquelle la filière application écrit en premier (plan 2026-10-23, tâche 4).
+    expect(await store.filDuContact(tenantId, neuf)).toEqual({ etat: 'sans_fil', waId: '33600000611' });
     const { rows } = await pool.query<{ n: string }>(
       `select count(*) as n from conversations where tenant_id = $1 and wa_id = '33600000611'`, [tenantId],
     );
     expect(Number(rows[0]!.n), 'la lecture n a cree aucun fil').toBe(0);
     const id = await store.ouvrirConversationDuContact(tenantId, neuf);
-    expect(await store.filDuContact(tenantId, neuf)).toEqual({ etat: 'fil', conversationId: id });
+    expect(await store.filDuContact(tenantId, neuf)).toEqual({ etat: 'fil', conversationId: id, waId: '33600000611' });
   });
 
   it('🔴 filDuContact : bloque, supprime ou d un autre espace -> injoignable, comme l ouverture', async () => {

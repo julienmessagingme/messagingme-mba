@@ -3020,6 +3020,9 @@ export interface operations {
                     phone?: string;
                     bsuid?: string;
                     text: string;
+                    /** @enum {string} */
+                    consent?: "opted_in";
+                    consentSource?: string;
                 };
             };
         };
@@ -3040,6 +3043,26 @@ export interface operations {
                     };
                 };
             };
+            /** @description Queued, nothing sent yet: on a number linked by QR code, a text to someone with no conversation, or outside the 24-hour window, is written first. It leaves spaced out, counts in the month's messages, and needs a record that is opted_in or the consent declared in the call. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @constant */
+                        status: "queued";
+                        /** @description The queued message id, not a WhatsApp message id. */
+                        id: string;
+                        /** @description When the message is due to leave (ISO 8601 date-time). */
+                        scheduledAt: string;
+                        /** @description null while the person has no conversation yet: the send opens it. */
+                        conversationId: string | null;
+                        /** @constant */
+                        channel: "whatsapp";
+                    };
+                };
+            };
             /** @description Error: invalid_body, invalid_recipient, invalid_phone. */
             400: {
                 headers: {
@@ -3051,6 +3074,15 @@ export interface operations {
             };
             /** @description Error: unauthorized. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Error: plan_limit_reached. */
+            402: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3076,7 +3108,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed. */
+            /** @description Error: identity_conflict, blocked_contact, opted_out, no_whatsapp_number, number_unlinked, number_suspended, meta_auth_failed, no_consent. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -3085,7 +3117,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Error: window_closed, meta_rejected. */
+            /** @description Error: window_closed, meta_rejected, no_phone. */
             422: {
                 headers: {
                     [name: string]: unknown;

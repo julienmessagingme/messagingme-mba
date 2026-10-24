@@ -139,6 +139,10 @@ import { lireJobEntrant, traiterEntrantApplication } from './application/entrant
 import { avanceDuParcours, type WorkflowAdvanceDeps } from './webhooks/workflow-advance';
 import { creerDejaRecu } from './application/entrant.pg';
 import { endormirLesComptes } from './application/sommeil';
+import { FILE_PREMIER_MESSAGE, enfileurPremier, jobPremierSchema, traiterPremierMessage } from './application/premier-message';
+import { PgPremiersMessages } from './application/premier-message.pg';
+import { avisDeGel } from './application/avis';
+import { noterIssueShopify } from './shopify/envoi';
 
 /**
  * Démarre l’orchestration du worker. L’appelant garde la responsabilité du chargement d’environnement
@@ -688,6 +692,34 @@ export async function demarrerWorker(): Promise<void> {
       priseDeMain: fil.prisEnEcrivant,
     });
   }, { concurrency: config.WEBHOOK_CONCURRENCY, groupConcurrency: 1 });
+
+  /**
+   * Les premiers messages de la filière application (plan 2026-10-23, tâche 2) : chacun part à son créneau, réclamé avant
+   * d'être envoyé, STOP, blocage, compte et gel relus (`src/application/premier-message.ts`). Groupe = l'espace : un seul
+   * envoi à la fois par numéro, deux espaces en parallèle.
+   */
+  const premiersMessages = new PgPremiersMessages(pool);
+  // L'issue finale d'un message Shopify (tâche 5) : sur l'événement ou le panier qui l'a mis en file.
+  const issuesShopify = noterIssueShopify(new PgShopifyStore(pool, config.ENCRYPTION_KEY));
+  await queue.work(FILE_PREMIER_MESSAGE, async (data) => {
+    const job = jobPremierSchema.safeParse(data);
+    if (!job.success) {
+      // eslint-disable-next-line no-console
+      console.error('application-premier-message: payload inexploitable, ignoré');
+      return;
+    }
+    await traiterPremierMessage({
+      premiers: premiersMessages,
+      comptes: comptesApplication,
+      client: clientApplication,
+      contacts: contactStore,
+      inbox: inboxStore,
+      prevenirDuGel: avisDeGel((e) => emetteurEmails.emettre(e)),
+      enfiler: enfileurPremier(queue),
+      // Shopify inscrit l'issue de ses messages ; Claude, l'API et la réponse n'en gardent aucune.
+      noterIssue: issuesShopify,
+    }, job.data);
+  }, { concurrency: 2, groupConcurrency: 1 });
 
   /**
    * File des accusés de livraison : le receveur y aiguille tout payload qui ne contient que des `statuses`.
@@ -1626,6 +1658,9 @@ export async function demarrerWorker(): Promise<void> {
       () => envoisEvenements.purger({ base: joursJournal('base'), pro: joursJournal('pro'), entreprise: joursJournal('entreprise') }));
     // Le journal des e-mails du produit (lot 7) : treize mois, pour comparer un mois à celui de l'an passé.
     await etape('emails-produit', 'envoi(s) d’e-mail du produit effacé(s) (au-delà de 13 mois)', () => emailsProduit.purgerAnciens());
+    // Les premiers messages de la filière application (0252) : le numéro et le texte d'un client, trente jours une fois finis.
+    await etape('premiers-messages', 'premier(s) message(s) de l’application fini(s) effacé(s) (au-delà de 30 j)',
+      () => premiersMessages.purgerTermines(30));
     // Les fichiers supprimés de la médiathèque, au-delà de leur grâce (spec médias, § 2.4) : `/m/` les sert jusque-là, pour un
     // visuel RCS que l'opérateur télécharge tard. Par petits lots : une ligne peut porter une vidéo de 16 Mo.
     await etape('medias', `fichier(s) supprimé(s) de la médiathèque effacé(s) (au-delà de ${GRACE_SUPPRESSION_JOURS} j)`,

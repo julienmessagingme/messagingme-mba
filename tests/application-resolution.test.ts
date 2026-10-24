@@ -65,6 +65,19 @@ describe('la résolution d’un destinataire avant un premier message', () => {
     expect(c.retenues).toEqual([]);
   });
 
+  it('🔴 un identifiant masqué déjà connu : présent, sans rien demander à WhatsApp ni rien réécrire', async () => {
+    const c = correspondances();
+    await c.retenir(LID, NUMERO);
+    const sock = socket([]);
+    expect(await resoudreDestinataire(sock, c, NUMERO)).toEqual({ present: true, lid: LID });
+    expect(sock.demandes).toEqual([]);
+    expect(c.retenues).toEqual([`${LID}:${NUMERO}`]);
+    // Un autre numéro, inconnu, se demande toujours.
+    const autre = socket([{ jid: '33600000000@s.whatsapp.net', exists: true, lid: '123@lid' }]);
+    expect(await resoudreDestinataire(autre, c, '33600000000')).toEqual({ present: true, lid: '123@lid' });
+    expect(autre.demandes).toEqual([['33600000000@s.whatsapp.net']]);
+  });
+
   it('un numéro mal formé ne part pas chez WhatsApp', async () => {
     const sock = socket([]);
     await expect(resoudreDestinataire(sock, correspondances(), '+33 6 12')).rejects.toThrow();

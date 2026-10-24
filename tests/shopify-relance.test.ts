@@ -3,6 +3,8 @@ import { relancerPaniers, type DepsRelance } from '../src/shopify/relance';
 import type { PanierDu } from '../src/shopify/store.pg';
 import type { RapportEnvoi, ResultatEnvoiPublic } from '../src/api/envoi-public';
 import type { Emission } from '../src/emails-produit/emission';
+import type { Filiere } from '../src/application/comptes';
+import type { DemandePremierMessage, ResultatPremier } from '../src/application/premier-message';
 
 /**
  * LA RELANCE DES PANIERS ABANDONNÉS (plan 2026-10-21, lot 2), un passage du balayage. La réclamation (une écriture
@@ -10,27 +12,50 @@ import type { Emission } from '../src/emails-produit/emission';
  */
 
 const panier = (over: Partial<PanierDu> = {}): PanierDu => ({
+  // Un modèle, filière API : la relance d'avant le texte simple.
   tenantId: 't1', jeton: 'jeton-1', telephone: '+33633921577', nom: 'Julien', lien: 'https://b.myshopify.com/1/checkouts/ac/x/recover?key=k',
-  domaine: 'b.myshopify.com', modele: 'relance_panier', langue: 'fr', variables: ['first_name', 'checkout_url'], ...over,
+  domaine: 'b.myshopify.com', modele: 'relance_panier', texte: null, langue: 'fr', variables: ['first_name', 'checkout_url'], ...over,
 });
 const rapport = (over: Partial<RapportEnvoi> = {}): RapportEnvoi => ({
   sendId: 's1', opening: 'whatsapp_template', recipientCount: 1, created: 1, matched: 0, skipped: [], skippedTotal: 0, ...over,
 });
 
+/** Un numéro relié par QR code : la filière, les espaces à relance en texte due, leur reste du mois, la réponse de la porte. */
+interface Application {
+  filiere?: (tenantId: string) => Filiere | null;
+  enTexte?: string[];
+  reste?: Record<string, number | null>;
+  premier?: (demande: DemandePremierMessage) => ResultatPremier;
+}
+
 function monter(
   paniers: PanierDu[], reponse: (corps: unknown) => Promise<ResultatEnvoiPublic> = async () => ({ statut: 201, corps: rapport() }),
-  fermes: readonly string[] = [],
+  fermes: readonly string[] = [], app: Application = {},
 ) {
   const journal = {
     limites: [] as number[], issues: [] as Array<[string, string]>, envois: [] as Array<{ corps: unknown; options: unknown }>,
-    emails: [] as Emission[],
+    emails: [] as Emission[], exclus: [] as string[][], liberes: [] as string[], premiers: [] as DemandePremierMessage[],
   };
   const deps: DepsRelance = {
     store: {
-      reclamerPaniersDus: async (limite) => { journal.limites.push(limite); return paniers; },
+      // Comme la vraie réclamation : un espace exclu n'est pas examiné.
+      reclamerPaniersDus: async (limite, exclus) => {
+        journal.limites.push(limite);
+        journal.exclus.push([...exclus]);
+        return paniers.filter((p) => !exclus.includes(p.tenantId));
+      },
       noterIssuePanier: async (_t, jeton, issue) => { journal.issues.push([jeton, issue]); },
       panierOuvert: async (_t, jeton) => !fermes.includes(jeton),
+      espacesAPaniersDusEnTexte: async () => app.enTexte ?? [],
+      libererPanier: async (_t, jeton) => { journal.liberes.push(jeton); },
     },
+    // La filière API par défaut : les tests d'avant le texte simple (plan 2026-10-23) restent ceux de l'API.
+    filiere: async (t) => (app.filiere ? app.filiere(t) : 'api'),
+    ecrirePremier: async (demande) => {
+      journal.premiers.push(demande);
+      return app.premier ? app.premier(demande) : { ok: true, id: 'p1', prevuLe: new Date('2026-10-22T10:01:00Z'), dejaEnFile: false };
+    },
+    quota: { etatDuMois: async (t) => { const r = app.reste?.[t]; return r === undefined || r === null ? null : { max: 1000, reste: r }; } },
     envoyer: async (_t, corps, compter, options) => {
       journal.envois.push({ corps, options });
       expect(await compter(1)).toBe(true);
@@ -115,5 +140,71 @@ describe('la relance d’un panier réclamé', () => {
     const { deps, journal } = monter([]);
     expect(await relancerPaniers(deps, 7)).toEqual({ reclames: 0, issues: {} });
     expect(journal.limites).toEqual([7]);
+    // Sans relance en texte due, aucun espace n'est exclu.
+    expect(journal.exclus).toEqual([[]]);
+  });
+});
+
+/**
+ * LA RELANCE SUR UN NUMÉRO RELIÉ PAR QR CODE (plan 2026-10-23, tâche 5) : un texte, par la porte « écrire en premier »,
+ * comptée dans les messages du mois. 🔴 Une limite atteinte ne consomme aucune relance : l'espace épuisé n'est pas
+ * réclamé, et un panier refusé pendant le passage redevient dû.
+ */
+describe('la relance sur un numéro relié par QR code', () => {
+  const QR = (t: string): Filiere | null => (t === 't-api' ? 'api' : 'application');
+  const texte = (over: Partial<PanierDu> = {}) => panier({ modele: null, texte: 'Bonjour {{first_name}}, votre panier vous attend : {{checkout_url}}', ...over });
+
+  it('🔴 enfile son texte, données remplies, la consigne STOP en dernière ligne, sous la clé et le jeton du panier', async () => {
+    const { deps, journal } = monter([texte()], undefined, [], { filiere: QR });
+    expect(await relancerPaniers(deps)).toEqual({ reclames: 1, issues: { en_file: 1 } });
+    expect(journal.envois).toEqual([]);
+    expect(journal.premiers).toEqual([{
+      tenantId: 't1', cle: 'shopify:b.myshopify.com:checkouts/abandoned:jeton-1', telephone: '33633921577',
+      texte: 'Bonjour Julien, votre panier vous attend : https://b.myshopify.com/1/checkouts/ac/x/recover?key=k\n\nRépondez STOP pour ne plus recevoir ces messages',
+      origine: 'shopify_panier', reference: 'jeton-1', consentement: { mode: 'marchand', source: 'shopify:b.myshopify.com' },
+    }]);
+    expect(journal.premiers[0]!.texte.split('\n').at(-1)).toBe('Répondez STOP pour ne plus recevoir ces messages');
+    expect(journal.issues).toEqual([['jeton-1', 'en_file']]);
+    // En anglais, le pied et le prénom de secours suivent la langue.
+    const en = monter([texte({ nom: null, langue: 'en_US', texte: 'Hello {{first_name}}: {{checkout_url}}' })], undefined, [], { filiere: QR });
+    await relancerPaniers(en.deps);
+    expect(en.journal.premiers[0]!.texte).toBe('Hello there: https://b.myshopify.com/1/checkouts/ac/x/recover?key=k\n\nReply STOP to stop these messages');
+  });
+
+  it('🔴 un croisement rend filiere_differente, sans rien envoyer, et le panier garde son issue', async () => {
+    const texteSurApi = monter([texte({ tenantId: 't-api' })], undefined, [], { filiere: QR });
+    await relancerPaniers(texteSurApi.deps);
+    expect([texteSurApi.journal.premiers, texteSurApi.journal.envois, texteSurApi.journal.issues]).toEqual([[], [], [['jeton-1', 'filiere_differente']]]);
+    const modeleSurQr = monter([panier()], undefined, [], { filiere: QR });
+    await relancerPaniers(modeleSurQr.deps);
+    expect([modeleSurQr.journal.premiers, modeleSurQr.journal.envois, modeleSurQr.journal.issues]).toEqual([[], [], [['jeton-1', 'filiere_differente']]]);
+  });
+
+  it('🔴 une relance refusée par la limite libère son panier : rien n’est noté, il redevient dû', async () => {
+    const { deps, journal } = monter([texte(), texte({ jeton: 'jeton-2' })], undefined, [], {
+      filiere: QR, premier: (d) => (d.reference === 'jeton-1' ? { ok: false, refus: 'limite_modeles' } : { ok: false, refus: 'desabonne' }),
+    });
+    expect((await relancerPaniers(deps)).issues).toEqual({ limite_modeles: 1, desabonne: 1 });
+    expect(journal.liberes).toEqual(['jeton-1']);
+    // Un autre refus de la porte, lui, consomme la relance avec son issue, comme un écart de l'envoi public.
+    expect(journal.issues).toEqual([['jeton-2', 'desabonne']]);
+    // Sur l'API, la limite des modèles garde son issue, comme avant : rien n'est libéré.
+    const api = monter([panier()], async () => ({ statut: 402, corps: { code: 'plan_limit_reached', limite: 'envoisModelesMois' } }));
+    await relancerPaniers(api.deps);
+    expect([api.journal.liberes, api.journal.issues]).toEqual([[], [['jeton-1', 'limite_modeles']]]);
+  });
+
+  it('🔴 un espace sans reste du mois n’est pas réclamé ; un espace de l’API, ou au reste illisible, l’est', async () => {
+    const { deps, journal } = monter(
+      [texte({ tenantId: 't-vide', jeton: 'vide' }), texte({ tenantId: 't-reste', jeton: 'reste' }), texte({ tenantId: 't-illisible', jeton: 'illisible' }), panier({ tenantId: 't-api', jeton: 'api' })],
+      undefined, [],
+      { filiere: QR, enTexte: ['t-vide', 't-reste', 't-illisible', 't-api'], reste: { 't-vide': 0, 't-reste': 5, 't-illisible': null, 't-api': 0 } },
+    );
+    const bilan = await relancerPaniers(deps);
+    expect(journal.exclus).toEqual([['t-vide']]);
+    expect(bilan.reclames).toBe(3);
+    expect(journal.premiers.map((p) => p.reference)).toEqual(['reste', 'illisible']);
+    expect(journal.envois).toHaveLength(1);
+    expect(journal.issues.map(([jeton]) => jeton)).not.toContain('vide');
   });
 });

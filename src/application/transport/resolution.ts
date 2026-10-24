@@ -30,9 +30,14 @@ function lidValide(v: unknown): string | null {
  * ses réponses repartiraient à son numéro, donc « En attente » sur son mobile.
  */
 export async function resoudreDestinataire(
-  sock: SocketVerification, c: Pick<Correspondances, 'retenir'>, numero: string,
+  sock: SocketVerification, c: Pick<Correspondances, 'retenir' | 'lidDe'>, numero: string,
 ): Promise<{ present: true; lid: string | null } | { present: false }> {
   if (!/^[0-9]{8,15}$/.test(numero)) throw new Error('numéro invalide');
+  // 🔴 Ce qu'on sait déjà ne se redemande pas (relecture du lot A) : chaque interrogation d'un contact par un appareil
+  // lié est un signal que WhatsApp surveille. Un identifiant masqué connu (le contact nous a écrit, ou une vérification
+  // l'a appris) suffit : le numéro est sur WhatsApp, et l'envoi qui suit lui est adressé.
+  const connu = await c.lidDe(numero);
+  if (connu) return { present: true, lid: connu };
   const trouve = (await sock.onWhatsApp(`${numero}@s.whatsapp.net`))?.[0];
   if (!trouve) return { present: false };
   const confirme = trouve.jid.split('@')[0]?.split(':')[0] === numero;

@@ -1594,6 +1594,13 @@ export class PgContactStore implements ContactStore {
       const waIdsDeLaPersonne = [...new Set([...waIds, ...waIdsDuNumero])];
       if (waIdsDeLaPersonne.length > 0) {
         await client.query(`delete from widget_tirs where tenant_id = $1 and wa_id = any($2::text[])`, [tenantId, waIdsDeLaPersonne]);
+        // Les premiers messages de la filière application (migration 0252) : le numéro et le texte, envoyés ou encore en
+        // file. 🔴 Une ligne en file partirait sinon à une personne effacée : le STOP relu par son `wa_id` ne trouve plus
+        // de fiche. Par les mêmes numéros, dans le même espace.
+        await client.query(
+          `delete from application_premiers_messages where tenant_id = $1 and wa_id = any($2::text[])`,
+          [tenantId, waIdsDeLaPersonne],
+        );
       }
       // Cache RCS : clé (agent_id, phone_e164). Effacé même sans fil, sinon le numéro resterait dans la table de
       // joignabilité.

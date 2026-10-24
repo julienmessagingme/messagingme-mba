@@ -48,6 +48,8 @@ Scope: `sends:create`
 | `phone` : string | At least one key | The phone number, in international format (+33…). |
 | `bsuid` : string | At least one key | The WhatsApp id of a person with no visible number. |
 | `text` : string | Yes | The text, 4096 characters at most. |
+| `consent` : string | No | On a number linked by QR code, a message written first (someone with no conversation, or outside the 24 h window) requires an opted_in record: opted_in declares it, written on the record before the send. No effect otherwise. Values: `opted_in`. [Consent and STOP](https://console.messagingme.app/developers/api/concepts.en.md#consentement) |
+| `consentSource` : string | No | Where the consent comes from, 100 characters at most. Missing: api. |
 
 An unknown key is refused: 400 `invalid_body`.
 
@@ -76,7 +78,9 @@ _JSON_
 }
 ```
 
-conversationId is always set.
+In the 200 response, conversationId is always set.
+
+On a number linked by QR code (WhatsApp Business app), a text to someone with no conversation, or outside the 24 h window, is written first: the response is 202, status is queued, id is the queued message’s id and scheduledAt its planned departure; conversationId is null while the person has no conversation. The message leaves spaced out, counts in the month’s messages, and needs an opted_in record, or consent set to opted_in in the call. Someone with no record, named by phone, gets one on the way. The same text to the same number, replayed within the minute, is queued once.
 
 After the provider accepts the message, journal is unrecorded if the Inbox write still fails after one retry. The status remains 200 and messageId identifies the message: do not replay this call.
 
@@ -93,11 +97,14 @@ In the order they are checked:
 | 409 | `no_whatsapp_number` | Workspace without a WhatsApp number. |
 | 409 | `number_unlinked` | Number unlinked from the Home page. |
 | 409 | `number_suspended` | Provided number subscription overdue or ended. |
+| 409 | `no_consent` | Number linked by QR code: a message written first to a record that is not opted_in, without consent. |
+| 422 | `no_phone` | Number linked by QR code: a message written first to someone with no known number. |
+| 402 | `plan_limit_reached` | Number linked by QR code: the month’s messages, or the plan’s contacts, reached. |
 | 400, 409 | `invalid_recipient` `invalid_phone` `identity_conflict` | Record keys missing, unreadable or contradictory: [Identifying a person](https://console.messagingme.app/developers/api/concepts.en.md#identification) |
 
 ### Notes
 
-Window closed: only a template can go out. [The 24-hour window](https://console.messagingme.app/developers/api/concepts.en.md#fenetre-24h)
+Window closed: only a template can go out (on a number linked by QR code, the text is written first). [The 24-hour window](https://console.messagingme.app/developers/api/concepts.en.md#fenetre-24h)
 
 <a id="message-meta"></a>
 

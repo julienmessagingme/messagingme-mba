@@ -294,9 +294,13 @@ const CIBLE_DU_CONTACT_SQL = `cible as (
 
 /**
  * Le fil d'un contact, cherché sans être créé (`PgInboxStore.filDuContact`). `injoignable` : fiche inconnue de
- * l'espace, supprimée, bloquée, ou sans identité WhatsApp. `sans_fil` : joignable, mais aucun fil n'existe.
+ * l'espace, supprimée, bloquée, ou sans identité WhatsApp. `sans_fil` : joignable, mais aucun fil n'existe. `waId` : la
+ * clé du fil (`CIBLE_DU_CONTACT_SQL`), à laquelle la filière application écrit en premier (plan 2026-10-23, tâche 4).
  */
-export type FilDuContact = { etat: 'fil'; conversationId: string } | { etat: 'sans_fil' } | { etat: 'injoignable' };
+export type FilDuContact =
+  | { etat: 'fil'; conversationId: string; waId: string }
+  | { etat: 'sans_fil'; waId: string }
+  | { etat: 'injoignable' };
 
 /**
  * Store Postgres de la boîte de réception (conversations + messages).
@@ -965,9 +969,9 @@ export class PgInboxStore implements InboxStore {
    * primaire de `contacts` et l'unique `(tenant_id, wa_id)`.
    */
   async filDuContact(tenantId: string, contactId: string): Promise<FilDuContact> {
-    const res = await this.pool.query<{ id: string | null }>(
+    const res = await this.pool.query<{ id: string | null; wa_id: string }>(
       `with ${CIBLE_DU_CONTACT_SQL}
-       select conv.id::text as id
+       select conv.id::text as id, cible.wa_id
          from cible
          left join conversations conv on conv.tenant_id = $1 and conv.wa_id = cible.wa_id
         where cible.wa_id is not null`,
@@ -975,7 +979,7 @@ export class PgInboxStore implements InboxStore {
     );
     const ligne = res.rows[0];
     if (!ligne) return { etat: 'injoignable' };
-    return ligne.id === null ? { etat: 'sans_fil' } : { etat: 'fil', conversationId: ligne.id };
+    return ligne.id === null ? { etat: 'sans_fil', waId: ligne.wa_id } : { etat: 'fil', conversationId: ligne.id, waId: ligne.wa_id };
   }
 
   /**

@@ -17,3 +17,20 @@ export function avisDeCoupure(emettre: (e: Emission) => Promise<unknown>): (comp
     });
   };
 }
+
+/**
+ * LE COURRIEL D'UN GEL (plan 2026-10-23, tâche 2) : WhatsApp a refusé un premier message du numéro, ses premiers messages
+ * sont suspendus 72 heures (`traiterPremierMessage`, `src/application/premier-message.ts`). L'occasion porte la fin du
+ * gel : un gel ne prévient qu'une fois, le suivant à nouveau.
+ */
+export function avisDeGel(emettre: (e: Emission) => Promise<unknown>): (compte: CompteApplication, jusqua: Date) => Promise<void> {
+  return async (compte, jusqua) => {
+    await emettre({
+      cle: 'application_premiers_geles',
+      tenantId: compte.tenantId,
+      occasion: `gel:${compte.id}:${jusqua.toISOString()}`,
+      a: 'admins',
+      valeurs: { numero: `+${compte.numero}` },
+    });
+  };
+}

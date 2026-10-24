@@ -377,6 +377,28 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     expect((await pool.query('select 1 from widget_tirs where tenant_id = $1 and wa_id = $2', [tenantId, chiffres])).rowCount).toBe(0);
   });
 
+  it('🔴 les premiers messages de la filière application partent, envoyés ou en file, pas ceux d’un autre espace (0251)', async () => {
+    // Une ligne encore en file partirait sinon à une personne effacée : le STOP relu par son `wa_id` ne trouve plus de fiche.
+    const tel = '+33600000931';
+    const chiffres = '33600000931';
+    const fiche = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, opt_in_status) values ($1, $2, 'opted_in') returning id`, [tenantId, tel],
+    )).rows[0]!.id;
+    await pool.query(
+      `insert into application_premiers_messages (tenant_id, cle, wa_id, texte, origine, statut, prevu_le)
+       values ($1, 'itest-purge-1', $3, 'Votre commande est partie', 'shopify_commande', 'en_file', now() + interval '1 minute'),
+              ($1, 'itest-purge-2', $3, 'Votre panier vous attend', 'shopify_panier', 'envoye', now()),
+              ($2, 'itest-purge-1', $3, 'Bonjour', 'mcp', 'en_file', now() + interval '1 minute')`,
+      [tenantId, autreTenantId, chiffres],
+    );
+    const lignes = (t: string) => pool.query('select 1 from application_premiers_messages where tenant_id = $1 and wa_id = $2', [t, chiffres]);
+    // ANCRES : les lignes existent AVANT la purge.
+    expect((await lignes(tenantId)).rowCount).toBe(2);
+    expect((await store.purgeMany(tenantId, [fiche])).purges).toBe(1);
+    expect((await lignes(tenantId)).rowCount).toBe(0);
+    expect((await lignes(autreTenantId)).rowCount).toBe(1);
+  });
+
   it('purger deux fois ne compte pas deux fois (anonymized_at fait garde)', async () => {
     expect((await store.purgeMany(tenantId, [contactId])).purges).toBe(0);
   });

@@ -2,7 +2,7 @@ import { DisconnectReason } from '@whiskeysockets/baileys';
 import type { CompteApplication, ComptesApplication, StatutCompte } from './comptes';
 import { reprendAuDemarrage } from './comptes';
 import { ErreurApplication, type Verification } from './interne';
-import { delaiBackoff } from './transport/connexion';
+import { codeDeconnexion, delaiBackoff } from './transport/connexion';
 import type { CauseFermeture, MessageApplication, RappelsSession, Session } from './transport/session';
 
 /**
@@ -60,6 +60,19 @@ interface Entree {
 const RELIABLES: ReadonlySet<StatutCompte> = new Set(['en_attente', 'relie', 'sommeil']);
 
 const versJson = (m: MessageApplication): MessageApplicationJson => ({ ...m, horodatage: m.horodatage.toISOString() });
+
+/**
+ * L'erreur 463 de WhatsApp (« reachout timelock », la restriction des appareils liés qui écrivent à de nouveaux
+ * contacts), que Baileys 6.7.23 ne nomme pas. Lue par la FORME, comme une fermeture (`codeDeconnexion`) : un `Boom` qui
+ * porte `output.statusCode` 463, ou une erreur dont le message cite 463.
+ * ⚠️ Baileys 6.7.23 ne lève pas sur un accusé en erreur : il émet `messages.update` (statut ERROR, le code dans
+ * `messageStubParameters`) après que `sendMessage` a rendu (`handleBadAck`, `Socket/messages-recv.js`). Ce test ne voit
+ * donc qu'un refus levé pendant l'envoi.
+ */
+export function estRefus463(err: unknown): boolean {
+  if (codeDeconnexion(err) === 463) return true;
+  return err instanceof Error && /\b463\b/.test(err.message);
+}
 
 /** Les attentes entre deux mises en file d'un message reçu : trois essais en tout. */
 const ATTENTES_MISE_EN_FILE_MS = [1_000, 3_000];
@@ -166,7 +179,15 @@ export function creerGestionnaireSessions(d: DepsSessions): GestionnaireSessions
     async envoyer(compteId, destinataire, texte) {
       const e = entrees.get(compteId);
       if (!e?.ouverte || !e.session) throw new ErreurApplication('non_relie', `compte ${compteId} non relié`);
-      const id = await e.session.envoyer(destinataire, texte);
+      let id: string;
+      try {
+        id = await e.session.envoyer(destinataire, texte);
+      } catch (err) {
+        // Un refus de WhatsApp a sa raison (il gèle les premiers messages du compte) ; tout le reste repart tel quel,
+        // lu comme une panne : on ne gèle jamais sur un doute.
+        if (estRefus463(err)) throw new ErreurApplication('refuse_whatsapp', `compte ${compteId} : WhatsApp a refusé le message (463)`);
+        throw err;
+      }
       // L'activité compte dans les deux sens pour la mise en sommeil. Un échec ici ne fait pas croire à un envoi perdu.
       await d.comptes.toucher(compteId, new Date()).catch((err: unknown) => console.error(`application ${compteId} : activité non notée`, err));
       return id;

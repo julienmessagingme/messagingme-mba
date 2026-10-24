@@ -49,7 +49,7 @@ describe.skipIf(!url)('le store Shopify', () => {
 
   it('🔴 une boutique connectée ailleurs est refusée ; coupée, elle se reprend et l’autre espace perd son branchement', async () => {
     expect(await store.connecter(B, connexion())).toBe('boutique_ailleurs');
-    await store.brancher(A, { evenement: 'order_paid', modele: 'm', langue: 'fr', variables: [], actif: true, par: null });
+    await store.brancher(A, { evenement: 'order_paid', modele: 'm', texte: null, langue: 'fr', variables: [], actif: true, par: null });
     expect(await store.couper(A, 'test')).toBe(true);
     expect(await store.couper(A, 'test')).toBe(false);
     expect(await store.boutiqueParDomaine(domaine)).toMatchObject({ tenantId: A, etat: 'coupee', secret: 'shpss_itest' });
@@ -60,8 +60,8 @@ describe.skipIf(!url)('le store Shopify', () => {
   });
 
   it('brancher remplace le message de l’événement, et l’affirmation du consentement se note', async () => {
-    await store.brancher(B, { evenement: 'order_paid', modele: 'a', langue: 'fr', variables: ['first_name'], actif: true, par: null });
-    await store.brancher(B, { evenement: 'order_paid', modele: 'b', langue: 'fr', variables: ['order_number'], actif: false, par: null });
+    await store.brancher(B, { evenement: 'order_paid', modele: 'a', texte: null, langue: 'fr', variables: ['first_name'], actif: true, par: null });
+    await store.brancher(B, { evenement: 'order_paid', modele: 'b', texte: null, langue: 'fr', variables: ['order_number'], actif: false, par: null });
     const m = await store.messages(B);
     expect(m.map((x) => [x.evenement, x.modele, x.variables, x.actif])).toEqual([['order_paid', 'b', ['order_number'], false]]);
     await store.affirmerConsentement(B, null);
@@ -146,7 +146,7 @@ describe.skipIf(!url)('le store Shopify : les paniers', () => {
     store = new PgShopifyStore(pool, CLE);
     C = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-shopify-paniers') returning id`)).rows[0]!.id;
     await store.connecter(C, { domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null, origine: 'claude_code' });
-    await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
+    await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', texte: null, langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
   });
 
   afterAll(async () => {
@@ -171,14 +171,14 @@ describe.skipIf(!url)('le store Shopify : les paniers', () => {
 
   it('🔴 rien n’est dû sans consentement affirmé, puis une seule réclamation sous deux balayages simultanés', async () => {
     await due('p1');
-    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === C)).toEqual([]);
     await store.affirmerConsentement(C, null);
-    const [a, b] = await Promise.all([store.reclamerPaniersDus(50), store.reclamerPaniersDus(50)]);
+    const [a, b] = await Promise.all([store.reclamerPaniersDus(50, []), store.reclamerPaniersDus(50, [])]);
     const miens = [...a, ...b].filter((p) => p.tenantId === C);
     expect(miens.map((p) => [p.jeton, p.telephone, p.lien, p.domaine, p.modele, p.variables])).toEqual([
       ['p1', '+33600000948', 'https://lien-1', domaine, 'relance', ['checkout_url']],
     ]);
-    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === C)).toEqual([]);
     await store.noterIssuePanier(C, 'p1', 'envoye');
   });
 
@@ -187,14 +187,14 @@ describe.skipIf(!url)('le store Shopify : les paniers', () => {
     await store.noterPanier(C, { jeton: 'ferme', telephone: '+33600000950', nom: null, lien: 'https://l' });
     await due('ferme');
     await store.fermerPanier(C, 'ferme');
-    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === C)).toEqual([]);
     await store.noterPanier(C, { jeton: 'eteint', telephone: '+33600000951', nom: null, lien: 'https://l' });
     await due('eteint');
-    await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', langue: 'fr', variables: ['checkout_url'], actif: false, par: null });
-    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
-    await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
+    await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', texte: null, langue: 'fr', variables: ['checkout_url'], actif: false, par: null });
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === C)).toEqual([]);
+    await store.brancher(C, { evenement: 'checkout_abandoned', modele: 'relance', texte: null, langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
     await store.couper(C, 'test');
-    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === C)).toEqual([]);
   });
 
   it('les compteurs : relancés par issue, fermés à temps, en attente, seuls les paniers notés ; la purge à 7 jours', async () => {
@@ -231,19 +231,19 @@ describe.skipIf(!url)('le store Shopify : les paniers', () => {
     await store.reglerDelaiPanier(C, 60);
     await store.noterPanier(C, { jeton: 'delai', telephone: '+33600000954', nom: null, lien: 'https://l' });
     await pool.query(`update shopify_paniers set maj_le = now() - interval '30 minutes' where tenant_id = $1 and jeton = 'delai'`, [C]);
-    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === C)).toEqual([]);
     await store.reglerDelaiPanier(C, 15);
     // Un autre balayage tient la ligne : `skip locked` la saute au lieu de l'attendre (ni double relance, ni blocage).
     const verrou = await pool.connect();
     try {
       await verrou.query('begin');
       await verrou.query(`select 1 from shopify_paniers where tenant_id = $1 and jeton = 'delai' for update`, [C]);
-      expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C)).toEqual([]);
+      expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === C)).toEqual([]);
     } finally {
       await verrou.query('rollback');
       verrou.release();
     }
-    expect((await store.reclamerPaniersDus(50)).filter((p) => p.tenantId === C).map((p) => p.jeton)).toEqual(['delai']);
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === C).map((p) => p.jeton)).toEqual(['delai']);
   });
 });
 
@@ -273,7 +273,7 @@ describe.skipIf(!url)('le store Shopify : la console (origine, attentes, migrati
   });
 
   it('🔴 une attente par événement : la nouvelle remplace, le retrait par modèle la rend, le message actif n’est pas touché', async () => {
-    await store.brancher(D, { evenement: 'checkout_abandoned', modele: 'ancien', langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
+    await store.brancher(D, { evenement: 'checkout_abandoned', modele: 'ancien', texte: null, langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
     await store.poserAttente(D, { evenement: 'checkout_abandoned', modele: 'shopify_a', langue: 'fr', variables: ['first_name'], delaiMinutes: 15, par: null });
     await store.poserAttente(D, { evenement: 'checkout_abandoned', modele: 'shopify_b', langue: 'fr', variables: ['first_name', 'checkout_url'], delaiMinutes: 30, par: null });
     expect((await store.attentes(D)).map((a) => [a.modele, a.delaiMinutes, a.variables])).toEqual([['shopify_b', 30, ['first_name', 'checkout_url']]]);
@@ -295,5 +295,69 @@ describe.skipIf(!url)('le store Shopify : la console (origine, attentes, migrati
     await store.effacerBoutique(D);
     expect(await store.attentes(D)).toEqual([]);
     expect(await store.lire(D)).toBeNull();
+  });
+});
+
+/**
+ * LE TEXTE D'UN NUMÉRO RELIÉ PAR QR CODE (migration 0251, plan 2026-10-23, tâche 5) : ce qu'aucun faux ne prouve. Brancher
+ * un texte vide le modèle (la contrainte « l'un ou l'autre ») ; la réclamation n'examine pas les espaces exclus et rend le
+ * texte du message ; un panier libéré redevient dû, dans SON espace, et pas s'il porte déjà son issue.
+ */
+describe.skipIf(!url)('le store Shopify : le texte d’un numéro relié par QR code (migration 0251)', () => {
+  let pool: Pool;
+  let store: PgShopifyStore;
+  let E = '';
+  let F = '';
+  const brancherRelance = (t: string, m: { modele: string | null; texte: string | null }) =>
+    store.brancher(t, { evenement: 'checkout_abandoned', ...m, langue: 'fr', variables: ['checkout_url'], actif: true, par: null });
+  const miens = <T extends { tenantId: string }>(paniers: T[]): T[] => paniers.filter((p) => p.tenantId === E || p.tenantId === F);
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    store = new PgShopifyStore(pool, CLE);
+    E = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-shopify-texte-e') returning id`)).rows[0]!.id;
+    F = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-shopify-texte-f') returning id`)).rows[0]!.id;
+    for (const t of [E, F]) {
+      await store.connecter(t, { domaine: `itest-t-${randomUUID().slice(0, 8)}.myshopify.com`, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null, origine: 'claude_code' });
+      await store.affirmerConsentement(t, null);
+    }
+  });
+
+  afterAll(async () => {
+    await pool.query('delete from tenants where id = any($1::uuid[])', [[E, F]]);
+    await pool.end();
+  });
+
+  it('brancher un texte vide le modèle, et rebrancher un modèle vide le texte', async () => {
+    await store.brancher(E, { evenement: 'order_paid', modele: 'commande_payee', texte: null, langue: 'fr', variables: ['first_name'], actif: true, par: null });
+    await store.brancher(E, { evenement: 'order_paid', modele: null, texte: 'Merci {{first_name}} pour {{order_number}}', langue: 'fr', variables: ['first_name', 'order_number'], actif: true, par: null });
+    expect(await store.message(E, 'order_paid')).toMatchObject({ modele: null, texte: 'Merci {{first_name}} pour {{order_number}}', variables: ['first_name', 'order_number'], actif: true });
+    await store.brancher(E, { evenement: 'order_paid', modele: 'commande_payee', texte: null, langue: 'fr', variables: [], actif: false, par: null });
+    expect(await store.message(E, 'order_paid')).toMatchObject({ modele: 'commande_payee', texte: null, actif: false });
+  });
+
+  it('🔴 la réclamation n’examine pas les espaces exclus, et rend le texte du message ; seule une relance en texte compte parmi les espaces à examiner', async () => {
+    await brancherRelance(E, { modele: null, texte: 'Votre panier : {{checkout_url}}' });
+    await brancherRelance(F, { modele: 'relance', texte: null });
+    await store.noterPanier(E, { jeton: 'e1', telephone: '+33600000961', nom: null, lien: 'https://l' });
+    await store.noterPanier(F, { jeton: 'f1', telephone: '+33600000962', nom: null, lien: 'https://l' });
+    await pool.query(`update shopify_paniers set maj_le = now() - interval '2 hours' where tenant_id = any($1::uuid[])`, [[E, F]]);
+    const enTexte = await store.espacesAPaniersDusEnTexte(1000);
+    expect([enTexte.includes(E), enTexte.includes(F)]).toEqual([true, false]);
+    expect(miens(await store.reclamerPaniersDus(50, [E])).map((p) => [p.tenantId, p.jeton])).toEqual([[F, 'f1']]);
+    const e = (await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === E);
+    expect(e.map((p) => [p.jeton, p.modele, p.texte, p.variables])).toEqual([['e1', null, 'Votre panier : {{checkout_url}}', ['checkout_url']]]);
+    // Réclamé, il n'est plus dû : l'espace n'est plus à examiner.
+    expect(await store.espacesAPaniersDusEnTexte(1000)).not.toContain(E);
+  });
+
+  it('🔴 un panier libéré redevient dû, dans SON espace seulement, et pas s’il porte déjà son issue', async () => {
+    await store.libererPanier(F, 'e1');
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === E)).toEqual([]);
+    await store.libererPanier(E, 'e1');
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === E).map((p) => p.jeton)).toEqual(['e1']);
+    await store.noterIssuePanier(E, 'e1', 'en_file');
+    await store.libererPanier(E, 'e1');
+    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === E)).toEqual([]);
   });
 });

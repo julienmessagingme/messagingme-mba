@@ -54,6 +54,7 @@ function monter() {
       importer: non,
       abonner: async (a) => { trace.abonnements.push(a); return { ok: true, abonnes: ['ORDERS_PAID'], deja: [] }; },
       programmerOubli: async () => undefined,
+      filiere: async () => 'api',
     },
     preparation: {
       store,

@@ -254,4 +254,24 @@ describe('la purge', () => {
     expect(anonymisation, 'la requête d’anonymisation').toBeDefined();
     expect(anonymisation).toMatch(/external_id = null/);
   });
+
+  it('🔴 efface les premiers messages de la filière application de ce numéro, dans cet espace (migration 0251)', async () => {
+    const appels: Array<{ sql: string; params: unknown[] }> = [];
+    const client = {
+      query: async (sql: string, params: unknown[] = []) => {
+        appels.push({ sql, params });
+        // La fiche visée, lue sous verrou : son numéro donne le `wa_id` (sans « + ») des lignes de la file.
+        if (/for update/.test(sql)) {
+          return { rows: [{ phone_e164: '+33612345678', bsuid: null, opt_in_status: 'opted_in', opt_out_at: null, rcs_optout_at: null }], rowCount: 1 };
+        }
+        return { rows: [], rowCount: 0 };
+      },
+      release: () => {},
+    };
+    await new PgContactStore({ connect: async () => client } as unknown as Pool).purgeMany(T, [ID]);
+    const effacement = appels.find((a) => /delete from application_premiers_messages/.test(a.sql));
+    expect(effacement, 'l’effacement des premiers messages').toBeDefined();
+    expect(effacement!.sql).toMatch(/where tenant_id = \$1 and wa_id = any\(\$2::text\[\]\)/);
+    expect(effacement!.params).toEqual([T, ['33612345678']]);
+  });
 });

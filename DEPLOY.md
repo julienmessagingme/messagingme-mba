@@ -219,6 +219,15 @@ Le savoir avant de déployer : la version du code
 (`sudo docker compose run --rm --no-deps mba-api node -p "require('./node_modules/pg-boss/package.json').pgboss.schema"`)
 contre celle de la base (`select version from pgboss.version`). Égales : rien à faire.
 
+## ⚠️ Retour arrière d'une image d'avant « écrire en premier » (migration 0252, lot B de 2026-10-23-shopify-numero-qr)
+
+Une fois des messages Shopify réglés en TEXTE (`shopify_messages.texte`, filière application), une image d'avant ce lot
+lit `modele` sans savoir qu'il peut être nul : son `brancher` écrirait un modèle à côté du texte resté en place (23514,
+contrainte `shopify_messages_modele_ou_texte`) et son `servir` enverrait un modèle nul. Avant de revenir en arrière,
+lire `select count(*) from shopify_messages where texte is not null` ; s'il y en a, les éteindre d'abord
+(`update shopify_messages set actif = false where texte is not null`, puis le dire aux espaces concernés). La file
+`application_premiers_messages` n'a pas besoin d'être vidée : une image ancienne ne la lit pas, ses lignes attendent.
+
 ## ⚠️ Le rechargement nginx n'est plus nécessaire depuis le 2026-10-03, mais s'il sert, il vient APRÈS le `healthy`
 
 Les routes de `mba.` et d'`api.` nomment `mba-api` par une variable, que nginx relit seul (résolveur de Docker,

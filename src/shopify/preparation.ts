@@ -5,8 +5,8 @@ import { messageDe } from '../lib/erreur';
 import { supprimerUnModele, type DepsGestionModeles } from '../templates/gestion';
 import type { Emission } from '../emails-produit/emission';
 import {
-  CATEGORIES_ADMISES, DELAI_PANIER_MAX, DELAI_PANIER_MIN, DONNEES_PAR_EVENEMENT, EVENEMENTS_DISPONIBLES, estEvenementShopify,
-  type DonneeShopify, type EvenementShopify,
+  avecPrenomDeSecours, CATEGORIES_ADMISES, DELAI_PANIER_MAX, DELAI_PANIER_MIN, DONNEES_PAR_EVENEMENT, EVENEMENTS_DISPONIBLES,
+  estEvenementShopify, type DonneeShopify, type EvenementShopify,
 } from './donnees';
 import type { Issue, Refus } from './gestion';
 import type { AttenteMessage, PgShopifyStore } from './store.pg';
@@ -191,6 +191,58 @@ export function versCorps(evenement: EvenementShopify, texte: unknown):
   return { ok: true, corps, variables, exemples: variables.map((v) => EXEMPLES_DONNEES[v]) };
 }
 
+/**
+ * LE TEXTE SIMPLE D'UN NUMÉRO RELIÉ PAR QR CODE (plan 2026-10-23, tâche 5) : aucun modèle, donc aucune règle propre à
+ * Meta (ni « pas de donnée au début ou à la fin », ni 1 024 caractères, ni 10 variables). La borne est celle d'un message
+ * WhatsApp, et de la porte « écrire en premier » (`src/application/premier-message.ts`), annoncée dans le schéma de
+ * `set_shopify_message`.
+ */
+export const TEXTE_SHOPIFY_MAX = 4096;
+
+/**
+ * Valide le texte d'un message Shopify : de 1 à `TEXTE_SHOPIFY_MAX` caractères, et chaque repère entre doubles
+ * accolades est une donnée que l'événement sait remplir. 🔴 Un repère qui n'en est pas une ({{1}} recopié d'un modèle,
+ * {{First_Name}}) est refusé : il partirait tel quel chez le client. Rend le texte nettoyé et les données citées, dans
+ * l'ordre de leur première apparition.
+ */
+export function validerTexteShopify(evenement: EvenementShopify, texte: unknown):
+  { ok: true; texte: string; variables: DonneeShopify[] } | { ok: false; message: string } {
+  if (typeof texte !== 'string' || texte.trim() === '' || texte.length > TEXTE_SHOPIFY_MAX) {
+    return { ok: false, message: `text : le message à envoyer, de 1 à ${TEXTE_SHOPIFY_MAX} caractères, les données Shopify entre doubles accolades ({{first_name}}).` };
+  }
+  const permises = DONNEES_PAR_EVENEMENT[evenement];
+  const inconnu = (repere: string) => ({
+    ok: false as const,
+    message: `text : ${repere} n’est pas une donnée de cet événement (permises : ${permises.map((d) => `{{${d}}}`).join(', ')}).`,
+  });
+  const variables: DonneeShopify[] = [];
+  for (const m of texte.matchAll(REPERE)) {
+    const donnee = permises.find((d) => d === m[1]);
+    if (!donnee) return inconnu(m[0]);
+    if (!variables.includes(donnee)) variables.push(donnee);
+  }
+  const reste = /\{\{[^{}]*\}\}/.exec(texte.replace(REPERE, ''));
+  if (reste) return inconnu(reste[0]);
+  return { ok: true, texte: texte.trim(), variables };
+}
+
+/**
+ * Le texte qui part : chaque repère remplacé par sa valeur, le prénom absent par son mot de secours, et pour la relance
+ * de panier seulement, la consigne STOP en dernière ligne (comme le pied du modèle sur l'API). 🔴 Une donnée manquante
+ * se constate AVANT (`donnee_manquante`, dans le traitement) : ici, un repère sans valeur resterait tel quel.
+ */
+export function composerTexteShopify(
+  texte: string, evenement: EvenementShopify, valeurs: Partial<Record<DonneeShopify, string>>, langue: string,
+): string {
+  const v = avecPrenomDeSecours(valeurs, langue);
+  const permises = DONNEES_PAR_EVENEMENT[evenement];
+  const corps = texte.trim().replace(REPERE, (tout, cle: string) => {
+    const donnee = permises.find((d) => d === cle);
+    return donnee === undefined ? tout : (v[donnee] ?? tout);
+  });
+  return evenement === 'checkout_abandoned' ? `${corps}\n\n${PIED_STOP[langueDuPied(langue)]}` : corps;
+}
+
 export interface Preparation {
   evenement: unknown;
   texte: unknown;
@@ -279,7 +331,7 @@ async function activer(
   store: Pick<PgShopifyStore, 'brancher' | 'reglerDelaiPanier'>, tenantId: string,
   a: Pick<AttenteMessage, 'evenement' | 'modele' | 'langue' | 'variables' | 'delaiMinutes'>,
 ): Promise<void> {
-  await store.brancher(tenantId, { evenement: a.evenement, modele: a.modele, langue: a.langue, variables: a.variables, actif: true, par: null });
+  await store.brancher(tenantId, { evenement: a.evenement, modele: a.modele, texte: null, langue: a.langue, variables: a.variables, actif: true, par: null });
   if (a.delaiMinutes !== null) await store.reglerDelaiPanier(tenantId, a.delaiMinutes);
 }
 

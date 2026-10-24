@@ -1,8 +1,13 @@
 import { ficheOutilMcp, MAX_MESSAGES_MCP as LIMITE_MESSAGES_MCP, type ScopeMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { ConversationSummary, ConversationMessage, ListConversationsOptions, ControlOwner } from '../inbox/store.pg';
 import type { AnalyseEtResume, BulkEdits, BulkTarget, ContactRow, ContactFilters, IssueActionEnMasse } from '../crm/contact-store.pg';
-import { repondreAvecUnMessage, repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre, type ResultatReponse } from '../inbox/repondre';
-import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible } from '../application/envoi';
+import {
+  empreinte, minuteUtc, repondreAvecUnMessage, repondreDansLaFenetre,
+  type ConversationsRepondre, type DepsRepondre, type RefusReponse, type ResultatReponse,
+} from '../inbox/repondre';
+import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible, phraseMessageEnFile, phrasePremierMessage } from '../application/envoi';
+import { MAX_OPT_IN_SOURCE } from '../api/contacts-upsert';
+import { journaliser } from '../lib/journal';
 import { apercuDuMessage, corpsPourMeta, schemaContenuMeta } from '../api/message-meta';
 import { messageDeForme } from '../api/forme';
 import { MetaApiError } from '../meta/errors';
@@ -37,7 +42,7 @@ import type { DepsGestionShopify } from '../shopify/gestion';
 import type { ResultatEnvoiPublic } from '../api/envoi-public';
 import type { VueOffre } from '../offres/vue';
 import type { SourceOffres } from '../offres/offre.pg';
-import type { Fonction } from '../offres/offres';
+import { DROITS, type Fonction } from '../offres/offres';
 import { OUTILS_DE_L_ETAPE, lireMiseEnService } from './mise-en-service';
 
 export { RefusOutil } from './saisie';
@@ -395,6 +400,18 @@ const CONVERSATION_ID: ProprieteEntree = {
  */
 export const MAX_MESSAGES_MCP = LIMITE_MESSAGES_MCP;
 
+/**
+ * `write_first_message` (plan 2026-10-23, tâche 4) : un numéro E.164 (le « + » et quinze chiffres au plus), et la
+ * source d'un consentement déclaré, bornée comme l'API publique et la porte (`MAX_OPT_IN_SOURCE`). Exportées : le test
+ * des bornes les relit dans le schéma, et le motif est celui que l'outil applique.
+ */
+export const LONGUEUR_MAX_E164 = 16;
+export const LONGUEUR_MAX_SOURCE_CONSENTEMENT = MAX_OPT_IN_SOURCE;
+export const MOTIF_E164 = /^\+[1-9][0-9]{7,14}$/;
+const CLES_PREMIER_MESSAGE = new Set(['phone', 'text', 'consent_source']);
+/** Les messages écrits en premier d'un mois, ceux de la Free, la seule offre de la filière application : lus dans la grille. */
+const MESSAGES_DU_MOIS = (DROITS.base.limites.envoisModelesMois ?? 0).toLocaleString('en-US');
+
 /** Les annotations d'une lecture : rien n'est touché, ni dans l'espace ni au-dehors. */
 const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true, openWorldHint: false });
 
@@ -483,11 +500,16 @@ export const OUTILS: OutilMcp[] = [
       return {
         conversation_id: id,
         phone: ctx.waId,
-        // Sur l'application WhatsApp Business, la fenêtre de 24 h n'existe pas : un champ qui le dit, plutôt qu'un
-        // `window_open: true` qui mentirait sur la règle (spec du 2026-10-22).
+        // Sur l'application WhatsApp Business, une réponse part toujours, mais la fenêtre de 24 h y décide de COMMENT
+        // (plan 2026-10-23, tâche 3) : dans la fenêtre, tout de suite ; hors d'elle, écrite en premier, par la porte.
+        window_open: ctx.windowOpen,
         ...(filiere === 'application'
-          ? { window: 'not_applicable', note: 'WhatsApp Business app number: the 24-hour window does not apply, a reply can always be sent.' }
-          : { window_open: ctx.windowOpen }),
+          ? {
+            note: 'WhatsApp Business app number: a reply always goes out. Within the 24-hour window it leaves right away; '
+              + `outside it, it is written first: queued, spaced out, counted in the ${MESSAGES_DU_MOIS} messages of the month, `
+              + 'and only to a contact who accepted WhatsApp (opted_in).',
+          }
+          : {}),
         last_inbound_at: ctx.lastInboundAt,
         handled_by: owner ?? null,
         assigned_to: assignee ?? null,
@@ -700,7 +722,10 @@ export const OUTILS: OutilMcp[] = [
       + 'this tool does not send. Sending TAKES OVER the conversation: no scenario, AI agent or Meta Business Agent '
       + 'answers this contact until it is handed back (control_conversation, hand_back), or until the workspace\'s '
       + 'takeover delay runs out when it has one; a conversation escalated to the team waits for a reply signed by a '
-      + 'person (OAuth) before that delay runs.',
+      + 'person (OAuth) before that delay runs. On a number linked by QR code (WhatsApp Business app), outside the '
+      + 'window the message is not refused but QUEUED as a first message, as write_first_message does: it leaves spaced '
+      + `out, counts in the ${MESSAGES_DU_MOIS} messages of the month, needs a contact who accepted WhatsApp (opted_in), `
+      + 'and does not take over the conversation.',
     // Le monde ouvert : un message part chez une personne, et ne se reprend pas. Destructrice : l'envoi PREND le fil,
     // le scénario cesse d'avancer, ce qui n'est pas un simple ajout.
     annotations: { title: 'Reply in the 24-hour window', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -722,6 +747,61 @@ export const OUTILS: OutilMcp[] = [
       // consommant le plafond de l'espace.
       const res = await reponseOuRefus(() => repondreDansLaFenetre(deps, tenantId, id, texte, personne?.userId ?? null, 'mcp'));
       return resultatEnvoiMcp(res, id);
+    },
+  },
+  {
+    ...ficheOutilMcp('write_first_message'),
+    // Ouvert à toutes les offres, comme `reply_in_open_window` : la filière application n'a que la Free, et ses limites
+    // (les messages du mois, les contacts) sont celles de la porte, jamais celles de l'outil.
+    fonction: null,
+    description:
+      'Writes FIRST to a phone number, outside any conversation, from a number linked by QR code (WhatsApp Business '
+      + 'app): a plain text. The message is queued and leaves spaced out, at least 30 seconds after the previous first '
+      + `message of the number (the result gives its departure time), it counts in the ${MESSAGES_DU_MOIS} messages of `
+      + 'the month, and it needs the contact\'s consent: a record already opted_in, or consent_source to declare it (written on the '
+      + 'record before the send). STOP and blocked contacts are never written to; an unknown number gets its contact '
+      + 'record, within the plan\'s contact limit. The same phone and text within the same minute are queued once. On a '
+      + 'number connected through the WhatsApp API, a first message is an approved template: send_template_to_contact. '
+      + 'Within 24 hours of the contact\'s last message, reply_in_open_window answers right away and counts nothing.',
+    // Monde ouvert : un message part chez une personne. Non idempotente : le même appel une minute plus tard repart.
+    // Destructrice pour la règle du répertoire de Claude (voir `AnnotationsMcp`).
+    annotations: { title: 'Write first to a number', readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    entree: {
+      type: 'object',
+      properties: {
+        phone: {
+          type: 'string', minLength: 1, maxLength: LONGUEUR_MAX_E164, pattern: MOTIF_E164.source,
+          description: 'The number in E.164 format, with its country code: +33612345678.',
+        },
+        text: { type: 'string', minLength: 1, maxLength: 4096, description: 'The message, as the contact will read it: plain text, links written out.' },
+        consent_source: {
+          type: 'string', minLength: 1, maxLength: LONGUEUR_MAX_SOURCE_CONSENTEMENT,
+          description: 'Where the contact\'s consent to receive WhatsApp messages comes from (a form, a purchase...): '
+            + 'it declares the consent on the record before the send. Leave it out when the record is already opted_in.',
+        },
+      },
+      required: ['phone', 'text'],
+      additionalProperties: false,
+    },
+    exigePersonne: true,
+    async executer(deps, tenantId, args, personne) {
+      const inconnue = Object.keys(args).find((k) => !CLES_PREMIER_MESSAGE.has(k));
+      if (inconnue !== undefined) throw new RefusOutil(`paramètre « ${inconnue} » inconnu : phone, text et consent_source seulement`);
+      const phone = texteObligatoire(args, 'phone', LONGUEUR_MAX_E164);
+      if (!MOTIF_E164.test(phone)) throw new RefusOutil('paramètre « phone » : le numéro au format E.164, avec son indicatif (+33612345678)');
+      const texte = texteObligatoire(args, 'text', 4096);
+      const source = args.consent_source === undefined || args.consent_source === null
+        ? null
+        : texteObligatoire(args, 'consent_source', LONGUEUR_MAX_SOURCE_CONSENTEMENT);
+      const telephone = phone.slice(1);
+      // La clé : le numéro, le texte et la minute. Le même appel rejoué dans la minute rend le message déjà en file.
+      const r = await deps.ecrirePremier({
+        tenantId, cle: `mcp:${empreinte(`${telephone}\n${texte}`)}:${minuteUtc(new Date())}`, telephone, texte,
+        origine: 'mcp', reference: null, consentement: source === null ? { mode: 'exige_opt_in' } : { mode: 'declare', source },
+      });
+      if (!r.ok) throw new RefusOutil(phrasePremierMessage(r.refus, 'mcp'));
+      journaliser('info', 'mcp_premier_message_en_file', { tenantId, userId: personne?.userId ?? null, id: r.id, dejaEnFile: r.dejaEnFile });
+      return { queued_id: r.id, scheduled_at: r.prevuLe.toISOString(), already_queued: r.dejaEnFile, message: phraseMessageEnFile(r.prevuLe) };
     },
   },
   {
@@ -1104,9 +1184,10 @@ export function outilsPour(ctx: { scopes: readonly string[]; personne: PersonneM
 /**
  * La réponse dans la fenêtre de 24 h, ou son refus en `RefusOutil` lisible : le numéro délié ou suspendu (exception du
  * point d'envoi), la conversation inconnue, l'espace sans numéro, le STOP, la fenêtre fermée. Sans cela, l'agent lirait
- * une panne et réessaierait en consommant le plafond de l'espace.
+ * une panne et réessaierait en consommant le plafond de l'espace. Un message mis en file (filière application, hors des
+ * 24 heures) n'est pas un refus : il est rendu, avec son heure de départ.
  */
-async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<Extract<ResultatReponse, { messageId: string }>> {
+async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<Exclude<ResultatReponse, { refus: RefusReponse }>> {
   let res: ResultatReponse;
   try {
     res = await envoi();
@@ -1123,6 +1204,8 @@ async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<Ex
   if (res.refus.motif === 'aucun_numero') throw new RefusOutil('aucun numéro WhatsApp rattaché à cet espace');
   if (res.refus.motif === 'application_indisponible') throw new RefusOutil(phraseApplicationIndisponible(res.refus.raison));
   if (res.refus.motif === 'format_non_pris_en_charge') throw new RefusOutil(`${PHRASE_FORMAT_APPLICATION} : utilisez reply_in_open_window`);
+  // Hors des 24 heures sur la filière application : la porte « écrire en premier » a refusé, sa phrase dit pourquoi.
+  if (res.refus.motif === 'premier_message') throw new RefusOutil(phrasePremierMessage(res.refus.refus, 'mcp'));
   // 🔴 Une machine ne parle pas à quelqu'un qui a dit STOP. Le message donne la raison et l'issue (un opérateur peut
   // encore répondre), sinon l'agent conclurait à une panne et réessaierait.
   if (res.refus.motif === 'contact_desabonne') {
@@ -1137,7 +1220,14 @@ async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<Ex
   );
 }
 
-function resultatEnvoiMcp(res: Extract<ResultatReponse, { messageId: string }>, conversationId: string) {
+function resultatEnvoiMcp(res: Exclude<ResultatReponse, { refus: RefusReponse }>, conversationId: string) {
+  // En file : rien n'est encore parti, ni tracé ; le job l'enverra à son heure, sans prendre le fil.
+  if ('differe' in res) {
+    return {
+      conversation_id: conversationId, queued_id: res.differe.id, scheduled_at: res.differe.prevuLe,
+      message: phraseMessageEnFile(new Date(res.differe.prevuLe)),
+    };
+  }
   return {
     message_id: res.messageId,
     conversation_id: conversationId,

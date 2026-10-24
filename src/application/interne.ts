@@ -4,7 +4,11 @@
  */
 export const PREFIXE = '/interne/application/comptes';
 
-export type RaisonRefus = 'compte_inconnu' | 'non_relie' | 'statut';
+/**
+ * `refuse_whatsapp` : WhatsApp a refusé le message lui-même (l'erreur 463 des appareils liés qui écrivent à de nouveaux
+ * contacts, plan 2026-10-23, tâche 2). Le numéro n'est pas coupé ; c'est ce qui gèle ses premiers messages.
+ */
+export type RaisonRefus = 'compte_inconnu' | 'non_relie' | 'statut' | 'refuse_whatsapp';
 
 /**
  * Ce que dit la vérification d'un numéro avant un premier message : présent sur WhatsApp ou non, et l'adresse à laquelle

@@ -105,6 +105,15 @@ export const reponseMessageSimple = z.object({
   journal: z.enum(['recorded', 'unrecorded']),
 });
 
+/** Le 202 de `POST /v1/messages/whatsapp` sur un numéro relié par QR code : un message écrit en premier, en file. */
+export const reponseMessageEnFile = z.object({
+  status: z.literal('queued'),
+  id: z.string().describe('The queued message id, not a WhatsApp message id.'),
+  scheduledAt: date.describe('When the message is due to leave (ISO 8601 date-time).'),
+  conversationId: z.string().nullable().describe('null while the person has no conversation yet: the send opens it.'),
+  channel: z.literal('whatsapp'),
+});
+
 const ouverture = z.enum(['whatsapp_template', 'whatsapp_session', 'rcs']);
 
 export const rapportEnvoi = z.object({

@@ -10,6 +10,7 @@ import { FILE_EVENEMENTS_DISTRIBUTION } from '../src/evenements/distribution';
 import { FILE_EVENEMENTS_ENVOI } from '../src/evenements/envoi';
 import { FILE_EMAILS_PRODUIT } from '../src/emails-produit/emission';
 import { FILE_OUBLI_MODELE } from '../src/shopify/preparation';
+import { FILE_PREMIER_MESSAGE } from '../src/application/premier-message';
 
 /**
  * Garde-fou anti-drift : /ops, pg-boss et le worker doivent voir la MÊME liste de files. Si on ajoute une file
@@ -46,6 +47,7 @@ describe('queue names (source unique)', () => {
       if (name === 'FILE_EVENEMENTS_ENVOI') return FILE_EVENEMENTS_ENVOI;
       if (name === 'FILE_EMAILS_PRODUIT') return FILE_EMAILS_PRODUIT;
       if (name === 'FILE_OUBLI_MODELE') return FILE_OUBLI_MODELE;
+      if (name === 'FILE_PREMIER_MESSAGE') return FILE_PREMIER_MESSAGE;
       throw new Error(`constante de file inconnue du test : ${name} (ajoute sa résolution ici)`);
     });
     const worked = [...new Set([...literals, ...resolved])];
@@ -70,6 +72,7 @@ describe('queue names (source unique)', () => {
       FILE_EVENEMENTS_ENVOI,
       FILE_EMAILS_PRODUIT,
       FILE_OUBLI_MODELE,
+      FILE_PREMIER_MESSAGE,
     };
     const resolus = new Set([...literals, ...viaConst.map((n) => RESOLUTION[n] ?? n)]);
     for (const q of BASE_QUEUES) {

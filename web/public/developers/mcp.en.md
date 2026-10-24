@@ -80,7 +80,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | create_field | mcp:write OAuth connection required | Create a custom field, as in the console: its key comes from the label. |
 | set_contact_field | mcp:write OAuth connection required | Set a field on the contacts of a target or of a list of conversations, like the console’s bulk action, without starting any automation. |
 | connect_shopify | mcp:write OAuth connection required | Connect the merchant’s Shopify store with the app the shopify skill created in its organization; the connection is checked with Shopify before the secret is kept, encrypted. |
-| set_shopify_message | mcp:write OAuth connection required | Send an approved template when an order is paid or fulfilled, or remind an abandoned checkout once, with Shopify data as variables, through the sends rules (STOP, consent, monthly templates, contact limit). |
+| set_shopify_message | mcp:write OAuth connection required | Send a message when an order is paid or fulfilled, or remind an abandoned checkout once: an approved template on the API, a plain text on a number linked by QR code, with Shopify data, through the sends rules (STOP, consent, monthly messages, contact limit). |
 | get_shopify_state | mcp:read OAuth connection required | The connected Shopify store: its state, its messages, the last event received, the last 30 days of outcomes and the last 7 days of checkouts. |
 | preview_shopify_customers | mcp:read OAuth connection required | Count, writing nothing, the Shopify customers subscribed to marketing (email or SMS) who have a phone: already in the workspace, new, free places of the plan, importable. |
 | import_shopify_customers | mcp:write OAuth connection required | Import the subscribed Shopify customers the merchant chose, newest first: records tagged Shopify, without WhatsApp consent, within the plan’s limit. |
@@ -89,7 +89,8 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |
 | block_contact | mcp:write OAuth connection required | Block or unblock a contact: nothing is sent to them anymore, their messages are still recorded. |
 | list_members | mcp:read | Workspace members, to assign threads to them. |
-| reply_in_open_window | mcp:write | Reply, only while the 24 h window is open. |
+| reply_in_open_window | mcp:write | Reply, only while the 24 h window is open; on a number linked by QR code, outside the window, the message is queued as a first message. |
+| write_first_message | mcp:write OAuth connection required | Write first to a number from a number linked by QR code: a queued, spaced-out text, counted in the 1,000 messages of the month, with the contact’s consent. |
 | tag_conversation | mcp:write | Add tags to a thread’s contact. |
 | assign_conversation | mcp:write | Assign a thread to a member, or release it. |
 | control_conversation | mcp:write | Take over a thread, or hand it back to the automatic responder, which answers the next message. |

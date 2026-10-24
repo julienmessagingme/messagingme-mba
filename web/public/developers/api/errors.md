@@ -123,7 +123,7 @@ Que faire : Ne plus écrire à cette personne : elle a dit STOP. L’API ne la r
 
 ### `no_consent` 409, aussi motif d’écart
 
-Consentement manquant : envoi marketing vers qui n’est pas opted_in, ou RCS libre vers qui n’a ni consenti ni écrit.
+Consentement manquant : envoi marketing vers qui n’est pas opted_in, RCS libre vers qui n’a ni consenti ni écrit, ou message écrit en premier depuis un numéro relié par QR code vers qui n’est pas opted_in.
 
 Que faire : Poser sur la fiche le consentement recueilli (consent, consentSource) avant un envoi marketing.
 
@@ -147,7 +147,7 @@ Que faire : Remplir la variable sur la fiche, ou donner une valeur de repli (fal
 
 ### `no_phone` 422, aussi motif d’écart
 
-Fiche sans numéro, alors que le RCS l’exige.
+Fiche sans numéro, alors que le RCS, ou un message écrit en premier depuis un numéro relié par QR code, l’exige.
 
 Que faire : Ajouter un numéro à la fiche.
 

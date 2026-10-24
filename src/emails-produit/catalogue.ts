@@ -760,6 +760,29 @@ export const CATALOGUE = [
     },
   },
   {
+    cle: 'application_premiers_geles',
+    categorie: 'service',
+    nom: 'Premiers messages de l’application suspendus',
+    quand: 'WhatsApp refuse un message écrit en premier par le numéro de l’application WhatsApp Business relié à l’espace.',
+    variables: { numero: NUMERO_APPLICATION },
+    textes: {
+      fr: {
+        sujet: 'WhatsApp a refusé un message de votre numéro',
+        corps: 'Bonjour,\n\nWhatsApp a refusé un premier message du numéro {{numero}}, relié à l’espace {{espace}} par '
+          + 'l’application WhatsApp Business. Les premiers messages de ce numéro (Shopify, Claude, l’API) sont suspendus '
+          + 'pendant 72 heures.\n\nLes réponses aux clients qui vous écrivent continuent de partir.',
+        bouton: null,
+      },
+      en: {
+        sujet: 'WhatsApp refused a message from your number',
+        corps: 'Hello,\n\nWhatsApp refused a first message from the number {{numero}}, linked to the {{espace}} workspace '
+          + 'through the WhatsApp Business app. The first messages of this number (Shopify, Claude, the API) are suspended '
+          + 'for 72 hours.\n\nReplies to customers who write to you keep going out.',
+        bouton: null,
+      },
+    },
+  },
+  {
     cle: 'application_appareil_retire',
     categorie: 'service',
     nom: 'Numéro de l’application délié depuis le téléphone',

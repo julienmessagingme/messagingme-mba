@@ -5,7 +5,8 @@ import { TEXTE_MAX_CARACTERES } from '../traduction/traduire';
 import { RCS_TEXTE_MAX } from '../../web/lib/partage/rcs';
 import { horodatageIso } from '../lib/horodatage-iso';
 import { schemaContactLotV1 } from './contacts-v1';
-import { schemaClesFiche } from './fiche';
+import { MAX_OPT_IN_SOURCE } from './contacts-upsert';
+import { schemaClesFiche, videEnAbsent } from './fiche';
 
 /**
  * LES ENTRÉES PROPRES À L'API PUBLIQUE `/v1`. Ce module possède leur forme et leurs bornes ; les adaptateurs HTTP
@@ -30,9 +31,18 @@ export const corpsChamp = z.strictObject({
   type: z.enum(USER_FIELD_TYPES as [string, ...string[]]),
 });
 
+/**
+ * `consent` et `consentSource` (plan 2026-10-23, tâche 4), facultatifs : sur un numéro relié par QR code, un message
+ * écrit en premier (une personne sans fil, ou hors des 24 heures) exige une fiche `opted_in`, ou ce consentement
+ * déclaré, écrit sur la fiche avant l'envoi, comme `POST /v1/sends` (source absente : `api`). Sans effet ailleurs : dans
+ * les 24 heures, ou sur l'API de WhatsApp, qui n'écrit pas en premier par cette route. Seul `opted_in` se déclare ici :
+ * un désabonnement passe par `PATCH /v1/contacts/{contactId}`.
+ */
 export const schemaMessageWhatsapp = z.strictObject({
   ...schemaClesFiche.shape,
   text: z.string().min(1).max(TEXTE_MAX_CARACTERES),
+  consent: z.preprocess(videEnAbsent, z.enum(['opted_in']).optional()),
+  consentSource: z.preprocess(videEnAbsent, z.string().trim().min(1).max(MAX_OPT_IN_SOURCE).optional()),
 });
 
 export const schemaMessageRcs = z.strictObject({

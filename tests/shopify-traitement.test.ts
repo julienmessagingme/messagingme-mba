@@ -1,9 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { traiterWebhookShopify, type BoutiqueRecue, type DepsTraitementShopify } from '../src/shopify/traitement';
-import { envoyerShopify, type EnvoyerPublic } from '../src/shopify/envoi';
+import { envoyerShopify, noterIssueShopify, type EnvoyerPublic } from '../src/shopify/envoi';
 import type { MessageBranche, Reservation } from '../src/shopify/store.pg';
 import type { Emission } from '../src/emails-produit/emission';
 import type { RapportEnvoi, ResultatEnvoiPublic } from '../src/api/envoi-public';
+import type { Filiere } from '../src/application/comptes';
+import type { DemandePremierMessage, ResultatPremier } from '../src/application/premier-message';
 
 /**
  * LE TRAITEMENT D'UN WEBHOOK SHOPIFY VÉRIFIÉ, ET SON ENVOI (plan 2026-10-21, lot 1).
@@ -26,7 +28,7 @@ const commande = (over: Record<string, unknown> = {}) => ({
 const expedition = { id: 5001, order_id: 1002, name: '#1002.1', tracking_company: 'Colissimo', tracking_number: '6A1', tracking_url: 'https://suivi/6A1', destination: { first_name: 'Julien', phone: '+33633921577', country_code: 'FR' } };
 
 const MESSAGE: MessageBranche = {
-  evenement: 'order_paid', modele: 'commande_payee', langue: 'fr', variables: ['first_name', 'order_number', 'order_status_url'],
+  evenement: 'order_paid', modele: 'commande_payee', texte: null, langue: 'fr', variables: ['first_name', 'order_number', 'order_status_url'],
   actif: true, modifieLe: '2026-10-21T00:00:00.000Z',
 };
 
@@ -36,13 +38,14 @@ const rapport = (over: Partial<RapportEnvoi> = {}): RapportEnvoi => ({
 
 function monter(o: {
   messages?: MessageBranche[]; reservation?: Reservation; reponse?: ResultatEnvoiPublic; envoyerLeve?: boolean;
+  filiere?: Filiere | null; premier?: ResultatPremier;
 } = {}) {
   const journal = {
     reserve: [] as string[], issues: [] as Array<[string, string]>, liberes: [] as string[], liees: [] as unknown[],
     envois: [] as Array<{ corps: unknown; options: unknown }>, emails: [] as Emission[], effaces: [] as string[][],
     coupees: [] as string[], boutiquesEffacees: [] as string[],
     paniers: [] as unknown[], fermes: [] as string[], fermesExistants: [] as string[], fermesParNumero: [] as string[],
-    paniersEffaces: [] as string[],
+    paniersEffaces: [] as string[], premiers: [] as DemandePremierMessage[],
   };
   const deps: DepsTraitementShopify = {
     store: {
@@ -66,6 +69,12 @@ function monter(o: {
       if (o.envoyerLeve) throw new Error('panne');
       expect(await compter(1)).toBe(true);
       return o.reponse ?? { statut: 201, corps: rapport() };
+    },
+    // La filière API par défaut : les tests d'avant le texte simple (plan 2026-10-23) restent ceux de l'API.
+    filiere: async () => (o.filiere === undefined ? 'api' : o.filiere),
+    ecrirePremier: async (demande) => {
+      journal.premiers.push(demande);
+      return o.premier ?? { ok: true, id: 'p1', prevuLe: new Date('2026-10-21T10:01:00Z'), dejaEnFile: false };
     },
     ficheParTelephone: async (_t, e164) => (e164 === '+33633921577' ? 'fiche-1' : null),
     effacerFiches: async (_t, ids) => { journal.effaces.push([...ids]); },
@@ -364,6 +373,102 @@ describe('une boutique coupée, la désinstallation et les sujets RGPD', () => {
     expect(await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', { pas: 'une commande' })).toEqual({ statut: 200 });
     expect(await traiterWebhookShopify(deps, BOUTIQUE, 'products/update', {})).toEqual({ statut: 200 });
     expect(journal.envois).toEqual([]);
+  });
+});
+
+/**
+ * LE TEXTE D'UN NUMÉRO RELIÉ PAR QR CODE (plan 2026-10-23, tâche 5) : il part par la porte « écrire en premier », en file,
+ * sous la clé de l'événement ; le job inscrit ensuite l'issue finale sur ce même événement (`noterIssueShopify`).
+ */
+describe('une commande sur un numéro relié par QR code', () => {
+  const CLE = 'shopify:b.myshopify.com:orders/paid:1002';
+  const TEXTE: MessageBranche = {
+    ...MESSAGE, modele: null, texte: 'Bonjour {{first_name}}, merci pour {{order_number}} : {{order_status_url}}',
+    variables: ['first_name', 'order_number', 'order_status_url'],
+  };
+  const AFFIRMEE: BoutiqueRecue = { ...BOUTIQUE, consentementAffirme: true };
+  const sansPrenom = () => commande({ customer: { id: 77, phone: null, first_name: null }, shipping_address: { first_name: null, phone: '+33633921577', country_code: 'FR' } });
+
+  it('🔴 une commande payée enfile le texte composé (données remplies, prénom de secours, sans pied STOP), sous la clé de l’événement', async () => {
+    const { deps, journal } = monter({ messages: [TEXTE], filiere: 'application' });
+    expect(await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', sansPrenom())).toEqual({ statut: 200 });
+    expect(journal.envois).toEqual([]);
+    expect(journal.premiers).toEqual([{
+      tenantId: T, cle: CLE, telephone: '33633921577',
+      texte: 'Bonjour à vous, merci pour #1002 : https://b.myshopify.com/1/orders/x/authenticate?key=k',
+      origine: 'shopify_commande', reference: CLE, consentement: { mode: 'marchand', source: 'shopify:b.myshopify.com' },
+    }]);
+    expect(journal.issues).toEqual([[CLE, 'en_file']]);
+    expect(journal.liees).toEqual([[T, '1002', '77', 'fiche-1']]);
+  });
+
+  it('une expédition enfile son texte, le transporteur et le suivi remplis', async () => {
+    const colis: MessageBranche = { ...TEXTE, evenement: 'order_fulfilled', texte: 'Votre commande {{order_number}} part avec {{carrier}} : {{tracking_url}}', variables: ['order_number', 'carrier', 'tracking_url'] };
+    const { deps, journal } = monter({ messages: [colis], filiere: 'application' });
+    await traiterWebhookShopify(deps, AFFIRMEE, 'fulfillments/create', expedition);
+    expect(journal.premiers).toMatchObject([{ cle: 'shopify:b.myshopify.com:fulfillments/create:5001', texte: 'Votre commande #1002 part avec Colissimo : https://suivi/6A1' }]);
+  });
+
+  it('🔴 sans l’accord affirmé du marchand, rien ne part en file : sans_consentement', async () => {
+    const { deps, journal } = monter({ messages: [TEXTE], filiere: 'application' });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande());
+    expect(journal.premiers).toEqual([]);
+    expect(journal.issues).toEqual([[CLE, 'sans_consentement']]);
+  });
+
+  it('🔴 un croisement (un texte sur l’API, un modèle sur un numéro relié par QR code) rend filiere_differente, sans rien envoyer', async () => {
+    const texteSurApi = monter({ messages: [TEXTE], filiere: 'api' });
+    await traiterWebhookShopify(texteSurApi.deps, AFFIRMEE, 'orders/paid', commande());
+    expect([texteSurApi.journal.premiers, texteSurApi.journal.envois, texteSurApi.journal.issues]).toEqual([[], [], [[CLE, 'filiere_differente']]]);
+    const modeleSurQr = monter({ filiere: 'application' });
+    await traiterWebhookShopify(modeleSurQr.deps, AFFIRMEE, 'orders/paid', commande());
+    expect([modeleSurQr.journal.premiers, modeleSurQr.journal.envois, modeleSurQr.journal.issues]).toEqual([[], [], [[CLE, 'filiere_differente']]]);
+    // Un modèle sans filière (le numéro retiré) suit sa voie d'avant : l'envoi public, qui le dit.
+    const sansFiliere = monter({ filiere: null });
+    await traiterWebhookShopify(sansFiliere.deps, AFFIRMEE, 'orders/paid', commande());
+    expect(sansFiliere.journal.envois).toHaveLength(1);
+  });
+
+  it('un refus de la porte devient son issue (filiere_api lue comme un croisement) ; un rejeu déjà en file reste en_file', async () => {
+    for (const [premier, issue] of [
+      [{ ok: false, refus: 'limite_modeles' }, 'limite_modeles'],
+      [{ ok: false, refus: 'gele' }, 'gele'],
+      [{ ok: false, refus: 'numero_coupe' }, 'numero_coupe'],
+      [{ ok: false, refus: 'filiere_api' }, 'filiere_differente'],
+      [{ ok: true, id: 'p1', prevuLe: new Date(), dejaEnFile: true }, 'en_file'],
+    ] as const) {
+      const { deps, journal } = monter({ messages: [TEXTE], filiere: 'application', premier });
+      await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', commande());
+      expect(journal.issues, issue).toEqual([[CLE, issue]]);
+    }
+    // La limite de contacts de la porte prévient les admins, comme celle de l'envoi public.
+    const limite = monter({ messages: [TEXTE], filiere: 'application', premier: { ok: false, refus: 'limite_contacts' } });
+    await traiterWebhookShopify(limite.deps, AFFIRMEE, 'orders/paid', commande());
+    expect(limite.journal.emails).toMatchObject([{ cle: 'shopify_limite_contacts' }]);
+  });
+
+  it('un texte qui dépasse ce qu’un message porte, une fois les données remplies, ne part pas', async () => {
+    const long: MessageBranche = { ...TEXTE, texte: `${'x'.repeat(4090)} {{order_status_url}}` };
+    const { deps, journal } = monter({ messages: [long], filiere: 'application' });
+    await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', commande());
+    expect([journal.premiers, journal.issues]).toEqual([[], [[CLE, 'texte_trop_long']]]);
+  });
+
+  it('🔴 en_file, puis l’issue finale du job par noterIssueShopify, sur le même événement de l’espace (le panier par son jeton)', async () => {
+    const { deps, journal } = monter({ messages: [TEXTE], filiere: 'application' });
+    await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', commande());
+    const paniers: Array<[string, string, string]> = [];
+    const noter = noterIssueShopify({ noterIssue: deps.store.noterIssue, noterIssuePanier: async (t, jeton, issue) => { paniers.push([t, jeton, issue]); } });
+    await noter('shopify_commande', T, CLE, 'envoye');
+    expect(journal.issues).toEqual([[CLE, 'en_file'], [CLE, 'envoye']]);
+    await noter('shopify_commande', T, CLE, 'filiere_api');
+    expect(journal.issues.at(-1)).toEqual([CLE, 'filiere_differente']);
+    await noter('shopify_panier', T, 'jeton-1', 'pas_sur_whatsapp');
+    expect(paniers).toEqual([[T, 'jeton-1', 'pas_sur_whatsapp']]);
+    // Claude, l'API, une réponse, ou une ligne sans référence : rien.
+    for (const origine of ['mcp', 'api', 'reponse'] as const) await noter(origine, T, CLE, 'envoye');
+    await noter('shopify_commande', T, null, 'envoye');
+    expect([journal.issues.length, paniers.length]).toEqual([3, 1]);
   });
 });
 

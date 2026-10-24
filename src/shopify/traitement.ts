@@ -10,7 +10,7 @@ import {
   avecPrenomDeSecours, estObjetSimple, numeroDeCommandeDExpedition, prenomDeCheckout, schemaCheckout, telephoneDeCheckout, valeurDeVariable,
   type DonneeShopify, type EvenementShopify,
 } from './donnees';
-import { envoyerShopify, type EnvoyerPublic, type IssueEnvoi } from './envoi';
+import { envoyerMessageShopify, type DepsEnvoiShopify, type IssueShopify } from './envoi';
 import type { EtatBoutique, OrigineBoutique, PgShopifyStore } from './store.pg';
 
 /**
@@ -42,7 +42,10 @@ export interface DepsTraitementShopify {
     'message' | 'reserverEvenement' | 'noterIssue' | 'libererEvenement' | 'noterDernierEvenement' | 'lierCommande'
     | 'couperParDomaine' | 'effacerBoutique' | 'contactsLies' | 'noterPanier' | 'fermerPanier' | 'fermerPanierExistant'
     | 'fermerPaniersDuTelephone' | 'effacerPaniersDuTelephone'>;
-  envoyer: EnvoyerPublic;
+  /** L'envoi public (un modèle, filière API), la filière lue à l'envoi, et la porte « écrire en premier » (un texte). */
+  envoyer: DepsEnvoiShopify['envoyer'];
+  filiere: DepsEnvoiShopify['filiere'];
+  ecrirePremier: DepsEnvoiShopify['ecrirePremier'];
   /** La fiche vivante d'un numéro E.164 dans l'espace, ou `null`. */
   ficheParTelephone(tenantId: string, e164: string): Promise<string | null>;
   /**
@@ -71,7 +74,7 @@ const LIBELLE: Readonly<Record<EvenementShopify, string>> = {
 
 /** Les issues qui ne sont pas un envoi : le traitement s'arrête avant l'envoi public. */
 type IssueAvantEnvoi = 'sans_telephone' | 'donnee_manquante';
-export type IssueEvenement = Exclude<IssueEnvoi, 'en_cours'> | IssueAvantEnvoi;
+export type IssueEvenement = Exclude<IssueShopify, 'en_cours'> | IssueAvantEnvoi;
 
 const SUJETS_RGPD = new Set(['customers/redact', 'customers/data_request', 'shop/redact']);
 
@@ -261,9 +264,11 @@ async function servir(deps: DepsTraitementShopify, b: BoutiqueRecue, s: Service)
     if (s.telephone === null) issue = 'sans_telephone';
     else if (manque || m.variables.some((v) => !DONNEES_PAR_EVENEMENT[s.evenement].includes(v))) issue = 'donnee_manquante';
     else {
-      issue = await envoyerShopify(deps.envoyer, {
-        tenantId: b.tenantId, cle, nomLigne: `Shopify · ${LIBELLE[s.evenement]} · ${s.numero}`,
-        modele: m.modele, langue: m.langue, variables: m.variables, valeurs, telephone: s.telephone,
+      // Un modèle part par l'envoi public (filière API) ; un texte par la porte « écrire en premier » (numéro relié par
+      // QR code), qui le met en file : l'issue est alors `en_file`, et le job inscrit la suivante sous la même clé.
+      issue = await envoyerMessageShopify(deps, {
+        tenantId: b.tenantId, cle, origine: 'shopify_commande', reference: cle, evenement: s.evenement,
+        nomLigne: `Shopify · ${LIBELLE[s.evenement]} · ${s.numero}`, message: m, valeurs, telephone: s.telephone,
         // Bornée comme toute source de consentement (`MAX_OPT_IN_SOURCE`) : trop longue, le destinataire serait écarté.
         sourceConsentement: b.consentementAffirme ? `shopify:${b.domaine}`.slice(0, MAX_OPT_IN_SOURCE) : null,
       });

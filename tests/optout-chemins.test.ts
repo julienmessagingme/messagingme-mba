@@ -76,7 +76,10 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
       + 'envoie le texte que le service de connexions lui passe, à qui il lui dit. Il ne décide rien : les gardes '
       + '(STOP, numéro bloqué, détenteur du fil) sont celles des appelants du service, qui y passent tous par '
       + '`src/application/envoi.ts` : la réponse (`repondreDansLaFenetre`) et l’agent IA (`src/agent/run-turn.ts`, '
-      + 'puis `envoyerTexteAgent`), comme pour un envoi par Meta.',
+      + 'puis `envoyerTexteAgent`), comme pour un envoi par Meta. Plus la porte « écrire en premier » '
+      + '(`src/application/premier-message.ts`, plan 2026-10-23), qui passe par le client du service sans '
+      + '`envoi.ts` : elle refuse un STOP et un contact bloqué à l’enfilement, et son job les RELIT juste avant '
+      + 'd’envoyer (`traiterPremierMessage`, `machineSeTaitParWaId`).',
   },
   'src/inbox/envoi-modele.ts': {
     verdict: 'delegue',

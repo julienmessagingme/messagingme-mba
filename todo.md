@@ -112,6 +112,43 @@ Meta délié, finitions de l'adressage masqué, mise en file retentée, e-mail d
 - Mineurs : l'empreinte d'état a changé une fois pour tous les états au déploiement du lot 1 ; quelques textes disent
   encore la filière avant la connexion de Meta ; une demande de renvoi d'un de NOS appareils liés secondaires repart sans
   enveloppe pour un message adressé à `@lid` (limite de Baileys 6.7.23, `messages-send.js`).
+## 🟡 Écrire en premier et Shopify sur un numéro QR code : ce que la relecture du lot B laisse (2026-10-24)
+
+Plan : `docs/superpowers/plans/2026-10-23-shopify-numero-qr.md`. Relu une fois ; le seul rouge (un numéro étranger mal
+saisi relu comme un mobile français par la porte) est corrigé dans le lot. Restent :
+
+- **Le SDK** : `sendWhatsappText` rend désormais l'union du 200 et du 202 (`sdk/src/schema.ts` régénéré) ; un code
+  TypeScript qui lit `res.messageId` sans test ne compile plus. Publier une 0.4.0 (tag `v0.4.0` de messagingme-sdk) et
+  monter `VERSION_SDK`, le README du SDK et la skill `rappels` APRÈS la publication, jamais avant (le tag doit exister).
+- **Le rejeu d'une clé déjà finie** (`dejaLa`, `premier-message.ts`) rend « en file » pour une ligne `envoye` ou
+  `abandonne` : un rejeu Shopify après `libererEvenement` réécrit `en_file` sur l'issue finale, et l'outil annonce
+  « part vers HH:MM » pour un message déjà parti. Rendre le statut et l'issue de la ligne.
+- **Une ligne restée `envoi`** (exception après la réclamation) n'appelle jamais `noterIssue` : l'issue Shopify reste
+  `en_file`. Un balayage qui conclut ces lignes après quelques minutes (`abandonne` / `envoi_incertain`).
+- **Le réessai à +60 s** (sommeil, service injoignable avant l'envoi) ne repasse pas par la réservation du créneau : deux
+  premiers messages d'un compte peuvent partir à moins de 30 s.
+- **Le gel 463 est presque inerte** : Baileys 6.7.23 rend le refus dans l'accusé (`messages.update`, `handleBadAck`),
+  que personne n'écoute. L'écoute des accusés est la brique qui le rendrait réel (et qui verrait un message resté
+  « En attente ») : l'essai 156 (2026-10-24) a montré qu'un premier message résolu par `onWhatsApp` arrive en clair, donc
+  elle n'est pas urgente.
+- **Un STOP dit depuis un fil masqué** (`@lid` sans numéro) est rangé sous l'identifiant masqué : écrire en premier au
+  numéro ne le voit pas. Relire aussi le STOP de l'identifiant masqué que la vérification trouve.
+- **L'accès** : `reply_in_open_window` (sans personne exigée) écrit en premier hors des 24 heures, alors que
+  `write_first_message` exige une personne ; `/v1` le fait avec une clé d'API. À aligner.
+- **`ORIGINE_DU_MESSAGE.reponse = 'api'`** : une réponse différée de Claude est tracée `api` au lieu de `mcp` (la
+  statistique « qui a répondu » s'en trouve faussée).
+- **La ligne STOP de la relance** s'ajoute après la validation : un texte proche de 4 096 caractères finit toujours en
+  `texte_trop_long` sans que le réglage l'ait dit. Valider avec la ligne STOP comprise au branchement.
+- **Détails** : `identity_conflict` rendu sous `sans_telephone` (phrase fausse) ; la clé « à la minute » met deux fois en
+  file un rejeu qui chevauche la minute ; une unité du mois perdue si l'insertion échoue après `consommer`.
+- **La fin de la tâche 6** : `features.md` § Boutique Shopify, la fiche `brancher-ma-boutique-shopify` (voie par QR code)
+  et son empreinte, une entrée de FAQ du plugin (`scripts/plugin/faq.ts`). La fiche est PUBLIQUE depuis la session
+  « Vitrine Shopify » : grammaire publique, version anglaise et `traduit_de` recalés, `npm run vitrine:aide` dans le même
+  commit, `aide:charger` après le push ; ses captures se refont par `web/e2e/captures/brancher-ma-boutique-shopify.capture.ts`.
+- **La page Boutiques Shopify** (`/solutions/shopify/`, conception de la vitrine du 2026-10-23), après l'essai 157 : la
+  carte Shopify de `/integrations/` (`site/integrations/index.html`, `id="shopify"`) mène pour l'instant à la fiche d'aide
+  publique ; la rebrancher sur la page le jour où elle existe (le bandeau de l'accueil pointe sur `/integrations/#shopify`).
+
 ## 🟡 Shopify : ce qui attend après les conceptions du 2026-10-23
 
 Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (le produit, d'abord) et

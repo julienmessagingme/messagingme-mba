@@ -18,6 +18,8 @@ const sessions: GestionnaireSessions = {
   async qr() { return { qr: 'QR-1', ouverte: false, statut: 'en_attente' }; },
   async envoyer(id, dest, texte) {
     if (texte === 'refuse') throw new ErreurApplication('non_relie', 'non relié');
+    if (texte === 'refus-463') throw new ErreurApplication('refuse_whatsapp', 'WhatsApp a refusé le message (463)');
+    if (texte === 'panne') throw new Error('Connection Closed');
     appels.push(`envoyer:${id}:${dest}:${texte}`);
     return 'WA-42';
   },
@@ -62,6 +64,11 @@ describe('le client et les routes du service de connexions', () => {
 
   it('un compte non relié rend un refus lisible, pas une exception', async () => {
     expect(await client().envoyer(COMPTE, 'x@s.whatsapp.net', 'refuse')).toEqual({ ok: false, raison: 'non_relie' });
+  });
+
+  it('🔴 un refus de WhatsApp traverse la route avec sa raison ; une panne de la session reste une panne', async () => {
+    expect(await client().envoyer(COMPTE, 'x@s.whatsapp.net', 'refus-463')).toEqual({ ok: false, raison: 'refuse_whatsapp' });
+    expect(await client().envoyer(COMPTE, 'x@s.whatsapp.net', 'panne')).toEqual({ ok: false, raison: 'service_injoignable' });
   });
 
   it('🔴 vérifie un numéro avant un premier message : présent, absent, mal formé, compte non relié', async () => {

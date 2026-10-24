@@ -13,7 +13,7 @@ const RACINE = resolve(__dirname, '..');
 const DEPARTS = [
   'src/application/client.ts', 'src/application/envoi.ts', 'src/application/connexion.ts', 'src/application/entrant.ts',
   'src/application/entrant.pg.ts', 'src/application/garde-outils.ts', 'src/application/sommeil.ts', 'src/application/avis.ts',
-  'src/application/comptes.pg.ts',
+  'src/application/comptes.pg.ts', 'src/application/premier-message.ts', 'src/application/premier-message.pg.ts',
 ];
 
 /** Les imports de valeur d'un fichier, relatifs, résolus en chemins de fichiers ; les paquets sont rendus tels quels. */

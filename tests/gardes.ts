@@ -6,6 +6,7 @@ import { DROITS } from '../src/offres/offres';
 import type { SourceOffres } from '../src/offres/offre.pg';
 import type { EnvoiApplication } from '../src/application/envoi';
 import type { DepsConnexionApplication } from '../src/application/connexion';
+import type { DepsRepondre } from '../src/inbox/repondre';
 
 /**
  * LA GARDE QUI LAISSE PASSER, ET ELLE A UN NOM (lot 2 du plan 2026-09-14).
@@ -64,6 +65,14 @@ export const filiereApiSeule: EnvoiApplication = {
   filiere: async () => 'api',
   relie: async () => false,
   envoyer: async () => { throw new Error('filière application : aucun envoi attendu dans ce test'); },
+};
+
+/**
+ * AUCUN MESSAGE ÉCRIT EN PREMIER (plan 2026-10-23, tâche 3) : l'hypothèse des tests d'une réponse qui ne parlent pas de
+ * la porte « écrire en premier » de la filière application. Y passer est une erreur du test, et lève.
+ */
+export const aucunPremierMessage: DepsRepondre['ecrirePremier'] = async () => {
+  throw new Error('porte « écrire en premier » : aucun message attendu dans ce test');
 };
 
 /**
