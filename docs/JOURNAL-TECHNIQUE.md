@@ -5,6 +5,37 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-24 (soir) : le numéro relié par QR code ne fait plus que répondre (lot C), et la coexistence conçue
+
+Suite des lots A et B (plus bas). Implémenteur unique et une relecture indépendante, dans une extraction d'origin
+publiée par plomberie.
+
+- **Ce qui a été mesuré** : l'essai 156 avait livré un premier message en clair, mais l'appareil lié a été déconnecté
+  (401) 2,8 s après, sans geste sur le téléphone. Relié de nouveau, un second essai vers un autre inconnu (vers
+  19 h 55, heure de Paris) : vérification `present`, envoi accepté par la session, puis refusé par WhatsApp dans
+  l'accusé (erreur 463), sans déconnexion cette fois. WhatsApp bride donc l'écriture en premier d'un appareil lié.
+- **Décision de Julien** : le numéro QR code reste une option, réservée aux réponses ; écrire en premier passera par
+  la coexistence de Meta.
+- **Lot C** (`efb8bfdd`) : la porte refuse tout mode autre que `conversation` (refus `premier_contact`, avant la clé,
+  la fiche, le quota et la file ; 422 `window_closed` sur `/v1`) ; `write_first_message` retiré partout (catalogue,
+  docs générées, plugin, SDK) ; Shopify refuse en 409 un message actif sur la filière application ; skills, manuel,
+  fonctionnel et doc de l'API publique alignés ; `appliquerConsentement` retiré de `depsPremier` (`src/index.ts`).
+- **La relecture** : aucun rouge ; les jaunes au `todo.md`. Un jaune corrigé avant le push : la skill
+  `mise-en-service` avait perdu le choix entre son propre numéro et un numéro fourni.
+- **Avant le déploiement, en lecture seule** : aucune ligne dans `application_premiers_messages`, aucun texte Shopify
+  actif ; rien de mis en file par le lot B ne pouvait donc partir après lui.
+- **Déployé** : CI verte job par job (unit, integration, securite, CodeQL, console vercel et proxy) ; `mba-api` et
+  `mba-worker`, puis `mba-worker-analyse`, à `efb8bfdd`, garde de révision dans chaque commande. `mba-application`
+  n'atteint aucun fichier changé (85 modules suivis depuis `src/application/service.ts`) : non redéployé. Le contrat
+  servi (`/openapi.json`) est identique à celui du commit pour `/v1/messages/whatsapp`.
+- **Le plugin** : la 0.3.8 (lot B) n'a jamais été publiée ; la session Vitrine publie la 0.3.9, qui porte les skills
+  du lot C et le questionnaire de Julien (compte Meta Business, application WhatsApp Business, ancienneté du numéro,
+  numéro disponible ou fourni).
+- **La coexistence** : conception `docs/superpowers/specs/2026-10-24-coexistence-design.md` et plan
+  `docs/superpowers/plans/2026-10-24-coexistence.md` (deux lots, chacun clos par un essai réel), validés par Julien.
+  Règle posée en route : un message écrit depuis l'application à un inconnu est un contact ajouté, qui compte dans la
+  limite de l'offre ; seuls les gens qui écrivent les premiers restent hors compte.
+
 ## 2026-10-24 : la machine d'état MFA sort de Fastify
 
 Le premier point de l'audit de simplicité du 22 octobre est livré par la PR
