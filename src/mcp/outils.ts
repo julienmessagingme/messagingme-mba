@@ -106,7 +106,8 @@ export interface DepsMcp extends DepsRepondre, DepsChampsMcp {
   etiquettes: Pick<PoseEtiquette, 'poser'>;
   /**
    * La main du fil (`control_conversation`) : les deux boutons du fil de la console, le MÊME contrôle
-   * (`src/inbox/fil.ts`). L'outil n'y ajoute que la garde d'espace et des refus lisibles là où la console rend un 409.
+   * (`src/inbox/fil.ts`). L'outil y ajoute la garde d'espace, des refus lisibles là où la console rend un 409, et la garde
+   * du consentement à la remise : il rend la main par `rendreLaMainSousConsentement`, jamais par le geste sans garde.
    */
   fil: Pick<ControleDuFil, 'reprendreLaMain' | 'rendreLaMainSousConsentement'>;
   /** Membres de l'espace, pour qu'un agent puisse confier une conversation à quelqu'un de nommé. */
@@ -903,18 +904,23 @@ export const OUTILS: OutilMcp[] = [
         throw new RefusOutil('Meta n’a pas repris la conversation : elle reste à l’équipe, réessayez dans un instant.');
       }
       if (detenteur === 'contact_muet') {
-        // Le répondeur de l'espace est devenu l'agent de Meta entre la lecture d'ici et celle du fil : rien n'a changé.
-        throw new RefusOutil('ce contact a dit STOP ou est bloqué, et le répondeur de l’espace vient de passer à l’agent '
-          + 'de Meta : la conversation ne lui est pas confiée, rien n’a changé.');
+        // Le fil a refusé de confier ce contact à l'agent de Meta : le mode est passé à `mba` entre les deux lectures, ou
+        // le contact a dit STOP ou a été bloqué entre-temps. Rien n'a changé.
+        throw new RefusOutil('ce contact a dit STOP ou est bloqué : la conversation n’est confiée à aucun robot, rien n’a '
+          + 'changé.');
       }
       if (detenteur === 'aucun_numero') {
         throw new RefusOutil('Aucun numéro WhatsApp n’est connecté : l’agent de Meta ne peut pas reprendre la conversation, '
           + 'elle reste à l’équipe.');
       }
-      if (!sansRepondeur) return { conversation_id: id, handled_by: detenteur };
+      // L'agent de Meta tient le fil : le fil a relu `mba` après la lecture d'ici (le mode a changé entre-temps). Aucune
+      // phrase sur le mode « équipe », qui ne vaut plus.
+      if (!sansRepondeur || detenteur === 'mba') return { conversation_id: id, handled_by: detenteur };
+      // Nos robots (scénario, agent IA) relisent STOP ou bloqué avant d'écrire ; l'agent de Meta, lui, répond chez Meta à un
+      // contact resté sur sa liste, d'où la phrase limitée à nos robots.
       const contact = stop
-        ? ' Ce contact a dit STOP : aucun robot ne lui écrit de lui-même, quel que soit le répondeur.'
-        : bloque ? ' Ce contact est bloqué : aucun robot ne lui écrit de lui-même, quel que soit le répondeur.' : '';
+        ? ' Ce contact a dit STOP : aucun scénario ni agent IA ne lui écrit de lui-même, quel que soit le répondeur.'
+        : bloque ? ' Ce contact est bloqué : aucun scénario ni agent IA ne lui écrit de lui-même, quel que soit le répondeur.' : '';
       return {
         conversation_id: id,
         handled_by: detenteur,

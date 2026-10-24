@@ -450,7 +450,7 @@ export const modelesInertes: Pick<DepsGestionModeles, 'getPublishedFlow' | 'indi
   tracking: {
     allocate: async () => { throw new Error('valeur inerte : traçage des liens éteint'); },
     // Aucun lien en base : rien à remettre en l'état, rien de périmé.
-    liens: { confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => [] },
+    liens: { getByCode: async () => null, confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => [] },
     lienDe: (code: string) => code,
     destinations: async () => new Map(),
   },

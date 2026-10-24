@@ -43,8 +43,9 @@ import { journaliser } from '../lib/journal';
  *     reprend le fil, agent de Meta ou scénario, et quand un opérateur le rend. Elle ne s'efface pas quand le fil
  *     va à l'équipe : c'est l'équipe qu'on attend. Sans ça, une conversation restait dans « À traiter » pendant que
  *     l'agent répondait, ou collée pour toujours après un refus de Meta (le balayage ne rend jamais un fil escaladé).
- *  5. **Un fil de test** (`is_test`) n'est jamais rendu automatiquement à l'agent. Seul « Rendre la main », geste
- *     humain explicite, le peut. ⚠️ Plus rien ne marque une conversation comme test depuis le 2026-10-03 (le lien
+ *  5. **Un fil de test** (`is_test`) n'est jamais rendu automatiquement à l'agent. Seul « Rendre la main » le peut :
+ *     le bouton de la console, geste humain explicite, et sa variante sous consentement (l'outil MCP, ouvert aussi
+ *     derrière une clé d'API, donc à une machine). ⚠️ Plus rien ne marque une conversation comme test depuis le 2026-10-03 (le lien
  *     de test ne le fait plus, décision de Julien) : la règle ne vaut que pour les conversations marquées avant.
  *  6. **Chaque écriture dit qui la demande** (`EcritureDuFil.par`, requis) : le collaborateur que l'appelant
  *     nomme pour un geste de la console, une cause écrite ici (`CAUSES`) pour tout le reste. Le dépôt en fait,
@@ -198,7 +199,8 @@ export interface DepsControleDuFil {
    * Le contact a-t-il dit STOP, ou a-t-il été bloqué ? Requise, comme partout où une machine parle (`tests/consentement.ts`) :
    * une remise AUTOMATIQUE confie le contact à l'agent de Meta, qui lui parle. Sans elle, un « STOP » que personne
    * ne prenait partait chez l'agent avec l'ordre de répondre, et le contact restait sur sa liste (relecture du
-   * 2026-09-30). Le bouton « Rendre la main » n'y passe pas : c'est un geste humain, délibéré.
+   * 2026-09-30). Le bouton « Rendre la main » n'y passe pas : c'est un geste humain, délibéré. Sa variante sous
+   * consentement (`rendreLaMainSousConsentement`, l'outil MCP) y passe.
    */
   consentement: {
     estDesabonne(tenantId: string, waId: string): Promise<boolean>;
@@ -281,8 +283,8 @@ export interface ControleDuFil {
    * que notre côté (`release` sans tenir le fil est hors contrat) ; l'agent de Meta n'est pas le répondeur (éteint, ou
    * en veille hors du mode `mba`) : `app_workflow`, et le prochain message relance le répondeur du mode ; sinon on
    * confie (liste, puis `release`) et on écrit `mba`. Aucun événement : l'agent parle au prochain message du client. Lève si
-   * Meta refuse l'ajout à la liste (un `release` refusé n'en est pas un, `confier`). Efface l'escalade. Seul geste
-   * qui confie un fil de test.
+   * Meta refuse l'ajout à la liste (un `release` refusé n'en est pas un, `confier`). Efface l'escalade. Avec sa variante
+   * sous consentement, seul geste qui confie un fil de test.
    */
   rendreLaMain(tenantId: string, waId: string, par: AuteurDuChangement): Promise<IssueRendreLaMain>;
   /**
@@ -461,7 +463,8 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
   const confier = async (
     tenantId: string,
     waId: string,
-    o: { automatique: boolean; faireDeLaPlace: boolean; consentement?: boolean },
+    // Un geste qui n'est pas automatique DIT s'il garde le consentement : l'oublier ne compile pas (relecture du lot 5).
+    o: { automatique: true; faireDeLaPlace: boolean } | { automatique: false; faireDeLaPlace: boolean; consentement: boolean },
   ): Promise<IssueConfier> => {
     if (!(await mbaAllume(tenantId))) return { sorte: 'agent_eteint' };
     if (o.automatique && await depot.estConversationDeTest(tenantId, waId)) {
@@ -471,7 +474,7 @@ export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
     }
     // Un contact désabonné ou bloqué n'est jamais confié par une machine : l'agent lui parlerait. Ni par un geste qui
     // peut venir d'une machine (`consentement`, l'outil MCP), même délibéré.
-    if ((o.automatique || o.consentement === true)
+    if ((o.automatique || o.consentement)
       && ((await deps.consentement.estDesabonne(tenantId, waId)) || (await deps.consentement.estBloque(tenantId, waId)))) {
       return { sorte: 'contact_muet' };
     }

@@ -313,3 +313,23 @@ vérifiée dans les deux sens. Pas de câblage partagé (le fil passe entier aux
 (`web/`) se publie au push, un texte. Les deux fiches ne changent que d'empreinte, leur page publique est identique
 (`vitrine:aide` vérifié). **Déploiement** : API et workers, avec l'accord de Julien. **Essai réel** : `hand_back` en
 mode « équipe » sur un contact bloqué (la phrase dit « de lui-même »), et sous l'agent le refus.
+
+## Suite : les jaunes de la relecture du lot 5 (2026-10-24, lot 6)
+
+La relecture du lot 5 a laissé huit jaunes (`todo.md`), dont deux restes du lot 4.
+
+1. **`update_template`** : un lien `/r/<code>/{{1}}` est l'un des nôtres si son code appartient à l'espace, confirmé ou
+   non (`getByCode`, la lecture de la redirection publique) ; la lecture n'a lieu que pour un lien de cette forme, et
+   une base qui ne répond pas est un refus « réessayez ». La garde de l'appelant de `modifierUnModele` devient asynchrone.
+2. **`hand_back`** : le refus `contact_muet` est neutre ; si le fil confie à l'agent de Meta un contact libre après un
+   mode relu à `mba`, le résultat ne parle plus du mode « équipe » ; la phrase se limite à nos robots (scénario, agent
+   IA). Un test monte le vrai contrôle du fil sous l'outil.
+3. **`confier`** : un geste non automatique dit s'il garde le consentement (le type l'exige).
+4. **Un modèle sans corps** : le refus de l'édition et l'infobulle le disent.
+5. **Commentaires** : la règle du fil de test, la doc du consentement, l'en-tête des dépendances du MCP.
+
+**Méthode de livraison** : en direct, dans une copie à part de `main`, puis une relecture indépendante ; chaque garde
+vérifiée dans les deux sens. Pas de câblage partagé (les liens tracés passent à la gestion sous la forme du dépôt
+entier), aucune migration ; la console (`web/`) se publie au push, un texte. **Déploiement** : API et workers, avec
+l'accord de Julien. **Essai réel** : `hand_back` en mode « équipe » sur un contact bloqué (la phrase nomme scénario et
+agent IA), et sous l'agent le refus.

@@ -791,7 +791,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
           destinations.set(`https://mba.messagingme.app/r/${code}`, destination);
           return code;
         },
-        liens: {
+        liens: { getByCode: async () => null,
           confirm: async (_t: string, codes: readonly string[]) => { journal.push(`confirm:${codes.join(',')}`); },
           deconfirmer: async (_t: string, codes: readonly string[]) => { journal.push(`deconfirmer:${codes.join(',')}`); },
           listByTemplates: async () => [],
@@ -857,7 +857,7 @@ describe('traçage des liens : la route substitue à la soumission et ré-habill
         repo: { getTenantWabaId: async () => 'waba1', listActiveCampaignsForTemplate: aucuneCampagneActive },
         tracking: {
           allocate: async () => { throw new Error('base indisponible'); },
-          liens: { confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => [] },
+          liens: { getByCode: async () => null, confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => [] },
           lienDe: (c: string) => `https://mba.messagingme.app/r/${c}`,
           destinations: async () => new Map(),
         },
@@ -920,7 +920,7 @@ function tableDesLiens() {
       Object.assign(l, { destination, avecJeton, confirme: false });
       return l.code;
     },
-    liens: {
+    liens: { getByCode: async () => null,
       confirm: async (_t: string, codes: readonly string[]) => {
         journal.push(`confirm:${codes.join(',')}`);
         for (const l of lignes) if (codes.includes(l.code)) l.confirme = true;

@@ -3349,8 +3349,9 @@ l'activer, et d'ouvrir une recharge du crédit.
   `prepare_resume` rend le motif de la pause et sa phrase (`pauseDe`, lu hors de l'empreinte du code, et
   `messageDePause`), et refuse une pause qu'un autre geste lève (numéro délié, abonnement impayé). `update_template`
   refuse un bouton Flow ou un lien qui prend une variable sans être l'un de nos liens tracés (`/r/<code>/{{1}}` sous
-  tout hôte, `codeDuLienTrace`, dont le code est l'un des liens tracés confirmés de cette langue du modèle, et qui se
-  retrace à la correction) : le format de Meta de l'outil ne les renvoie pas. Ce refus est jugé dans `modifierUnModele` (`refusDeLAppelant`), sur le modèle qu'elle lit chez
+  tout hôte, `codeDuLienTrace`, dont le code appartient à cet espace, confirmé ou non, lu par `getByCode` et seulement
+  pour un lien de cette forme, et qui se retrace à la correction) : le format de Meta de l'outil ne les renvoie pas. Une
+  base qui ne répond pas à cette lecture est un refus « réessayez ». Ce refus est jugé dans `modifierUnModele` (`refusDeLAppelant`), sur le modèle qu'elle lit chez
   Meta, jamais dans le cache d'une minute de la liste, et en une seule lecture ; la console n'en passe pas. Un bouton
   que la lecture ne relit pas (téléphone, code à copier, appel, catalogue) rend le modèle non éditable pour tous
   (`isSimpleEditable`), et le résumé le dit (`boutonsNonRelus`) pour que la duplication de la console le signale.

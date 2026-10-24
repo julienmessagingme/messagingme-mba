@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { OUTILS, RefusOutil, type DepsMcp } from '../src/mcp/outils';
 import { parCause, type AuteurDuChangement } from '../src/inbox/evenements';
 import type { ConversationMessage } from '../src/inbox/store.pg';
+import { bancDuFil } from './banc-du-fil';
 
 /**
  * `control_conversation` (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`, tâche 1) : prendre et rendre la
- * main sur un fil, les deux boutons du fil de la console, par le MÊME contrôle (`reprendreLaMain`, `rendreLaMain`). En Free,
+ * main sur un fil, les deux boutons du fil de la console, par le MÊME contrôle (`reprendreLaMain`, et
+ * `rendreLaMainSousConsentement`, le rendu avec la garde STOP ou bloqué). En Free,
  * sans Inbox, c'est le seul chemin pour qu'un agent IA réponde de nouveau après une réponse de Claude. Ce fichier tient ce
  * que l'outil ajoute : la garde d'espace, l'auteur du geste, et des refus lisibles là où la console rend un 409.
  */
@@ -125,7 +127,7 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
         expect(r.repondeur).toBe('equipe');
         expect(r.a_savoir).toMatch(cas.motif);
         // La console peut encore le confier à la main : la phrase ne promet que l'absence de robot DE LUI-MÊME (lot 5).
-        expect(r.a_savoir).toMatch(/aucun robot ne lui écrit de lui-même/);
+        expect(r.a_savoir).toMatch(/aucun scénario ni agent IA ne lui écrit de lui-même/);
       }
     }
     // Un contact ni STOP ni bloqué : la phrase n'en dit rien.
@@ -134,11 +136,27 @@ describe('control_conversation : prendre et rendre la main sur un fil', () => {
     expect(r.a_savoir).not.toMatch(/STOP|bloqué/);
   });
 
+  it('🔴 sur le VRAI contrôle du fil : l’outil lit « équipe », le fil relit `mba`, un contact STOP ou bloqué n’est pas confié (lot 6)', async () => {
+    for (const cas of [{ desabonne: true, banc: { desabonnes: [WA] } }, { bloque: true, banc: { bloques: [WA] } }]) {
+      const banc = bancDuFil({ ...cas.banc, mode: 'mba', mbaEnabled: true, conversations: { [WA]: { owner: 'app_human', changedAt: null } } });
+      const { d } = deps({ ...cas, mode: 'equipe' });
+      const reel = { ...d, fil: banc.fil } as DepsMcp;
+      await expect(outil.executer(reel, T, { conversation_id: CONV, action: 'hand_back' }, null)).rejects.toThrow(/n’est confiée à aucun robot/);
+      expect(banc.appels, 'ni liste, ni release chez Meta').toEqual([]);
+      expect(banc.etat(WA)?.owner, 'rien n’est écrit').toBe('app_human');
+    }
+  });
+
+  it('la course inverse : l’outil lit « équipe », le fil confie à l’agent de Meta un contact libre ; aucune phrase « équipe » (lot 6)', async () => {
+    const { d } = deps({ mode: 'equipe', remise: 'mba' });
+    expect(await outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, MOI)).toEqual({ conversation_id: CONV, handled_by: 'mba' });
+  });
+
   it('🔴 si le fil refuse de confier le contact à l’agent de Meta (STOP ou bloqué, mode passé à `mba` entre-temps), un refus qui le dit (lot 5)', async () => {
     // L'outil a lu « équipe », le fil relit `mba` : sa garde du consentement joue, rien n'est écrit.
     for (const personne of [MOI, null]) {
       const { d, appels } = deps({ desabonne: true, mode: 'equipe', remise: 'contact_muet' });
-      await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, personne)).rejects.toThrow(/ne lui est pas confiée/);
+      await expect(outil.executer(d, T, { conversation_id: CONV, action: 'hand_back' }, personne)).rejects.toThrow(/n’est confiée à aucun robot/);
       expect(appels.map((a) => a.geste)).toEqual(['rendre']);
     }
   });

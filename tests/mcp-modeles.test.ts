@@ -27,14 +27,17 @@ function deps(o: {
   listeEnCache?: TemplateSummary[];
   /** L'oubli de la liste en cache échoue (la base ne répond pas). */
   oubliEchoue?: boolean;
-  /** Les liens tracés confirmés du modèle en base (`tracked_links`) : leurs codes sont « les nôtres ». */
-  liensDuModele?: Array<{ code: string; templateLanguage: string }>;
+  /** Les codes de `tracked_links`, confirmés ou non, et l'espace de chacun (`getByCode`). */
+  codes?: Record<string, string>;
+  /** La lecture des codes échoue (la base ne répond pas). */
+  codesIllisibles?: boolean;
 } = {}) {
   const editions: Array<{ id: string; input: Record<string, unknown> }> = [];
   const suppressions: string[] = [];
   let lourds = 0;
   let oublis = 0;
   let lectures = 0;
+  let lecturesDeCodes = 0;
   const client = {
     // Chaque lecture de la liste COMPLÈTE chez Meta (des pages entières pour un gros compte).
     list: async () => { lectures += 1; return [{ ...RESUME, ...o.resume }]; },
@@ -57,7 +60,13 @@ function deps(o: {
     champsDeclares: async () => [],
     tracking: {
       allocate: async () => { throw new Error('aucun lien tracé dans ces modèles'); },
-      liens: { confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => (o.liensDuModele ?? []).map((l, i) => ({ ...l, templateName: 'commande_prete', cardIndex: null, buttonIndex: i, destination: 'https://boutique.example', avecJeton: true })) },
+      liens: { confirm: async () => {}, deconfirmer: async () => {}, listByTemplates: async () => [],
+        getByCode: async (code: string) => {
+          lecturesDeCodes += 1;
+          if (o.codesIllisibles) throw new Error('base injoignable');
+          const espace = o.codes?.[code];
+          return espace ? { tenantId: espace, destination: 'https://boutique.example' } : null;
+        } },
       lienDe: (code: string) => `https://api.exemple.test/r/${code}`,
       destinations: async () => new Map<string, string>(),
     },
@@ -67,7 +76,7 @@ function deps(o: {
     modeles: { modeles: gestion, lister: async () => o.listeEnCache ?? client.list(), oublier: async () => { oublis += 1; if (o.oubliEchoue) throw new Error('base injoignable'); } },
     couteux: { consommer: async () => { lourds += 1; return { accepte: o.lourdAccepte ?? true, attenteMs: 2000 }; } },
   } as unknown as DepsMcp;
-  return { d, editions, suppressions, lourds: () => lourds, oublis: () => oublis, lectures: () => lectures };
+  return { d, editions, suppressions, lourds: () => lourds, oublis: () => oublis, lectures: () => lectures, lecturesDeCodes: () => lecturesDeCodes };
 }
 
 const CORRIGE = {
@@ -139,26 +148,47 @@ describe('corriger et supprimer un modèle depuis Claude (marche arrière, tâch
     await expect(outil('update_template').executer(panier.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/prend une variable/);
     expect(panier.editions).toEqual([]);
     // Un lien tracé par nous (`/r/<code>/{{1}}`) se retrace à la correction : rien à refuser.
-    const trace = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://api.exemple.test/r/abcdefgh2345/{{1}}' }] }, liensDuModele: [{ code: 'abcdefgh2345', templateLanguage: 'fr' }] });
+    const trace = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://api.exemple.test/r/abcdefgh2345/{{1}}' }] }, codes: { abcdefgh2345: T } });
     await outil('update_template').executer(trace.d, T, { template: CORRIGE }, MOI);
     expect(trace.editions).toHaveLength(1);
   });
 
   it('🔴 un lien tracé soumis sous un ancien nom de l’API reste l’un des nôtres : la correction passe (lot 4)', async () => {
     // Un modèle soumis quand l'API répondait sous `mba.` : son lien n'a pas l'hôte d'aujourd'hui (`lienDe`).
-    const ancien = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://mba.messagingme.app/r/abcdefgh2345/{{1}}' }] }, liensDuModele: [{ code: 'abcdefgh2345', templateLanguage: 'fr' }] });
+    const ancien = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://mba.messagingme.app/r/abcdefgh2345/{{1}}' }] }, codes: { abcdefgh2345: T } });
     await outil('update_template').executer(ancien.d, T, { template: CORRIGE }, MOI);
     expect(ancien.editions).toHaveLength(1);
   });
 
-  it('🔴 une adresse du client qui a la forme d’un lien tracé, sans en être un de CE modèle, reste un lien à variable (lot 5)', async () => {
+  it('🔴 une adresse du client qui a la forme d’un lien tracé, sans être l’un des nôtres pour CET espace, reste un lien à variable (lots 5 et 6)', async () => {
     const url = 'https://boutique.example/r/abcdefgh2345/{{1}}';
-    // Aucun lien tracé en base pour ce modèle, puis un lien tracé d'une AUTRE langue : refusé les deux fois.
-    for (const liensDuModele of [[], [{ code: 'abcdefgh2345', templateLanguage: 'en' }]]) {
-      const client = deps({ resume: { buttons: [{ type: 'URL', text: 'Mon panier', url }] }, liensDuModele });
+    // Un code inconnu, puis le code d'un AUTRE espace : refusé les deux fois.
+    for (const codes of [{}, { abcdefgh2345: 'un-autre-espace' }] as Array<Record<string, string>>) {
+      const client = deps({ resume: { buttons: [{ type: 'URL', text: 'Mon panier', url }] }, codes });
       await expect(outil('update_template').executer(client.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/prend une variable/);
       expect(client.editions).toEqual([]);
     }
+  });
+
+  it('🔴 un lien tracé de l’espace dont la ligne n’est pas confirmée reste l’un des nôtres (lot 6)', async () => {
+    // Une confirmation ratée après la soumission, ou une restauration ratée après un refus : `getByCode` ne filtre pas
+    // sur la confirmation, et le faux non plus.
+    const nonConfirme = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://api.messagingme.app/r/abcdefgh2345/{{1}}' }] }, codes: { abcdefgh2345: T } });
+    await outil('update_template').executer(nonConfirme.d, T, { template: CORRIGE }, MOI);
+    expect(nonConfirme.editions).toHaveLength(1);
+  });
+
+  it('🔴 une base qui ne répond pas à la relecture d’un lien tracé est un refus lisible, pas un « lien à variable » (lot 6)', async () => {
+    const panne = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://api.messagingme.app/r/abcdefgh2345/{{1}}' }] }, codesIllisibles: true });
+    await expect(outil('update_template').executer(panne.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/réessayez/);
+    expect(panne.editions).toEqual([]);
+  });
+
+  it('un modèle sans lien de la forme d’un lien tracé ne lit rien en base (lot 6)', async () => {
+    const simple = deps({ resume: { buttons: [{ type: 'URL', text: 'Voir', url: 'https://boutique.example/aide' }] }, codesIllisibles: true });
+    await outil('update_template').executer(simple.d, T, { template: CORRIGE }, MOI);
+    expect(simple.editions).toHaveLength(1);
+    expect(simple.lecturesDeCodes()).toBe(0);
   });
 
   it('🔴 le modèle se lit UNE fois chez Meta pour une correction (lot 4)', async () => {
@@ -196,6 +226,9 @@ describe('corriger et supprimer un modèle depuis Claude (marche arrière, tâch
     const avecImage = deps({ resume: { headerFormat: 'IMAGE', editable: false } });
     await expect(outil('update_template').executer(avecImage.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/édition non supportée/);
     expect([...enCampagne.editions, ...avecImage.editions]).toEqual([]);
+    // Un modèle sans corps est aussi non éditable : le refus le dit, au lieu de parler d'un composant perdu (lot 6).
+    const sansCorps = deps({ resume: { body: '', editable: false } });
+    await expect(outil('update_template').executer(sansCorps.d, T, { template: CORRIGE }, MOI)).rejects.toThrow(/n'a pas de corps/);
   });
 
   it('🔴 un refus de Meta est un refus lisible, pas une panne', async () => {

@@ -3,7 +3,7 @@ import type { ParamSource } from '../crm/template';
 import { analyserChampsUrl } from '../../web/lib/partage/champs-url';
 import { porteDesChamps, refusChampsUrl } from '../links/champs-url';
 import { appliquerLiens, boutonsTracables, cleBouton, codeDuLienTrace, rehabillerBoutons } from '../links/rewrite';
-import type { CibleLien, LienTrace } from '../links/tracked-links.pg';
+import type { CibleLien, DestinationLien, LienTrace } from '../links/tracked-links.pg';
 import { messageDe } from '../lib/erreur';
 import type { ClientModeles, CreateTemplateInput, TemplateButton, TemplateSummary, StatutModele } from '../meta/templates';
 
@@ -36,6 +36,8 @@ export interface DepsGestionModeles {
       confirm(tenantId: string, codes: readonly string[]): Promise<void>;
       deconfirmer(tenantId: string, codes: readonly string[]): Promise<void>;
       listByTemplates(tenantId: string, noms: readonly string[]): Promise<LienTrace[]>;
+      /** L'espace et la destination d'un code, confirmé ou non (la redirection publique le lit). */
+      getByCode(code: string): Promise<DestinationLien | null>;
     };
     lienDe(code: string, avecJeton: boolean): string;
     destinations(tenantId: string, noms: readonly string[]): Promise<Map<string, string>>;
@@ -327,7 +329,7 @@ export async function modifierUnModele(
   language: string,
   fields: ChampsModele,
   paramHints?: IndicesModele,
-  refusDeLAppelant?: (existant: TemplateSummary) => string | null,
+  refusDeLAppelant?: (existant: TemplateSummary) => Promise<string | null>,
 ): Promise<IssueModificationModele> {
   if (fields.carousel) return { refus: { statut: 422, error: 'édition d\'un carousel non supportée' } };
   const refusChamps = await refusDesChamps(deps, tenant, fields);
@@ -340,9 +342,13 @@ export async function modifierUnModele(
   if (!existing) return { refus: { statut: 404, error: 'template introuvable' } };
   if (!existing.id) return { refus: { statut: 422, error: 'id du template indisponible' } };
   if (!existing.editable) {
+    // Un modèle sans corps se lit aussi non éditable (`isSimpleEditable`) : il n'a rien qu'une édition puisse refaire.
+    if (!existing.isCarousel && existing.body === '') {
+      return { refus: { statut: 422, error: 'édition non supportée : ce template n\'a pas de corps, que l\'édition exige' } };
+    }
     return { refus: { statut: 422, error: existing.isCarousel ? 'édition d\'un carousel non supportée' : 'édition non supportée : ce template a un composant que l\'édition ne sait pas refaire (un en-tête image, vidéo ou document, un bouton téléphone, code à copier, appel ou catalogue, ou un composant qu\'elle ne connaît pas, comme une offre limitée dans le temps), qui serait perdu' } };
   }
-  const refusAppelant = refusDeLAppelant?.(existing) ?? null;
+  const refusAppelant = refusDeLAppelant ? await refusDeLAppelant(existing) : null;
   if (refusAppelant !== null) return { refus: { statut: 422, error: refusAppelant } };
   if (!EDITABLE_STATUSES.has(existing.status)) {
     return { refus: { statut: 409, error: `template non éditable (statut ${existing.status}) : seuls APPROVED/REJECTED/PAUSED le sont` } };

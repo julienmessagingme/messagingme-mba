@@ -48,19 +48,21 @@ async function oublierLaListe(deps: DepsMcp, tenantId: string): Promise<void> {
  * lien dont une variable vient d'un scénario ou de Shopify (son panier) disparaîtraient en silence. Jugé sur le modèle tel
  * que Meta le rend, lu une fois par `modifierUnModele` (jamais le cache d'une minute de `lister`). Nos liens tracés
  * (`/r/<code>/{{1}}`, sous tout hôte, `codeDuLienTrace`) se retracent à la correction : ils passent, mais seulement si
- * leur code est l'un des liens tracés confirmés de CE modèle (`nosCodes`) : une adresse du client de la même forme reste
- * un lien à variable (relecture du lot 4).
+ * leur code est l'un des nôtres pour CET espace (`notreCode`) : une adresse du client de la même forme reste un lien à
+ * variable (relectures des lots 4 et 5). Rien n'est lu en base pour un modèle sans lien de cette forme.
  */
-function ceQueCeFormatPerdrait(existant: TemplateSummary, nosCodes: ReadonlySet<string>): string | null {
+async function ceQueCeFormatPerdrait(
+  existant: TemplateSummary,
+  notreCode: (code: string) => Promise<boolean>,
+): Promise<string | null> {
   if (existant.buttons?.some((b) => b.type === 'FLOW')) {
     return 'ce modèle porte un bouton Flow, que ce format ne sait pas renvoyer : la correction le supprimerait. Il ne se '
       + 'corrige pas depuis Claude';
   }
-  const estLUnDesNotres = (url: string): boolean => {
-    const code = codeDuLienTrace(url);
-    return code !== null && nosCodes.has(code);
-  };
-  if (existant.buttons?.some((b) => b.type === 'URL' && /\{\{\s*\d+\s*\}\}/.test(b.url ?? '') && !estLUnDesNotres(b.url ?? ''))) {
+  for (const b of existant.buttons ?? []) {
+    if (b.type !== 'URL' || !/\{\{\s*\d+\s*\}\}/.test(b.url ?? '')) continue;
+    const code = codeDuLienTrace(b.url ?? '');
+    if (code !== null && await notreCode(code)) continue;
     return 'ce modèle porte un bouton de lien qui prend une variable ({{1}}), que ce format ne sait pas renvoyer : la '
       + 'correction le changerait, et les envois qui la remplissent échoueraient. Il ne se corrige pas depuis Claude';
   }
@@ -311,12 +313,20 @@ export const OUTILS_MODELES: OutilMcp[] = [
       }
       await plafondCouteux(deps, tenantId);
       const { name, language, ...champs } = input;
-      // Les liens tracés confirmés de cette langue du modèle : seuls leurs codes sont « les nôtres » (`ceQueCeFormatPerdrait`).
-      const nosCodes = new Set((await deps.modeles.modeles.tracking.liens.listByTemplates(tenantId, [name]))
-        .filter((l) => l.templateLanguage === language).map((l) => l.code));
+      // Un code de nos liens tracés, confirmé ou non : une confirmation ou une restauration ratée laisse la ligne non
+      // confirmée, et le lien reste le nôtre. Son espace le dit (`getByCode`, la lecture de la redirection publique).
+      // Une panne de la base est un refus lisible, jamais un « lien à variable » qui serait faux.
+      const notreCode = async (code: string): Promise<boolean> => {
+        try {
+          return (await deps.modeles.modeles.tracking.liens.getByCode(code))?.tenantId === tenantId;
+        } catch (err) {
+          journaliser('error', 'mcp_modele_lien_illisible', { tenantId, nom: name, erreur: err instanceof Error ? err.message : String(err) });
+          throw new RefusOutil('les liens tracés de ce modèle n’ont pas pu être relus : réessayez dans un instant');
+        }
+      };
       await ouRefusDeMeta(async () => {
         const issue = await modifierUnModele(deps.modeles.modeles, tenantId, name, language, champs, undefined,
-          (existant) => ceQueCeFormatPerdrait(existant, nosCodes));
+          (existant) => ceQueCeFormatPerdrait(existant, notreCode));
         if ('refus' in issue) throw new RefusOutil(phraseDuRefus(issue.refus));
       });
       await oublierLaListe(deps, tenantId);
