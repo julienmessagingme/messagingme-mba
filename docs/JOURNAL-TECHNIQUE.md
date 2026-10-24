@@ -5,6 +5,27 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-24 : la marche arrière des outils MCP, lot 5 (les jaunes de la relecture du lot 4)
+
+Le lot 5 (`85f63954`) traite les neuf jaunes de la relecture du lot 4, en commençant par la double lecture du mode.
+Une relecture indépendante, sans rouge (huit jaunes au `todo.md`), 8 mutations prouvées dans les deux sens, CI racine
+et console vertes job par job, déployé le 2026-10-24 avec `aide:charger`.
+
+- **`hand_back` ne confie jamais un contact STOP ou bloqué à l'agent de Meta**, même si le mode passe à `mba` entre la
+  lecture de l'outil et celle du fil : `rendreLaMainSousConsentement` (`src/inbox/fil.ts`) fait jouer la garde de
+  `confier` (`contact_muet`) sur le mode qu'il relit lui-même, et l'outil refuse ce retour. Le bouton de la console
+  garde `rendreLaMain`. Tenu sur le vrai contrôle du fil (`tests/repondeur-modes.test.ts`).
+- **La rotation du secret d'un webhook** ne perd plus le secret neuf sur un audit raté ; **nos liens tracés** ne sont
+  reconnus que si leur code est un lien tracé confirmé de cette langue du modèle.
+- **Textes** : `features.md` (section Modèles) avec l'empreinte des deux fiches qui la citent, sans changement de leur
+  page publique (`vitrine:aide` relancé pour le vérifier).
+- ⚠️ **Un pair a avancé le dépôt du VPS pendant le déploiement** (`4bb12d3f`, une migration de plus, aucun code) et
+  reconstruit `mba-api` : la garde de révision écrite DANS la commande du `up` (`[ "$(git rev-parse --short HEAD)" =
+  <sha> ] &&`) a arrêté la relance suivante, et les dates de création (conteneur, image) ont montré que rien de servi
+  n'avait bougé. Une relance à finir se fait alors sur l'image dont on a lu l'étiquette (`REVISION` seule), `--no-deps`.
+- **Essai réel** le même jour (essai 148) : `hand_back` accepté en mode « équipe » sur un contact bloqué (« de
+  lui-même »), refusé sous l'agent ; l'espace remis.
+
 ## 2026-10-23 (soir) : l'essai 152 de la filière application, et la trace des messages remis sans contenu
 
 - **L'essai 152** (newCompany, numéro fourni +44 1555 479304) : `mba-application` arrêté de 19 h 08 min 24 s à
