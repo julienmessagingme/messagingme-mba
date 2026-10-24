@@ -229,6 +229,31 @@ your Facebook profile. Before the first template, Meta will ask for a payment me
 
 ## Lot 2 : ce que Meta envoie ensuite
 
+**Ce que la relecture du lot 1 y ajoute (2026-10-25)**, à traiter dans ce lot, chacun avec son test :
+- **Un renouvellement ne doit pas effacer la coexistence** : « Renouveler la connexion Meta » rouvre la fenêtre
+  ordinaire, qui ne renvoie que le code ; si `surApplication` rend `null`, `coexistence = excluded.coexistence` repasse le
+  numéro à faux, et la tâche 6 ne verrait plus sa coupure. Un `null` garde la valeur en base, et le renouvellement d'un
+  numéro en coexistence rouvre la fenêtre de coexistence (console et Claude).
+- **Le courriel « appareil retiré » au passage voulu** : WhatsApp délie l'appareil QR code dès la fenêtre de
+  coexistence ; `fermee('deconnecte')` (`src/application/sessions.ts`) prévient alors les administrateurs que « plus
+  aucun message ne part ni n'arrive ». Faux une fois la coexistence faite : ne pas l'envoyer pour un espace qui a un
+  numéro de Meta, ou le remplacer par la confirmation du passage.
+- **Un compte WhatsApp à plusieurs numéros** : sans `phone_number_id` à la fin de la fenêtre, le rattachement rend 409
+  « impossible de deviner » alors que Meta a déjà fait la coexistence ; départager par `is_on_biz_app` sur chaque numéro.
+- **Le même numéro** : `retirerLeCompteApplication` retire le compte QR code quel que soit le numéro relié ; comparer le
+  numéro affiché, et sinon le dire dans l'avertissement.
+- **La forme réelle d'`account_update`** (tâche 6) : `PRIMARY_INACTIVITY` et `COMPANION_INACTIVITY` ne sont pas des
+  événements mais des `disconnection_info.reason` sous `PARTNER_REMOVED` ; `ACCOUNT_OFFBOARDED` et `ACCOUNT_RECONNECTED`
+  existent aussi. Un `account_update` n'est gardé que dans `pgboss.job` (aucun événement dans `webhook_events`) : c'est
+  là que l'essai le relève.
+- **Les textes** (tâche 7) : la skill `mise-en-service` doit appeler `watch_whatsapp_connection` avec le mode
+  `coexistence` (sans lui, un espace QR code est dit « branché » avant la coexistence) ; la capture de la fiche d'aide
+  « connecter mon numéro » (`web/e2e/captures/connecter-mon-numero-whatsapp.capture.ts`) montre deux choix, `ParcoursNumero`
+  en a trois.
+- **Accepté pour le lot 1, à savoir** : le bouton de l'Accueil et les trois phrases de refus proposent la coexistence
+  avant ce lot, alors que ce que tape le marchand y est ignoré ; au 2026-10-25, seuls newCompany (QR code) et trois espaces
+  sans numéro de Meta pouvaient les voir, tous de test.
+
 ### Tâche 5 : ce que le marchand tape dans son application
 
 **Fichiers** : créer `src/webhooks/echos-coexistence.ts` et `tests/webhooks-echos-coexistence.test.ts` ; modifier
@@ -280,7 +305,9 @@ Créer un test d'intégration (CI seulement) pour le SQL des deux méthodes neuv
 
 **Interfaces** :
 - `EVENEMENTS_COUPURE: readonly string[]`, lus dans la référence `account_update` de Meta (son adresse citée dans le
-  fichier), `PARTNER_REMOVED` au moins. Un événement inconnu sur un numéro en coexistence est journalisé en entier.
+  fichier) : `PARTNER_REMOVED` (sa raison dans `disconnection_info.reason`, `PRIMARY_INACTIVITY` ou
+  `COMPANION_INACTIVITY`, portée dans le courriel) et `ACCOUNT_OFFBOARDED` ; `ACCOUNT_RECONNECTED` lève la coupure s'il
+  arrive. Un événement inconnu sur un numéro en coexistence est journalisé en entier.
 - `lireLesCoupures(payload: unknown): Array<{ wabaId: string; evenement: string }>` (`entry.id`, `field ===
   'account_update'`), l'espace par `espaceDuCompte` (celui des statuts de modèles).
 - `PgNumeroDelieStore.couperCoexistence(tenantId: string): Promise<{ phoneNumberId: string; numero: string; coupeeLe: Date } | null>` :
