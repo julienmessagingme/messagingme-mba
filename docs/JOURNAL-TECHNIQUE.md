@@ -5,6 +5,26 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-24 : la marche arrière des outils MCP, lot 6 (les jaunes de la relecture du lot 5)
+
+Le lot 6 (`c83414fd`) traite les huit jaunes de la relecture du lot 5. Une relecture indépendante, sans rouge (sept
+jaunes au `todo.md`), 9 mutations prouvées dans les deux sens, CI racine et console vertes job par job, déployé le
+2026-10-24 sur `mba-api`, `mba-worker` et `mba-worker-analyse`.
+
+- **`update_template`** : un lien `/r/<code>/{{1}}` est l'un des nôtres si son code appartient à l'espace, confirmé ou
+  non (`getByCode`, la lecture de la redirection publique), lu seulement pour un lien de cette forme ; une base qui ne
+  répond pas est un refus « réessayez ». La garde de l'appelant de `modifierUnModele` devient asynchrone.
+- **`hand_back`** : refus `contact_muet` neutre ; plus de phrase « équipe » quand le fil confie finalement à l'agent de
+  Meta ; la phrase sur STOP ou bloqué se limite à nos robots. Un test monte le vrai contrôle du fil sous l'outil.
+- **`confier`** : un geste non automatique dit s'il garde le consentement (union discriminée, l'oubli ne compile pas).
+- **Un modèle sans corps** : le refus de l'édition et l'infobulle le disent.
+- ⚠️ **Deux avis « high » neufs** (undici < 7.30.1, zod < 4.6.6) ont rendu le job `securite` rouge sur TOUT commit le
+  matin même ; la session HubSpot a monté les deux (`727fae24`). Le lot 6 a attendu que `main` repasse au vert pour être
+  poussé par-dessus, sans lancer `npm install` dans le dossier partagé : la CI du commit a jugé le lot avec les nouvelles
+  versions. zod 4.6 refuse une date ISO sans secondes (`horodatageIso()`, `src/lib/horodatage-iso.ts`).
+- **Essai réel** le même jour (essai 148) : `hand_back` accepté en mode « équipe » sur un contact bloqué, refusé sous
+  l'agent ; l'espace remis. Reste à jouer le jaune 1 (un contact confié par « Envoyer au MBA » puis rendu).
+
 ## 2026-10-24 : la marche arrière des outils MCP, lot 5 (les jaunes de la relecture du lot 4)
 
 Le lot 5 (`85f63954`) traite les neuf jaunes de la relecture du lot 4, en commençant par la double lecture du mode.
