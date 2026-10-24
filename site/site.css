@@ -81,6 +81,9 @@ a:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius
 .bouton-vert:hover{background:#13B044}
 .bouton-rond{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#FFFFFF;color:#17C74E;font-size:1.2rem}
 .bouton-texte{padding:.85em .4em;font-size:1rem;color:var(--ink)}
+/* Sur un petit téléphone, un libellé long (« Ouvrir « Campagnes » dans la console », « Let's talk about your mobility
+   project ») passe à la ligne au lieu de faire défiler la page de côté. */
+@media (max-width:420px){.bouton{white-space:normal;max-width:100%;text-align:center}}
 .bouton-texte:hover{color:var(--action-ink)}
 .bouton-texte .ic{transition:transform .15s}
 .bouton-texte:hover .ic{transform:translateX(3px)}
@@ -275,6 +278,9 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 @media (max-width:960px){.flux-crm{grid-row:auto;justify-self:center;margin-top:8px}.crm{transform:none}.flux .geo-decale{display:none}.flux .geo-centre{display:inline}}
 @media (max-width:560px){.scene-cadre{--k:.7}.flux-crm{grid-template-columns:minmax(0,1fr);justify-self:stretch}}
 @media (max-width:400px){.scene-cadre{--k:.64}}
+/* Sous 352 px, la scène à .64 (320 px) dépasse la colonne (la largeur moins deux gouttières de 16 px) : la page
+   défilait de côté de 16 px à 320 px de large. */
+@media (max-width:351px){.scene-cadre{--k:.57}}
 
 /* La une JOUE la conversation en boucle (le script en bas de l'accueil pose les classes, sur environ 15 s) : les
    messages des deux téléphones arrivent un à un (`tour`, chacun à son `--t`), la carte de l'analyse jaillit du

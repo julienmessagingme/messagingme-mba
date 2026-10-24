@@ -134,8 +134,7 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   les outils que vous utilisez déjà ») s'applique mal à Shopify, où le flux va de la boutique vers WhatsApp, à trancher
   par Julien ; (2) un visiteur Free arrive, depuis la carte Shopify et la ligne Free des tarifs, sur une page d'aide
   marquée Pro dont le chemin Claude Code n'est que la dernière section ; (3) la carte Codex mène aux pages développeurs,
-  qui n'expliquent pas encore Codex (essai 121 pas fait) ; (4) le menu du téléphone de l'accueil déborde de 16 px à
-  320 px de large (déjà vrai avant le lot : `.burger-liens` fermé, mesuré).
+  qui n'expliquent pas encore Codex (essai 121 pas fait).
 - **Remplacer un numéro relié par QR code par un numéro fourni** : `relierApplication` et `preparer` refusent un espace
   déjà relié (`deja_relie`), donc un marchand qui a relié le numéro de sa boutique ne peut pas passer à un numéro fourni
   pour le protéger (sort des conversations, des fiches, du cache `@lid` et du crédit offert à décider).
