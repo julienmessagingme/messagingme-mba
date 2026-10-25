@@ -41,6 +41,11 @@ commits.
   un numéro fourni payé pour le QR code (le compte de l'application n'existe qu'une fois créé dans l'application, donc
   `get_setup_state` dit encore `api`) : elle demande désormais la voie. La voie QR code promettait la coexistence sans
   « bientôt ».
+- **Le complément, avant la publication du plugin** : la consigne de Julien relayée par la session produit (« beaucoup
+  de gens n'ont pas de BM mais ils ont le WhatsApp pro : il faut leur faciliter la vie »). Page, skill, README et FAQ
+  disent désormais que rien n'est à préparer : la fenêtre de Meta propose de créer le compte en chemin, avec le profil
+  Facebook, en termes généraux tant que l'essai 161 n'a pas montré ses écrans. La voie API dit aussi le moyen de
+  paiement à ajouter chez Meta avant le premier modèle, et la skill fait attendre la coexistence dans le même mode.
 - **Mesuré** : `DROITS.base.contacts` n'existe pas (les limites sont sous `.limites`), et `tsx` génère quand même : la page
   affichait « 0 contacts créés » ; la génération refuse désormais une limite absente. Et `git apply --3way` réécrit en
   CRLF (le `core.autocrlf` du poste) chaque fichier qu'il patche dans une extraction : le générateur des pages a refusé

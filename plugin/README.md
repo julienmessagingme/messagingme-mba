@@ -32,12 +32,13 @@ your phone. An interrupted setup resumes where it stopped.
 This is where most people get lost, so here are the five words first.
 
 - **Meta Business account**: your business's account at Meta (a "business portfolio", formerly Business Manager). It
-  is free and created with your Facebook account; if you advertise on Facebook or Instagram, you probably have one.
+  is free; if you advertise on Facebook or Instagram, you probably have one. Otherwise, nothing to prepare: Meta's
+  window offers to create it during the setup, with your Facebook profile.
 - **WhatsApp Business app**: the free app for businesses, on your phone, distinct from WhatsApp.
 - **The official API**: the same WhatsApp, driven by software, on a number connected through Meta. It writes first
   (templates: confirmations, reminders, campaigns, Shopify messages), and Meta bills the messages. It needs a Meta
-  Business account, which you create on business.facebook.com or Meta's window creates during the setup, and the
-  number leaves the WhatsApp app.
+  Business account (Meta's window offers to create it) and a payment method at Meta before the first template, and
+  the number leaves the WhatsApp app.
 - **The QR code**: your WhatsApp Business app linked to Messaging Me like a linked device, with no Meta Business
   account. Your AI agent answers the customers who write to you, but nothing goes out first: WhatsApp cuts a linked
   device that writes to strangers, and it can cut the number.
@@ -143,9 +144,9 @@ remote server, the Messaging Me MCP server at `https://api.messagingme.app/mcp`.
 - **What comes back.** The data of your workspace that the tool returns: conversations and messages, contacts,
   templates, AI agents, statistics. Actions that change your workspace (sending a message, activating an agent,
   opening a payment page) are marked as such, and payments always happen on Stripe's page, by you.
-- **Before you start.** A Messaging Me account (created during the setup). For the official API, a Facebook account
-  and a Meta business portfolio, which Meta's window creates during the setup; messages that Meta bills are charged by
-  Meta to your WhatsApp Business account. For the QR code, the WhatsApp Business app on your phone.
+- **Before you start.** A Messaging Me account (created during the setup). For the official API, a Facebook profile:
+  Meta's window offers to create your Meta business portfolio during the setup; messages that Meta bills are charged
+  by Meta to your WhatsApp Business account. For the QR code, the WhatsApp Business app on your phone.
 
 Messaging Me is published by Messaging Me SAS (SmartLink), Paris. Privacy policy:
 https://www.messagingme.fr/en/politique-de-confidentialite-messaging-me/. Terms of use: https://www.messagingme.fr/en/conditions-d-utilisation/. Support:

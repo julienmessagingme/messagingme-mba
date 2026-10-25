@@ -209,8 +209,7 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   Julien (face publique) : « le seul prérequis » de `site/developpeurs/index.html` (au-dessus de la FAQ qui répond
   désormais « Oui, de deux façons ») et de la méta description de `site/developpeurs/compte-meta-business/`, l'étape 3
   de `site/solutions/saas-et-app-builders/` et sa jumelle, « an official WhatsApp number » dans l'accroche du README du
-  plugin et la description de `plugin.json`. Et la voie API du guide ne dit pas que Meta demande une carte avant le
-  premier modèle (la conception de la coexistence veut que ce soit dit au moment du choix).
+  plugin et la description de `plugin.json`.
 - **Remplacer un numéro relié par QR code par un numéro fourni** : `relierApplication` et `preparer` refusent un espace
   déjà relié (`deja_relie`), donc un marchand qui a relié le numéro de sa boutique ne peut pas passer à un numéro fourni
   pour le protéger (sort des conversations, des fiches, du cache `@lid` et du crédit offert à décider).
