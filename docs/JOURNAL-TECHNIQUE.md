@@ -4,6 +4,32 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-25 (nuit) : la Free ne gère jamais plus de 100 contacts, quelle que soit leur origine
+
+- **La décision** (Julien) : « 100 contacts max gérés, quelle que soit l'origine : l'import et les conversations
+  entrantes, pas plus de 100, sinon on ne gagnera jamais d'argent avec le Pro ; si quelqu'un essaie de parler alors que
+  le client en a déjà 100, tant pis, il faut juste l'alerter qu'il est plein. » Portée : la Free seule.
+- **Le lot** (`d3b0b071`, plan `docs/superpowers/plans/2026-10-25-free-100-contacts.md`) : le compte se décide en un
+  point (`contactsToutesOrigines`) ; la porte d'une Free pleine (`src/webhooks/espace-plein.ts`) retire le message d'un
+  inconnu du payload avant le journal brut, sur la file `webhook` (Meta et 360dialog) et sur la filière application ;
+  seul son STOP est retenu ; l'alerte `espace_plein_entrant` part une fois par jour au plus. Avec lui, les phrases
+  montrées au client sur le passage du QR code à l'API ne disent plus « coexistence » (le bouton « Garder mon
+  application WhatsApp Business », ou Claude).
+- **La relecture** : aucun rouge. Corrigés dans le lot : un STOP dont l'écriture échoue n'est plus écarté (il passe par
+  le chemin commun, qui garde son message), l'offre relue en base dans la requête de la porte (le cache du worker
+  retarde de 30 s sur un paiement du Pro, un client qui écrit pendant ce temps aurait été perdu), l'alerte qui ne part
+  plus pour un STOP seul, un faux de test qui levait sans rien prouver. Les autres jaunes vont au `todo.md`. Quinze
+  mutations, chacune a rougi son test.
+- **Avant le déploiement, lu en base** (lecture seule) : aucun texte d'e-mail de limite surchargé dans `/ops`, aucun
+  espace à 50 fiches vivantes ou plus, trois espaces en Free, Groupama PJ en Entreprise : la règle ne coupe personne.
+- **Déployé** : CI verte job par job (`unit`, `securite`, `integration`, CodeQL, la console en topologies proxy et
+  Vercel) ; `mba-api` et `mba-worker` puis `mba-worker-analyse` à `d3b0b071`, garde de révision dans chaque commande ;
+  `mba-application` non redéployé (il ne charge de ce lot qu'une constante de texte et le catalogue des e-mails, sans
+  effet sur lui) ; `aide:charger` fait (157 lignes, 0 retirée) ; la console et la vitrine publiées par Vercel. Vérifié
+  en production : `get_plan` rend `contactsToutesOrigines: true` sur un espace Free.
+- **Reste** : les textes publics de la vitrine et le plugin 0.3.11 (session Vitrine, après ce déploiement), l'essai réel
+  165.
+
 ## 2026-10-25 (soir) : par Claude, l'accord des contacts est déclaré par le client, et l'essai 161 de la coexistence
 
 - **L'essai 161** (lot 1 de la coexistence) : Meta a accepté en coexistence le numéro de test de newCompany, dans
