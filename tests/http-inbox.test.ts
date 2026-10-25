@@ -5,6 +5,7 @@ import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
+import { creerOuvertureConversationInbox, type DepsOuvertureConversationInbox } from '../src/inbox/ouverture';
 import { MediaExpire } from '../src/inbox/media-entrant';
 import { CreditEpuise } from '../src/inbox/transcrire';
 import { MediaTropGros } from '../src/meta/media';
@@ -26,23 +27,41 @@ const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity |
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 const authAgent = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${tokenAgent}` } });
 
-function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<InboxDep> } = {}) {
-  const { inbox, ...reste } = over;
+type ConversationsTest = InboxDep & DepsOuvertureConversationInbox['conversations'];
+type SurchargeApp = Partial<Omit<InboxRouteDeps, 'inbox' | 'ouvrirConversation'>> & {
+  inbox?: Partial<ConversationsTest>;
+  ouvrirConversation?: InboxRouteDeps['ouvrirConversation'];
+  lireMediaMessage?: DepsOuvertureConversationInbox['lireMediaMessage'];
+  transcrireMessage?: DepsOuvertureConversationInbox['transcrireMessage'];
+  traduireFil?: DepsOuvertureConversationInbox['traduireFil'];
+};
+
+function app(over: SurchargeApp = {}) {
+  const { inbox, ouvrirConversation, lireMediaMessage, transcrireMessage, traduireFil, ...reste } = over;
+  const conversations: ConversationsTest = {
+    ...inboxDepInerte,
+    listConversations: async () => [
+      { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow', unread: true, assignedTo: null, assignedToName: null },
+    ],
+    getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z' } : null),
+    getMessages: async () => [
+      { id: 'm1', direction: 'in', type: 'text', body: 'coucou', buttonPayload: null, createdAt: '2026-07-06T00:00:00.000Z' },
+    ],
+    getControlOwner: async () => 'app_workflow',
+    markConversationRead: async () => {},
+    recordOutbound: async () => {},
+    ...inbox,
+  };
   const deps: InboxRouteDeps = {
     ...inboxInerte,
     estDesabonne: jamaisDesabonne,
-    inbox: {
-      ...inboxDepInerte,
-      listConversations: async () => [
-        { id: 'c1', waId: '33611', profileName: 'Julie', lastPreview: 'Oui', lastMessageAt: '2026-07-06T00:00:00.000Z', controlOwner: 'app_workflow', unread: true, assignedTo: null, assignedToName: null },
-      ],
-      getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-07-06T00:00:00.000Z' } : null),
-      getMessages: async () => [
-        { id: 'm1', direction: 'in', type: 'text', body: 'coucou', buttonPayload: null, createdAt: '2026-07-06T00:00:00.000Z' },
-      ],
-      recordOutbound: async () => {},
-      ...inbox,
-    },
+    inbox: conversations,
+    ouvrirConversation: ouvrirConversation ?? creerOuvertureConversationInbox({
+      conversations,
+      lireMediaMessage: lireMediaMessage ?? (async () => null),
+      ...(transcrireMessage ? { transcrireMessage } : {}),
+      ...(traduireFil ? { traduireFil } : {}),
+    }),
     repo: { getTenantPhoneNumberId: async () => 'pn1' },
     sendReply: async () => 'wamid.OUT',
     sendTemplateMessage: async () => 'wamid.TPL',
@@ -1257,6 +1276,28 @@ describe('marquer « Traité », à la main (migration 0160)', () => {
 describe('servir une pièce jointe reçue (2026-09-19)', () => {
   const MSG = '22222222-2222-4222-8222-222222222222';
   const url = `/tenants/t1/conversations/c1/messages/${MSG}/media`;
+
+  it('🔴 une conversation étrangère reste opaque et ne touche ni au média ni à la transcription', async () => {
+    let lectures = 0;
+    const a = app({
+      inbox: { getConversationContext: async () => null },
+      lireMediaMessage: async () => { lectures += 1; return null; },
+      transcrireMessage: async () => {
+        lectures += 1;
+        return { texte: 'interdit', deja: false, langue: null, traduction: null };
+      },
+    });
+
+    const media = await a.inject({ method: 'GET', url, ...auth() });
+    const vocal = await a.inject({ method: 'POST', url: `/tenants/t1/conversations/c1/messages/${MSG}/transcrire`, ...auth(), payload: {} });
+
+    expect(media.statusCode).toBe(404);
+    expect(media.json()).toEqual({ error: 'conversation inconnue' });
+    expect(vocal.statusCode).toBe(404);
+    expect(vocal.json()).toEqual({ error: 'conversation inconnue' });
+    expect(lectures).toBe(0);
+    await a.close();
+  });
 
   it('🔴 une photo s’affiche : inline, son type, et nosniff', async () => {
     const a = app({ lireMediaMessage: async () => ({ bytes: Buffer.from('jpg'), mime: 'image/jpeg', nom: null }) });

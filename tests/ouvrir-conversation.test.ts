@@ -35,7 +35,6 @@ function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<In
       ...inboxDepInerte,
       listConversations: async () => [],
       getConversationContext: async () => null,
-      getMessages: async () => [],
       recordOutbound: async () => {},
       ...inbox,
     },

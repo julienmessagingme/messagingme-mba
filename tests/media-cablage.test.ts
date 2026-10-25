@@ -82,15 +82,18 @@ describe('le câblage de la lecture des pièces jointes', () => {
     expect(messages && ts.isIdentifier(messages)).toBe(true);
   });
 
-  it('la garde voit bien le bloc de la transcription : `transcrireMessage` y est', () => {
-    // Le témoin inverse. Sans lui, un bloc renommé rendrait `sousLaTranscription` toujours faux, et le cas
-    // ci-dessus passerait sur n'importe quel câblage.
-    const visiter = (n: ts.Node): ts.PropertyAssignment | undefined => {
-      if (ts.isPropertyAssignment(n) && n.name.getText(fichier) === 'transcrireMessage') return n;
+  it('la garde voit bien le bloc de la transcription : la capacité optionnelle y naît', () => {
+    // Le témoin inverse. L'ouverture reçoit désormais une capacité déjà construite, donc c'est sa DÉFINITION
+    // `transcrireMessageInbox` qui doit rester sous la condition du modèle. Sans ce témoin, un bloc renommé
+    // rendrait `sousLaTranscription` toujours faux, et le cas ci-dessus passerait sur n'importe quel câblage.
+    const visiter = (n: ts.Node): ts.VariableDeclaration | undefined => {
+      if (ts.isVariableDeclaration(n) && n.name.getText(fichier) === 'transcrireMessageInbox') return n;
       return ts.forEachChild(n, visiter);
     };
     const transcrire = visiter(fichier);
     expect(transcrire).toBeDefined();
-    expect(sousLaTranscription(transcrire!)).toBe(true);
+    expect(transcrire?.initializer && ts.isConditionalExpression(transcrire.initializer)).toBe(true);
+    expect((transcrire?.initializer as ts.ConditionalExpression).condition.getText(fichier)).toContain('TRANSCRIPTION_MODELE');
+    expect(fichier.text).toContain('transcrireMessage: transcrireMessageInbox');
   });
 });

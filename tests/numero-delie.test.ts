@@ -470,7 +470,6 @@ describe('une réponse d’Inbox depuis un numéro délié', () => {
         ...inboxDepInerte,
         listConversations: async () => [],
         getConversationContext: async () => ({ waId: '33611', windowOpen: true, lastInboundAt: '2026-09-25T00:00:00.000Z' }),
-        getMessages: async () => [],
         recordOutbound: async () => { traces.push('trace'); },
       },
       repo: {

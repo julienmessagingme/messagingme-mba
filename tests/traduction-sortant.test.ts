@@ -33,7 +33,6 @@ function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<In
       getConversationContext: async (id) => (id === 'c1'
         ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-09-12T00:00:00.000Z', langueContact: 'es' }
         : null),
-      getMessages: async () => [],
       recordOutbound: async () => {},
       ...inbox,
     },
