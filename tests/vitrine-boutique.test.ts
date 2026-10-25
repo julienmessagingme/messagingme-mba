@@ -5,6 +5,9 @@ import { PRIX_NUMERO_AFFICHE_HT_CENTIMES, TEXTES_BOUTIQUES } from '../scripts/vi
 import { ENTREES } from '../web/lib/registre-vitrine';
 import { fichierDe } from '../scripts/vitrine/cas';
 import { lire, pagesHtml, texte } from './vitrine-lecture';
+import { FAQ } from '../scripts/plugin/faq';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 /**
  * LA PAGE « BOUTIQUES SHOPIFY » (plan `docs/superpowers/plans/2026-10-24-boutiques-shopify.md`). Qu'elle soit égale à sa
@@ -104,6 +107,47 @@ describe('la page Boutiques Shopify', () => {
       }
       // Le mot « QR code » du lexique le dit aussi.
       expect(lexique.termes.find((t) => /QR/.test(t.terme))!.definition, langue).toMatch(rien);
+    }
+  });
+
+  it('🔴 l’agent IA n’est jamais dit gratuit, ni sur la page ni dans la FAQ du plugin : il consomme le crédit prépayé', () => {
+    const fr = /agent IA[^.]*gratuit|gratuit[^.]*agent IA/i;
+    const en = /AI agent[^.]*(for free|free of charge)|(for free|free of charge)[^.]*AI agent/i;
+    for (const e of boutiques) {
+      for (const [adresse, motif] of [[e.fr.adresse, fr], [e.en.adresse, en]] as const) {
+        for (const x of phrases(corps(lire(fichierDe(adresse))))) expect(x, adresse).not.toMatch(motif);
+      }
+    }
+    for (const q of FAQ) {
+      for (const x of phrases(q.reponse.fr)) expect(x, q.id).not.toMatch(fr);
+      for (const x of phrases(q.reponse.en)) expect(x, q.id).not.toMatch(en);
+    }
+  });
+
+  it('🔴 la page ne dit jamais « coexistence » : face au client, c’est « garder votre application » (Julien, 2026-10-25)', () => {
+    for (const e of boutiques) {
+      for (const adresse of [e.fr.adresse, e.en.adresse]) expect(corps(lire(fichierDe(adresse))), adresse).not.toMatch(/coexist/i);
+    }
+    // Ni le README du dépôt public du plugin, ni la FAQ qu'il publie (aussi sur les pages développeurs).
+    expect(readFileSync(join(process.cwd(), 'plugin/README.md'), 'utf8')).not.toMatch(/coexist/i);
+    for (const q of FAQ) expect(`${q.question.fr} ${q.question.en} ${q.reponse.fr} ${q.reponse.en}`, q.id).not.toMatch(/coexist/i);
+  });
+
+  it('chaque note de réponse est reliée à son bouton, et seulement sur une réponse qui mène quelque part', () => {
+    for (const e of boutiques) {
+      for (const [langue, adresse] of [['fr', e.fr.adresse], ['en', e.en.adresse]] as const) {
+        const html = lire(fichierDe(adresse));
+        // Le « Non » au compte Meta Business porte la sienne : rien n'est à préparer.
+        expect(TEXTES_BOUTIQUES.shopify![langue].numero.questions.some((q) => q.reponses.some((r) => r.note)), langue).toBe(true);
+        for (const q of TEXTES_BOUTIQUES.shopify![langue].numero.questions) {
+          q.reponses.forEach((r, k) => {
+            if (!r.note) return;
+            expect(r.vers, `${langue} : ${q.id}`).toBeTruthy();
+            expect(html).toContain(`data-note="note-${q.id}-${k}"`);
+            expect(html).toContain(`<p class="bt-note-reponse" id="note-${q.id}-${k}" role="status" hidden>`);
+          });
+        }
+      }
     }
   });
 

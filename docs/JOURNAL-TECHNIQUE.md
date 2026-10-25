@@ -5,6 +5,31 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-25 : l'arbre du numéro revu après l'essai 161 (garder son application, jamais « coexistence »)
+
+L'essai 161 a montré que Meta accepte de garder l'application sur un numéro qui y servait depuis quatre jours, et que
+sa fenêtre fait créer le compte Meta Business en chemin (nom, e-mail, pays, site) puis propose un moyen de paiement.
+Julien en a tiré un nouvel arbre, relayé par la session produit, pour la page « Boutiques Shopify » et le plugin.
+
+- **L'ordre** : le compte Meta Business (un « Non » n'arrête rien, une note le dit sous la question), puis
+  l'application WhatsApp Business sur le numéro de l'entreprise, posée à tous, puis la garder ou un numéro à part, puis
+  un numéro libre. « Depuis quand ? » et l'issue « QR code puis la coexistence dans un mois » sont retirés.
+- **Chaque issue porte ses deux voies** : par Meta (un compte créé en chemin et un moyen de paiement, mais les messages
+  partent) ou par QR code (aucun compte, ni profil Facebook ni carte chez Meta, des réponses gratuites, mais il ne fait
+  que répondre). Meta facture aussi les réponses depuis le 1er octobre 2026, au-delà d'une franchise mensuelle : c'est
+  dit sans chiffre, comme le veut la décision du lot 17.
+- **« Personne ne comprend rien aux noms de Meta »** : la page, le README et la FAQ ne disent plus jamais
+  « coexistence », mais « garder votre application WhatsApp Business » ; la skill le dit à Claude, qui ne garde le mot
+  que dans son appel d'outil. Un test refuse le mot sur la page, dans le README et dans la FAQ.
+- **La relecture** : un rouge, corrigé. L'agent IA y était dit « gratuit » par QR code, alors que chaque tour consomme
+  le crédit prépayé : c'est Meta qui ne facture pas les réponses. Un test refuse désormais « agent IA » et « gratuit »
+  dans une même phrase, sur la page et dans la FAQ du plugin, vérifié dans les deux sens.
+- **Le consentement**, décision de Julien du même jour (« sur Claude Code, les contacts importés sont opt in, c'est la
+  responsabilité du client ; on respecte le STOP ») : la page ne dit plus qu'un import arrive sans consentement, et la
+  skill ne fait plus demander le consentement par Claude. Le correctif produit est celui de la session produit.
+- Plugin en 0.3.10, publié après ce correctif. Le tutoriel avec les captures réelles de la fenêtre attend le lot 2 de
+  la coexistence (`todo.md`).
+
 ## 2026-10-25 : l'ouverture d'une conversation Inbox devient une capacité liée à son espace
 
 Le quatrième point de l'audit de simplicité du 22 octobre est livré par la PR

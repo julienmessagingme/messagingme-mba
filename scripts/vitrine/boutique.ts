@@ -56,7 +56,7 @@ const etapes = (liste: readonly Etape[]) => [
 
 /**
  * Le guide du numéro : d'abord les cinq mots qu'il emploie, puis l'arbre de Julien (2026-10-24). Sans script, les
- * questions restent cachées et ses six issues se lisent l'une sous l'autre, chacune précédée de la situation qu'elle
+ * questions restent cachées et ses issues se lisent l'une sous l'autre, chacune précédée de la situation qu'elle
  * sert ; avec `site.js`, la première question s'affiche, chaque réponse montre la question suivante (`data-vers`) ou une
  * issue (`data-chemin`), et une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa question.
  */
@@ -64,10 +64,11 @@ function guide(n: TexteBoutique['numero']): string[] {
   const question = (q: Question, i: number) => [
     `          <fieldset class="bt-question" data-question="${q.id}"${i > 0 ? ' hidden' : ''}>`,
     `            <legend>${q.texte}${q.precision ? `<span class="bt-precision">${q.precision}</span>` : ''}</legend>`,
-    `            <div class="bt-reponses">${q.reponses.map((r) => r.vers
-      ? `<button type="button" class="bouton bouton-trait" data-vers="${r.vers}" aria-pressed="false">${r.libelle}</button>`
+    `            <div class="bt-reponses">${q.reponses.map((r, k) => r.vers
+      ? `<button type="button" class="bouton bouton-trait" data-vers="${r.vers}"${r.note ? ` data-note="note-${q.id}-${k}"` : ''} aria-pressed="false">${r.libelle}</button>`
       : `<button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">${r.libelle}</button>`).join('')}</div>`,
     ...(q.aide ? [`            <p class="bt-aide" hidden>${q.aide}</p>`] : []),
+    ...q.reponses.flatMap((r, k) => (r.note ? [`            <p class="bt-note-reponse" id="note-${q.id}-${k}" role="status" hidden>${r.note}</p>`] : [])),
     '          </fieldset>',
   ];
   const ligne = (classe: string, icone: string, sr: string) => (x: string) =>

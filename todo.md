@@ -195,11 +195,16 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   laissé, la relance, la question, la réponse de l'agent IA, la commande, l'expédition), à poser dans la section du
   scénario (`VideoObject`). La page est en ligne depuis le 2026-10-24 (plan `2026-10-24-boutiques-shopify.md`).
 - **La coexistence livrée : retirer « bientôt » partout où le parcours du numéro l'annonce** : la page « Boutiques
-  Shopify » (`scripts/vitrine/boutique-textes.ts` : le mot « La coexistence (bientôt) » du lexique, les issues
-  `coexistence` et `qr-puis-coexistence`, la voie QR code des issues à choix, la réponse `faq-numero`), puis
-  `npm run vitrine:cas` ; la skill `mise-en-service` (le choix de la filière), le README du plugin (« Which WhatsApp
-  number? ») et l'entrée `api-ou-application` de `scripts/plugin/faq.ts`, puis `npm run plugin:generer` et une montée de
-  version du plugin.
+  Shopify » (`scripts/vitrine/boutique-textes.ts` : le mot « Garder votre application (bientôt) » du lexique, l'issue
+  `garder-application` et sa voie « en gardant l'application (bientôt) », la réponse `faq-numero`), puis
+  `npm run vitrine:cas` ; la skill `mise-en-service` (le choix de la filière), la skill `shopify`, le README du plugin
+  (« Which WhatsApp number? ») et les entrées `api-ou-application` et `numero-dans-l-application` de
+  `scripts/plugin/faq.ts`, puis `npm run plugin:generer` et une montée de version du plugin. Toujours sans le mot
+  « coexistence » face au client.
+- **Le tutoriel de la fenêtre de Meta pour garder son application** (demandé par Julien le 2026-10-25), avec les dix
+  captures réelles de l'essai 161 (`docs/prive/captures-coexistence-2026-10-25/`, son `LISEZMOI` liste ce qu'il faut
+  masquer) : seulement après le lot 2 de la coexistence, qui corrige la fin du parcours (la page n'a pas reçu la
+  réponse de Meta au premier passage).
 - **La carte Codex de `/integrations/`** mène aux pages développeurs, qui n'expliquent pas encore Codex (essai 121 pas
   fait ; Julien garde la carte telle quelle en attendant, 2026-10-24).
 - **Le logo de l'application WhatsApp Business** à côté de sa question dans le guide du numéro : l'icône actuelle (celle

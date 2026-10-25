@@ -12,8 +12,8 @@ son numéro. Le film (lot 3) reste à faire.
   Shopify (confirmation, expédition, relance) demandent un numéro relié par Meta. Mesuré le 2026-10-24 par la session
   du connecteur : écrire en premier à un inconnu depuis un numéro QR code fait couper le numéro ou refuser le message.
 - **La coexistence s'annonce déjà** (« on est en train de bosser dessus ») : le marchand qui a un numéro WhatsApp
-  Business depuis plus d'un mois le gardera, et le reliera aussi à l'API. Pas de date ; « un mois » est la règle de
-  Julien (Meta n'en publie pas, les revendeurs conseillent sept jours).
+  Business le gardera, et le reliera aussi à l'API. Pas de date. Le seuil d'« un mois » d'abord retenu est tombé à
+  l'essai 161 (2026-10-25) : Meta a accepté un numéro qui servait dans l'application depuis quatre jours.
 - **Le questionnaire est l'arbre de Julien** (une feuille dessinée à la main, après le premier rendu en deux questions),
   qui part de ce que le marchand a déjà : jusqu'à quatre questions, et à chaque « ou » la différence expliquée. Et
   « personne ne comprend jamais rien à ça » : les mots se disent avant les questions.
@@ -32,23 +32,27 @@ son numéro. Le film (lot 3) reste à faire.
   garde l'application et son numéro, avec ses contreparties (messages de l'API facturés par Meta, fonctions de
   l'application retirées, l'ouvrir au moins toutes les deux semaines).
 
-## Le questionnaire : l'arbre de Julien
+## Le questionnaire : l'arbre de Julien, revu après l'essai 161 (2026-10-25)
 
-D'abord cinq mots : compte Meta Business, application WhatsApp Business, API officielle, QR code, coexistence. Puis :
+Mesuré à l'essai 161 : Meta a accepté de garder l'application sur un numéro qui y servait depuis quatre jours, et sa
+fenêtre a fait créer le compte Meta Business en chemin (nom, e-mail, pays, site), puis proposé un moyen de paiement. La
+question « depuis quand ? » et l'issue « QR code puis la coexistence dans un mois » sont donc retirées.
 
-1. « Avez-vous un compte Meta Business ? » Je ne sais pas → où vérifier (business.facebook.com).
-2. Dans les deux cas (avec un compte depuis la relecture du rendu par Julien) : « Utilisez-vous l'application WhatsApp
-   Business ? » Oui → 3 ; Non → 5.
-3. « Voulez-vous automatiser ce numéro ? » Oui → 4 ; Non → 5 (un autre numéro).
-4. « Depuis quand ? » Plus d'un mois → **la coexistence** (bientôt ; le QR code en attendant) ; moins d'un mois → **le
-   QR code, puis la coexistence**.
-5. Avec un compte : « Avez-vous un numéro disponible ? » Oui → **l'API, votre numéro** ; Non → **l'API, un numéro
-   fourni**. Sans compte : « Avez-vous un numéro pour automatiser ? » Oui → **votre numéro, deux voies** ; Non → **un
-   numéro fourni, deux voies**.
+D'abord cinq mots : compte Meta Business, application WhatsApp Business, API officielle, garder son application, QR code.
+Puis :
 
-Les deux voies, la légende de Julien : l'API (un compte Meta Business à créer, les messages partent) ou le QR code (sans
-compte, ne fait que répondre, la coexistence plus tard). Sans script, les six issues se lisent en liste, chacune avec sa
-situation.
+1. « Avez-vous un compte Meta Business ? » Oui ou Non → 2 (un « Non » affiche que rien n'est à préparer, la fenêtre de
+   Meta le fait créer en chemin) ; Je ne sais pas → où vérifier (business.facebook.com).
+2. « Avez-vous l'application WhatsApp Business sur le numéro de votre entreprise ? », posée à tous. Oui → 3 ; Non → 4.
+3. « Voulez-vous garder ce numéro dans l'application, ou prendre un numéro à part ? » Garder → **garder son
+   application** (bientôt) ; à part → 4.
+4. « Avez-vous un numéro libre ? » Oui → **votre numéro** ; Non → **un numéro fourni**.
+
+Chaque issue a ses deux voies : par Meta (un compte Meta Business, créé en chemin s'il manque, et un moyen de paiement,
+mais les messages partent) ou par QR code (aucun compte, ni profil Facebook ni carte chez Meta, et des réponses
+gratuites, mais il ne fait que répondre et WhatsApp peut couper le numéro). Le client ne lit jamais « coexistence » :
+c'est « garder votre application WhatsApp Business », le mode technique n'apparaît que dans l'appel d'outil. Sans
+script, les issues se lisent en liste, chacune avec sa situation.
 
 ## Tâches
 
@@ -83,7 +87,7 @@ téléphone, en deux langues, lui est montré, et rien ne part sans son oui. Une
 tournée vers la promesse (numéro, prix, QR code), la marque Shopify et le rayon de souffle sur le menu.
 
 **L'essai réel qui clôt** : Julien parcourt la page en ligne, sur ordinateur et sur téléphone, en français et en anglais,
-répond au questionnaire jusqu'à chacune des six issues, et retrouve la page depuis le menu Solutions, la page
-Intégrations, le bandeau de l'accueil et la page d'aide. Puis, le plugin 0.3.9 installé, il tape `/messagingme:demarrer`
+répond au questionnaire jusqu'à chacune de ses issues, et retrouve la page depuis le menu Solutions, la page
+Intégrations, le bandeau de l'accueil et la page d'aide. Puis, le plugin installé (0.3.10), il tape `/messagingme:demarrer`
 sur un espace sans numéro et vérifie que Claude explique les mots et pose les questions une à une, dans l'ordre de
 l'arbre.

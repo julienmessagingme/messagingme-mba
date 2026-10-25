@@ -120,12 +120,13 @@ dans le Pro. Shopify n'y apparaît qu'en compatibilité (Messaging Me n'est pas 
 `/en/solutions/shopify-stores/`, au menu « Solutions » après les secteurs. Pour les marchands : la relance de panier et
 les messages de commande sur WhatsApp, branchés en le demandant à Claude Code avec l'offre Free (0 € d'abonnement), ou
 depuis la console avec le Pro. Le scénario du panier abandonné en cinq temps, ce qui se branche, ce que la conversation
-rend possible (chaque carte étiquetée de son offre), puis le guide du numéro, l'arbre de Julien du 2026-10-24 : les mots
-expliqués d'abord (compte Meta Business, application WhatsApp Business, API officielle, QR code, coexistence), puis des
-questions une à une (un compte Meta Business ? l'application WhatsApp Business ? ce numéro à automatiser, depuis plus ou
-moins d'un mois ? un numéro disponible ?) qui mènent à l'API avec son numéro ou un numéro fourni, à la coexistence
-(annoncée « bientôt », le QR code en attendant), au QR code puis la coexistence au bout d'un mois, ou au choix entre l'API
-et le QR code, avec ce que chacun apporte et coûte. Suivent les quatre étapes depuis Claude Code,
+rend possible (chaque carte étiquetée de son offre), puis le guide du numéro, l'arbre de Julien (2026-10-24, revu le
+2026-10-25 après l'essai 161) : les mots expliqués d'abord (compte Meta Business, application WhatsApp Business, API
+officielle, garder son application, QR code), puis des questions une à une (un compte Meta Business ? un « Non »
+n'arrête rien ; l'application WhatsApp Business sur le numéro de l'entreprise ? la garder, ou un numéro à part ? un
+numéro libre ?) qui mènent à garder son application (annoncé « bientôt »), à son numéro libre ou à un numéro fourni,
+chaque fois par Meta ou par QR code, avec ce que chaque voie apporte et coûte. Le mot « coexistence » n'y apparaît
+jamais : face au client, c'est « garder votre application WhatsApp Business ». Suivent les quatre étapes depuis Claude Code,
 le prix et une FAQ. Un numéro relié par QR code n'y sert qu'à répondre aux clients qui écrivent. Le même arbre guide
 Claude dans la mise en service (la skill `mise-en-service` du plugin), et le README du plugin et sa FAQ l'expliquent.
 Le film viendra plus tard.
@@ -4825,10 +4826,10 @@ numéro.
 
 - ✅ **LIVE, éprouvée par un essai réel les 22 et 23 octobre.** **À quoi ça sert.** Un développeur qui n'a pas de compte
   Meta Business relie le compte WhatsApp Business de son téléphone, comme un appareil lié, par un QR code. Claude explique
-  d'abord les mots (compte Meta Business, application WhatsApp Business, API, QR code, coexistence), puis pose une à une
-  les questions de l'arbre du numéro (Julien, 2026-10-24) ; sans compte Meta Business, il propose cette filière à côté de
-  l'API (dont la fenêtre de Meta crée le compte) et la dit en une phrase : ce n'est pas l'API officielle, le numéro ne
-  fait que répondre, et WhatsApp peut couper un numéro.
+  d'abord les mots (compte Meta Business, application WhatsApp Business, API, garder son application, QR code), puis
+  pose une à une les questions de l'arbre du numéro (Julien, revu le 2026-10-25) ; à chaque choix, il propose cette
+  filière à côté de l'API (dont la fenêtre de Meta crée le compte en chemin) et la dit en une phrase : aucun compte et
+  des réponses gratuites, mais ce n'est pas l'API officielle, le numéro ne fait que répondre, et WhatsApp peut le couper.
 - ✅ **Relier** : `start_whatsapp_connection` avec la filière « application », pour un numéro que nous fournissons
   (recommandé pour un essai) ou le sien. Le lien ouvre la page de connexion, qui montre le QR code à scanner depuis
   l'application (« Appareils liés ») ; Claude suit par `watch_whatsapp_connection` et annonce le compte relié. Le crédit

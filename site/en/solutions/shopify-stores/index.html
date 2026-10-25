@@ -81,7 +81,7 @@
      "name": "Which WhatsApp number should I use?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "It depends on your Meta Business account and your number: the guide above gives you your path. Your store’s messages need a number connected through Meta (yours, if it is not used in the WhatsApp app, or a provided number at €3.50 excl. VAT a month), and Meta’s window creates your Meta Business account on the spot. Without an account, a number linked by QR code serves to answer: WhatsApp can cut a number linked this way that writes first. A number used in the WhatsApp Business app will soon be able to go through Meta without leaving it: coexistence."
+      "text": "It depends on your number and your WhatsApp Business app: the guide above gives you your path. Your store’s messages go out from a number connected through Meta: yours if it is available, a provided number at €3.50 excl. VAT a month, and soon the number of your WhatsApp Business app, which you keep. Meta’s window has you create your Meta Business account along the way if you lack one. With no account at all, a number linked by QR code serves to answer: WhatsApp can cut a number linked this way that writes first."
      }
     },
     {
@@ -314,7 +314,7 @@
         <li><span class="bt-num">4</span><div><h3>Your AI agent answers them</h3><p>With what it knows about your store: your delivery times, your carriers, your returns, your products. Without the answer, it hands over to you.</p></div></li>
         <li><span class="bt-num">5</span><div><h3>They order</h3><p>The confirmation arrives on WhatsApp, then the shipping notice with the tracking link.</p></div></li>
       </ol>
-      <p class="bt-note">The reminder is a marketing message: it only goes out once you have confirmed your customers’ consent, and it says how to reply STOP.</p>
+      <p class="bt-note">The reminder is a marketing message: your customers’ consent is your responsibility, and it says how to reply STOP.</p>
     </div>
   </section>
 
@@ -326,7 +326,7 @@
         <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-wallet"/></svg></span><h3>The paid order</h3><p>The confirmation, with the order number, its total and its link.</p></li>
         <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><h3>The shipment</h3><p>The shipping notice, with the carrier and the tracking link.</p></li>
         <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-cart"/></svg></span><h3>The abandoned checkout</h3><p>A reminder, with the link that reopens the checkout.</p></li>
-        <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg></span><h3>Your subscribed customers</h3><p>The import of your customers subscribed to your marketing (email or SMS) who have a phone number. They arrive without WhatsApp consent: an email agreement is not one.</p></li>
+        <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg></span><h3>Your subscribed customers</h3><p>The import of your customers subscribed to your marketing (email or SMS) who have a phone number. Their agreement to WhatsApp is your responsibility, and a STOP is always respected.</p></li>
       </ul>
       <p class="bt-note"><a href="/en/help/connect-my-shopify-store/">Without Claude Code: the console step by step</a> <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></p>
     </div>
@@ -348,128 +348,110 @@
     <div class="cadre">
       <p class="f-surtitre">Your WhatsApp number</p>
       <h2 class="f-titre">The right number, <span class="sec-accent">in a few questions.</span></h2>
-      <p class="f-texte">Depending on your Meta Business account and your number, here is your path, in four questions at most.</p>
+      <p class="f-texte">Depending on your number and your WhatsApp Business app, here is your path, in four questions at most.</p>
       <div class="bt-lexique">
         <h3>Before you answer, five words to know</h3>
         <dl>
-          <div><dt>The Meta Business account</dt><dd>Your business’s account at Meta (a “portfolio”, formerly Business Manager). If you advertise on Facebook or Instagram, you probably have one. Otherwise, nothing to prepare: it is free, and Meta’s window offers to create it along the way, with your Facebook profile.</dd></div>
+          <div><dt>The Meta Business account</dt><dd>Your business’s account at Meta (a “portfolio”, formerly Business Manager). If you advertise on Facebook or Instagram, you probably have one. Otherwise, nothing to prepare: it is free, and Meta’s window has you create it along the way, with your Facebook profile.</dd></div>
           <div><dt>The WhatsApp Business app</dt><dd>The free app for businesses, on your phone: your store’s number, its profile, the replies you type. It does not send your store’s messages on its own.</dd></div>
-          <div><dt>The official API</dt><dd>The same WhatsApp, driven by software, on a number connected through Meta: it sends the confirmation, the shipping notice and the reminder, and Meta bills each message. It needs a Meta Business account, and the number leaves the app, except with coexistence.</dd></div>
-          <div><dt>The QR code</dt><dd>Your WhatsApp Business app linked to Messaging Me like a computer (“Linked devices”), without a Meta Business account: your AI agent answers those who write to you, but nothing goes out first.</dd></div>
-          <div><dt>Coexistence (soon)</dt><dd>Your number keeps the WhatsApp Business app and goes through the API at the same time, if you want it to. Meta keeps it for numbers already in use for a while.</dd></div>
+          <div><dt>The official API</dt><dd>The same WhatsApp, driven by software, on a number connected through Meta: it sends the confirmation, the shipping notice and the reminder, and Meta bills its messages. It needs a Meta Business account, and the number leaves the app, unless you keep it.</dd></div>
+          <div><dt>Keeping your app (soon)</dt><dd>Your number stays in the WhatsApp Business app and goes through Meta at the same time: you still reply from your phone, and your store’s messages go out from Messaging Me.</dd></div>
+          <div><dt>The QR code</dt><dd>Your WhatsApp Business app linked to Messaging Me like a computer (“Linked devices”), with no account at all (no Facebook profile, no card at Meta): your AI agent answers those who write to you without Meta billing its replies, but nothing goes out first, and WhatsApp can cut the number.</dd></div>
         </dl>
       </div>
       <div class="bt-guide" data-guide-numero>
         <div class="bt-questions" hidden>
           <fieldset class="bt-question" data-question="compte">
             <legend>Do you have a Meta Business account?<span class="bt-precision">A business portfolio, formerly Business Manager.</span></legend>
-            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="application-compte" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="application" aria-pressed="false">No</button><button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">I don’t know</button></div>
-            <p class="bt-aide" hidden>Sign in to business.facebook.com with your Facebook account: the menu under “Home”, at the top left, lists your portfolios. None? Answer “No”: Meta’s window will offer to create it along the way, with your Facebook profile.</p>
-          </fieldset>
-          <fieldset class="bt-question" data-question="application-compte" hidden>
-            <legend>Do you use the WhatsApp Business app?<span class="bt-precision">The app for businesses, separate from WhatsApp.</span></legend>
-            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="utiliser-compte" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="numero-compte" aria-pressed="false">No</button></div>
-          </fieldset>
-          <fieldset class="bt-question" data-question="utiliser-compte" hidden>
-            <legend>Do you want to automate this number with Claude Code?</legend>
-            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="depuis" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="numero-compte" aria-pressed="false">No</button></div>
-          </fieldset>
-          <fieldset class="bt-question" data-question="numero-compte" hidden>
-            <legend>Do you have a number available to automate WhatsApp with Claude Code?<span class="bt-precision">A number that is not used in the WhatsApp app.</span></legend>
-            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="api" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="api-fourni" aria-pressed="false">No</button></div>
+            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="application" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="application" data-note="note-compte-1" aria-pressed="false">No</button><button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">I don’t know</button></div>
+            <p class="bt-aide" hidden>Sign in to business.facebook.com with your Facebook profile: the menu under “Home”, at the top left, lists your portfolios. None? Answer “No”, that is not a problem.</p>
+            <p class="bt-note-reponse" id="note-compte-1" role="status" hidden>No problem, nothing to prepare: Meta’s window will have you create it along the way, with your Facebook profile (your business name, an email, the country and the website).</p>
           </fieldset>
           <fieldset class="bt-question" data-question="application" hidden>
-            <legend>Do you use the WhatsApp Business app?<span class="bt-precision">The app for businesses, separate from WhatsApp.</span></legend>
-            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="utiliser" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="numero" aria-pressed="false">No</button></div>
+            <legend>Do you have the WhatsApp Business app on your business’s number?<span class="bt-precision">The app for businesses, separate from WhatsApp.</span></legend>
+            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="garder" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="numero" aria-pressed="false">No</button></div>
           </fieldset>
-          <fieldset class="bt-question" data-question="utiliser" hidden>
-            <legend>Do you want to automate this number with Claude Code?</legend>
-            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="depuis" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="autre-numero" aria-pressed="false">No</button></div>
-          </fieldset>
-          <fieldset class="bt-question" data-question="depuis" hidden>
-            <legend>How long has this number been used in the WhatsApp Business app?</legend>
-            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="coexistence" aria-pressed="false">More than a month</button><button type="button" class="bouton bouton-trait" data-vers="qr-puis-coexistence" aria-pressed="false">Less than a month</button></div>
-          </fieldset>
-          <fieldset class="bt-question" data-question="autre-numero" hidden>
-            <legend>Do you have another number to automate WhatsApp?</legend>
-            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="choix" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="choix-fourni" aria-pressed="false">No</button></div>
+          <fieldset class="bt-question" data-question="garder" hidden>
+            <legend>Do you want to keep this number in the app, or take a separate number?</legend>
+            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="garder-application" aria-pressed="false">Keep it in the app</button><button type="button" class="bouton bouton-trait" data-vers="numero" aria-pressed="false">A separate number</button></div>
           </fieldset>
           <fieldset class="bt-question" data-question="numero" hidden>
-            <legend>Do you have a number to automate WhatsApp with Claude Code?</legend>
-            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="choix" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="choix-fourni" aria-pressed="false">No</button></div>
+            <legend>Do you have an available number?<span class="bt-precision">A number that is not used in WhatsApp, nor in the WhatsApp Business app.</span></legend>
+            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="api" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="api-fourni" aria-pressed="false">No</button></div>
           </fieldset>
           <button type="button" class="bt-recommencer" data-recommencer hidden>Start again</button>
         </div>
         <div class="bt-chemins" aria-live="polite">
+        <article class="bt-chemin" data-chemin="garder-application" id="numero-garder-application">
+          <p class="bt-situation">With the WhatsApp Business app, which you want to keep</p>
+          <h3>Keep your WhatsApp Business app</h3>
+          <p>Soon, your number will also go through Meta without leaving the app. Right now, it can already answer your customers by QR code.</p>
+          <div class="bt-voies">
+            <section class="bt-voie">
+              <h4>Through Meta, keeping the app (soon)</h4>
+              <ul>
+                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>The same number, and the app stays on your phone: you reply there as before.</li>
+                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Your store’s three messages go out, and your AI agent answers.</li>
+                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>A Meta Business account, which Meta’s window has you create along the way if you lack one, and a payment method at Meta.</li>
+                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>Meta bills the messages sent from Messaging Me, replies included beyond a monthly allowance; those you type in the app stay free.</li>
+                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>A few app features stop, such as broadcast lists and the away message, and you need to open the app at least every two weeks.</li>
+              </ul>
+            </section>
+            <section class="bt-voie">
+              <h4>By QR code, to answer</h4>
+              <ul>
+                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>No account at all: neither a Facebook profile nor a card at Meta.</li>
+                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Meta does not bill the replies.</li>
+                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>Your AI agent answers the customers who write, but nothing goes out first: neither confirmation nor reminder.</li>
+                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>WhatsApp can cut a number linked this way.</li>
+              </ul>
+            </section>
+          </div>
+        </article>
         <article class="bt-chemin" data-chemin="api" id="numero-api">
-          <p class="bt-situation">With a Meta Business account and an available number</p>
-          <h3>Your number, connected through Meta</h3>
-          <p>Claude opens Meta’s window: you choose your Meta Business account there and connect your number.</p>
-          <p>Your store’s three messages go out, and your AI agent answers.</p>
-        </article>
-        <article class="bt-chemin" data-chemin="api-fourni" id="numero-api-fourni">
-          <p class="bt-situation">With a Meta Business account, without an available number</p>
-          <h3>A provided number, connected through Meta</h3>
-          <p>Take a provided number, at €3.50 excl. VAT a month with the Free plan, included in Pro: Claude connects it to your Meta Business account.</p>
-          <p>Your store’s three messages go out, and your AI agent answers.</p>
-        </article>
-        <article class="bt-chemin" data-chemin="coexistence" id="numero-coexistence">
-          <p class="bt-situation">With a number used in the WhatsApp Business app for more than a month</p>
-          <h3>Keep your number: coexistence is coming</h3>
-          <p>Soon, this number will connect through Meta without leaving the WhatsApp Business app: “coexistence”. Meta’s window will take your Meta Business account, or offer to create it along the way with your Facebook profile, and your store’s messages will go out.</p>
-          <p>Messages sent from Messaging Me will be billed by Meta (those you type in the app stay free), a few app features will stop, and you will need to open the app at least every two weeks.</p>
-          <p>Meanwhile, link it by QR code: your AI agent answers the customers who write to you, without sending anything first. To recover your checkouts right away, take another number connected through Meta, yours or a provided one.</p>
-        </article>
-        <article class="bt-chemin" data-chemin="qr-puis-coexistence" id="numero-qr-puis-coexistence">
-          <p class="bt-situation">With a number used in the WhatsApp Business app for less than a month</p>
-          <h3>Answer by QR code, then coexistence</h3>
-          <p>Link this number by QR code, without going through Meta: your AI agent answers the customers who write to you. Nothing goes out first, neither confirmation nor reminder: WhatsApp can cut a number linked this way that writes to strangers.</p>
-          <p>Once it has been used for a month, coexistence (soon) will also connect it through Meta, with your Meta Business account or by offering to create it along the way, and your store’s messages will go out. To recover your checkouts right away, take another number connected through Meta, yours or a provided one.</p>
-        </article>
-        <article class="bt-chemin" data-chemin="choix" id="numero-choix">
-          <p class="bt-situation">Without a Meta Business account, with a number to automate</p>
+          <p class="bt-situation">With an available number</p>
           <h3>Your number, two ways</h3>
+          <p>Through Meta, Claude opens Meta’s window to connect it; by QR code, your AI agent answers your customers.</p>
           <div class="bt-voies">
             <section class="bt-voie">
               <h4>Through Meta, the official API</h4>
               <ul>
                 <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Your store’s three messages go out: confirmation, shipping, reminder.</li>
                 <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Your AI agent answers.</li>
-                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>You need a Meta Business account: free, Meta’s window offers to create it along the way, with your Facebook profile.</li>
-                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>Meta bills your store’s messages: a payment method to add at Meta before the first one.</li>
-                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>The number must not be used in the WhatsApp app.</li>
+                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>A Meta Business account, which Meta’s window has you create along the way if you lack one, and a payment method at Meta.</li>
+                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>Meta bills your store’s messages, and replies beyond a monthly allowance.</li>
               </ul>
             </section>
             <section class="bt-voie">
               <h4>By QR code, to answer</h4>
               <ul>
-                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>No Meta Business account to create.</li>
-                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Coexistence later (soon), once the number has been used for a month in the WhatsApp Business app.</li>
+                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>No account at all: neither a Facebook profile nor a card at Meta.</li>
+                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Meta does not bill the replies.</li>
                 <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>Your AI agent answers the customers who write, but nothing goes out first: neither confirmation nor reminder.</li>
                 <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>The number must be in the WhatsApp Business app on a phone, and WhatsApp can cut it.</li>
               </ul>
             </section>
           </div>
         </article>
-        <article class="bt-chemin" data-chemin="choix-fourni" id="numero-choix-fourni">
-          <p class="bt-situation">Without a Meta Business account or a number</p>
+        <article class="bt-chemin" data-chemin="api-fourni" id="numero-api-fourni">
+          <p class="bt-situation">Without an available number</p>
           <h3>A provided number, two ways</h3>
-          <p>Take a provided number, at €3.50 excl. VAT a month with the Free plan, included in Pro, then choose:</p>
+          <p>Take a provided number, at €3.50 excl. VAT a month with the Free plan (included in Pro, which goes through Meta), then choose the way:</p>
           <div class="bt-voies">
             <section class="bt-voie">
               <h4>Through Meta, the official API</h4>
               <ul>
                 <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Your store’s three messages go out: confirmation, shipping, reminder.</li>
                 <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Your AI agent answers.</li>
-                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>You need a Meta Business account: free, Meta’s window offers to create it along the way, with your Facebook profile.</li>
-                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>Meta bills your store’s messages: a payment method to add at Meta before the first one.</li>
+                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>A Meta Business account, which Meta’s window has you create along the way if you lack one, and a payment method at Meta.</li>
+                <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>Meta bills your store’s messages, and replies beyond a monthly allowance.</li>
               </ul>
             </section>
             <section class="bt-voie">
               <h4>By QR code, to answer</h4>
               <ul>
-                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>No Meta Business account to create.</li>
-                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Coexistence later (soon), once the number has been used for a month in the WhatsApp Business app.</li>
+                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>No account at all: neither a Facebook profile nor a card at Meta.</li>
+                <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Meta does not bill the replies.</li>
                 <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>Your AI agent answers the customers who write, but nothing goes out first: neither confirmation nor reminder.</li>
                 <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>The number must be in the WhatsApp Business app on a phone, and WhatsApp can cut it.</li>
               </ul>
@@ -517,7 +499,7 @@
         <details id="faq-prix"><summary>How much does the abandoned checkout reminder cost?</summary><p>€0 a month with the Free plan, by connecting it from Claude Code. Meta bills each message sent to your store, with no surcharge from us. You need a number connected through Meta (yours, or a provided number at €3.50 excl. VAT a month), and your AI agent uses prepaid credit.</p></details>
         <details id="faq-app"><summary>Do I need to install an app from the Shopify App Store?</summary><p>No. Claude creates the app in your own Shopify organization, with no Shopify review: all you have to do is click “Install”.</p></details>
         <details id="faq-reponse"><summary>Who answers when the customer replies to the reminder?</summary><p>The one you chose: your AI agent, with what it knows about your store, or your team. The agent has no access to your orders: for a specific parcel, it hands over.</p></details>
-        <details id="faq-numero"><summary>Which WhatsApp number should I use?</summary><p>It depends on your Meta Business account and your number: the guide above gives you your path. Your store’s messages need a number connected through Meta (yours, if it is not used in the WhatsApp app, or a provided number at €3.50 excl. VAT a month), and Meta’s window creates your Meta Business account on the spot. Without an account, a number linked by QR code serves to answer: WhatsApp can cut a number linked this way that writes first. A number used in the WhatsApp Business app will soon be able to go through Meta without leaving it: coexistence.</p></details>
+        <details id="faq-numero"><summary>Which WhatsApp number should I use?</summary><p>It depends on your number and your WhatsApp Business app: the guide above gives you your path. Your store’s messages go out from a number connected through Meta: yours if it is available, a provided number at €3.50 excl. VAT a month, and soon the number of your WhatsApp Business app, which you keep. Meta’s window has you create your Meta Business account along the way if you lack one. With no account at all, a number linked by QR code serves to answer: WhatsApp can cut a number linked this way that writes first.</p></details>
         <details id="faq-stop"><summary>What happens to a customer who replies STOP?</summary><p>They no longer receive anything from your store. The reminder carries at the bottom the line “Reply STOP to stop these messages”.</p></details>
       </div>
     </div>

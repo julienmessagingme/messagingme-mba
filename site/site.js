@@ -311,6 +311,7 @@
       var bouton = q.querySelector('[data-aide]');
       if (aide) aide.hidden = true;
       if (bouton) bouton.setAttribute('aria-expanded', 'false');
+      [].slice.call(q.querySelectorAll('.bt-note-reponse')).forEach(function (n) { n.hidden = true; });
     };
     // Retire du parcours tout ce qui suit la question `q` : une réponse changée plus haut ouvre une autre branche.
     var couper = function (q) {
@@ -333,6 +334,8 @@
         var vers = b.getAttribute('data-vers');
         couper(q);
         [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+        // Une réponse peut porter une note (le « Non » au compte Meta Business n'arrête rien) : seule la sienne s'affiche.
+        [].slice.call(q.querySelectorAll('.bt-note-reponse')).forEach(function (n) { n.hidden = n.id !== b.getAttribute('data-note'); });
         recommencer.hidden = false;
         var suivante = g.querySelector('[data-question="' + vers + '"]');
         if (suivante) {
