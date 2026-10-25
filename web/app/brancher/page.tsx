@@ -7,7 +7,7 @@ import { TitrePage, IntroPage } from '@/components/TitrePage';
 import { Squelette } from '@/components/Squelette';
 import { ParcoursNumero } from '@/components/ParcoursNumero';
 import { useT } from '@/lib/i18n';
-import { lireLien, CLE_JETON_LIEN, type LienLu } from '@/lib/lien-numero';
+import { connexionFinie, lireLien, CLE_JETON_LIEN, type LienLu } from '@/lib/lien-numero';
 import { apiDuLien, LienRefuse } from '@/lib/api/connexion-numero';
 
 /**
@@ -42,17 +42,19 @@ export default function BrancherPage() {
   }, []);
 
   const api = useMemo(() => (lien ? apiDuLien(lien.lu.tenantId, lien.jeton) : null), [lien]);
+  const mode = lien?.lu.mode;
 
   // L'état de la connexion, relu toutes les trois secondes jusqu'à la connexion : c'est lui qui dit « connecté », et
   // un 401 (lien expiré, révoqué, forgé) fait redemander le lien.
   useEffect(() => {
-    if (!api || connecte || refuse) return undefined;
+    if (!api || !mode || connecte || refuse) return undefined;
     let vivant = true;
     const lire = () => {
       api.etat().then((r) => {
         if (!vivant) return;
         setAActiver(r.etat.connecte?.aActiver === true);
-        if (r.etat.connecte && !r.etat.connecte.aActiver) setConnecte(true);
+        // En coexistence, le compte relié par QR code n'est pas la fin : la page attend le numéro de Meta.
+        if (connexionFinie(r.etat, mode)) setConnecte(true);
       }).catch((err: unknown) => {
         if (vivant && err instanceof LienRefuse) setRefuse(true);
       });
@@ -60,7 +62,7 @@ export default function BrancherPage() {
     lire();
     const minuterie = setInterval(lire, 3_000);
     return () => { vivant = false; clearInterval(minuterie); };
-  }, [api, connecte, refuse]);
+  }, [api, mode, connecte, refuse]);
 
   return (
     <main className="relative flex min-h-screen items-start justify-center px-4 py-12">

@@ -26,6 +26,7 @@ import { useConfirmation } from '@/components/Confirmation';
 import { ChiffreMessagesTenus } from '@/components/EnteteAgent';
 import { agentMetaRepond, lireMessagesMba, type MessagesEcritsMba } from '@/lib/chiffres-canaux';
 import { useConnexionNumero, type ConnexionNumero } from '@/lib/connexion-numero';
+import { COEXISTENCE_BOUTON, COEXISTENCE_PHRASES } from '@/lib/fenetre-meta';
 import { apiDeLaSession } from '@/lib/api/connexion-numero';
 import { lireHubspotActif, affichageHubspotAccueil } from '@/lib/hubspot-actif';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
@@ -977,7 +978,9 @@ function BadgeField({ label, badge }: { label: string; badge: StatusBadge }) {
 // une fenêtre Meta, et `fbSdkLoading` est un singleton de module qu'on ne peut pas dupliquer.
 
 /**
- * Onboarding d'un espace SANS numéro : le bouton ouvre la fenêtre Meta (Embedded Signup).
+ * Onboarding d'un espace SANS numéro : les deux boutons ouvrent la fenêtre Meta (Embedded Signup), pour un numéro qui
+ * quitte l'application WhatsApp, ou en coexistence, le numéro restant dans l'application WhatsApp Business (plan
+ * 2026-10-24, `@/lib/fenetre-meta`).
  *
  * ⚠️ LA MÉCANIQUE A QUITTÉ CE COMPOSANT (2026-09-25) pour `useConnexionNumero` (`@/lib/connexion-numero`),
  * créé une fois par l'Accueil : l'interrupteur « Numéro WhatsApp » du bloc « Canaux et services » lance la même
@@ -990,6 +993,9 @@ function ConnectNumberZone({ isAdmin, connexion, tenantId, onConnecte360 }: {
   const t = useT();
   const { cfg, busy, error, connect } = connexion;
   const ready = cfg?.enabled === true && isAdmin;
+  // Le bouton qui a ouvert la fenêtre de Meta : c'est lui qui dit « Connexion en cours… », pas son voisin.
+  const [enCoexistence, setEnCoexistence] = useState(false);
+  const ouvrir = (coexistence: boolean) => { setEnCoexistence(coexistence); void connect({ coexistence }); };
   return (
     <div className="rounded-carte border border-ink-200 bg-ink-50 p-5">
       <div className="mb-3 flex items-center justify-between">
@@ -1017,13 +1023,20 @@ function ConnectNumberZone({ isAdmin, connexion, tenantId, onConnecte360 }: {
       {error && <p className="mt-3 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{error}</p>}
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-ink-200 pt-3">
         {ready ? (
-          <Bouton enCours={busy}
-            type="button"
-            onClick={() => { void connect(); }}
-            disabled={busy}
-          >
-            {busy ? t('Connexion en cours…', 'Connecting…') : t('Connecter mon compte WhatsApp', 'Connect my WhatsApp account')}
-          </Bouton>
+          <>
+            <Bouton enCours={busy && !enCoexistence}
+              type="button"
+              onClick={() => ouvrir(false)}
+              disabled={busy}
+            >
+              {busy && !enCoexistence ? t('Connexion en cours…', 'Connecting…') : t('Connecter mon compte WhatsApp', 'Connect my WhatsApp account')}
+            </Bouton>
+            {/* La coexistence (plan 2026-10-24) : la même fenêtre de Meta, le numéro restant dans l'application WhatsApp
+                Business. Ses deux phrases suivent la rangée. */}
+            <Bouton data-testid="connecter-coexistence" variante="secondaire" type="button" enCours={busy && enCoexistence} disabled={busy} onClick={() => ouvrir(true)}>
+              {busy && enCoexistence ? t('Connexion en cours…', 'Connecting…') : t(COEXISTENCE_BOUTON.fr, COEXISTENCE_BOUTON.en)}
+            </Bouton>
+          </>
         ) : (
           <>
             <button
@@ -1041,6 +1054,11 @@ function ConnectNumberZone({ isAdmin, connexion, tenantId, onConnecte360 }: {
             par l'une ou l'autre voie : la règle est celle de la branche qui la monte (`!account.hasNumber`). */}
         {isAdmin && <Connexion360dialog tenantId={tenantId} mode="connecter" onConnecte={onConnecte360} />}
       </div>
+      {ready && (
+        <div data-testid="coexistence-explication" className="mt-2 space-y-1">
+          {COEXISTENCE_PHRASES.map((p) => <p key={p.fr} className="text-xs text-ink-500">{t(p.fr, p.en)}</p>)}
+        </div>
+      )}
     </div>
   );
 }

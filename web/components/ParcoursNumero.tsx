@@ -5,6 +5,8 @@ import { Bouton } from '@/components/Bouton';
 import { useT } from '@/lib/i18n';
 import { useConnexionNumero } from '@/lib/connexion-numero';
 import type { ApiConnexionNumero } from '@/lib/api/connexion-numero';
+import { COEXISTENCE_BOUTON, COEXISTENCE_PHRASES } from '@/lib/fenetre-meta';
+import { repriseDuNumeroFourni } from '@/lib/lien-numero';
 import { ETAPES_NUMERO_FOURNI } from '@/lib/partage/etapes-numero-fourni';
 import { PREREQUIS_META } from '@/lib/partage/etapes-meta';
 import { ETAPES_COMPTE_FOURNI } from '@/lib/partage/etapes-application';
@@ -13,10 +15,12 @@ import { QrApplication } from '@/components/QrApplication';
 /**
  * LE PARCOURS DE CONNEXION DU NUMÉRO (lot 3b, sorti de `/connecter-whatsapp` au lot 3c pour servir aussi `/brancher`).
  *
- * Deux choix. « Fournissez-moi un numéro » : un numéro de notre réserve s'affiche ; le client le tape dans la fenêtre de
+ * Trois choix. « Fournissez-moi un numéro » : un numéro de notre réserve s'affiche ; le client le tape dans la fenêtre de
  * Meta, par SMS de préférence (la ligne fixe le lit à voix haute), sinon par la voix ; notre Asterisk capte le code
  * dans les deux cas, et le parcours l'affiche pour qu'il le recopie. Les étapes affichées sont celles que Claude redit
  * (`ETAPES_NUMERO_FOURNI`, essai réel 99). « J'ai déjà un numéro » : la fenêtre de Meta, comme depuis l'Accueil.
+ * « Garder mon application WhatsApp Business » : la même fenêtre en coexistence (plan 2026-10-24), le numéro reste dans
+ * l'application.
  *
  * Il ne connaît pas son autorité : `api` est celle de la session de la console ou celle du lien de Claude Code
  * (`@/lib/api/connexion-numero`). La page décide de ce qu'on voit une fois le numéro connecté.
@@ -34,15 +38,15 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   filiere?: 'api' | 'application';
   /** Où Stripe renvoie après le paiement : cette page-ci (`/brancher` ou `/connecter-whatsapp`). */
   retour: 'brancher' | 'console';
-  /** Le choix déjà fait (le mode du lien de Claude Code), ou `null` pour proposer les deux. */
-  choixInitial: 'fourni' | 'apporte' | null;
+  /** Le choix déjà fait (le mode du lien de Claude Code), ou `null` pour proposer les trois. */
+  choixInitial: 'fourni' | 'apporte' | 'coexistence' | null;
   /** Le numéro est connecté : la lecture du code s'arrête. */
   connecte: boolean;
   /** La fenêtre de Meta a relié le compte : ses avertissements, à afficher par la page. */
   surConnexion(avertissements: string[]): void;
 }) {
   const t = useT();
-  const [choix, setChoix] = useState<'fourni' | 'apporte' | null>(choixInitial);
+  const [choix, setChoix] = useState<'fourni' | 'apporte' | 'coexistence' | null>(choixInitial);
   const [numero, setNumero] = useState<string | null>(null);
   const [code, setCode] = useState<string | null>(null);
   const [copie, setCopie] = useState(false);
@@ -97,12 +101,14 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [choix, numero, connecte, tenantId]);
 
-  // Au retour sur la page (rechargement, onglet rouvert), un numéro déjà attribué reprend où il en était. Une API qui
-  // n'a pas encore la route rend une erreur : le parcours reste au choix, sans message.
+  // Au retour sur la page (rechargement, onglet rouvert), un numéro déjà attribué reprend où il en était, sauf sur un lien
+  // de coexistence (`repriseDuNumeroFourni`). Une API qui n'a pas encore la route rend une erreur : le parcours reste au
+  // choix, sans message.
   useEffect(() => {
     const depart = generation.current;
     api.lire().then((r) => {
-      if (r.numero && fraiche(depart)) { setNumero(r.numero); setCode(r.code); setChoix('fourni'); }
+      const reprise = repriseDuNumeroFourni(choixInitial, r);
+      if (reprise && fraiche(depart)) { setNumero(reprise.numero); setCode(reprise.code); setChoix('fourni'); }
     }).catch(() => {});
     // L'abonnement, même quand un numéro est déjà là : le portail et le texte après « Abandonner » en dépendent.
     api.etat().then((r) => { if (fraiche(depart)) { setAbonnement(r.etat.abonnement); setInclus(r.etat.inclusDansLePro === true); } }).catch(() => {});
@@ -156,6 +162,9 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   const boutonRetour = choixInitial === null
     ? <Bouton type="button" variante="discret" onClick={() => setChoix(null)}>{t('Retour', 'Back')}</Bouton>
     : null;
+  // En coexistence, le numéro RESTE dans l'application : le prérequis d'un numéro hors de l'application la contredirait,
+  // et le compte Meta Business, sa carte le dit elle-même, la fenêtre de Meta le crée en chemin. Reste ce qu'il est.
+  const prerequis = choix === 'coexistence' ? PREREQUIS_META.slice(0, 1) : PREREQUIS_META;
 
   return (
     <>
@@ -165,7 +174,7 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
         <div data-testid="prerequis-meta" className="mt-6 rounded-carte border border-ink-200 bg-ink-50 p-5">
           <div className="text-sm font-semibold text-ink-900">{t('Avant de commencer, chez Meta', 'Before you start, at Meta')}</div>
           <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-ink-700">
-            {PREREQUIS_META.map((e) => <li key={e.fr}>{t(e.fr, e.en)}</li>)}
+            {prerequis.map((e) => <li key={e.fr}>{t(e.fr, e.en)}</li>)}
           </ol>
         </div>
       )}
@@ -183,6 +192,23 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
             <div className="text-base font-semibold text-ink-900">{t('J’ai déjà un numéro', 'I already have a number')}</div>
             <p className="mt-1 text-xs text-ink-500">{t('Vous le saisissez dans la fenêtre de Meta et recevez son code.', 'You enter it in the Meta window and receive its code.')}</p>
           </button>
+          {/* La coexistence passe par l'API officielle : la filière application, qui relie par QR code, ne la propose pas. */}
+          {!application && (
+            <button type="button" data-testid="choix-coexistence" onClick={() => setChoix('coexistence')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400 sm:col-span-2">
+              <div className="text-base font-semibold text-ink-900">{t(COEXISTENCE_BOUTON.fr, COEXISTENCE_BOUTON.en)}</div>
+              <p className="mt-1 text-xs text-ink-500">{t('Le numéro de votre application WhatsApp Business, qui reste sur votre téléphone.', 'Your WhatsApp Business app number, which stays on your phone.')}</p>
+            </button>
+          )}
+        </div>
+      ) : choix === 'coexistence' ? (
+        <div data-testid="choix-coexistence-ouvert" className="mt-6 rounded-carte border border-ink-200 bg-white p-5">
+          <div className="flex items-center gap-3">
+            <Bouton type="button" enCours={connexion.busy} disabled={!pret || connexion.busy} onClick={() => { void connexion.connect({ coexistence: true }); }} data-testid="ouvrir-fenetre-coexistence">
+              {connexion.busy ? t('Fenêtre de Meta ouverte…', 'Meta window open…') : t(COEXISTENCE_BOUTON.fr, COEXISTENCE_BOUTON.en)}
+            </Bouton>
+            {boutonRetour}
+          </div>
+          {COEXISTENCE_PHRASES.map((p) => <p key={p.fr} className="mt-3 text-sm text-ink-700">{t(p.fr, p.en)}</p>)}
         </div>
       ) : choix === 'apporte' && application ? (
         <QrApplication api={api} />

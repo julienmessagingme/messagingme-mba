@@ -32,6 +32,11 @@ describe('lireMessageEs : ce que la fenêtre Meta annonce', () => {
   it('un événement hors de la forme attendue n’est pas transmis', () => {
     expect(lireMessageEs(FB, msg('finish<script>', { waba_id: 'w1' }))).toEqual({ wabaId: 'w1' });
   });
+
+  it('🔴 la fin du parcours en coexistence (plan 2026-10-24) : son événement est transmis, le serveur saute register sur lui', () => {
+    expect(lireMessageEs(FB, { type: 'WA_EMBEDDED_SIGNUP', event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING', data: { waba_id: '123' } }))
+      .toEqual({ wabaId: '123', evenement: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' });
+  });
 });
 
 describe('retenirMessageEs : un message tardif n’efface pas ce qui est déjà capturé', () => {

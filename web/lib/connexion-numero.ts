@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { EsConfig } from '@/lib/api';
 import type { ApiConnexionNumero } from '@/lib/api/connexion-numero';
 import { loadFbSdk } from '@/lib/fb-sdk';
+import { optionsFenetreMeta } from '@/lib/fenetre-meta';
 import { lireMessageEs, retenirMessageEs, type MessageEs } from '@/lib/message-es';
 import { useT } from '@/lib/i18n';
 
@@ -23,7 +24,11 @@ export interface ConnexionNumero {
   cfg: EsConfig | null;
   busy: boolean;
   error: string | null;
-  connect(): Promise<void>;
+  /**
+   * Ouvre la fenêtre de Meta. `coexistence` : le numéro reste dans l'application WhatsApp Business (plan 2026-10-24,
+   * `optionsFenetreMeta`) ; absent, le parcours d'aujourd'hui.
+   */
+  connect(o?: { coexistence?: boolean }): Promise<void>;
 }
 
 /** Attend qu'une valeur apparaisse (session info postMessage), sinon null au timeout. */
@@ -98,7 +103,7 @@ export function useConnexionNumero(
     return () => window.removeEventListener('message', onMsg);
   }, []);
 
-  async function connect() {
+  async function connect(o: { coexistence?: boolean } = {}) {
     if (!cfg?.enabled || busy) return;
     setBusy(true);
     setError(null);
@@ -132,7 +137,8 @@ export function useConnexionNumero(
             }
           })();
         },
-        { config_id: cfg.configId, response_type: 'code', override_default_response_type: true, extras: { setup: {} } },
+        // Les options de la fenêtre, et la seule différence de la coexistence : `@/lib/fenetre-meta`.
+        optionsFenetreMeta(cfg.configId, o.coexistence === true),
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Connexion impossible', 'Connection failed'));
