@@ -196,7 +196,7 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   scénario (`VideoObject`). La page est en ligne depuis le 2026-10-24 (plan `2026-10-24-boutiques-shopify.md`).
 - **La coexistence livrée : retirer « bientôt » partout où le parcours du numéro l'annonce** : la page « Boutiques
   Shopify » (`scripts/vitrine/boutique-textes.ts` : le mot « Garder votre application (bientôt) » du lexique, l'issue
-  `garder-application` et sa voie « en gardant l'application (bientôt) », la réponse `faq-numero`), puis
+  `garder-application`, la réponse `faq-numero`), puis
   `npm run vitrine:cas` ; la skill `mise-en-service` (le choix de la filière), la skill `shopify`, le README du plugin
   (« Which WhatsApp number? ») et les entrées `api-ou-application` et `numero-dans-l-application` de
   `scripts/plugin/faq.ts`, puis `npm run plugin:generer` et une montée de version du plugin. Toujours sans le mot

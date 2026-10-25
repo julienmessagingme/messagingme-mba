@@ -5,6 +5,46 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-25 : le compte Meta Business, rien à préparer (la console, Claude, la fiche et le guide)
+
+Mesuré à l'essai 161 : la fenêtre de Meta fait créer le portefeuille en chemin. `PREREQUIS_META`
+(`web/lib/partage/etapes-meta.ts`) ne dit plus « le faire avant est plus sûr », mais « rien à préparer : la fenêtre de
+Meta vous le fait créer en chemin, avec votre profil Facebook », en laissant la création préalable possible. Ce texte
+est lu à cinq endroits, partis ensemble : la page « Connecter WhatsApp » de la console, la consigne de
+`start_whatsapp_connection` (au prochain déploiement de l'API), la FAQ `compte-meta` du plugin et des pages
+développeurs (`npm run plugin:generer`), la fiche publique « Ce qu'il faut chez Meta » en français et en anglais (mot
+pour mot, `tests/etapes-meta.test.ts`), et le guide « Compte Meta Business » des pages développeurs (`npm run
+vitrine:guide-meta`, que `tests/vitrine-guide-meta.test.ts` a rappelé). La section de `features.md` que cite la fiche
+suit, avec son empreinte.
+
+## 2026-10-25 : le QR code seulement sans compte Meta Business (précision de Julien sur l'arbre du numéro)
+
+Précision de Julien, relayée par la session produit : le QR code ne se propose pas à chaque choix, seulement sans compte
+Meta Business, quand le chemin mène à un numéro à part ou à un nouveau numéro.
+
+- **L'arbre** : avec un compte, l'application, la garder ou un numéro à part, puis un numéro libre, par Meta seulement.
+  Sans compte, les mêmes questions, et à la place du numéro à part (ou sans application) le choix « Par QR code, pour
+  répondre, ou avec un compte Meta Business créé en chemin ? », qui montre les deux voies côte à côte : une question
+  peut désormais en porter. Le plus long parcours compte cinq questions, et le chapeau le dit (le test le dérive).
+- **Le QR code devient une issue à part entière** (votre numéro ou un numéro fourni), et les issues de l'API ne parlent
+  plus que de Meta ; garder l'application ne propose plus le QR code en attendant. Un test le tient : depuis le « Oui »
+  au compte, aucune question ni issue atteignable ne nomme le QR code, vérifié dans les deux sens.
+- La skill, le README et la FAQ suivent (« garder ce numéro dans l'application » ne propose plus le QR code en
+  attendant). Le plugin reste en 0.3.10, pas encore publié.
+- **Relu par la session produit** : la phrase de la skill sur le consentement était trop large (« jamais de question
+  de consentement »). Elle est bornée aux deux outils qui le déclarent au nom de l'utilisateur (un modèle à un numéro,
+  l'import des clients Shopify) ; une campagne ne touche toujours que les contacts d'accord, et la relance de panier
+  demande toujours la réponse du marchand. Et une skill publique ne nomme personne.
+- **Relecture indépendante** : aucun rouge. Jaunes repris : la reprise d'un numéro fourni ne propose le QR code que sans
+  compte, l'issue « garder l'application » dit quoi faire en attendant, la FAQ précise « sans compte » pour le QR code,
+  et les deux voies du choix sont lues avec la question par un lecteur d'écran (`aria-describedby`).
+- **La suite du QR code**, demande de Julien (« si le client a la formule QR code, le chemin vers la coexistence doit
+  être clair ») : partout où le QR code est proposé ou décrit (la page, la skill, le README, la FAQ, la skill Shopify), la
+  suite est dite en mots simples. Plus tard, pour écrire en premier, le même numéro garde l'application et passe par Meta
+  (« Garder mon application WhatsApp Business », depuis Claude ou l'Accueil), le compte Meta Business se crée dans la
+  fenêtre, et les conversations restent. Le produit l'accepte déjà (le mode `coexistence` de
+  `start_whatsapp_connection` sur un espace relié par QR code).
+
 ## 2026-10-25 : l'arbre du numéro revu après l'essai 161 (garder son application, jamais « coexistence »)
 
 L'essai 161 a montré que Meta accepte de garder l'application sur un numéro qui y servait depuis quatre jours, et que

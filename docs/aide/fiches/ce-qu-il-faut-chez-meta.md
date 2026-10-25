@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Ce qu'il faut chez Meta (avant de connecter un numéro)
-source_empreinte: 2bd970
+source_empreinte: add9d7
 publique: oui
 rubrique: demarrer
 rang: 2
@@ -17,13 +17,12 @@ ce qu'il faut, dans l'ordre. La page « Connecter WhatsApp » et Claude vous dis
 Business Manager) : c’est lui qui portera votre compte WhatsApp, votre numéro et votre carte. Vous y entrez avec
 votre profil Facebook, ou avec un compte Meta géré par votre organisation.
 
-**2. Un portefeuille, s'il n'existe pas encore.** Créez-le sur business.facebook.com, avant de connecter votre
-numéro.
+**2. Un portefeuille, s'il n'existe pas encore.** Il se crée en chemin, pendant la connexion de votre numéro.
 
-Pas encore de portefeuille ? Sur business.facebook.com, connectez-vous, ouvrez le menu sous « Accueil » en haut
-à gauche, puis créez un portefeuille business : le nom public de votre entreprise (sans caractères spéciaux),
-votre prénom, votre nom et une adresse e-mail professionnelle, puis confirmez l’e-mail que Meta vous envoie. La
-fenêtre de Meta peut aussi le créer en route, mais le faire avant est plus sûr.
+Pas encore de portefeuille ? Rien à préparer : la fenêtre de Meta vous le fait créer en chemin, avec votre
+profil Facebook (le nom de votre entreprise, une adresse e-mail, le pays et le site), puis vous propose un moyen
+de paiement. Vous pouvez aussi le créer avant, sur business.facebook.com : ouvrez le menu sous « Accueil » en
+haut à gauche, puis créez un portefeuille business.
 
 **3. Un numéro libre.** Un numéro qui ne sert pas dans l’application WhatsApp (ni WhatsApp Business) : une fois
 relié, il la quitte. Pas de numéro libre ? Nous vous en fournissons un.

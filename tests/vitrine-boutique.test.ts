@@ -96,8 +96,9 @@ describe('la page Boutiques Shopify', () => {
 
   it('🔴 la voie QR code d’une issue à choix ne promet aucun message qui part, et dit que rien ne part en premier', () => {
     for (const [langue, part, rien] of [['fr', /partent|envoie/i, /rien ne part en premier/i], ['en', /go out|sends/i, /nothing goes out first/i]] as const) {
-      const { issues, lexique } = TEXTES_BOUTIQUES.shopify![langue].numero;
-      const choix = issues.filter((x) => x.voies);
+      const { questions, issues, lexique } = TEXTES_BOUTIQUES.shopify![langue].numero;
+      // Les voies vivent sur le choix « QR code ou compte Meta ? » (une question), et peuvent vivre sur une issue.
+      const choix = [...questions, ...issues].filter((x) => x.voies);
       expect(choix.length, langue).toBeGreaterThan(0);
       for (const x of choix) {
         const qr = x.voies!.filter((v) => /QR/.test(v.titre));
@@ -107,6 +108,25 @@ describe('la page Boutiques Shopify', () => {
       }
       // Le mot « QR code » du lexique le dit aussi.
       expect(lexique.termes.find((t) => /QR/.test(t.terme))!.definition, langue).toMatch(rien);
+    }
+  });
+
+  it('🔴 avec un compte Meta Business, et pour garder l’application, le QR code ne se propose jamais (Julien, 2026-10-25)', () => {
+    for (const langue of ['fr', 'en'] as const) {
+      const { questions, issues } = TEXTES_BOUTIQUES.shopify![langue].numero;
+      const atteints = new Set<string>();
+      const aller = (id: string): void => {
+        if (atteints.has(id)) return;
+        atteints.add(id);
+        for (const r of questions.find((x) => x.id === id)?.reponses ?? []) if (r.vers) aller(r.vers);
+      };
+      // La première réponse de la première question est le « Oui » au compte.
+      aller(questions[0]!.reponses[0]!.vers!);
+      expect(atteints.size, langue).toBeGreaterThan(2);
+      for (const id of atteints) {
+        expect(JSON.stringify(questions.find((x) => x.id === id) ?? issues.find((x) => x.id === id)), `${langue} : ${id}`).not.toMatch(/QR/);
+      }
+      expect(JSON.stringify(issues.find((x) => x.id === 'garder-application')), langue).not.toMatch(/QR/);
     }
   });
 

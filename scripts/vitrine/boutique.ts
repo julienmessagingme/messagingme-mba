@@ -55,15 +55,18 @@ const etapes = (liste: readonly Etape[]) => [
 ];
 
 /**
- * Le guide du numéro : d'abord les cinq mots qu'il emploie, puis l'arbre de Julien (2026-10-24). Sans script, les
- * questions restent cachées et ses issues se lisent l'une sous l'autre, chacune précédée de la situation qu'elle
- * sert ; avec `site.js`, la première question s'affiche, chaque réponse montre la question suivante (`data-vers`) ou une
- * issue (`data-chemin`), et une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa question.
+ * Le guide du numéro : d'abord les cinq mots qu'il emploie, puis l'arbre de Julien (2026-10-24, précisé le 25). Sans
+ * script, les questions restent cachées et ses issues se lisent l'une sous l'autre, chacune précédée de la situation
+ * qu'elle sert ; avec `site.js`, la première question s'affiche, chaque réponse montre la question suivante (`data-vers`)
+ * ou une issue (`data-chemin`), et une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa question. Une
+ * question peut montrer, avant ses réponses, les deux voies entre lesquelles elle fait choisir (`voies`).
  */
 function guide(n: TexteBoutique['numero']): string[] {
   const question = (q: Question, i: number) => [
-    `          <fieldset class="bt-question" data-question="${q.id}"${i > 0 ? ' hidden' : ''}>`,
+    `          <fieldset class="bt-question" data-question="${q.id}"${q.voies ? ` aria-describedby="voies-${q.id}"` : ''}${i > 0 ? ' hidden' : ''}>`,
     `            <legend>${q.texte}${q.precision ? `<span class="bt-precision">${q.precision}</span>` : ''}</legend>`,
+    // Les voies sont lues avec la question, même quand le focus saute directement à sa première réponse.
+    ...(q.voies ? [`            <div class="bt-voies" id="voies-${q.id}">`, ...q.voies.flatMap(voie), '            </div>'] : []),
     `            <div class="bt-reponses">${q.reponses.map((r, k) => r.vers
       ? `<button type="button" class="bouton bouton-trait" data-vers="${r.vers}"${r.note ? ` data-note="note-${q.id}-${k}"` : ''} aria-pressed="false">${r.libelle}</button>`
       : `<button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">${r.libelle}</button>`).join('')}</div>`,

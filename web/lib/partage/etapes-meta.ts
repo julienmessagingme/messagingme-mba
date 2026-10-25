@@ -20,14 +20,16 @@ export const PREREQUIS_META: ReadonlyArray<{ fr: string; en: string }> = [
       + 'your organization.',
   },
   {
-    fr: 'Pas encore de portefeuille ? Sur business.facebook.com, connectez-vous, ouvrez le menu sous « Accueil » en haut '
-      + 'à gauche, puis créez un portefeuille business : le nom public de votre entreprise (sans caractères spéciaux), '
-      + 'votre prénom, votre nom et une adresse e-mail professionnelle, puis confirmez l’e-mail que Meta vous envoie. La '
-      + 'fenêtre de Meta peut aussi le créer en route, mais le faire avant est plus sûr.',
-    en: 'No portfolio yet? On business.facebook.com, sign in, open the menu under “Home” at the top left, then create a '
-      + 'business portfolio: your business’s public name (no special characters), your first name, last name and a '
-      + 'business email address, then confirm the email Meta sends you. Meta’s window can also create it along the way, '
-      + 'but doing it first is safer.',
+    // Mesuré à l'essai 161 (2026-10-25) : la fenêtre de Meta fait créer le portefeuille en chemin (« Créez un
+    // portefeuille business » : nom, e-mail, pays, site), puis propose « Ajouter un moyen de paiement ».
+    fr: 'Pas encore de portefeuille ? Rien à préparer : la fenêtre de Meta vous le fait créer en chemin, avec votre '
+      + 'profil Facebook (le nom de votre entreprise, une adresse e-mail, le pays et le site), puis vous propose un moyen '
+      + 'de paiement. Vous pouvez aussi le créer avant, sur business.facebook.com : ouvrez le menu sous « Accueil » en '
+      + 'haut à gauche, puis créez un portefeuille business.',
+    en: 'No portfolio yet? Nothing to prepare: Meta’s window has you create it along the way, with your Facebook profile '
+      + '(your business name, an email address, the country and the website), then offers a payment method. You can '
+      + 'also create it beforehand on business.facebook.com: open the menu under “Home” at the top left, then create a '
+      + 'business portfolio.',
   },
   {
     fr: 'Un numéro qui ne sert pas dans l’application WhatsApp (ni WhatsApp Business) : une fois relié, il la quitte. '

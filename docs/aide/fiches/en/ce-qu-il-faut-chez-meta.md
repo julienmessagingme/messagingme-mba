@@ -1,6 +1,6 @@
 ---
 slug: what-you-need-at-meta
-traduit_de: 6b9a4a
+traduit_de: dfd909
 ---
 # What you need at Meta, before and after connecting
 
@@ -11,12 +11,12 @@ what you need, in order. The “Connect WhatsApp” page and Claude tell you exa
 it will hold your WhatsApp account, your number and your card. You sign in with your Facebook profile, or with a
 managed Meta account from your organization.
 
-**2. A portfolio, if you do not have one yet.** Create it on business.facebook.com, before connecting your number.
+**2. A portfolio, if you do not have one yet.** It is created along the way, while your number connects.
 
-No portfolio yet? On business.facebook.com, sign in, open the menu under “Home” at the top left, then create a
-business portfolio: your business’s public name (no special characters), your first name, last name and a business
-email address, then confirm the email Meta sends you. Meta’s window can also create it along the way, but doing it
-first is safer.
+No portfolio yet? Nothing to prepare: Meta’s window has you create it along the way, with your Facebook profile
+(your business name, an email address, the country and the website), then offers a payment method. You can also
+create it beforehand on business.facebook.com: open the menu under “Home” at the top left, then create a business
+portfolio.
 
 **3. A spare number.** A number that is not used in the WhatsApp app (nor WhatsApp Business): once connected, it
 leaves the app. No spare number? We provide one.

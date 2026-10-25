@@ -46,18 +46,23 @@ This is where most people get lost, so here are the five words first.
   Facebook profile, no card at Meta), and Meta does not bill its replies. But it only answers the customers who write
   to you:
   nothing goes out first, since WhatsApp cuts a linked device that writes to strangers, and it can cut the number.
+  Later, to write first, the same number keeps the app and goes through the official API ("Keep my WhatsApp Business
+  app", from Claude or the console's Home): Meta's window creates the Meta Business account, and your conversations
+  stay.
 
 Then `/messagingme:demarrer` asks you, one question at a time:
 
-1. **Do you have a Meta Business account?** No is not a problem, Meta's window has you create one. Not sure:
-   business.facebook.com lists your portfolios, under "Home".
+1. **Do you have a Meta Business account?** No is not a problem: Meta's window has you create one, or the QR code does
+   without it. Not sure: business.facebook.com lists your portfolios, under "Home".
 2. **Do you have the WhatsApp Business app on your business's number?**
-3. **If so, do you want to keep this number in the app, or take a separate number?** Keeping it comes soon; until
-   then, it answers your customers by QR code.
-4. **Do you have an available number?** It goes through the official API; without one, a provided number does.
+3. **If so, do you want to keep this number in the app, or take a separate number?** Keeping it comes soon.
+4. **Without a Meta Business account, for a separate or a new number: the QR code, or an account created along the
+   way?** The QR code needs no account at all and Meta does not bill its replies, but it only answers (later, the same
+   number can keep its app and go through Meta to write first); the account lets your number write first right away.
+   With a Meta Business account, Claude skips this question.
+5. **Do you have an available number?** It goes through the official API; without one, a provided number does.
 
-At each step, Claude also tells you the difference with the QR code: no account at all and no Meta billing on replies,
-but it only answers. The price of a provided number is under [What it costs](#what-it-costs).
+The price of a provided number is under [What it costs](#what-it-costs).
 
 ## What you can build
 

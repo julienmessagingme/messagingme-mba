@@ -41,16 +41,19 @@ question « depuis quand ? » et l'issue « QR code puis la coexistence dans un 
 D'abord cinq mots : compte Meta Business, application WhatsApp Business, API officielle, garder son application, QR code.
 Puis :
 
-1. « Avez-vous un compte Meta Business ? » Oui ou Non → 2 (un « Non » affiche que rien n'est à préparer, la fenêtre de
-   Meta le fait créer en chemin) ; Je ne sais pas → où vérifier (business.facebook.com).
+1. « Avez-vous un compte Meta Business ? » Je ne sais pas → où vérifier (business.facebook.com). La réponse décide de
+   la question 4 ; un « Non » affiche que rien n'est à préparer (créé en chemin, ou le QR code sans compte).
 2. « Avez-vous l'application WhatsApp Business sur le numéro de votre entreprise ? », posée à tous. Oui → 3 ; Non → 4.
 3. « Voulez-vous garder ce numéro dans l'application, ou prendre un numéro à part ? » Garder → **garder son
-   application** (bientôt) ; à part → 4.
-4. « Avez-vous un numéro libre ? » Oui → **votre numéro** ; Non → **un numéro fourni**.
+   application** (bientôt), sans QR code ; à part → 4.
+4. Seulement sans compte Meta Business (précision de Julien du même jour) : « Par QR code, pour répondre, ou avec un
+   compte Meta Business créé en chemin ? », avec les deux voies côte à côte. QR code → **le QR code** (votre numéro ou
+   un numéro fourni) ; le compte → 5. Avec un compte, on passe directement à 5.
+5. « Avez-vous un numéro libre ? » Oui → **votre numéro** ; Non → **un numéro fourni**, tous deux par Meta.
 
-Chaque issue a ses deux voies : par Meta (un compte Meta Business, créé en chemin s'il manque, et un moyen de paiement,
-mais les messages partent) ou par QR code (aucun compte, ni profil Facebook ni carte chez Meta, et des réponses
-gratuites, mais il ne fait que répondre et WhatsApp peut couper le numéro). Le client ne lit jamais « coexistence » :
+Les deux voies du choix 4 : par QR code (aucun compte, ni profil Facebook ni carte chez Meta, des réponses que Meta ne
+facture pas, mais il ne fait que répondre et WhatsApp peut couper le numéro) ou par un compte Meta Business créé en
+chemin (un moyen de paiement, mais les messages partent). Le client ne lit jamais « coexistence » :
 c'est « garder votre application WhatsApp Business », le mode technique n'apparaît que dans l'appel d'outil. Sans
 script, les issues se lisent en liste, chacune avec sa situation.
 
