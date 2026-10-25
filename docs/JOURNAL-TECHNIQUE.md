@@ -47,6 +47,31 @@ commits.
   son gabarit (« commentaire introuvable »), et l'en-tête a laissé 90 pages en fins de ligne mélangées. Tout repassé en
   LF puis régénéré : le site est ensuite identique, au caractère près, au rendu validé.
 
+## 2026-10-25 : les horaires effectifs sortent du grand record de réglages
+
+Le troisième point de l'audit de simplicité du 22 octobre est livré par la PR
+[#18](https://github.com/julienmessagingme/messagingme-mba/pull/18), fusionnée en `d7565862` et déployée le même
+jour sur les quatre services qui exécutent ce code.
+
+- **Le contrat plus étroit** : `PgSettingsStore.horairesEffectifs(tenantId)` possède désormais la lecture de la
+  `timezone` et des `businessHours`, ainsi que leurs valeurs par défaut. Les chemins qui ne demandent que ces deux
+  politiques (campagnes, reprises, handoff, agent, workflow, engagement et filière application) ne reçoivent plus le
+  grand record de réglages. Les lecteurs qui consomment plusieurs familles de réglages gardent `get()` afin de ne pas
+  multiplier les requêtes.
+- **Compatibilité de déploiement** : la lecture interne reste un `select *`, puis projette la politique demandée. Une
+  API construite avant ou après une migration de réglages continue ainsi de lire une ligne dont certaines colonnes
+  peuvent manquer. Aucun schéma, aucune écriture et aucun comportement produit n'ont changé.
+- **Filet contre l'incident Google** : le test utilise un faux pool sous forme de classe dont `query` lit `this`, comme
+  le store PostgreSQL réel. Il couvre les valeurs persistées et les valeurs par défaut sans détacher une méthode
+  d'instance. Les fakes de handoff et de contexte ont été resserrés sur le même contrat.
+- **Relecture forte** : une revue des règles du dépôt et une revue du contrat ont été menées indépendamment ; aucune
+  anomalie actionnable. Typecheck et lint verts, 511 tests ciblés verts ; la CI du merge est verte en entier (suite
+  unitaire, auto-attaque, intégration PostgreSQL, sécurité des dépendances et images, CodeQL).
+- **Production** : migration à jour, puis bascule en deux temps des workers. `mba-api`, `mba-worker`,
+  `mba-worker-analyse` et `mba-application` portent `REVISION=d7565862`, sont sains avec zéro redémarrage. La fumée
+  publique est verte sur les six chemins et les deux fiches OAuth Claude sont conformes ; aucun motif d'erreur critique
+  n'apparaît dans les journaux après la bascule.
+
 ## 2026-10-25 : la coexistence, lot 1 (garder l'application WhatsApp Business et relier le même numéro à l'API)
 
 Plan `docs/superpowers/plans/2026-10-24-coexistence.md`, tâches 1 à 4 ; implémenteur unique dans une extraction

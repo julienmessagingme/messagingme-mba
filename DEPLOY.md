@@ -254,6 +254,9 @@ empêché. Ce jour-là, les trois conteneurs avaient été recréés sur le bon 
 
 ## 🔴 Dernière étape OBLIGATOIRE : le contrôle de fumée public
 
+À lancer depuis un checkout qui possède Node et ses dépendances (par exemple le poste de développement) : le VPS
+n'installe volontairement ni `node` ni `npm` sur l'hôte, ils vivent seulement dans les images Docker.
+
 ```bash
 node scripts/fumee.mjs
 ```
