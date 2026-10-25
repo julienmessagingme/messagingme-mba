@@ -5,6 +5,41 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-25 : la coexistence, lot 1 (garder l'application WhatsApp Business et relier le même numéro à l'API)
+
+Plan `docs/superpowers/plans/2026-10-24-coexistence.md`, tâches 1 à 4 ; implémenteur unique dans une extraction
+d'origin, une relecture indépendante, trois publications par plomberie dans l'ordre que la production impose.
+
+- **Migration 0253** (`548fc36e`), poussée SEULE puis appliquée avant le code : `phone_numbers.coexistence` (booléen,
+  faux par défaut, une constante : instantané) et `phone_numbers.coexistence_coupee_le` (servie au lot 2). Bloquante :
+  la lecture du numéro de l'espace (`getPhoneNumber`) la nomme, et elle sert l'Accueil, la garde du lien, la bulle et
+  le lancement de campagne. Avant : aucune transaction longue, aucun verrou sur `phone_numbers` (7 lignes) ; seule 0253
+  en attente dans l'image. Après : colonnes relues au catalogue (type, nullabilité, défaut), 0253 inscrite.
+- **Serveur** (`9f3a0383`) : l'événement de fin de la fenêtre de coexistence ou `is_on_biz_app` (lu dans un appel à part
+  qui ne lève jamais, la lecture ordinaire du numéro inchangée) fait sauter `/register`, écrit la coexistence et retire
+  le compte QR code de l'espace ; rien à activer sur un tel numéro ; `start_whatsapp_connection` et
+  `watch_whatsapp_connection` gagnent le mode `coexistence`, accepté sur un espace relié par QR code ; les refus du lot C
+  et du Pro y renvoient.
+- **Console** (`7f268833`), poussée APRÈS le `up` du serveur : la fenêtre de Meta avec `featureType`
+  `whatsapp_business_app_onboarding` pour ce seul parcours (l'ordinaire garde `{ setup: {} }`), la carte « Garder mon
+  application WhatsApp Business » sur la page du lien et l'Accueil, avec ce que l'application garde et perd, le coût des
+  modèles, le compte Meta Business créé en chemin et le moyen de paiement.
+- **La relecture** : un rouge, corrigé et vérifié dans les deux sens. Le crédit offert s'ouvrait sur l'événement de la
+  fenêtre seul, une chaîne que le navigateur envoie librement : la fenêtre ordinaire, un numéro laissé `NOT_VERIFIED` et
+  un corps forgé récoltaient l'offre fermée le 2026-09-29. Il exige désormais un signal de Meta (`is_on_biz_app`,
+  `CONNECTED`, `VERIFIED` ou un register accepté). Deux jaunes corrigés dans le lot : la page du lien quittait la
+  coexistence dès qu'un numéro fourni était attribué (celui de newCompany, donc l'essai), et « Activer le numéro »
+  pouvait mener à un `/register` sur un numéro en coexistence. Les autres jaunes sont au plan, en tête du lot 2.
+- **Déployé** : CI verte job par job à chaque publication ; `mba-api` et `mba-worker` puis `mba-worker-analyse` à
+  `9f3a0383`, garde de révision dans chaque commande, aucun redémarrage ; `mba-application` non redéployé (le seul fichier
+  qu'il atteint, `src/application/comptes.ts`, ne gagne qu'une constante qu'il n'utilise pas). La lecture du numéro
+  passée par le vrai code en production (`get_setup_state`), sans erreur ; la console READY chez Vercel.
+- **Accepté pour l'entre-deux** : le bouton de l'Accueil et les phrases de refus proposent la coexistence avant le lot 2,
+  qui seul fait apparaître ce que le marchand tape dans l'application ; au 2026-10-25, seuls newCompany (QR code) et trois
+  espaces sans numéro de Meta pouvaient les voir, tous de test.
+- **Mesuré en chemin** : sous Git Bash, `grep -c $'\r'` reçoit un motif vide et compte toutes les lignes (un blob LF
+  d'origin y comptait « 429 CR ») ; les CR et les tirets se comptent par script, comme la mémoire le disait.
+
 ## 2026-10-24 (soir) : le numéro relié par QR code ne fait plus que répondre (lot C), et la coexistence conçue
 
 Suite des lots A et B (plus bas). Implémenteur unique et une relecture indépendante, dans une extraction d'origin
