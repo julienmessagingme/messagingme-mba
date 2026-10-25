@@ -874,6 +874,10 @@ modifiée n'atteint le bot qu'après `npm run aide:charger` en production (`DEPL
 oui`) est aussi une page du centre d'aide de la vitrine : retouchée, elle se régénère par `npm run vitrine:aide` dans le
 même commit (sinon `tests/vitrine-aide.test.ts` est rouge), et sa version anglaise (`docs/aide/fiches/en/`) se
 retraduit, son `traduit_de` recalé (`tests/aide-fiches-anglais.test.ts`).
+⚠️ Le chargeur est un MIROIR : il retire toute clé absente des fiches de la révision qu'il lit (« N retirées »). Le
+lancer depuis une révision plus ancienne que la dernière chargée défait donc le chargement d'un pair, en silence côté
+bot : avant `aide:charger`, comparer `docs/aide` de sa révision à `origin/main` et charger la plus récente, au besoin
+en montant son `docs/aide` dans l'image en service (seulement si `src/aide` et le chargeur n'ont pas changé).
 
 🔴 **LA DÉFINITION D'UN OUTIL APPARTIENT À L'ESPACE, LE CONSENTEMENT AU COUPLE (outil, consommateur).**
 `agent_tools` porte ce qu'un outil EST (son nom, unique par espace pour une définition d'espace et par agent
