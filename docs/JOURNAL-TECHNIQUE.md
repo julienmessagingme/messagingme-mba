@@ -43,6 +43,11 @@ pour mot, `tests/etapes-meta.test.ts`), et le guide « Compte Meta Business » d
 vitrine:guide-meta`, que `tests/vitrine-guide-meta.test.ts` a rappelé). La section de `features.md` que cite la fiche
 suit, avec son empreinte.
 
+Publié avec `d7f90080`. La fiche est chargée vers 19 h UTC par `aide:charger` sans `up` : `docs/aide` de ce commit
+monté en lecture seule dans l'image en service (`d405ed44`), le chargeur n'ayant pas bougé entre les deux. 157 lignes
+chargées, aucune retirée ; relue en base en lecture seule (le nouveau texte dans le morceau 3, l'ancien disparu), et
+son vecteur recalculé par le balayage du worker quelques minutes plus tard.
+
 ## 2026-10-25 : le QR code seulement sans compte Meta Business (précision de Julien sur l'arbre du numéro)
 
 Précision de Julien, relayée par la session produit : le QR code ne se propose pas à chaque choix, seulement sans compte
@@ -70,6 +75,10 @@ Meta Business, quand le chemin mène à un numéro à part ou à un nouveau num�
   (« Garder mon application WhatsApp Business », depuis Claude ou l'Accueil), le compte Meta Business se crée dans la
   fenêtre, et les conversations restent. Le produit l'accepte déjà (le mode `coexistence` de
   `start_whatsapp_connection` sur un espace relié par QR code).
+- **Publié le 2026-10-25** : `d7f90080`, CI verte (unit, sécurité, intégration, CodeQL, console) ; la vitrine par
+  Vercel, relue en ligne (les deux pages Boutiques, la FAQ et le guide des développeurs, la fiche en français et en
+  anglais) ; puis le plugin 0.3.10 par `plugin.yml`, après le `up` de l'API à `d405ed44`, son contenu publié identique
+  à `plugin/` de `d7f90080`, fichier par fichier.
 
 ## 2026-10-25 : l'arbre du numéro revu après l'essai 161 (garder son application, jamais « coexistence »)
 
