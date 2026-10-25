@@ -11,7 +11,7 @@ import { creerModeleDepuisMeta, estNomDeModele, refusDeMeta, statutsDuModele, ty
 import { modifierUnModele, supprimerUnModele, type RefusGestionModele } from '../templates/gestion';
 import { codeDuLienTrace } from '../links/rewrite';
 import type { TemplateSummary } from '../meta/templates';
-import { LOURDE, plafondCouteux } from './outils-agent';
+import { LOURDE, plafondCouteux, signataire } from './outils-agent';
 
 /**
  * LES MODÈLES DEPUIS CLAUDE (lot 13, domaine 3, spec § 5) : créer un modèle au format de Meta, suivre sa validation,
@@ -202,8 +202,10 @@ export const OUTILS_MODELES: OutilMcp[] = [
     fonction: null,
     description:
       'Sends an APPROVED WhatsApp template to ONE person, even outside the 24-hour window, through the same path as '
-      + 'POST /v1/sends: consent (a marketing template only goes to people who consented), STOP, number unlinked or '
-      + 'suspended, the plan\'s monthly templates. The person is designated by phone (with the country code: '
+      + 'POST /v1/sends: STOP, number unlinked or suspended, the plan\'s monthly templates. Sending through Claude '
+      + 'declares, on the user\'s behalf and under their responsibility, that the person agreed to receive their '
+      + 'messages: the record becomes opted in (marketing included), with who declared it; consent is not a '
+      + 'parameter, the send records it on the user\'s behalf. A person who sent STOP is never written to. The person is designated by phone (with the country code: '
       + '+33612345678) or contact_id; an unknown number creates its contact record. values: one value per variable '
       + '{{1}}, {{2}}... of the body, in order. idempotency_key: a key chosen for THIS send (a call replayed with the '
       + 'same key sends nothing again, for 24 hours). The send goes out within the minute: returns send_id. It does not '
@@ -240,11 +242,18 @@ export const OUTILS_MODELES: OutilMcp[] = [
         throw new RefusOutil('values : ni retour à la ligne, ni tabulation, ni plus de quatre espaces de suite (Meta refuserait le message)');
       }
       // Le corps de `POST /v1/sends`, pour une seule personne : les valeurs en sources littérales, positions 1..N.
+      // 🔴 L'ACCORD DE LA PERSONNE EST DÉCLARÉ PAR LE CLIENT (décision de Julien du 2026-10-25 : « si je demande
+      // d'envoyer à tel numéro, c'est le choix du client », sa responsabilité, pas la nôtre). Il s'écrit sur la fiche par
+      // le chemin partagé de `POST /v1/sends`, signé de la personne connectée ; ce chemin refuse d'y lever un STOP
+      // (`appliquerConsentement`), et la personne désabonnée reste écartée.
       const corps = {
         idempotencyKey: args.idempotency_key,
         target: { template: { name: args.name, language: args.language } },
         ...(values.length > 0 ? { params: values.map((v, i) => ({ position: i + 1, source: { type: 'literal', value: v } })) } : {}),
-        recipients: [phone !== undefined ? { phone } : { contactId }],
+        recipients: [{
+          ...(phone !== undefined ? { phone } : { contactId }),
+          consent: 'opted_in', consentSource: `déclaré dans Claude par ${signataire(personne)}`,
+        }],
       };
       // Compté où le cycle public compte (juste après la clé d'idempotence, qu'il libère si ce compteur lève) : le
       // plafond coûteux, PUIS le quota d'envois du jour.

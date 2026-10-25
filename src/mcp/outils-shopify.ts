@@ -1,6 +1,7 @@
 import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { DepsMcp, OutilMcp } from './outils';
 import { RefusOutil } from './saisie';
+import { signataire } from './outils-agent';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import { journaliser } from '../lib/journal';
 import { DELAI_PANIER_DEFAUT, DELAI_PANIER_MAX, DELAI_PANIER_MIN, DONNEES_PAR_EVENEMENT, EVENEMENTS_DISPONIBLES } from '../shopify/donnees';
@@ -182,8 +183,10 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
     description:
       'Imports the newest max_contacts customers of the connected Shopify store who subscribed to marketing (email or SMS), '
       + 'have a valid phone and are not in the workspace yet, as the number the user chose after preview_shopify_customers. '
-      + 'The records are tagged Shopify and carry NO WhatsApp consent: an email or SMS agreement is not a WhatsApp one, '
-      + 'and a record that said STOP stays opted out. A max_contacts above the plan\'s free places is refused, nothing is '
+      + 'The records are tagged Shopify and opted in: importing through Claude declares, on the user\'s behalf and under '
+      + 'their responsibility, that these customers agreed to receive their WhatsApp messages (recorded with who declared '
+      + 'it); consent is not a parameter, the import records it on the user\'s behalf. A record that said STOP stays opted out. A max_contacts above the plan\'s '
+      + 'free places is refused, nothing is '
       + `written halfway. At most ${IMPORT_MAX} per call; calling again imports the next ones without duplicates. `
       + 'Records already in the workspace are left untouched. Counts toward the workspace\'s heavy operations.',
     annotations: { title: 'Import the Shopify customers', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
@@ -198,11 +201,13 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
     async executer(deps: DepsMcp, tenantId, args, personne) {
       const c = await deps.couteux.consommer(tenantId);
       if (!c.accepte) throw new RefusOutil(`${MESSAGE_OPERATIONS_LOURDES} (réessayer dans ${Math.max(1, Math.ceil(c.attenteMs / 1000))} s)`);
-      const b = valeur(await importerClients(deps.shopify, tenantId, args.max_contacts));
+      // Depuis Claude, l'accord des clients importés est déclaré par le client, signé de la personne connectée (décision
+      // de Julien du 2026-10-25) ; la console importe toujours sans consentement.
+      const b = valeur(await importerClients(deps.shopify, tenantId, args.max_contacts, signataire(personne)));
       journaliser('info', 'mcp_shopify_clients_importes', { tenantId, userId: personne?.userId ?? null, importes: b.importes, retablis: b.retablis });
       return {
         imported: b.importes, restored: b.retablis, left_out: b.restent, free_places_left: b.placesLibres, tag: b.etiquette,
-        complete: b.complet, consent: 'none: the imported records are not opted in to WhatsApp',
+        complete: b.complet, consent: 'opted_in: declared by the user through Claude (a record that said STOP stays opted out)',
       };
     },
   },

@@ -2372,8 +2372,11 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   envoyé ne sert qu'à lire moins de pages ; c'est `estAbonne` (e-mail ou SMS `SUBSCRIBED`) qui décide. Seul le
   téléphone du CLIENT (`defaultPhoneNumber`) est retenu : `customers/redact` ne porte que lui. La lecture s'arrête à
   `BUDGET_LECTURE_MS` (le proxy coupe à 45 s) en rendant `complet: false`. Les fiches
-  passent par `importContacts`, le chemin de l'import HubSpot : SANS consentement (`optIn: false`, décision de Julien),
-  autorité `import` (un STOP reste un STOP), étiquette `Shopify`, aucun événement d'automation. L'aperçu compte les
+  passent par `importContacts`, le chemin de l'import HubSpot : depuis la console SANS consentement (`optIn: false`),
+  depuis Claude consentantes (`declarePar`, la personne connectée : `optIn: true` et une source qui la nomme, décision de
+  Julien du 2026-10-25), autorité `import` (un STOP reste un STOP), étiquette `Shopify`, aucun événement d'automation.
+  `send_template_to_contact` déclare de même l'accord de la personne (`consent: opted_in` dans le corps de
+  `POST /v1/sends`, signé), que `appliquerConsentement` refuse sur une fiche désabonnée. L'aperçu compte les
   places par `placesContacts`, sur les MÊMES prédicats que `verifierPlaceContacts` (`FICHE_COMPTEE`, `FICHE_ACTIVE`) :
   l'annonce et le refus comptent pareil. Un nombre au-delà des places libres est refusé avant d'écrire. Le jeton
   `client_credentials` se redemande à chaque appel (`demanderJeton`), avec le secret que `acces` déchiffre pour
@@ -4674,7 +4677,9 @@ Ajouté par le lot 4 de l'API publique :
    passagère (429 avec `Retry-After`), contenu refusé (422 `meta_rejected`). La création compte `templates.create` à
    l'usage, hors quota du jour, et ne prend PAS la place lourde (une par copie), qu'un téléchargement de 20 s prendrait
    aux envois. `create_template` et `send_template_to_contact` exigent une personne (jeton OAuth) : une clé d'API ne les
-   voit pas.
+   voit pas. Par Claude, l'accord de la personne est déclaré par le client (décision de Julien du 2026-10-25) :
+   `send_template_to_contact` envoie `consent: opted_in` signé de la personne connectée, que `appliquerConsentement`
+   refuse sur une fiche désabonnée.
 47. **Le cœur de `POST /v1/sends` est une fonction, `lancerEnvoi` (`src/http/v1-sends.ts`)**, que la route et l'outil
    `send_template_to_contact` appellent sur les MÊMES dépendances (`depsEnvois`, `src/index.ts`) : validation,
    idempotence, cible, gardes du numéro, modèles du mois, destinataires, consentement, campagne scellée avec sa clé,

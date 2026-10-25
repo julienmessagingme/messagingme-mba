@@ -1243,8 +1243,24 @@ describe('serveur MCP : envoyer un modèle à un contact (lot 13, domaine 3, liv
     const params = validateParamMapping(lu.data.params ?? [], { accepterVariables: true });
     expect(params).toEqual([{ position: 1, source: { type: 'literal', value: 'Claire' } }, { position: 2, source: { type: 'literal', value: '8412' } }]);
     expect(lireCible(lu.data, params!)).toEqual({ kind: 'template', name: 'commande_prete', language: 'fr' });
-    expect(lu.data.recipients).toEqual([{ phone: '+33612345678' }]);
+    // L'accord de la personne, déclaré par le client et signé de la personne connectée (test suivant).
+    expect(lu.data.recipients).toEqual([{ phone: '+33612345678', consent: 'opted_in', consentSource: 'déclaré dans Claude par u1' }]);
     expect(schemaDestinataire.safeParse(lu.data.recipients[0]).success).toBe(true);
+  });
+
+  it('🔴 envoyer par Claude, c’est le client qui déclare l’accord de la personne : opted_in, signé, par numéro comme par fiche', async () => {
+    // Décision de Julien du 2026-10-25 : « si je demande d'envoyer à tel numéro, c'est le choix du client », sa
+    // responsabilité. Le chemin partagé de `POST /v1/sends` l'écrit sur la fiche, refuse d'y lever un STOP
+    // (`appliquerConsentement`) et écarte la personne désabonnée. Aucun paramètre : Claude ne pose jamais la question.
+    expect(outil.description).toMatch(/consent is not a parameter, the send records it on the user's behalf/);
+    const parFiche = monterEnvoi({ statut: 201, corps: RAPPORT });
+    const { phone: _p, ...sansNumero } = ARGS;
+    await outil.executer(parFiche.deps, 't1', { ...sansNumero, contact_id: '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01' }, { userId: 'u2' });
+    expect((parFiche.corps[0] as { recipients: unknown[] }).recipients)
+      .toEqual([{ contactId: '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01', consent: 'opted_in', consentSource: 'déclaré dans Claude par u2' }]);
+    // Une personne désabonnée : écartée par le chemin partagé, et Claude le dit.
+    const stop = monterEnvoi({ statut: 201, corps: { ...RAPPORT, recipientCount: 0, skipped: [{ index: 0, reason: 'opted_out' }], skippedTotal: 1 } });
+    await expect(outil.executer(stop.deps, 't1', ARGS, { userId: 'u1' })).rejects.toThrow(/rien n’est parti.*opted_out/);
   });
 
   it('🔴 un refus de l’envoi revient à Claude avec sa phrase et son code ; une personne écartée aussi', async () => {

@@ -442,9 +442,9 @@ describe('l’import des clients abonnés (lot 3)', () => {
     expect(await apercuImportClients(monterImport({ comptees: 120 }).deps, T)).toMatchObject({ ok: true, valeur: { placesLibres: 0, importables: 0 } });
   });
 
-  it('🔴 importe les nouveaux les plus récents, au nombre choisi, SANS consentement, autorité import, étiquette Shopify', async () => {
+  it('🔴 depuis la console : les nouveaux les plus récents, au nombre choisi, SANS consentement, autorité import, étiquette Shopify', async () => {
     const { deps, journal } = monterImport();
-    expect(await importerClients(deps, T, 2)).toEqual({ ok: true, valeur: {
+    expect(await importerClients(deps, T, 2, null)).toEqual({ ok: true, valeur: {
       importes: 2, retablis: 0, restent: 1, placesLibres: 8, etiquette: 'Shopify', complet: true,
     } });
     expect(journal.imports).toEqual([{
@@ -454,33 +454,54 @@ describe('l’import des clients abonnés (lot 3)', () => {
     }]);
   });
 
+  it('🔴 depuis Claude : consentants par principe, l’accord déclaré par le client et signé de la personne connectée', async () => {
+    // Décision de Julien du 2026-10-25 : « par principe, sur Claude Code, les contacts importés sont opt in », la
+    // responsabilité du client. L'autorité `import` ne lève toujours pas un STOP (`importContacts`).
+    const { deps, journal } = monterImport();
+    expect(await importerClients(deps, T, 2, 'u1')).toMatchObject({ ok: true, valeur: { importes: 2 } });
+    expect(journal.imports).toEqual([{
+      rows: [{ phone: '+33600000001', name: 'Le plus récent' }, { phone: '+33600000003', name: '' }],
+      mapping: { columns: { phone: { target: 'phone' }, name: { target: 'name' } } },
+      tenantId: T, tags: ['Shopify'], autorite: 'import', optIn: true, optInSource: 'import Shopify, déclaré dans Claude par u1',
+    }]);
+  });
+
+  it('🔴 l’outil de Claude importe au nom de la personne connectée, et dit les fiches consentantes', async () => {
+    const outil = OUTILS.find((o) => o.nom === 'import_shopify_customers')!;
+    const { deps, journal } = monterImport();
+    const depsMcp = { couteux: { consommer: async () => ({ accepte: true, attenteMs: 0 }) }, shopify: deps } as unknown as DepsMcp;
+    const r = await outil.executer(depsMcp, T, { max_contacts: 2 }, { userId: 'u1' }) as { consent: string };
+    expect(journal.imports[0]).toMatchObject({ optIn: true, optInSource: 'import Shopify, déclaré dans Claude par u1' });
+    expect(r.consent).toMatch(/^opted_in/);
+  });
+
   it('🔴 au-delà des places libres : refusé, rien n’est écrit ; le marchand gère sa limite', async () => {
     const { deps, journal } = monterImport({ comptees: 99 });
-    const r = await importerClients(deps, T, 2);
+    const r = await importerClients(deps, T, 2, null);
     expect(r).toMatchObject({ ok: false, statut: 402 });
     expect((r as { message: string }).message).toContain('1 place de contacts');
     expect(journal.imports).toEqual([]);
     // Ce qui serait ÉCRIT compte, pas le nombre demandé : 100 demandés pour 1 nouveau et 1 place, ça passe.
     const un = monterImport({ comptees: 99, lecture: { ok: true, abonnes: [ABONNES[0]!], sansTelephone: 0, complet: true } });
-    expect(await importerClients(un.deps, T, 100)).toMatchObject({ ok: true, valeur: { importes: 1, placesLibres: 0 } });
+    expect(await importerClients(un.deps, T, 100, null)).toMatchObject({ ok: true, valeur: { importes: 1, placesLibres: 0 } });
     // Deux écritures à la dernière place : le refus de l'import est rendu, pas une panne.
     const course = monterImport({ importerLeve: new LimiteOffreError(T, 'contacts', 100) });
-    expect(await importerClients(course.deps, T, 1)).toMatchObject({ ok: false, statut: 402 });
+    expect(await importerClients(course.deps, T, 1, null)).toMatchObject({ ok: false, statut: 402 });
   });
 
   it('le nombre choisi est un entier de 1 à la borne d’un appel ; rien à importer ne lance rien', async () => {
     for (const m of [0, IMPORT_MAX + 1, 1.5, '3', undefined]) {
-      expect(await importerClients(monterImport().deps, T, m), String(m)).toMatchObject({ ok: false, statut: 400 });
+      expect(await importerClients(monterImport().deps, T, m, null), String(m)).toMatchObject({ ok: false, statut: 400 });
     }
     const vide = monterImport({ lecture: { ok: true, abonnes: [], sansTelephone: 0, complet: true } });
-    expect(await importerClients(vide.deps, T, 5)).toMatchObject({ ok: true, valeur: { importes: 0, restent: 0 } });
+    expect(await importerClients(vide.deps, T, 5, null)).toMatchObject({ ok: true, valeur: { importes: 0, restent: 0 } });
     expect(vide.journal.imports).toEqual([]);
   });
 
   it('sans boutique, boutique coupée, jeton refusé, accès aux clients refusé : chaque refus dit le geste', async () => {
     expect(await apercuImportClients(monterImport({ acces: null }).deps, T)).toMatchObject({ ok: false, statut: 409 });
     const coupee = monterImport({ acces: { domaine: 'b.myshopify.com', clientId: 'cid', secret: 's', pays: 'FR', etat: 'coupee', origine: 'claude_code' } });
-    expect(await importerClients(coupee.deps, T, 1)).toMatchObject({ ok: false, statut: 409, message: expect.stringContaining('coupée') });
+    expect(await importerClients(coupee.deps, T, 1, null)).toMatchObject({ ok: false, statut: 409, message: expect.stringContaining('coupée') });
     expect(coupee.journal.lectures).toEqual([]);
     const jeton = monterImport({ jeton: { ok: false, code: 'app_non_installee', message: 'Installez l’app.' } });
     expect(await apercuImportClients(jeton.deps, T)).toEqual({ ok: false, statut: 409, message: 'Installez l’app.' });

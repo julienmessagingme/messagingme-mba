@@ -1,6 +1,6 @@
 ---
 slug: connect-my-shopify-store
-traduit_de: 28f662
+traduit_de: e3b0b5
 bouton_claude: Connect Shopify from Claude Code, for free
 bouton_console: Connect Shopify in the console
 ---
@@ -15,9 +15,10 @@ Code**.
 Install the Messaging Me plugin in Claude Code, then ask “connect my Shopify store”. Claude creates the app in your own
 Shopify organization (no Shopify review is needed); all you have to do is sign in to Shopify and click “Install”. It
 then suggests the text of each message, has it approved by Meta, and connects it. It also imports your customers
-subscribed to your marketing, if you ask it to.
+subscribed to your marketing, if you ask it to: by asking, you declare they agreed to receive your WhatsApp messages,
+and their records arrive opted in (a customer who said STOP stays opted out).
 
-The rules described below (the reminder, consent, STOP, the contact limit) are the same as from the console: both paths
+The other rules described below (the reminder, STOP, the contact limit) are the same as from the console: both paths
 go through the same management.
 
 ## From the console, with the Pro plan

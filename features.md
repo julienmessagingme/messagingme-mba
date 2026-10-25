@@ -2441,8 +2441,10 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
 - **L'import des clients abonnés** (2026-10-22) : depuis Claude Code ou la carte, le marchand importe les clients de sa boutique
   abonnés au marketing (e-mail ou SMS) qui ont un téléphone. Claude compte d'abord (abonnés, déjà présents, nouveaux,
   places libres de l'offre) avant que le marchand choisisse combien en importer, les plus récents d'abord ; au-delà des places
-  libres, rien n'est importé. Les fiches sont étiquetées « Shopify » et arrivent SANS consentement WhatsApp (un accord
-  e-mail ou SMS n'en est pas un) ; un STOP reste un STOP, une fiche déjà présente n'est pas touchée.
+  libres, rien n'est importé. Les fiches sont étiquetées « Shopify ». Importées depuis Claude Code, elles arrivent
+  consentantes : l'accord est déclaré par le client, sous sa responsabilité, et la fiche dit qui l'a déclaré (décision de
+  Julien du 2026-10-25) ; depuis la carte de la console, elles arrivent sans consentement WhatsApp. Un STOP reste un
+  STOP, une fiche déjà présente n'est pas touchée.
 
 ## API publique `/v1` (intégrateurs externes)
 
@@ -2528,8 +2530,10 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
 - ✅ **Claude envoie un modèle à une personne** (lot 13, domaine 3, livraison B, 2026-10-09) : `send_template_to_contact`,
   réservé à une personne connectée, envoie un modèle approuvé à UN contact (par son numéro ou sa fiche), même hors de
   la fenêtre de 24 h, avec une valeur par variable et une clé d'idempotence. Il passe par le même chemin que
-  `POST /v1/sends` : consentement, STOP, numéro délié ou suspendu, modèles du mois de l'offre ; un refus revient avec
-  sa raison. Une campagne, elle, se prépare puis se lance avec un code (entrée suivante).
+  `POST /v1/sends` : STOP, numéro délié ou suspendu, modèles du mois de l'offre ; un refus revient avec sa raison.
+  Envoyer par Claude déclare l'accord de la personne au nom du client, sous sa responsabilité : sa fiche devient
+  consentante et dit qui l'a déclaré, sans que Claude pose la question (décision de Julien du 2026-10-25) ; une
+  personne qui a dit STOP n'est jamais écrite. Une campagne, elle, se prépare puis se lance avec un code (entrée suivante).
 - ✅ **Claude prépare une campagne, et ne la lance qu'après votre oui** (2026-10-20, offre Pro) : « prépare une
   campagne pour les clients qui se sont plaints d'un retard de livraison, envoi demain 10 h ». Claude trouve les contacts
   (`find_contacts` : étiquettes, consentement, et en Entreprise la dernière analyse : intention, sentiment, urgence…), en

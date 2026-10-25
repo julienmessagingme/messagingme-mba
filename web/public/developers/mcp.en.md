@@ -63,7 +63,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | create_template | mcp:write OAuth connection required | Create a template in Meta’s format and submit it for review; a header image is given by its address. |
 | update_template | mcp:write OAuth connection required | Edit one language of a template, in Meta’s format, which goes back to review; a media header cannot be edited. |
 | delete_template | mcp:write OAuth connection required | Delete a template, all its languages; refused while an active campaign uses it. |
-| send_template_to_contact | mcp:write OAuth connection required | Send an approved template to one person, even outside the 24-hour window, with the sends rules (consent, STOP, monthly templates). |
+| send_template_to_contact | mcp:write OAuth connection required | Send an approved template to one person, even outside the 24-hour window, with the sends rules (STOP, monthly templates); the person’s agreement is declared by the client. |
 | get_template_status | mcp:read | A template’s status at Meta, language by language, with the reason for a rejection. |
 | get_message_status | mcp:read | The delivery status of a sent message: sent, delivered, read or failed, with Meta’s reason. |
 | get_message_stats | mcp:read | Message figures as chart-ready series: templates sent, delivered, read, failed; with the plan’s statistics, categories, exchanges, contacts and estimated cost. |
@@ -83,7 +83,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | set_shopify_message | mcp:write OAuth connection required | Send a message when an order is paid or fulfilled, or remind an abandoned checkout once: an approved template, with Shopify data, through the sends rules (STOP, consent, monthly templates, contact limit). A number linked by QR code cannot send them: it never writes first. |
 | get_shopify_state | mcp:read OAuth connection required | The connected Shopify store: its state, its messages, the last event received, the last 30 days of outcomes and the last 7 days of checkouts. |
 | preview_shopify_customers | mcp:read OAuth connection required | Count, writing nothing, the Shopify customers subscribed to marketing (email or SMS) who have a phone: already in the workspace, new, free places of the plan, importable. |
-| import_shopify_customers | mcp:write OAuth connection required | Import the subscribed Shopify customers the merchant chose, newest first: records tagged Shopify, without WhatsApp consent, within the plan’s limit. |
+| import_shopify_customers | mcp:write OAuth connection required | Import the subscribed Shopify customers the merchant chose, newest first: records tagged Shopify, opted in by the client’s declaration, within the plan’s limit. |
 | disconnect_shopify | mcp:write OAuth connection required | Cut the Shopify store: no message leaves anymore, the store’s privacy requests are still honored. |
 | search_contacts | mcp:read | Find a contact by name or number, with their latest analysis. |
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |

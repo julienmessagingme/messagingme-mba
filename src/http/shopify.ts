@@ -104,7 +104,7 @@ export function registerShopify(app: FastifyInstance, deps: ShopifyRouteDeps, ga
     const tenant = espaceVerifie(req);
     const corps = corpsImport.safeParse(req.body ?? {});
     if (!corps.success) return reply.code(400).send({ error: raisonCorps(corps.error) });
-    const r = await importerClients(deps.gestion, tenant, corps.data.maximum);
+    const r = await importerClients(deps.gestion, tenant, corps.data.maximum, null);
     if (!r.ok) return reply.code(r.statut).send({ error: r.message });
     await journal(tenant, req, 'shopify.import', CIBLE, { importes: r.valeur.importes, retablis: r.valeur.retablis });
     return reply.code(200).send(r.valeur);

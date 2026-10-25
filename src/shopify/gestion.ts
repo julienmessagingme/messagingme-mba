@@ -362,11 +362,17 @@ export interface BilanImport {
 
 /**
  * Importe les `maximum` abonnés nouveaux les plus récents, le nombre que le marchand a choisi après l'aperçu.
- * 🔴 JAMAIS de consentement (décision de Julien : un accord e-mail ou SMS n'est pas un accord WhatsApp), et l'autorité
+ * 🔴 LE CONSENTEMENT DÉPEND DU CHEMIN. Depuis Claude (`declarePar`, la personne connectée), les fiches arrivent
+ * consentantes : l'accord est déclaré par le client, sous sa responsabilité (décision de Julien du 2026-10-25, « par
+ * principe, sur Claude Code, les contacts importés sont opt in », qui remplace pour Claude celle du 2026-10-22). Depuis
+ * la console (`declarePar: null`, requis pour qu'aucun appel ne l'oublie), aucun consentement (un accord e-mail ou SMS
+ * n'est pas un accord WhatsApp). Dans les deux cas, l'autorité
  * `import` ne lève jamais un STOP. Un maximum au-delà des places libres est refusé : le marchand gère sa limite, rien
  * ne s'écrit à moitié.
  */
-export async function importerClients(deps: DepsGestionShopify, tenantId: string, maximum: unknown): Promise<Issue<BilanImport>> {
+export async function importerClients(
+  deps: DepsGestionShopify, tenantId: string, maximum: unknown, declarePar: string | null,
+): Promise<Issue<BilanImport>> {
   if (typeof maximum !== 'number' || !Number.isInteger(maximum) || maximum < 1 || maximum > IMPORT_MAX) {
     return refus(400, `max_contacts : un entier de 1 à ${IMPORT_MAX}, le nombre de clients que le marchand a choisi d’importer.`);
   }
@@ -384,7 +390,10 @@ export async function importerClients(deps: DepsGestionShopify, tenantId: string
       rapport = await deps.importer({
         rows: choisis.map((c) => ({ phone: c.telephone, name: c.nom ?? '' })),
         mapping: { columns: { phone: { target: 'phone' }, name: { target: 'name' } } },
-        tenantId, optIn: false, tags: [ETIQUETTE_SHOPIFY], autorite: 'import',
+        tenantId, tags: [ETIQUETTE_SHOPIFY], autorite: 'import',
+        ...(declarePar !== null
+          ? { optIn: true, optInSource: `import Shopify, déclaré dans Claude par ${declarePar}` }
+          : { optIn: false }),
       });
     } catch (err) {
       // Deux écritures simultanées à la dernière place : la vérification de l'import tranche, et le dit.

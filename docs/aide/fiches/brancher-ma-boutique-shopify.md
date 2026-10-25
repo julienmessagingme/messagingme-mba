@@ -1,7 +1,7 @@
 ---
 ecran: parametres
 source_section: Boutique Shopify : les messages de commande sur WhatsApp (Claude Code ou console, 2026-10-21)
-source_empreinte: fad4a7
+source_empreinte: dd2293
 publique: oui
 rubrique: parler-aux-clients
 rang: 6
@@ -22,10 +22,12 @@ transporteur et le lien de suivi, et une **relance s'ils abandonnent leur panier
 Installez le plugin Messaging Me dans Claude Code, puis demandez « branche ma boutique Shopify ». Claude crée l'app
 dans votre propre organisation Shopify (aucune validation de Shopify n'est nécessaire) ; vous n'avez qu'à vous
 connecter à Shopify et à cliquer « Installer ». Il vous propose ensuite le texte de chaque message, le fait approuver
-par Meta, et le branche. Il importe aussi vos clients abonnés à votre marketing, si vous le lui demandez.
+par Meta, et le branche. Il importe aussi vos clients abonnés à votre marketing, si vous le lui demandez : en le
+demandant, vous déclarez qu'ils ont accepté vos messages WhatsApp, et leurs fiches arrivent consentantes (un client qui
+a dit STOP le reste).
 
-Les règles décrites plus bas (la relance, le consentement, STOP, la limite de contacts) sont les mêmes que depuis la
-console : les deux chemins passent par la même gestion.
+Les autres règles décrites plus bas (la relance, STOP, la limite de contacts) sont les mêmes que depuis la console :
+les deux chemins passent par la même gestion.
 
 ## Depuis la console, avec l'offre Pro
 

@@ -4882,7 +4882,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | create_template | mcp:write connexion OAuth requise | Créer un modèle au format de Meta et le soumettre à sa validation ; une image d’en-tête se donne par son adresse. |
 | update_template | mcp:write connexion OAuth requise | Corriger une langue d’un modèle, au format de Meta, qui repart en validation ; un en-tête média ne se corrige pas. |
 | delete_template | mcp:write connexion OAuth requise | Supprimer un modèle, toutes ses langues ; refusé tant qu’une campagne active l’utilise. |
-| send_template_to_contact | mcp:write connexion OAuth requise | Envoyer un modèle approuvé à une personne, même hors de la fenêtre de 24 h, avec les règles des envois (consentement, STOP, modèles du mois). |
+| send_template_to_contact | mcp:write connexion OAuth requise | Envoyer un modèle approuvé à une personne, même hors de la fenêtre de 24 h, avec les règles des envois (STOP, modèles du mois) ; l’accord de la personne est déclaré par le client. |
 | get_template_status | mcp:read | Le statut d’un modèle chez Meta, langue par langue, avec le motif d’un refus. |
 | get_message_status | mcp:read | Le statut de livraison d’un message envoyé : envoyé, distribué, lu ou en échec, avec le motif de Meta. |
 | get_message_stats | mcp:read | Les chiffres des messages en séries pour un graphique : modèles envoyés, livrés, lus, en échec ; avec les statistiques de l’offre, les catégories, les échanges, les contacts et le coût estimé. |
@@ -4902,7 +4902,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | set_shopify_message | mcp:write connexion OAuth requise | Envoyer un message quand une commande est payée ou expédiée, ou relancer une fois un panier abandonné : un modèle approuvé, avec les données Shopify, par les règles des envois (STOP, consentement, modèles du mois, limite de contacts). Un numéro relié par QR code ne peut pas les envoyer : il n’écrit jamais en premier. |
 | get_shopify_state | mcp:read connexion OAuth requise | La boutique Shopify branchée : son état, ses messages, le dernier événement reçu, les issues des 30 derniers jours et les paniers des 7 derniers. |
 | preview_shopify_customers | mcp:read connexion OAuth requise | Compter, sans rien écrire, les clients Shopify abonnés au marketing (e-mail ou SMS) qui ont un téléphone : déjà dans l’espace, nouveaux, places libres de l’offre, importables. |
-| import_shopify_customers | mcp:write connexion OAuth requise | Importer les clients Shopify abonnés que le marchand a choisis, les plus récents d’abord : des fiches étiquetées Shopify, sans consentement WhatsApp, dans la limite de l’offre. |
+| import_shopify_customers | mcp:write connexion OAuth requise | Importer les clients Shopify abonnés que le marchand a choisis, les plus récents d’abord : des fiches étiquetées Shopify, consentantes par la déclaration du client, dans la limite de l’offre. |
 | disconnect_shopify | mcp:write connexion OAuth requise | Couper la boutique Shopify : plus aucun message ne part, les demandes RGPD de la boutique restent traitées. |
 | search_contacts | mcp:read | Chercher un contact par nom ou par numéro, avec sa dernière analyse. |
 | get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |
