@@ -5,6 +5,33 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-25 : l'ouverture d'une conversation Inbox devient une capacité liée à son espace
+
+Le quatrième point de l'audit de simplicité du 22 octobre est livré par la PR
+[#19](https://github.com/julienmessagingme/messagingme-mba/pull/19), fusionnée en `d9bc42bb` et déployée le même
+jour.
+
+- **Le partage réuni** : `src/inbox/ouverture.ts` prouve une seule fois que la conversation appartient à l'espace,
+  puis rend une capacité qui possède déjà `tenantId` et `conversationId`. Lecture des messages et du contexte,
+  média, transcription et marquage lu passent par cette ouverture. Les routes Fastify ne recomposent plus ces
+  dépendances et ne peuvent plus appeler ces opérations avec un autre espace.
+- **Comportement conservé** : mêmes 404 opaques, curseurs en microsecondes, traduction et états dégradés, propriétaire,
+  erreurs de média ou de transcription et invalidation du compteur de non-lus. Les envois interactifs, l'affectation,
+  la prise ou la restitution d'un fil, les campagnes et les scénarios restent hors de ce chantier.
+- **Filet contre l'incident Google** : le module reçoit le store entier et appelle toujours
+  `deps.conversations.methode(...)`. Son test monte une classe dont les méthodes lisent `this`, comme le store
+  PostgreSQL réel. Une conversation d'un autre espace rend 404 avant tout appel aux adaptateurs de média ou de
+  transcription.
+- **Relecture forte** : les revues indépendantes du contrat et des règles du dépôt n'ont trouvé aucun constat.
+  Typecheck, lint et `git diff --check` verts ; 219 tests ciblés puis les 8 tests du module et de son câblage verts ;
+  1 890 sondes d'auto-attaque sans défaut. La CI GitHub est verte en entier, dont l'intégration sur PostgreSQL jetable,
+  l'unitaire, la sécurité et les deux contrôles Vercel.
+- **Production** : aucune migration à appliquer. `mba-api`, `mba-worker` et `mba-worker-analyse` portent
+  `REVISION=d9bc42bb`, avec zéro redémarrage ; l'API est saine et les deux workers annoncent leurs files. `mba-web` a
+  été reconstruit et sert normalement (il n'expose pas `REVISION`) ; `mba-application` n'atteint pas le code changé et
+  n'a pas été redéployé. Les six chemins de fumée publics répondent comme attendu et les deux fiches OAuth Claude sont
+  conformes.
+
 ## 2026-10-25 : la page « Boutiques Shopify » et son arbre du numéro, le même arbre dans le plugin, et l'aide Shopify qui commence par Claude Code
 
 Plan `docs/superpowers/plans/2026-10-24-boutiques-shopify.md`. Julien, devant la page d'aide publique : « Ouvrir
