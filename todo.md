@@ -1,5 +1,28 @@
 # todo.md : backlog
 
+## 🟡 Le consentement déclaré par Claude : ce que la relecture laisse (2026-10-25)
+
+Aucun rouge (d405ed44, en production le même jour). Décision de Julien : par Claude, l'accord des contacts est déclaré
+par le client, le STOP toujours respecté.
+
+- **À trancher par Julien** : deux régimes pour les mêmes clients Shopify. Importés par Claude, ils sont consentants
+  (campagnes comprises), mais la relance de panier exige toujours que le marchand affirme l'accord de ses clients
+  (`customers_consented`), que Claude lui demande. Supprimer aussi cette affirmation ?
+- **L'audit** : l'import Shopify par Claude n'écrit aucune ligne d'audit (un journal seulement, `outils-shopify.ts`),
+  alors que la console écrit `shopify.import` ; le `contact.optin` d'un envoi n'a pas d'acteur et porte `source: api` ;
+  le « qui » n'existe qu'en UUID dans `opt_in_source`, que ni la console ni `get_contact` ne montrent.
+- **Le consentement s'écrit avant le tri** (`envoi-public.ts`) : un contact bloqué, une clé reprise ou une création qui
+  échoue laissent la fiche `opted_in` alors que l'outil dit « rien n'est parti ». Comportement existant de
+  `POST /v1/sends` : l'accepter, ou le dire dans la description.
+- **L'empreinte d'idempotence** (`empreinteCorps`) inclut désormais le consentement et la personne : un rejeu à cheval
+  sur le déploiement aurait reçu 422 `idempotency_key_reused` (fenêtre passée).
+- **La fiche jumelle par BSUID** : une personne en STOP sur une fiche qui n'a que son BSUID n'est pas reconnue sous son
+  numéro ; un envoi ou un import par Claude rend consentante la fiche du numéro (cas existant, plus fréquent).
+- **Tests** : le cas `no_consent` de `tests/mcp-serveur.test.ts` décrit un refus devenu impossible par Claude.
+- **Un aléa de CI** : `tests/email-smtp.test.ts` (« la copie cachée part en destinataires SMTP ») a rougi une fois sous
+  charge sur d405ed44 (une adresse de copie cachée captée dans le message du faux serveur SMTP partagé), vert relancé et
+  3 fois sur 3 seul. À rendre déterministe (un serveur, ou un tampon, par cas).
+
 ## 🟡 La marche arrière MCP : les jaunes de la relecture du lot 8 (2026-10-24)
 
 Relecture sans rouge ; ces points attendent le lot suivant (plan `docs/superpowers/plans/2026-10-22-mcp-marche-arriere.md`).

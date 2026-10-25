@@ -4,6 +4,32 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-25 (soir) : par Claude, l'accord des contacts est déclaré par le client, et l'essai 161 de la coexistence
+
+- **L'essai 161** (lot 1 de la coexistence) : Meta a accepté en coexistence le numéro de test de newCompany, dans
+  l'application depuis 4 jours seulement ; la fenêtre a créé le portefeuille (le compte Meta Business) en chemin et
+  proposé le moyen de paiement. Au premier passage (moyen de paiement ajouté dans la fenêtre, puis « Terminer »), la
+  page n'a reçu aucune réponse de Meta : aucun appel de rattachement (journaux du proxy). Le second, avec le
+  portefeuille et le compte déjà créés, a rattaché : `coexistence` vrai, compte QR code `retire`, pas de second crédit.
+  La reprise après une fenêtre fermée sans réponse est au lot 2. Julien en tire son arbre : plus de « dans un mois »,
+  et le QR code ne se propose que sans compte Meta Business.
+- **La décision** (Julien) : « par principe, sur Claude Code, les contacts importés sont opt in, c'est la
+  responsabilité du client ; on respecte le STOP, sinon c'est opt in ». Le modèle d'essai, classé marketing par Meta,
+  butait sur le consentement d'un numéro nouveau.
+- **Le correctif** (`d405ed44`) : `send_template_to_contact` envoie toujours `consent: opted_in` signé de la personne
+  connectée (le chemin partagé de `POST /v1/sends` refuse d'y lever un STOP) ; `import_shopify_customers` importe les
+  clients consentants, la console toujours sans consentement (`declarePar` requis, `null` pour elle). Les descriptions
+  le disent en fait, la règle de l'annuaire interdisant de dicter sa conduite à Claude (le test `mcp-repertoire` a
+  refusé « never ask the user about consent »). La fiche d'aide publique « Brancher ma boutique Shopify » (FR, EN,
+  empreinte, `traduit_de`, pages de la vitrine) et les skills suivent.
+- **La relecture** : aucun rouge ; les jaunes peu coûteux corrigés dans le lot, les autres au `todo.md`.
+- **Déployé** : CI verte job par job après la relance d'un aléa (`email-smtp`) ; `mba-api` et `mba-worker` puis
+  `mba-worker-analyse` à `d405ed44`, garde de révision ; `mba-application` non redéployé (aucun fichier changé
+  atteint). Les PR #18 et #19 (Codex) étaient déjà en production (`d9bc42bb`), déployées hors de cette session.
+  `aide:charger` fait (157 lignes).
+- **Décidé le même jour, en construction** : la Free ne gère jamais plus de 100 contacts, quelle que soit leur origine
+  (plan `docs/superpowers/plans/2026-10-25-free-100-contacts.md`).
+
 
 ## 2026-10-25 : le compte Meta Business, rien à préparer (la console, Claude, la fiche et le guide)
 
