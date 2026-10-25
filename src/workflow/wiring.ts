@@ -281,7 +281,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
   const buildEvalContext = async (tenant: string, waId: string, besoins?: BesoinsContexte): Promise<EvalContext | null> => {
     const state = await contactStore.getContactStateByWaId(tenant, waId);
     if (!state) return null;
-    const settings = await settingsStore.get(tenant);
+    const horaires = await settingsStore.horairesEffectifs(tenant);
     // Chacune lue seulement si un bloc la réclame. Un échec ne coule pas le contexte : le bloc pose une valeur vide,
     // et une condition lit un champ vide, jamais une valeur inventée.
     const derniereSaisie = besoins?.derniereSaisie
@@ -294,7 +294,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       ? await contactStore.langueDetecteeParWaId(tenant, waId).catch(() => null)
       : null;
     return {
-      ...state, now: new Date(), timeZone: settings.timezone, businessHours: settings.businessHours, derniereSaisie,
+      ...state, now: new Date(), timeZone: horaires.timezone, businessHours: horaires.businessHours, derniereSaisie,
       dernierMessageRecu: dernierRecu ? dernierRecu.toISOString() : null, langueDetectee,
     };
   };
@@ -513,7 +513,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
       inbox: inboxStore,
       // Les champs fixes de la fiche (origine `fiche` : dernière analyse, identifiant externe...).
       fiche: contactStore,
-      fuseau: async (t) => (await settingsStore.get(t)).timezone,
+      fuseau: async (t) => (await settingsStore.horairesEffectifs(t)).timezone,
       // Relue à chaque appel, pas portée par le contexte du parcours : le bloc peut suivre un bloc qui vient
       // d'écrire un champ.
       projectionContact: (t, waId) => contactStore.projectionPourTiers(t, waId),

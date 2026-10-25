@@ -46,7 +46,7 @@ function deps(options: {
     deps: {
       reglages: {
         setMbaHandoffMode: async () => {},
-        get: async () => ({ timezone: options.timezone ?? 'Europe/Paris', businessHours: HEURES }),
+        horairesEffectifs: async () => ({ timezone: options.timezone ?? 'Europe/Paris', businessHours: HEURES }),
         tenantsHandoffSurHoraires: async () => tenants.map((tenantId) => ({
           tenantId,
           timezone: options.timezone ?? 'Europe/Paris',

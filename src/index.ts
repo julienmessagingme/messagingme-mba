@@ -903,7 +903,7 @@ async function main(): Promise<void> {
                 requetes: agentRequetes,
                 inbox: inboxStore,
                 fiche: contactStore,
-                fuseau: async (t) => (await settingsStore.get(t)).timezone,
+                fuseau: async (t) => (await settingsStore.horairesEffectifs(t)).timezone,
               }),
             },
           }),
@@ -1791,7 +1791,7 @@ async function main(): Promise<void> {
       // Quantitatif > Performance : les demandes de la base, les durées en heures d'ouverture de L'ESPACE (ses
       // réglages, défauts du serveur compris, ceux que l'écran Paramètres lui montre).
       getPerformance: (tenant, range) => lirePerformance(
-        { demandes: (t, r) => performanceStore.lire(t, r), reglages: (t) => settingsStore.get(t) },
+        { demandes: (t, r) => performanceStore.lire(t, r), reglages: (t) => settingsStore.horairesEffectifs(t) },
         tenant, range,
       ),
       // Le même journal que l'écran d'exploitation (`/parametres`), avec le code et la plage en filtre : deux
@@ -2991,7 +2991,7 @@ async function main(): Promise<void> {
           requetes: agentRequetes,
           inbox: inboxStore,
           fiche: contactStore,
-          fuseau: async (t) => (await settingsStore.get(t)).timezone,
+          fuseau: async (t) => (await settingsStore.horairesEffectifs(t)).timezone,
         }),
         journal: journalAppels,
         // La forme de l'en-tête du numéro, jamais sa valeur : sans ce journal, une macro que Meta cesserait de

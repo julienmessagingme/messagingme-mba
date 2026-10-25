@@ -267,7 +267,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   const emetteurEmails = creerEmetteurEmails({
     adminsConnectes: (t) => emailsProduit.adminsConnectes(t),
     reserver: (e) => emailsProduit.reserver(e),
-    fuseau: async (t) => (await settingsStore.get(t)).timezone,
+    fuseau: async (t) => (await settingsStore.horairesEffectifs(t)).timezone,
     enfiler: (job) => queue.enqueue(FILE_EMAILS_PRODUIT, job, { groupId: job.tenantId }),
   });
   const envoisResend = config.RESEND_API_KEY ? creerEnvoisResend(config.RESEND_API_KEY, config.SUPPORT_FROM) : null;
@@ -459,7 +459,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    * e-mails du produit. Le démarreur du répondeur la déclenche, le tour d'un agent aussi (worker).
    */
   const alerteCredit = creerAlerteCreditEpuise({
-    fuseau: async (t) => (await settingsStore.get(t)).timezone,
+    fuseau: async (t) => (await settingsStore.horairesEffectifs(t)).timezone,
     emettre: (e) => emetteurEmails.emettre(e),
     pageCredit,
   });

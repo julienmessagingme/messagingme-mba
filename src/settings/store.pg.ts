@@ -108,6 +108,36 @@ export interface TenantSettings {
 }
 
 /**
+ * La politique horaire réellement consommée par les campagnes, scénarios, automations et courriels.
+ * Les valeurs par défaut appartiennent au module de réglages : un appelant ne distingue jamais une
+ * colonne absente d'une valeur explicitement réglée.
+ */
+export interface HorairesEffectifs {
+  timezone: string;
+  businessHours: BusinessHours;
+}
+
+type LigneReglages = Partial<{
+  mba_enabled: boolean;
+  hubspot_lists_enabled: boolean;
+  campaigns_paused: boolean;
+  auto_retry_enabled: boolean;
+  control_handback_seconds: number | null;
+  timezone: string | null;
+  business_hours: BusinessHours | null;
+  mba_handoff_mode: MbaHandoffMode | null;
+  optout_request_id: string | null;
+  mention_ia_frequence: string | null;
+}> & Record<string, unknown>;
+
+function horairesEffectifsDe(r: Pick<LigneReglages, 'timezone' | 'business_hours'> | undefined): HorairesEffectifs {
+  return {
+    timezone: r?.timezone ?? DEFAULT_TIMEZONE,
+    businessHours: r?.business_hours ?? DEFAULT_BUSINESS_HOURS,
+  };
+}
+
+/**
  * Les trois choix de l'écran « Activation ». `business_hours` est le seul qui varie dans la journée : c'est
  * le balayage qui bascule alors `handoff.enabled` selon les heures d'ouverture du tenant, Meta n'ayant
  * aucune notion d'horaires.
@@ -191,6 +221,23 @@ export interface ChoixHubspotEcrit {
 export class PgTenantSettingsStore {
   constructor(private readonly pool: Pool) {}
 
+  /**
+   * `select *` garde un déploiement avant migration compatible : une base en retard ne connaît pas encore la
+   * nouvelle colonne, mais rend quand même la ligne. Les politiques ci-dessous ne lisent que leurs champs connus.
+   */
+  private async lireLigne(tenantId: string): Promise<LigneReglages | undefined> {
+    const res = await this.pool.query<LigneReglages>(
+      `select * from tenant_settings where tenant_id = $1`,
+      [tenantId],
+    );
+    return res.rows[0];
+  }
+
+  /** Fuseau et heures d'ouverture avec les défauts du serveur déjà appliqués. */
+  async horairesEffectifs(tenantId: string): Promise<HorairesEffectifs> {
+    return horairesEffectifsDe(await this.lireLigne(tenantId));
+  }
+
   /** Le choix HubSpot de l'espace (lot 1bis). `select *`, comme `get` : une base en retard rend les défauts. */
   async lireChoixHubspot(tenantId: string): Promise<ChoixHubspot> {
     const res = await this.pool.query<Record<string, unknown>>(`select * from tenant_settings where tenant_id = $1`, [tenantId]);
@@ -238,17 +285,7 @@ export class PgTenantSettingsStore {
   }
 
   async get(tenantId: string): Promise<TenantSettings> {
-    const res = await this.pool.query<{ mba_enabled: boolean; hubspot_lists_enabled: boolean; campaigns_paused: boolean; auto_retry_enabled: boolean; control_handback_seconds: number | null; timezone: string | null; business_hours: BusinessHours | null; mba_handoff_mode: MbaHandoffMode | null; optout_request_id: string | null; mention_ia_frequence: string | null } & Record<string, unknown>>(
-      /**
-       * `select *` : cette méthode est sur le chemin de chaque message entrant (`mbaActifPour`), du fuseau de
-       * chaque campagne et de chaque tour d'agent. Nommer les colonnes rendrait chaque migration de
-       * `tenant_settings` bloquante pour l'ingestion (un déploiement avant `migrate` casserait la réception).
-       * Aucun secret dans cette table, et la conversion ci-dessous ne lit que ce qu'elle connaît.
-       */
-      `select * from tenant_settings where tenant_id = $1`,
-      [tenantId],
-    );
-    const r = res.rows[0];
+    const r = await this.lireLigne(tenantId);
     return {
       mbaEnabled: r?.mba_enabled ?? false,
       repondeurMode: modeDeLaLigne(r),
@@ -261,8 +298,7 @@ export class PgTenantSettingsStore {
       campaignsPaused: r?.campaigns_paused ?? false,
       autoRetryEnabled: r?.auto_retry_enabled ?? false,
       controlHandbackSeconds: r?.control_handback_seconds ?? null,
-      timezone: r?.timezone ?? DEFAULT_TIMEZONE,
-      businessHours: r?.business_hours ?? DEFAULT_BUSINESS_HOURS,
+      ...horairesEffectifsDe(r),
       mbaHandoffMode: r?.mba_handoff_mode ?? null,
       // Une valeur inconnue vaut `null`, donc le défaut `always` : une base en retard sur la migration se
       // comporte comme avant.
@@ -524,11 +560,7 @@ export class PgTenantSettingsStore {
     const res = await this.pool.query<{ tenant_id: string; timezone: string | null; business_hours: BusinessHours | null }>(
       `select tenant_id, timezone, business_hours from tenant_settings where mba_handoff_mode = 'business_hours'`,
     );
-    return res.rows.map((r) => ({
-      tenantId: r.tenant_id,
-      timezone: r.timezone ?? DEFAULT_TIMEZONE,
-      businessHours: r.business_hours ?? DEFAULT_BUSINESS_HOURS,
-    }));
+    return res.rows.map((r) => ({ tenantId: r.tenant_id, ...horairesEffectifsDe(r) }));
   }
 
   /** Active ou désactive l'import de listes HubSpot. */
