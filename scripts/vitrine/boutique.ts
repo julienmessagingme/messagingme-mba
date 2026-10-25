@@ -1,0 +1,248 @@
+// scripts/vitrine/boutique.ts
+// Les pages « boutique » de la rubrique Solutions (la première : Boutiques Shopify, 2026-10-24), dans les deux langues,
+// depuis `boutique-textes.ts`, écrites par `npm run vitrine:cas` avec les autres pages de la rubrique. Plan
+// `docs/superpowers/plans/2026-10-24-boutiques-shopify.md`. Une troisième nature de page : ni références clients, ni film,
+// ni cas de terrain, mais deux portes (Claude Code, la console) et le guide du numéro, que `site.js` rend interactif et
+// qui reste lisible sans script (ses issues en liste).
+import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
+import { ACCUEIL, fichierDe, fil, page } from './cas';
+import type { Langue } from './cas-textes';
+import { insecables } from './guide-meta';
+import { TEXTES_BOUTIQUES, type Carte, type Etape, type Issue, type Question, type TexteBoutique, type Voie } from './boutique-textes';
+
+const CONSOLE = 'https://console.messagingme.app';
+const BAYMARD = 'https://baymard.com/lists/cart-abandonment-rate';
+const PLUGIN: Readonly<Record<Langue, string>> = { fr: '/developpeurs/installer-le-plugin/', en: '/en/developers/install-the-plugin/' };
+const AIDE: Readonly<Record<Langue, string>> = { fr: '/aide/brancher-ma-boutique-shopify/', en: '/en/help/connect-my-shopify-store/' };
+const TARIFS: Readonly<Record<Langue, string>> = { fr: '/tarifs/', en: '/en/pricing/' };
+const CONTACT: Readonly<Record<Langue, string>> = { fr: '/contact/#formulaire', en: '/en/contact/#formulaire' };
+
+/** Le texte brut d'un fragment : sans balises ni entités, pour une méta ou un JSON-LD. */
+const brut = (h: string): string => h.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
+const fleche = '<svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg>';
+const deux = (l: readonly [string, string]) => `${l[0]} <span class="sec-accent">${l[1]}</span>`;
+
+function telephone(t: TexteBoutique['telephone']): string[] {
+  const bulle = (b: TexteBoutique['telephone']['bulles'][number]) => `            <li class="bulle ${b.envoye ? 'envoye' : 'recu'}"><p>${b.texte}${b.pied ? `<span class="bt-pied">${b.pied}</span>` : ''}<span class="heure">${b.heure}${b.envoye ? ' <svg class="ic" aria-hidden="true"><use href="#i-coches"/></svg>' : ''}</span></p></li>`;
+  return [
+    `    <figure class="bt-tel" role="img" aria-label="${t.aria}">`,
+    '      <div class="tel tel-wa">',
+    '        <i class="btn b1"></i><i class="btn b2"></i><i class="btn b3"></i><i class="btn b4"></i>',
+    '        <div class="ecran">',
+    '          <div class="ios" aria-hidden="true"><span>18:14</span><span class="ilot"></span><span class="etat"><svg class="ic"><use href="#i-signal"/></svg><svg class="ic"><use href="#i-wifi"/></svg><svg class="ic pile"><use href="#i-pile"/></svg></span></div>',
+    `          <div class="wa-tete" aria-hidden="true"><svg class="ic"><use href="#i-caret-left"/></svg><span class="avatar">VB</span><span class="qui"><strong>${t.boutique}</strong><small>${t.compte}</small></span></div>`,
+    '          <ol class="wa-fil" aria-hidden="true">',
+    `            <li class="jour">${t.jour}</li>`,
+    ...t.bulles.map(bulle),
+    '          </ol>',
+    '          <div class="saisie" aria-hidden="true"><svg class="ic"><use href="#i-plus"/></svg><span class="champ"></span><svg class="ic"><use href="#i-camera"/></svg><svg class="ic"><use href="#i-micro"/></svg></div>',
+    '        </div>',
+    '      </div>',
+    '    </figure>',
+  ];
+}
+
+const cartes = (liste: readonly Carte[], offre: string) => [
+  '      <ul class="bt-cartes">',
+  ...liste.map((c) => `        <li>${c.icone ? `<span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#${c.icone}"/></svg></span>` : ''}<h3>${c.titre}${c.offre ? ` <span class="bt-offre">${offre} ${c.offre}</span>` : ''}</h3><p>${c.texte}</p></li>`),
+  '      </ul>',
+];
+
+const etapes = (liste: readonly Etape[]) => [
+  '      <ol class="bt-etapes">',
+  ...liste.map((e, i) => `        <li><span class="bt-num">${i + 1}</span><div><h3>${e.titre}</h3><p>${e.texte}</p></div></li>`),
+  '      </ol>',
+];
+
+/**
+ * Le guide du numéro : d'abord les cinq mots qu'il emploie, puis l'arbre de Julien (2026-10-24). Sans script, les
+ * questions restent cachées et ses six issues se lisent l'une sous l'autre, chacune précédée de la situation qu'elle
+ * sert ; avec `site.js`, la première question s'affiche, chaque réponse montre la question suivante (`data-vers`) ou une
+ * issue (`data-chemin`), et une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa question.
+ */
+function guide(n: TexteBoutique['numero']): string[] {
+  const question = (q: Question, i: number) => [
+    `          <fieldset class="bt-question" data-question="${q.id}"${i > 0 ? ' hidden' : ''}>`,
+    `            <legend>${q.texte}${q.precision ? `<span class="bt-precision">${q.precision}</span>` : ''}</legend>`,
+    `            <div class="bt-reponses">${q.reponses.map((r) => r.vers
+      ? `<button type="button" class="bouton bouton-trait" data-vers="${r.vers}" aria-pressed="false">${r.libelle}</button>`
+      : `<button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">${r.libelle}</button>`).join('')}</div>`,
+    ...(q.aide ? [`            <p class="bt-aide" hidden>${q.aide}</p>`] : []),
+    '          </fieldset>',
+  ];
+  const ligne = (classe: string, icone: string, sr: string) => (x: string) =>
+    `                <li class="${classe}"><svg class="ic" aria-hidden="true"><use href="#${icone}"/></svg><span class="bt-sr">${sr} </span>${x}</li>`;
+  const voie = (v: Voie) => [
+    '            <section class="bt-voie">',
+    `              <h4>${v.titre}</h4>`,
+    '              <ul>',
+    ...v.plus.map(ligne('bt-plus', 'i-check', n.plus)),
+    ...v.moins.map(ligne('bt-moins', 'i-x', n.moins)),
+    '              </ul>',
+    '            </section>',
+  ];
+  const issue = (x: Issue) => [
+    `        <article class="bt-chemin" data-chemin="${x.id}" id="numero-${x.id}">`,
+    `          <p class="bt-situation">${x.situation}</p>`,
+    `          <h3>${x.titre}</h3>`,
+    ...x.textes.map((p) => `          <p>${p}</p>`),
+    ...(x.voies ? ['          <div class="bt-voies">', ...x.voies.flatMap(voie), '          </div>'] : []),
+    '        </article>',
+  ];
+  return [
+    '      <div class="bt-lexique">',
+    `        <h3>${n.lexique.titre}</h3>`,
+    '        <dl>',
+    ...n.lexique.termes.map((t) => `          <div><dt>${t.terme}</dt><dd>${t.definition}</dd></div>`),
+    '        </dl>',
+    '      </div>',
+    '      <div class="bt-guide" data-guide-numero>',
+    '        <div class="bt-questions" hidden>',
+    ...n.questions.flatMap(question),
+    `          <button type="button" class="bt-recommencer" data-recommencer hidden>${n.recommencer}</button>`,
+    '        </div>',
+    '        <div class="bt-chemins" aria-live="polite">',
+    ...n.issues.flatMap(issue),
+    '        </div>',
+    '      </div>',
+  ];
+}
+
+function mainBoutique(t: TexteBoutique, langue: Langue): string {
+  const p = t.prix;
+  return [
+    '<main>',
+    '  <section class="cadre f-une bt-une">',
+    '    <div>',
+    `      <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg>${t.surtitre}</span> ${t.h1[0]} <span class="sec-accent">${t.h1[1]}</span></h1>`,
+    `      <p class="chapeau">${t.chapeau}</p>`,
+    '      <div class="appels">',
+    `        <a class="bouton bouton-plein" href="#commencer">${t.boutonClaude}</a>`,
+    `        <a class="bouton bouton-trait" href="${CONSOLE}/signup${langue === 'en' ? '?lang=en' : ''}">${t.boutonConsole}</a>`,
+    '      </div>',
+    // La phrase d'abord, le logo ensuite : « se branche à votre boutique [Shopify] », jamais un logo en sujet, qui ferait badge.
+    `      <p class="bt-compat"><span>${t.compat}</span><span class="bt-compat-logo"><img class="logo-shopify" src="/img/logos/shopify-noir.svg" width="105" height="30" alt="Shopify"></span></p>`,
+    '    </div>',
+    ...telephone(t.telephone),
+    '  </section>',
+    '',
+    '  <section class="f-bloc bt-probleme">',
+    '    <div class="cadre">',
+    `      <p class="f-surtitre">${t.probleme.surtitre}</p>`,
+    `      <h2 class="f-titre">${deux(t.probleme.titre)}</h2>`,
+    `      <p class="f-texte">${t.probleme.texte}</p>`,
+    `      <p class="bt-source"><a href="${BAYMARD}" rel="noopener">${t.probleme.source}</a></p>`,
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-bloc bande-claire bt-scenario">',
+    '    <div class="cadre">',
+    `      <p class="f-surtitre">${t.scenario.surtitre}</p>`,
+    `      <h2 class="f-titre">${deux(t.scenario.titre)}</h2>`,
+    ...etapes(t.scenario.etapes),
+    `      <p class="bt-note">${t.scenario.note}</p>`,
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-bloc">',
+    '    <div class="cadre">',
+    `      <p class="f-surtitre">${t.branchez.surtitre}</p>`,
+    `      <h2 class="f-titre">${deux(t.branchez.titre)}</h2>`,
+    ...cartes(t.branchez.cartes, t.ensuite.offre),
+    `      <p class="bt-note"><a href="${AIDE[langue]}">${t.commencer.aide}</a> ${fleche}</p>`,
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-bloc">',
+    '    <div class="cadre">',
+    `      <p class="f-surtitre">${t.ensuite.surtitre}</p>`,
+    `      <h2 class="f-titre">${deux(t.ensuite.titre)}</h2>`,
+    ...cartes(t.ensuite.cartes, t.ensuite.offre),
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-bloc bt-numero" id="numero">',
+    '    <div class="cadre">',
+    `      <p class="f-surtitre">${t.numero.surtitre}</p>`,
+    `      <h2 class="f-titre">${deux(t.numero.titre)}</h2>`,
+    `      <p class="f-texte">${t.numero.chapeau}</p>`,
+    ...guide(t.numero),
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-bloc" id="commencer">',
+    '    <div class="cadre">',
+    `      <p class="f-surtitre">${t.commencer.surtitre}</p>`,
+    `      <h2 class="f-titre">${deux(t.commencer.titre)}</h2>`,
+    ...etapes(t.commencer.etapes),
+    '      <div class="appels">',
+    `        <a class="bouton bouton-plein" href="${PLUGIN[langue]}">${t.commencer.bouton}</a>`,
+    `        <a class="bouton bouton-texte" href="${AIDE[langue]}">${t.commencer.aide} ${fleche}</a>`,
+    '      </div>',
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-bloc" id="prix">',
+    '    <div class="cadre">',
+    `      <p class="f-surtitre">${p.surtitre}</p>`,
+    `      <h2 class="f-titre">${deux(p.titre)}</h2>`,
+    '      <ul class="bt-prix">',
+    ...p.offres.map((o) => `        <li><h3>${o.nom}</h3><p class="bt-montant"><strong>${o.prix}</strong><span>${o.detail}</span></p><ul>${o.liste.map((x) => `<li>${x}</li>`).join('')}</ul></li>`),
+    '      </ul>',
+    `      <p class="bt-note">${p.note} <a href="${TARIFS[langue]}">${p.tarifs}</a></p>`,
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-bloc tarifs-faq-bloc" id="faq">',
+    '    <div class="cadre">',
+    `      <h2 class="f-titre">${t.faq.titre}.</h2>`,
+    '      <div class="dev-faq">',
+    ...t.faq.questions.map((q) => `        <details id="${q.id}"><summary>${q.q}</summary><p>${q.r}</p></details>`),
+    '      </div>',
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-appel">',
+    '    <div class="cadre">',
+    `      <h2 class="f-titre">${t.appel.titre}</h2>`,
+    `      <p class="f-texte">${t.appel.texte}</p>`,
+    '      <div class="appels">',
+    `        <a class="bouton bouton-plein" href="#commencer">${t.boutonClaude}</a>`,
+    `        <a class="bouton bouton-trait" href="${CONSOLE}/signup${langue === 'en' ? '?lang=en' : ''}">${t.boutonConsole}</a>`,
+    `        <a class="bouton bouton-texte" href="${CONTACT[langue]}">${t.appel.contact} ${fleche}</a>`,
+    '      </div>',
+    '    </div>',
+    '  </section>',
+    '</main>',
+  ].join('\n');
+}
+
+function pageBoutique(e: EntreeVitrine, langue: Langue): { chemin: string; contenu: string } {
+  const brute = TEXTES_BOUTIQUES[e.cle]?.[langue];
+  if (!brute) throw new Error(`${e.cle} : boutique en ligne sans ses textes (scripts/vitrine/boutique-textes.ts)`);
+  const p = langue === 'fr' ? e.fr : e.en;
+  const autre = langue === 'fr' ? e.en : e.fr;
+  // En français, la ponctuation haute et les guillemets gardent leur espace insécable.
+  const html = mainBoutique(brute, langue);
+  const main = langue === 'fr' ? insecables(html) : html;
+  const ld = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      fil(langue, [ACCUEIL[langue], [p.titre, p.adresse]]),
+      {
+        '@type': 'FAQPage', inLanguage: langue === 'fr' ? 'fr-FR' : 'en-US',
+        mainEntity: brute.faq.questions.map((q) => ({ '@type': 'Question', name: brut(q.q), acceptedAnswer: { '@type': 'Answer', text: brut(q.r) } })),
+      },
+    ],
+  };
+  return {
+    chemin: fichierDe(p.adresse),
+    contenu: page(langue, { adresse: p.adresse, jumelle: autre.adresse, titre: brute.titre, description: brut(brute.description), ldJson: ld }, main,
+      `Page « ${e.fr.titre} », GÉNÉRÉE par npm run vitrine:cas depuis scripts/vitrine/boutique-textes.ts : ne pas modifier à la main.`),
+  };
+}
+
+/** Les pages boutique EN LIGNE au registre, dans les deux langues. */
+export function pagesBoutiques(): Array<{ chemin: string; contenu: string }> {
+  return ENTREES.filter((e) => e.enLigne && e.nature === 'boutique').flatMap((e) => (['fr', 'en'] as const).map((l) => pageBoutique(e, l)));
+}

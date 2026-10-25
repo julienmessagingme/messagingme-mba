@@ -110,12 +110,25 @@ Meta, le détail des Tarifs, les publicités de Pilotage des coûts.
 
 ✅ **La vitrine a sa page Intégrations** (2026-10-24) : `app.messagingme.fr/integrations/`, jumelle `/en/integrations/`,
 au menu « Ressources ». Shopify, HubSpot, Salesforce, Claude Code, Codex et « vos autres outils » (API, webhooks, MCP),
-un logo et une ligne chacun, sans offre ni état. Shopify mène à la page d'aide « Brancher ma boutique Shopify » (la page
-« Boutiques Shopify » attend le numéro relié par QR code), HubSpot et Salesforce à « Analyse de conversations », Claude
-Code et Codex aux pages développeurs. Après « Ils nous font confiance », l'accueil porte la rangée « Se branche à vos
+un logo et une ligne chacun, sans offre ni état. Shopify mène à la page « Boutiques Shopify », HubSpot et Salesforce à
+« Analyse de conversations », Claude Code et Codex aux pages développeurs. Après « Ils nous font confiance », l'accueil porte la rangée « Se branche à vos
 outils », dont chaque logo mène à sa carte ; les tarifs citent Shopify, par Claude Code dans la Free et depuis la console
 dans le Pro. Shopify n'y apparaît qu'en compatibilité (Messaging Me n'est pas Partner) : son logo noir, jamais
 « partenaire », « officiel » ni « certifié ».
+
+✅ **La vitrine a sa page Boutiques Shopify** (2026-10-24) : `app.messagingme.fr/solutions/shopify/`, jumelle
+`/en/solutions/shopify-stores/`, au menu « Solutions » après les secteurs. Pour les marchands : la relance de panier et
+les messages de commande sur WhatsApp, branchés en le demandant à Claude Code avec l'offre Free (0 € d'abonnement), ou
+depuis la console avec le Pro. Le scénario du panier abandonné en cinq temps, ce qui se branche, ce que la conversation
+rend possible (chaque carte étiquetée de son offre), puis le guide du numéro, l'arbre de Julien du 2026-10-24 : les mots
+expliqués d'abord (compte Meta Business, application WhatsApp Business, API officielle, QR code, coexistence), puis des
+questions une à une (un compte Meta Business ? l'application WhatsApp Business ? ce numéro à automatiser, depuis plus ou
+moins d'un mois ? un numéro disponible ?) qui mènent à l'API avec son numéro ou un numéro fourni, à la coexistence
+(annoncée « bientôt », le QR code en attendant), au QR code puis la coexistence au bout d'un mois, ou au choix entre l'API
+et le QR code, avec ce que chacun apporte et coûte. Suivent les quatre étapes depuis Claude Code,
+le prix et une FAQ. Un numéro relié par QR code n'y sert qu'à répondre aux clients qui écrivent. Le même arbre guide
+Claude dans la mise en service (la skill `mise-en-service` du plugin), et le README du plugin et sa FAQ l'expliquent.
+Le film viendra plus tard.
 
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton
@@ -4811,9 +4824,11 @@ numéro.
 ### Relier l'application WhatsApp Business depuis Claude (filière application, 2026-10-22)
 
 - ✅ **LIVE, éprouvée par un essai réel les 22 et 23 octobre.** **À quoi ça sert.** Un développeur qui n'a pas de compte
-  Meta Business relie le compte WhatsApp Business de son téléphone, comme un appareil lié, par un QR code. Claude pose
-  d'abord la question « Avez-vous un compte Meta Business ? » ; sans réponse sûre, il propose cette filière et la dit en
-  une phrase : ce n'est pas l'API officielle, et WhatsApp peut couper un numéro.
+  Meta Business relie le compte WhatsApp Business de son téléphone, comme un appareil lié, par un QR code. Claude explique
+  d'abord les mots (compte Meta Business, application WhatsApp Business, API, QR code, coexistence), puis pose une à une
+  les questions de l'arbre du numéro (Julien, 2026-10-24) ; sans compte Meta Business, il propose cette filière à côté de
+  l'API (dont la fenêtre de Meta crée le compte) et la dit en une phrase : ce n'est pas l'API officielle, le numéro ne
+  fait que répondre, et WhatsApp peut couper un numéro.
 - ✅ **Relier** : `start_whatsapp_connection` avec la filière « application », pour un numéro que nous fournissons
   (recommandé pour un essai) ou le sien. Le lien ouvre la page de connexion, qui montre le QR code à scanner depuis
   l'application (« Appareils liés ») ; Claude suit par `watch_whatsapp_connection` et annonce le compte relié. Le crédit

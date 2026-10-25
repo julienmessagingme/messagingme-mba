@@ -176,9 +176,6 @@ aucun texte Shopify actif.
 - **Restes** : le commentaire de `DepsPremierMessage.quota` (« un message écrit en premier y compte ») ; le chemin 202 de
   `/v1/messages/whatsapp` pour une personne sans fil, code mort gardé pour le contrat ; un commentaire d'une seule ligne
   très longue dans `tests/aide/porte-premier.ts`.
-- **`features.md`, la page Intégrations** : « la page Boutiques Shopify attend le numéro relié par QR code » est
-  périmé ; la session Vitrine le réécrit avec la page (règles de Julien du 2026-10-24 : le numéro QR code ne fait que
-  répondre, les messages Shopify partent d'un numéro relié par Meta, bientôt en coexistence).
 
 ## 🟡 Shopify : ce qui attend après les conceptions du 2026-10-23
 
@@ -194,16 +191,26 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   vraiment.
 - **L'essai de la bulle WhatsApp sur un thème Shopify** (la balise collée dans le thème de la boutique de test, visible et
   cliquable sur un téléphone) : la carte « bulle » de la page Boutiques Shopify n'apparaît qu'après.
-- **La page « Boutiques Shopify » (`/solutions/shopify/`) et son film** (lots 1 et 3 de la conception vitrine) : en
-  construction par la session Vitrine ; depuis le lot C, le numéro QR code ne fait que répondre, et les messages Shopify
-  partent d'un numéro relié par Meta (bientôt en coexistence, plan `2026-10-24-coexistence.md`). À leur sortie,
-  rebrancher sur elle la carte Shopify de `/integrations/`
-  (`site/integrations/index.html`, `id="shopify"`), qui mène en attendant à la page d'aide (décision de Julien du
-  2026-10-24). Le reste de la conception est en ligne depuis `5cae9de1` (plan `2026-10-24-vitrine-shopify-integrations.md`).
-- **Les jaunes de la relecture du 2026-10-24 (vitrine)** : (1) un visiteur Free arrive, depuis la carte Shopify et la
-  ligne Free des tarifs, sur une page d'aide marquée Pro dont le chemin Claude Code n'est que la dernière section ;
-  (2) la carte Codex mène aux pages développeurs, qui n'expliquent pas encore Codex (essai 121 pas fait ; Julien garde
-  la carte telle quelle en attendant, 2026-10-24).
+- **Le film de la page « Boutiques Shopify »** (lot 3 de la conception vitrine) : le parcours du client (le panier
+  laissé, la relance, la question, la réponse de l'agent IA, la commande, l'expédition), à poser dans la section du
+  scénario (`VideoObject`). La page est en ligne depuis le 2026-10-24 (plan `2026-10-24-boutiques-shopify.md`).
+- **La coexistence livrée : retirer « bientôt » partout où le parcours du numéro l'annonce** : la page « Boutiques
+  Shopify » (`scripts/vitrine/boutique-textes.ts` : le mot « La coexistence (bientôt) » du lexique, les issues
+  `coexistence` et `qr-puis-coexistence`, la voie QR code des issues à choix, la réponse `faq-numero`), puis
+  `npm run vitrine:cas` ; la skill `mise-en-service` (le choix de la filière), le README du plugin (« Which WhatsApp
+  number? ») et l'entrée `api-ou-application` de `scripts/plugin/faq.ts`, puis `npm run plugin:generer` et une montée de
+  version du plugin.
+- **La carte Codex de `/integrations/`** mène aux pages développeurs, qui n'expliquent pas encore Codex (essai 121 pas
+  fait ; Julien garde la carte telle quelle en attendant, 2026-10-24).
+- **Le logo de l'application WhatsApp Business** à côté de sa question dans le guide du numéro : l'icône actuelle (celle
+  de WhatsApp avec un « + », depuis mars 2025), fichier fourni par Julien (2026-10-25), sur fond transparent, à poser
+  dans `site/img/logos/`.
+- **Ce qui dit encore qu'un compte Meta Business est indispensable**, à aligner sur l'arbre du numéro avec l'accord de
+  Julien (face publique) : « le seul prérequis » de `site/developpeurs/index.html` (au-dessus de la FAQ qui répond
+  désormais « Oui, de deux façons ») et de la méta description de `site/developpeurs/compte-meta-business/`, l'étape 3
+  de `site/solutions/saas-et-app-builders/` et sa jumelle, « an official WhatsApp number » dans l'accroche du README du
+  plugin et la description de `plugin.json`. Et la voie API du guide ne dit pas que Meta demande une carte avant le
+  premier modèle (la conception de la coexistence veut que ce soit dit au moment du choix).
 - **Remplacer un numéro relié par QR code par un numéro fourni** : `relierApplication` et `preparer` refusent un espace
   déjà relié (`deja_relie`), donc un marchand qui a relié le numéro de sa boutique ne peut pas passer à un numéro fourni
   pour le protéger (sort des conversations, des fiches, du cache `@lid` et du crédit offert à décider).

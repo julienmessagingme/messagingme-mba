@@ -59,10 +59,19 @@ export const FAQ: readonly EntreeFaq[] = [
     id: 'application-whatsapp-business',
     question: { fr: 'Je n’ai pas de compte Meta Business : je peux quand même ?', en: 'I have no Meta Business account: can I still use it?' },
     reponse: {
-      fr: 'Oui : reliez l’application WhatsApp Business de votre téléphone par un QR code, en le demandant à Claude. L’agent IA y répond, Claude y lit et y répond, et vous pouvez toujours répondre depuis le téléphone. Elle passe par WhatsApp comme un appareil lié : ce n’est pas l’API officielle, et WhatsApp peut couper un numéro. Les modèles, les campagnes et l’offre Pro demandent l’API, avec un compte Meta Business.',
-      en: 'Yes: link the WhatsApp Business app on your phone with a QR code, by asking Claude. The AI agent answers there, Claude reads and replies there, and you can still reply from the phone. It goes through WhatsApp as a linked device: it is not the official API, and WhatsApp can cut a number. Templates, campaigns and the Pro plan need the API, with a Meta Business account.',
+      fr: 'Oui, de deux façons. Créez votre compte Meta Business (gratuit, sur business.facebook.com ou en route dans la fenêtre de Meta), et votre numéro passe par l’API officielle. Ou bien reliez l’application WhatsApp Business de votre téléphone par un QR code, sans compte : l’agent IA y répond aux clients qui écrivent, Claude y lit et y répond, et vous répondez toujours depuis le téléphone. Elle passe par WhatsApp comme un appareil lié, ce n’est pas l’API officielle. Rien n’y part en premier (ni modèles, ni campagnes, ni messages Shopify), et WhatsApp peut couper un numéro. L’offre Pro demande l’API.',
+      en: 'Yes, in two ways. Create your Meta Business account (free, on business.facebook.com or along the way in Meta’s window), and your number goes through the official API. Or link the WhatsApp Business app on your phone with a QR code, without an account: the AI agent answers the customers who write, Claude reads and replies there, and you can still reply from the phone. It goes through WhatsApp as a linked device, it is not the official API. Nothing goes out first there (no templates, campaigns or Shopify messages), and WhatsApp can cut a number. The Pro plan needs the API.',
     },
-    source: 'src/application/ (filière application, spec du 2026-10-22) ; src/application/garde-outils.ts ; src/stripe/pro.ts',
+    source: 'src/application/ (filière application, spec du 2026-10-22) ; src/application/premier-message.ts (lot C, 2026-10-24 : le numéro QR code ne fait que répondre) ; src/stripe/pro.ts ; web/lib/partage/etapes-meta.ts (la fenêtre de Meta crée le portefeuille)',
+  },
+  {
+    id: 'api-ou-application',
+    question: { fr: 'Numéro de l’API ou application WhatsApp Business : lequel choisir ?', en: 'API number or WhatsApp Business app: which one should I choose?' },
+    reponse: {
+      fr: `Cela dépend de ce que votre numéro doit faire. Un numéro de l’API officielle, relié par Meta, écrit en premier. Il envoie modèles, confirmations, rappels, campagnes et messages Shopify ; il demande un compte Meta Business, gratuit, créé sur business.facebook.com ou en route dans la fenêtre de Meta, et il quitte l’application WhatsApp. L’application WhatsApp Business reliée par QR code ne demande aucun compte et reste sur votre téléphone, mais elle ne fait que répondre à ceux qui vous écrivent. Bientôt, la coexistence réunira les deux : un numéro qui sert dans l’application WhatsApp Business depuis environ un mois pourra passer aussi par l’API sans la quitter, si vous le voulez. Sans numéro libre, un numéro fourni coûte ${NUMERO_FR}${INCLUS_FR}. Claude vous pose les questions une par une pendant la mise en service.`,
+      en: `It depends on what your number must do. An official API number, connected through Meta, writes first. It sends templates, confirmations, reminders, campaigns and Shopify messages; it needs a Meta Business account, free, created on business.facebook.com or along the way in Meta’s window, and it leaves the WhatsApp app. The WhatsApp Business app linked by QR code needs no account and stays on your phone, but it only answers those who write to you. Coexistence will soon bring the two together: a number used in the WhatsApp Business app for about a month will also be able to go through the API without leaving it, if you want. Without a free number, a provided number costs ${NUMERO_EN}${INCLUS_EN}. Claude asks you the questions one at a time during setup.`,
+    },
+    source: 'l’arbre du numéro de Julien (2026-10-24), repris par scripts/vitrine/boutique-textes.ts et la skill mise-en-service ; docs/superpowers/specs/2026-10-24-coexistence-design.md ; src/application/premier-message.ts (lot C) ; src/stripe/abonnement.ts',
   },
   {
     id: 'compte-meta',
@@ -137,10 +146,10 @@ export const FAQ: readonly EntreeFaq[] = [
     id: 'numero-dans-l-application',
     question: { fr: 'Puis-je garder ce numéro dans l’application WhatsApp ?', en: 'Can I keep this number in the WhatsApp app?' },
     reponse: {
-      fr: 'Non : un numéro branché sur l’API quitte l’application WhatsApp. Prenez un numéro dédié, le vôtre ou un numéro fourni.',
-      en: 'No: a number connected to the API leaves the WhatsApp app. Use a dedicated number, your own or a provided one.',
+      fr: 'Pas encore avec l’API : un numéro qui y est branché quitte l’application WhatsApp. Bientôt, la coexistence gardera l’application WhatsApp Business sur un numéro qui y sert depuis environ un mois, si vous le voulez. En attendant, reliez l’application WhatsApp Business par un QR code : elle reste sur votre téléphone et l’agent IA répond à ceux qui vous écrivent, sans écrire en premier. Ou prenez un numéro dédié pour l’API, le vôtre ou un numéro fourni.',
+      en: 'Not yet with the API: a number connected to it leaves the WhatsApp app. Coexistence will soon keep the WhatsApp Business app on a number used there for about a month, if you want. Meanwhile, link the WhatsApp Business app with a QR code: it stays on your phone and the AI agent answers those who write to you, without writing first. Or use a dedicated number for the API, your own or a provided one.',
     },
-    source: 'plan privé, décisions du 2026-10-02 (pas de coexistence)',
+    source: 'docs/superpowers/specs/2026-10-24-coexistence-design.md (la coexistence, en construction) ; src/application/premier-message.ts (lot C)',
   },
   {
     id: 'numero-fourni',

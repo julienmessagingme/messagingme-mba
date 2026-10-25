@@ -20,7 +20,11 @@
 export const PROFILS = ['saas', 'lovable', 'agence', 'produit'] as const;
 export type Profil = (typeof PROFILS)[number];
 
-export type NatureEntree = 'cas' | 'secteur' | 'metier';
+/**
+ * `boutique` : une page Solutions pour les marchands d'une plateforme de commerce (Shopify, 2026-10-24), générée par
+ * `scripts/vitrine/boutique.ts` : ni références clients ni film, deux portes (Claude Code, la console).
+ */
+export type NatureEntree = 'cas' | 'secteur' | 'metier' | 'boutique';
 
 /** Une adresse de la vitrine (chemin avec barre finale) et le libellé qui la nomme dans le menu et les carrefours. */
 export interface PageVitrine {
@@ -127,6 +131,14 @@ export const ENTREES: readonly EntreeVitrine[] = [
     fr: { adresse: '/solutions/voyage-et-tourisme/', titre: 'Voyage et tourisme' },
     en: { adresse: '/en/solutions/travel-and-tourism/', titre: 'Travel and tourism' },
     profils: [], vague: 1, recherche: 'whatsapp voyage tourisme', chemin: 'console', enLigne: true,
+  },
+  {
+    // La conception du 2026-10-23 (`2026-10-23-vitrine-shopify-design.md`), sortie le 2026-10-24 avant le numéro par
+    // QR code : le chemin gratuit par Claude Code, et un guide du numéro.
+    cle: 'shopify', nature: 'boutique',
+    fr: { adresse: '/solutions/shopify/', titre: 'Boutiques Shopify' },
+    en: { adresse: '/en/solutions/shopify-stores/', titre: 'Shopify stores' },
+    profils: [], vague: 1, recherche: 'relance panier abandonné whatsapp shopify', chemin: 'console', enLigne: true,
   },
   {
     cle: 'saas-app-builders', nature: 'metier',

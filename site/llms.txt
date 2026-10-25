@@ -54,6 +54,8 @@
 - [Insurance](https://app.messagingme.fr/en/solutions/insurance/) : WhatsApp campaigns, AI answers and handover to your network: get closer to your policyholders. The Gan Prévoyance, Groupama and Mieux Assuré cases.
 - [Voyage et tourisme](https://app.messagingme.fr/solutions/voyage-et-tourisme/) : Réservation, préparation de l’arrivée et services pendant le séjour : gardez le lien avec vos voyageurs sur WhatsApp. Le cas Odalys.
 - [Travel and tourism](https://app.messagingme.fr/en/solutions/travel-and-tourism/) : Booking, arrival preparation and services during the stay: stay connected with your travellers on WhatsApp. The Odalys case.
+- [Boutiques Shopify](https://app.messagingme.fr/solutions/shopify/) : Branchez votre boutique Shopify à WhatsApp en le demandant à Claude Code, avec l’offre Free à 0 € d’abonnement : confirmation de commande, avis d’expédition, relance des paniers abandonnés, et un agent IA qui répond.
+- [Shopify stores](https://app.messagingme.fr/en/solutions/shopify-stores/) : Connect your Shopify store to WhatsApp by asking Claude Code, with the Free plan at €0 a month: order confirmation, shipping notice, abandoned checkout reminders, and an AI agent that answers.
 
 ## Aide
 

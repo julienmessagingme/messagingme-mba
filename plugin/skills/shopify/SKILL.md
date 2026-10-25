@@ -13,12 +13,15 @@ you give. A link exists for the user only once you write it, in full, as plain t
 ## Before anything
 
 - Call `get_shopify_state`. If a store is already connected, say which one and go straight to the messages.
-- The workspace needs its WhatsApp number connected (`get_setup_state`); without it, nothing can be sent. Read its track
+- The workspace needs its WhatsApp number connected (`get_setup_state`); without it, nothing can be sent: connect it
+  first, with the questions of the setup (`connecter_numero` in the `mise-en-service` skill), which explain to the
+  merchant why the official API sends the store's messages and the QR code does not. Read its track
   (`numero.filiere`): `api` is the official API, with templates approved by Meta, and everything below applies. On
   `application`, a number linked by QR code, Shopify messages cannot go out: WhatsApp does not let a linked device write
   first to a customer (it cuts or blocks the number), and an order confirmation, a shipping update or a checkout
   reminder writes first. Say it plainly before going on: to send them, the number must be linked through Meta, with a
-  Meta Business account. `set_shopify_message` refuses them on such a number.
+  Meta Business account (free; Meta's window can create it); coexistence, coming soon, will do it while keeping the
+  WhatsApp Business app on a number used there for about a month. `set_shopify_message` refuses them on such a number.
 - Node.js must be installed (`node --version`). On Windows, call the CLI with `npx.cmd`, not `npx`: PowerShell blocks
   `npx` by its execution policy.
 

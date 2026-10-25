@@ -289,3 +289,72 @@
     }
   });
 })();
+
+// Le guide du numéro de la page Boutiques Shopify : l'arbre de questions de Julien. Sans script, les questions restent
+// cachées et toutes les issues se lisent en liste, chacune avec la situation qu'elle sert. Avec lui, chaque réponse
+// (`data-vers`) montre la question suivante ou une issue ; changer une réponse plus haut efface tout ce qui la suivait ;
+// une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa question.
+(function () {
+  [].slice.call(document.querySelectorAll('[data-guide-numero]')).forEach(function (g) {
+    var questions = g.querySelector('.bt-questions');
+    var recommencer = g.querySelector('[data-recommencer]');
+    var premiere = g.querySelector('[data-question]');
+    var chemins = [].slice.call(g.querySelectorAll('.bt-chemin'));
+    if (!questions || !recommencer || !premiere) return;
+    var parcours = [premiere];
+    var montrer = function (cle) {
+      chemins.forEach(function (c) { c.classList.toggle('actif', c.getAttribute('data-chemin') === cle); });
+    };
+    var effacer = function (q) {
+      [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
+      var aide = q.querySelector('.bt-aide');
+      var bouton = q.querySelector('[data-aide]');
+      if (aide) aide.hidden = true;
+      if (bouton) bouton.setAttribute('aria-expanded', 'false');
+    };
+    // Retire du parcours tout ce qui suit la question `q` : une réponse changée plus haut ouvre une autre branche.
+    var couper = function (q) {
+      parcours.splice(parcours.indexOf(q) + 1).forEach(function (x) { x.hidden = true; effacer(x); });
+      montrer(null);
+    };
+    questions.hidden = false;
+    g.setAttribute('data-pret', '');
+    g.addEventListener('click', function (e) {
+      var aide = e.target.closest && e.target.closest('[data-aide]');
+      if (aide) {
+        var texte = aide.closest('[data-question]').querySelector('.bt-aide');
+        if (texte) texte.hidden = !texte.hidden;
+        aide.setAttribute('aria-expanded', String(Boolean(texte) && !texte.hidden));
+        return;
+      }
+      var b = e.target.closest && e.target.closest('[data-vers]');
+      if (b) {
+        var q = b.closest('[data-question]');
+        var vers = b.getAttribute('data-vers');
+        couper(q);
+        [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+        recommencer.hidden = false;
+        var suivante = g.querySelector('[data-question="' + vers + '"]');
+        if (suivante) {
+          // Une question partagée par deux branches suit celle qui y mène : on l'affiche à la suite du parcours, avant
+          // « Recommencer », quel que soit son rang dans la page.
+          questions.insertBefore(suivante, recommencer);
+          suivante.hidden = false;
+          parcours.push(suivante);
+          // La question suivante apparaît : le focus va à sa première réponse, qu'un lecteur d'écran l'entende.
+          suivante.querySelector('[data-vers]').focus();
+        } else {
+          montrer(vers);
+        }
+        return;
+      }
+      if (e.target.closest && e.target.closest('[data-recommencer]')) {
+        couper(premiere);
+        effacer(premiere);
+        recommencer.hidden = true;
+        // « Recommencer » se cache : le focus revient à la première question plutôt que de se perdre.
+        premiere.querySelector('[data-vers]').focus();
+      }
+    });
+  });
+})();

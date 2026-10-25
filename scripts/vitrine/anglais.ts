@@ -38,6 +38,7 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/solutions/enseignement-superieur/': '/en/solutions/higher-education/',
   '/solutions/assurance/': '/en/solutions/insurance/',
   '/solutions/voyage-et-tourisme/': '/en/solutions/travel-and-tourism/',
+  '/solutions/shopify/': '/en/solutions/shopify-stores/',
   '/cas-d-usage/rappels-rendez-vous/': '/en/use-cases/appointment-reminders/',
   '/cas-d-usage/notifications-de-commande/': '/en/use-cases/order-notifications/',
   '/cas-d-usage/prise-de-rendez-vous/': '/en/use-cases/appointment-booking/',

@@ -11,6 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ENTREES } from '../../web/lib/registre-vitrine';
 import { TEXTES_CAS, TEXTES_CARREFOUR } from './cas-textes';
 import { TEXTES_ATTENTE, TEXTES_SECTEURS } from './secteurs-textes';
+import { TEXTES_BOUTIQUES } from './boutique-textes';
 
 export type Langue = 'fr' | 'en';
 
@@ -54,6 +55,13 @@ export function liensSolutions(langue: Langue, retrait: string, burger: boolean)
     const p = langue === 'fr' ? e.fr : e.en;
     return `${retrait}<a class="menu-secteur" href="${p.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg></span><span><strong>${p.titre}</strong><small>${t.menu}</small></span></a>`;
   });
+  // Les pages boutique (Boutiques Shopify, 2026-10-24) suivent les secteurs, sous la même forme.
+  for (const e of ENTREES.filter((x) => x.enLigne && x.nature === 'boutique')) {
+    const t = TEXTES_BOUTIQUES[e.cle]?.[langue];
+    if (!t) throw new Error(`${e.cle} : boutique en ligne sans ses textes (scripts/vitrine/boutique-textes.ts)`);
+    const p = langue === 'fr' ? e.fr : e.en;
+    secteurs.push(`${retrait}<a class="menu-secteur" href="${p.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#${t.icone}"/></svg></span><span><strong>${p.titre}</strong><small>${t.menu}</small></span></a>`);
+  }
   const suite = burger ? '' : '<svg class="ic menu-suite" aria-hidden="true"><use href="#i-caret-left"/></svg>';
   const chapeau = `<a class="menu-chapeau" href="${c.adresse}"><span class="menu-ic"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg></span><span><strong>${c.fil}</strong><small>${c.menu}</small></span>${suite}</a>`;
   const cas = ENTREES.filter((e) => e.enLigne && e.nature === 'cas').map((e) => {

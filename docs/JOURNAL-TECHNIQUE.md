@@ -5,6 +5,48 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-25 : la page « Boutiques Shopify » et son arbre du numéro, le même arbre dans le plugin, et l'aide Shopify qui commence par Claude Code
+
+Plan `docs/superpowers/plans/2026-10-24-boutiques-shopify.md`. Julien, devant la page d'aide publique : « Ouvrir
+« Général » dans la console » ne voulait rien dire, le chemin gratuit par Claude Code devait venir d'abord, et Shopify
+n'était nulle part dans Solutions. Puis, devant le rendu de la page, une feuille dessinée à la main : l'arbre des
+questions qui choisit le numéro, avec ses mots, « le coup du WhatsApp Business App, du compte BM, personne ne comprend
+jamais rien à ça, il va donc falloir être super didactique », et le même parcours dans le plugin et son README. Deux
+commits.
+
+- **L'aide** (`b273525f`) : une fiche publique peut se faire depuis Claude Code (`claude_code: oui`, ses libellés de
+  boutons par langue, `ancre_console`) ; la fiche Shopify commence par Claude Code et l'offre Free ; la carte Shopify de la
+  console se montre à l'arrivée par `#integration-shopify`. Un intertitre sans paragraphe se perdait au découpage du bot
+  (`tests/aide-decoupage.test.ts`, attrapé avant le push). Bot rechargé sans déployer, 157 lignes.
+- **La page** : une nature `boutique` au registre, au menu Solutions après les secteurs ; le chemin gratuit par Claude
+  Code, le scénario du panier, puis le guide du numéro : cinq mots expliqués d'abord (compte Meta Business, application
+  WhatsApp Business, API, QR code, coexistence), puis l'arbre de Julien, jusqu'à quatre questions et six issues, dont
+  deux à choix (l'API, un compte à créer mais des messages qui partent ; le QR code, sans compte mais qui ne fait que
+  répondre, et la coexistence plus tard). Devant le rendu, Julien a ajouté la question de l'application à qui a déjà un
+  compte Meta Business (un numéro qui y sert depuis longtemps va lui aussi vers la coexistence) ; une question partagée
+  par deux branches s'affiche donc à la suite du parcours, quel que soit son rang dans la page. Les faits du numéro viennent de la session du connecteur : sur un numéro relié
+  par QR code, écrire en premier à un inconnu fait couper le numéro ou refuser le message (mesuré le jour même), donc ce
+  numéro n'y sert qu'à répondre (`tests/vitrine-boutique.test.ts`, vérifié dans les deux sens) ; la coexistence, dont le
+  lot 1 est passé en production pendant ce lot, reste dite « bientôt » partout, comme son plan le prévoit (il la passe à
+  « disponible » au lot 2) ; la skill ne la propose pas d'elle-même mais ne la refuse pas à qui la demande (le mode
+  `coexistence` de `start_whatsapp_connection` existe). « Un mois » d'ancienneté est la règle de Julien (les revendeurs
+  conseillent sept jours). Le test parcourt l'arbre : chaque réponse mène à une question ou à une issue, tout est atteint, rien ne boucle.
+- **Le plugin (0.3.9)** : la skill `mise-en-service` suit le même arbre ; elle envoyait au QR code tout « non » ou « je
+  ne sais pas » au compte Meta Business, alors que la fenêtre de Meta crée le compte. Le README GitHub gagne « Which
+  WhatsApp number? », et son accroche ne dit plus qu'un compte Meta Business est indispensable. La FAQ (skill et pages
+  développeurs) corrige deux réponses (sans compte Meta Business, seul le QR code était proposé ; garder le numéro dans
+  l'application, « non » sans la coexistence) et ajoute « API ou application WhatsApp Business ».
+- **La relecture** : trois rouges, corrigés. La FAQ disait « officielle » et « Shopify » dans une même phrase, ce que la
+  règle de marque (`tests/vitrine-marque-shopify.test.ts`) refuse : la CI aurait été rouge. La skill reprenait sur l'API
+  un numéro fourni payé pour le QR code (le compte de l'application n'existe qu'une fois créé dans l'application, donc
+  `get_setup_state` dit encore `api`) : elle demande désormais la voie. La voie QR code promettait la coexistence sans
+  « bientôt ».
+- **Mesuré** : `DROITS.base.contacts` n'existe pas (les limites sont sous `.limites`), et `tsx` génère quand même : la page
+  affichait « 0 contacts créés » ; la génération refuse désormais une limite absente. Et `git apply --3way` réécrit en
+  CRLF (le `core.autocrlf` du poste) chaque fichier qu'il patche dans une extraction : le générateur des pages a refusé
+  son gabarit (« commentaire introuvable »), et l'en-tête a laissé 90 pages en fins de ligne mélangées. Tout repassé en
+  LF puis régénéré : le site est ensuite identique, au caractère près, au rendu validé.
+
 ## 2026-10-25 : la coexistence, lot 1 (garder l'application WhatsApp Business et relier le même numéro à l'API)
 
 Plan `docs/superpowers/plans/2026-10-24-coexistence.md`, tâches 1 à 4 ; implémenteur unique dans une extraction

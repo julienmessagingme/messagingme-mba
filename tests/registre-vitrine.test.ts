@@ -41,6 +41,8 @@ describe('le registre de la vitrine', () => {
     // Transport et mobilités s'ajoute aux trois secteurs de la spec (maquette de Julien du 2026-10-20).
     expect(ENTREES.filter((e) => e.nature === 'secteur')).toHaveLength(4);
     expect(ENTREES.filter((e) => e.nature === 'metier')).toHaveLength(2);
+    // La page Boutiques Shopify (2026-10-24), avant le numéro par QR code.
+    expect(ENTREES.filter((e) => e.nature === 'boutique')).toHaveLength(1);
   });
 
   it('ne répète ni une clé, ni une adresse, ni une recherche visée', () => {

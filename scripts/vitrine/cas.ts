@@ -17,6 +17,8 @@ import { TEXTES_CAS, TEXTES_CARREFOUR, type Langue, type TexteCas } from './cas-
 import { TEXTES_ATTENTE, TEXTES_SECTEURS, type LogoClient, type TexteSecteur, type UsageSecteur } from './secteurs-textes';
 import { pageAvecEntete } from './entete';
 import { LOGOS_ASSISTANTS, type LogoAssistant } from './logos-assistants';
+import { pagesBoutiques } from './boutique';
+import { TEXTES_BOUTIQUES } from './boutique-textes';
 
 const ORIGINE = 'https://app.messagingme.fr';
 const CONSOLE = 'https://console.messagingme.app';
@@ -362,7 +364,7 @@ export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
 
 /** Tout ce que `npm run vitrine:cas` écrit. */
 export function pagesGenerees(): Array<{ chemin: string; contenu: string }> {
-  return [...pagesCarrefour(), ...ENTREES.filter((e) => e.enLigne && e.nature === 'cas').flatMap(pagesCas), ...pagesSecteurs()];
+  return [...pagesCarrefour(), ...ENTREES.filter((e) => e.enLigne && e.nature === 'cas').flatMap(pagesCas), ...pagesSecteurs(), ...pagesBoutiques()];
 }
 
 /**
@@ -557,6 +559,10 @@ export function sectionLlms(): string {
     ...ENTREES.filter((e) => e.enLigne && e.nature === 'secteur' && !e.attente).flatMap((e) => [
       `- [${e.fr.titre}](${ORIGINE}${e.fr.adresse}) : ${texte(TEXTES_SECTEURS[e.cle]!.fr.description)}`,
       `- [${e.en.titre}](${ORIGINE}${e.en.adresse}) : ${texte(TEXTES_SECTEURS[e.cle]!.en.description)}`,
+    ]),
+    ...ENTREES.filter((e) => e.enLigne && e.nature === 'boutique').flatMap((e) => [
+      `- [${e.fr.titre}](${ORIGINE}${e.fr.adresse}) : ${texte(TEXTES_BOUTIQUES[e.cle]!.fr.description)}`,
+      `- [${e.en.titre}](${ORIGINE}${e.en.adresse}) : ${texte(TEXTES_BOUTIQUES[e.cle]!.en.description)}`,
     ]),
     '',
   ].join('\n');
