@@ -84,6 +84,7 @@ import { creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe } from '
 import { composerPassageEquipe } from './analysis/push-handoff';
 import { PgOffresStore } from './offres/offre.pg';
 import { OffresEnCache } from './offres/cache';
+import { limiteContactsDe } from './offres/offres';
 import { QuotaModeles } from './offres/compteurs';
 import { adresseOffre } from './offres/refus';
 import { PgComptesApplication } from './application/comptes.pg';
@@ -202,8 +203,9 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
       }),
       emetteur,
     ),
-    // La limite de contacts de l'offre (lot 6) : vérifiée par les trois chemins de création, jamais par l'entrant.
-    async (tenant) => (await offres.offreDe(tenant)).droits.limites.contacts,
+    // La limite de contacts de l'offre (lot 6), avec l'offre qui dit ce qu'elle compte (`contactsToutesOrigines`) : vérifiée
+    // par les trois chemins de création, et lue par la porte d'une Free pleine (`inconnusRefuses`), jamais par l'entrant.
+    async (tenant) => limiteContactsDe(await offres.offreDe(tenant)),
   );
   // Les définitions de champs : l'API les écrit (import, API publique), le worker déclare les champs « Pub » la
   // première fois qu'un contact arrive par une publicité (sans définition, la valeur serait invisible du CRM).

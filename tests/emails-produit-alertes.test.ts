@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
-  ATTENTE_RECENTE_MS, balayerLimites, creerAlerteCreditBas, creerPaiementRefuse, creerPrevenirEquipe, limitesAlertables, numeroMasque,
-  PLAFOND_TRANSFERTS_JOUR, seuilAtteint, SEUIL_CREDIT_BAS_MICRO_EUR, type ContextePassage, type DepsLimites,
+  ATTENTE_RECENTE_MS, balayerLimites, creerAlerteCreditBas, creerAlerteEspacePlein, creerPaiementRefuse, creerPrevenirEquipe,
+  limitesAlertables, numeroMasque, PLAFOND_TRANSFERTS_JOUR, seuilAtteint, SEUIL_CREDIT_BAS_MICRO_EUR, type ContextePassage,
+  type DepsLimites,
 } from '../src/emails-produit/alertes';
-import type { Emission } from '../src/emails-produit/emission';
+import { creerEmetteurEmails, type Emission, type JobEmail } from '../src/emails-produit/emission';
 import { PgCreditStore } from '../src/agent/credits.pg';
 import { CLES_TRANSFERT, modeleDe } from '../src/emails-produit/catalogue';
 import { rendre } from '../src/emails-produit/rendu';
@@ -65,6 +66,91 @@ describe('le crédit IA presque épuisé', () => {
     const m = modeleDe('credit_bas')!;
     expect(rendre(m, m.textes.fr, { solde: '420000', espace: 'A' }, 'fr').sujet).toMatch(/0,42\s€/);
     expect(rendre(m, m.textes.en, { solde: '420000', espace: 'A' }, 'en').sujet).toContain('€0.42');
+  });
+});
+
+/**
+ * L'ESPACE FREE PLEIN QUI ÉCARTE UN NOUVEAU CLIENT (décision de Julien du 2026-10-25, `src/webhooks/espace-plein.ts`) : les
+ * administrateurs prévenus au plus une fois par jour et par espace. Le « une fois » est la réservation du journal, comme
+ * pour le crédit épuisé : ce faux reproduit sa contrainte unique (espace, modèle, personne, occasion).
+ */
+describe('🔴 l’espace Free plein qui écarte un nouveau client', () => {
+  function journal() {
+    const lignes = new Set<string>();
+    const jobs: JobEmail[] = [];
+    const valeurs: Array<Record<string, string>> = [];
+    return {
+      lignes, jobs, valeurs,
+      reserver: async (e: { tenantId: string; cle: string; occasion: string; identites: string[]; valeurs: Record<string, string> }) => {
+        valeurs.push(e.valeurs);
+        const ids: string[] = [];
+        for (const i of e.identites) {
+          const k = `${e.tenantId}/${e.cle}/${i}/${e.occasion}`;
+          if (lignes.has(k)) continue;
+          lignes.add(k);
+          ids.push(`00000000-0000-4000-8000-${String(lignes.size).padStart(12, '0')}`);
+        }
+        return ids;
+      },
+    };
+  }
+  function alerte(j: ReturnType<typeof journal>, maintenant = '2026-10-25T10:00:00.000Z', fuseau = 'Europe/Paris') {
+    const emetteur = creerEmetteurEmails({
+      adminsConnectes: async () => ['id-admin'], reserver: j.reserver, fuseau: async () => fuseau, enfiler: async (job) => { j.jobs.push(job); },
+    });
+    return creerAlerteEspacePlein({
+      emettre: (e) => emetteur.emettre(e), fuseau: async () => fuseau, pageOffre: 'https://c/offre', now: () => new Date(maintenant),
+    });
+  }
+
+  it('une fois par jour et par espace, pas deux : le jour de l’espace pour occasion ; le lendemain, de nouveau', async () => {
+    const j = journal();
+    await alerte(j)('t1', 100);
+    await alerte(j)('t1', 100);
+    expect(j.jobs).toHaveLength(1);
+    expect([...j.lignes]).toEqual(['t1/espace_plein_entrant/id-admin/plein:2026-10-25']);
+    await alerte(j, '2026-10-26T10:00:00.000Z')('t1', 100);
+    expect(j.jobs).toHaveLength(2);
+    await alerte(j)('t2', 100);
+    expect(j.jobs).toHaveLength(3);
+  });
+
+  it('la réservation porte la limite et la page de l’offre, rien de la personne qui a écrit', async () => {
+    const j = journal();
+    await alerte(j)('t1', 100);
+    expect(j.valeurs).toEqual([{ limite: '100', lien_offre: 'https://c/offre', _fuseau: 'Europe/Paris' }]);
+  });
+
+  it('une panne ne lève jamais : la réception ne tombe pas avec son alerte', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const a = creerAlerteEspacePlein({ emettre: async () => { throw new Error('base'); }, fuseau: async () => 'Europe/Paris', pageOffre: 'x' });
+    await expect(a('t1', 100)).resolves.toBeUndefined();
+  });
+
+  it('le texte dit que le message n’est pas entré, la limite, et les deux issues : le Pro, ou supprimer des contacts', () => {
+    const m = modeleDe('espace_plein_entrant')!;
+    expect(m.categorie).toBe('service');
+    const v = { limite: '100', lien_offre: 'https://c/offre', espace: 'Boulangerie', _fuseau: 'Europe/Paris' };
+    const fr = rendre(m, m.textes.fr, v, 'fr').text;
+    expect(fr).toMatch(/nouveau client vous a écrit sur WhatsApp/);
+    expect(fr).toMatch(/100 contacts de l’offre Free/);
+    expect(fr).toMatch(/n’est pas entré dans Messaging Me/);
+    expect(fr).toMatch(/Passez en Pro.*supprimez/s);
+    expect(rendre(m, m.textes.en, v, 'en').text).toMatch(/100 contacts of the Free plan/);
+  });
+
+  it('🔴 les alertes de franchissement de la Free disent que tous les contacts comptent ; celles du Pro, que ceux qui écrivent ne comptent pas', () => {
+    const v = { limite: '100', limite_pro: '5000', lien_offre: 'x', espace: 'A', _fuseau: 'Europe/Paris' };
+    for (const cle of ['limite_contacts_80', 'limite_contacts_100'] as const) {
+      const m = modeleDe(cle)!;
+      expect(rendre(m, m.textes.fr, v, 'fr').text, cle).toMatch(/ceux qui vous ont écrit les premiers compris/);
+      expect(rendre(m, m.textes.fr, v, 'fr').text, cle).not.toMatch(/jamais refusé ni compté/);
+      expect(rendre(m, m.textes.en, v, 'en').text, cle).toMatch(/including those who wrote to you first/);
+    }
+    for (const cle of ['limite_contacts_pro_80', 'limite_contacts_pro_100'] as const) {
+      const m = modeleDe(cle)!;
+      expect(rendre(m, m.textes.fr, v, 'fr').text, cle).toMatch(/jamais refusé ni compté/);
+    }
   });
 });
 

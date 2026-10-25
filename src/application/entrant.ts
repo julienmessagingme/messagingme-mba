@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { processInbound, type DepsEntrants, type InboundMessage, type InboxStore } from '../webhooks/inbound';
 import { processRemiseMbaEntrant, type RemiseMbaEntrantDeps } from '../webhooks/remise-mba-entrant';
 import { processWorkflowAdvance, type WorkflowAdvanceDeps } from '../webhooks/workflow-advance';
+import { messagesEcartes, type EspacesPleins } from '../webhooks/espace-plein';
 import { auteurDeLEnvoi, type AuteurDuChangement } from '../inbox/evenements';
 import type { OrigineMessage } from '../inbox/origine';
 import { TYPES_MESSAGE, estIndividuel, idDuMessage } from './message';
@@ -10,9 +11,10 @@ import type { Filiere } from './comptes';
 
 /**
  * RECEVOIR, FILIÈRE APPLICATION (plan 2026-10-22, tâche 4) : le job de la file `application-entrant`, traité par le
- * worker comme le canal RCS (`src/rcs/message-entrant.ts`), sur l'ingestion commune. `processInbound` fait la fiche,
- * le STOP, l'écriture et le détenteur ; l'avance fait suivre un parcours en attente, celui de l'agent IA en pleine
- * conversation ; la remise commune décide si l'agent IA répond, avec ses gardes.
+ * worker comme le canal RCS (`src/rcs/message-entrant.ts`), sur l'ingestion commune. La porte d'une Free pleine passe
+ * d'abord (`messagesEcartes`, `src/webhooks/espace-plein.ts`) ; `processInbound` fait la fiche, le STOP, l'écriture et le
+ * détenteur ; l'avance fait suivre un parcours en attente, celui de l'agent IA en pleine conversation ; la remise commune
+ * décide si l'agent IA répond, avec ses gardes.
  *
  * Ce qui n'existe pas sur l'application n'est pas appelé : publicités, Flows, déclencheurs d'automations et jetons de
  * test, agent de Meta. `handleWebhookJob` reste intact.
@@ -65,6 +67,12 @@ export function versInboundMessage(job: JobEntrant): InboundMessage | null {
 export interface DepsEntrantApplication {
   /** Ce message est-il déjà enregistré dans l'espace ? Un message redonné ne refait rien. */
   dejaRecu(tenantId: string, messageId: string): Promise<boolean>;
+  /**
+   * 🔴 La porte d'une Free pleine (2026-10-25, `src/webhooks/espace-plein.ts`), la même que la réception de Meta : le
+   * message d'un inconnu n'entre pas, son STOP seul est retenu. Requise : un câblage qui l'oublierait laisserait cette
+   * filière sans plafond.
+   */
+  espacesPleins: EspacesPleins;
   inbox: InboxStore & {
     recordOutboundByWaId(tenantId: string, waId: string, msg: { body: string; messageId: string | null; type?: string; origine: OrigineMessage }): Promise<void>;
   };
@@ -111,6 +119,9 @@ export async function traiterEntrantApplication(job: JobEntrant, deps: DepsEntra
     return;
   }
   const entrants = [{ message: m, tenantId: job.tenantId }];
+  // 🔴 Avant l'ingestion commune, comme la réception de Meta : l'inconnu d'une Free pleine n'entre pas, et son STOP est
+  // retenu par les mêmes écritures (`deps.entrants`). Un message tapé sur le téléphone, plus haut, n'est pas un entrant.
+  if ((await messagesEcartes(entrants, deps.espacesPleins, deps.entrants)).has(m.messageId)) return;
   const rouvertes = await processInbound(entrants, deps.inbox, deps.entrants);
   // L'avance avant la remise, comme la réception de Meta (`src/webhooks/handler.ts`) : un message qu'un parcours a reçu
   // est à lui, la remise ne le confie pas une seconde fois à l'agent.

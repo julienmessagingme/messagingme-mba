@@ -16,7 +16,7 @@ import { creerLancements } from '../src/workflow/lancements';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import type { IssueRoutage } from '../src/pubs/routage';
 import { bancDuFil, type EtatDuFil, type OptionsBanc } from './banc-du-fil';
-import { agentEteintALArrivee, aucunNumeroDelie, aucunRoutagePub, aucunSignalReponse, aucuneArriveePub, entrantsDe } from './webhook-fixtures';
+import { aucunEspacePlein, agentEteintALArrivee, aucunNumeroDelie, aucunRoutagePub, aucunSignalReponse, aucuneArriveePub, entrantsDe } from './webhook-fixtures';
 import { aucunStop, jamaisDesabonne } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { offresToutOuvert } from './gardes';
@@ -374,6 +374,7 @@ describe('décision 2 : une réponse de campagne « Inbox » arrive à l’équi
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      espacesPleins: aucunEspacePlein,
       inboundOptOut: aucunStop,
       inboundAssignation: (t, w) => assignerReponse(t, w, {
         campagneDeLaReponse: async () => campagne,
@@ -426,6 +427,7 @@ describe('relecture du lot 4 : une réponse de campagne « Inbox » ne prend le 
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      espacesPleins: aucunEspacePlein,
       inboundOptOut: aucunStop,
       inboundAssignation: (t, w) => assignerReponse(t, w, {
         campagneDeLaReponse: async () => ({

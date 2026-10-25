@@ -427,7 +427,7 @@ Que faire : Changer d’offre sur la page que donne upgradeUrl.
 
 ### `plan_limit_reached` 402, aussi motif d’écart
 
-Une limite de l’offre de l’espace est atteinte (contacts créés, modèles du mois…) : upgradeUrl mène à la page de l’offre. Les réponses dans la fenêtre de 24 h ne sont jamais concernées.
+Une limite de l’offre de l’espace est atteinte (contacts, modèles du mois…) : upgradeUrl mène à la page de l’offre. Les réponses dans la fenêtre de 24 h ne sont jamais concernées.
 
 Que faire : Changer d’offre sur la page que donne upgradeUrl, ou attendre la remise à zéro de la limite.
 

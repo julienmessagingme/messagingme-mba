@@ -562,7 +562,9 @@ describe('POST /v1/messages/whatsapp sur un numéro relié par QR code', () => {
 
   it('🔴 la phrase du QR code propose la coexistence : écrire en premier en gardant l’application (plan 2026-10-24)', () => {
     expect(PHRASE_PREMIER_CONTACT).toMatch(/^Sur un numéro relié par QR code, WhatsApp ne laisse pas écrire en premier/);
-    expect(PHRASE_PREMIER_CONTACT).toMatch(/ Pour écrire en premier tout en gardant l’application WhatsApp Business, reliez ce numéro en coexistence, depuis l’Accueil de la console ou depuis Claude\.$/);
+    expect(PHRASE_PREMIER_CONTACT).toMatch(/ Pour écrire en premier tout en gardant l’application WhatsApp Business, passez ce même numéro sur l’API officielle de WhatsApp : choisissez « Garder mon application WhatsApp Business » sur l’Accueil de la console, ou demandez-le à Claude\.$/);
+    // 🔴 Sans le mot de Meta (Julien, 2026-10-25) : le client ne le comprend pas.
+    expect(PHRASE_PREMIER_CONTACT).not.toMatch(/coexistence/i);
   });
 
   it('🔴 une fiche sans fil n’a jamais écrit : 422 window_closed, la phrase du QR code, rien en file ni compté, même avec consent', async () => {

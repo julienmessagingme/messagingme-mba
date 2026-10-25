@@ -361,25 +361,29 @@ export const CATALOGUE = [
       },
     },
   },
+  // La Free compte tous ses contacts, ceux qui écrivent les premiers compris (décision de Julien du 2026-10-25,
+  // `contactsToutesOrigines`) ; le Pro, plus bas, ne compte que ceux qu'il crée.
   {
     cle: 'limite_contacts_80',
     categorie: 'service',
     nom: 'Offre Free : 80 % des contacts',
-    quand: 'Un espace Free atteint 80 % de sa limite de contacts. Une fois à chaque franchissement.',
+    quand: 'Un espace Free atteint 80 % de sa limite de contacts, ceux qui lui ont écrit les premiers compris. Une fois à chaque franchissement.',
     variables: { limite: LIMITE, limite_pro: LIMITE_PRO, lien_offre: LIEN_OFFRE },
     textes: {
       fr: {
         sujet: 'Vous approchez de votre limite de contacts',
-        corps: 'Bonjour,\n\nL’espace {{espace}} a créé 80 % des {{limite}} contacts que l’offre Free permet. Au-delà, il ne '
-          + 'sera plus possible d’en créer ni d’en importer. Un contact qui vous écrit le premier n’est jamais refusé ni '
-          + 'compté.\n\nL’offre Pro en permet {{limite_pro}}.',
+        corps: 'Bonjour,\n\nL’espace {{espace}} compte 80 % des {{limite}} contacts que l’offre Free permet, ceux qui vous ont '
+          + 'écrit les premiers compris. Au-delà, il ne sera plus possible d’en créer ni d’en importer, et un nouveau client '
+          + 'qui vous écrit n’entrera pas dans Messaging Me.\n\nL’offre Pro en permet {{limite_pro}}, sans compter ceux qui '
+          + 'vous écrivent les premiers.',
         bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
       },
       en: {
         sujet: 'You are close to your contact limit',
-        corps: 'Hello,\n\nThe {{espace}} workspace has created 80% of the {{limite}} contacts the Free plan allows. Beyond '
-          + 'that, creating or importing contacts will no longer be possible. A contact who writes to you first is never '
-          + 'refused nor counted.\n\nThe Pro plan allows {{limite_pro}}.',
+        corps: 'Hello,\n\nThe {{espace}} workspace has 80% of the {{limite}} contacts the Free plan allows, including those '
+          + 'who wrote to you first. Beyond that, creating or importing contacts will no longer be possible, and a new '
+          + 'customer who writes to you will not get into Messaging Me.\n\nThe Pro plan allows {{limite_pro}}, not counting '
+          + 'those who write to you first.',
         bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
       },
     },
@@ -388,21 +392,25 @@ export const CATALOGUE = [
     cle: 'limite_contacts_100',
     categorie: 'service',
     nom: 'Offre Free : limite de contacts atteinte',
-    quand: 'Un espace Free atteint sa limite de contacts. Une fois à chaque franchissement.',
+    quand: 'Un espace Free atteint sa limite de contacts, ceux qui lui ont écrit les premiers compris. Une fois à chaque franchissement.',
     variables: { limite: LIMITE, limite_pro: LIMITE_PRO, lien_offre: LIEN_OFFRE },
     textes: {
       fr: {
-        sujet: 'Limite atteinte : vous ne pouvez plus créer de contacts',
-        corps: 'Bonjour,\n\nL’espace {{espace}} a atteint les {{limite}} contacts que l’offre Free permet : créer ou importer '
-          + 'un contact est refusé. Un contact qui vous écrit le premier n’est jamais refusé ni compté.\n\nPassez en Pro '
-          + 'pour en créer jusqu’à {{limite_pro}}, tout de suite.',
+        sujet: 'Limite atteinte : votre espace Free est plein',
+        corps: 'Bonjour,\n\nL’espace {{espace}} a atteint les {{limite}} contacts que l’offre Free permet, ceux qui vous ont '
+          + 'écrit les premiers compris : créer ou importer un contact est refusé, et un nouveau client qui vous écrit '
+          + 'n’entre plus dans Messaging Me (son message n’y est pas enregistré, et vos agents IA ne lui répondent pas).'
+          + '\n\nPassez en Pro pour en gérer jusqu’à {{limite_pro}}, tout de suite, ou supprimez par l’API des contacts dont '
+          + 'vous n’avez plus besoin.',
         bouton: { libelle: 'Passer en Pro', lien: '{{lien_offre}}' },
       },
       en: {
-        sujet: 'Limit reached: you can no longer create contacts',
-        corps: 'Hello,\n\nThe {{espace}} workspace has reached the {{limite}} contacts the Free plan allows: creating or '
-          + 'importing a contact is refused. A contact who writes to you first is never refused nor counted.\n\nUpgrade '
-          + 'to Pro to create up to {{limite_pro}}, right away.',
+        sujet: 'Limit reached: your Free workspace is full',
+        corps: 'Hello,\n\nThe {{espace}} workspace has reached the {{limite}} contacts the Free plan allows, including those '
+          + 'who wrote to you first: creating or importing a contact is refused, and a new customer who writes to you no '
+          + 'longer gets into Messaging Me (their message is not recorded there, and your AI agents do not reply to them).'
+          + '\n\nUpgrade to Pro to manage up to {{limite_pro}}, right away, or delete contacts you no longer need through '
+          + 'the API.',
         bouton: { libelle: 'Upgrade to Pro', lien: '{{lien_offre}}' },
       },
     },
@@ -450,6 +458,33 @@ export const CATALOGUE = [
           + 'importing a contact is refused. A contact who writes to you first is never refused nor counted.\n\nThe '
           + 'Enterprise plan sets this limit to your needs, on quote: write to us from the Plan page.',
         bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    // La porte d'une Free pleine (décision de Julien du 2026-10-25, `src/webhooks/espace-plein.ts`) : le message d'un
+    // inconnu n'est pas entré. Une occasion par jour (`plein:<jour>`), quel que soit le nombre d'inconnus.
+    cle: 'espace_plein_entrant',
+    categorie: 'service',
+    nom: 'Offre Free pleine : un nouveau client n’est pas entré',
+    quand: 'Un inconnu écrit à un espace Free qui a déjà tous ses contacts : son message n’entre pas dans Messaging Me. Une fois par jour au plus.',
+    variables: { limite: LIMITE, lien_offre: LIEN_OFFRE },
+    textes: {
+      fr: {
+        sujet: 'Votre espace Free est plein : un nouveau client n’est pas entré',
+        corps: 'Bonjour,\n\nUn nouveau client vous a écrit sur WhatsApp, mais l’espace {{espace}} a déjà les {{limite}} '
+          + 'contacts de l’offre Free : son message n’est pas entré dans Messaging Me. Il n’a ni fiche ni conversation, et '
+          + 'vos agents IA ne lui ont pas répondu.\n\nPassez en Pro pour recevoir tous vos clients, ou supprimez par l’API '
+          + 'des contacts dont vous n’avez plus besoin.\n\nCette alerte part une fois par jour au plus.',
+        bouton: { libelle: 'Passer en Pro', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'Your Free workspace is full: a new customer did not get in',
+        corps: 'Hello,\n\nA new customer wrote to you on WhatsApp, but the {{espace}} workspace already has the {{limite}} '
+          + 'contacts of the Free plan: their message did not get into Messaging Me. They have no record and no '
+          + 'conversation, and your AI agents did not reply to them.\n\nUpgrade to Pro to receive all your customers, or '
+          + 'delete contacts you no longer need through the API.\n\nThis alert is sent at most once a day.',
+        bouton: { libelle: 'Upgrade to Pro', lien: '{{lien_offre}}' },
       },
     },
   },

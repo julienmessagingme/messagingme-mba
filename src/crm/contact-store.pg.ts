@@ -13,6 +13,7 @@ import type { CleFicheFixe } from './champs-fiche';
 import { clauseFiltreFiche, estCleFiltrable, estOperateurFicheSeul } from './filtre-fiche';
 import { COLONNES_ANALYSE_FICHE, analyseDeLaLigne, type AnalyseDeFiche, type LigneAnalyseFiche } from '../analysis/fiche';
 import { LimiteOffreError } from '../offres/refus';
+import { contactsToutesOrigines, estOffre, type LimiteContacts } from '../offres/offres';
 import {
   affectationsDUpsert, ecritureDuConsentement, issueDeLaTransition, type AutoriteParWaId, type CompteDeLEcriture,
   type FicheDeLEcriture,
@@ -174,10 +175,20 @@ export interface EditionFicheApi {
 /** Une violation d'index unique : un refus de saisie, pas une panne. */
 const estUnicite = (err: unknown): boolean => (err as { code?: string }).code === '23505';
 
-/** Une fiche active (alias `x`) : ni supprimée, ni anonymisée. Un numéro qu'elle porte n'est pas une création. */
-const FICHE_ACTIVE = 'x.deleted_at is null and x.anonymized_at is null';
-/** Une fiche que la limite de contacts de l'offre compte : active, et pas née d'un message entrant (migration 0218). */
-const FICHE_COMPTEE = `not x.ne_entrant and ${FICHE_ACTIVE}`;
+/** Une fiche active (alias donné) : ni supprimée, ni anonymisée. Un numéro qu'elle porte n'est pas une création. */
+function ficheActive(alias: string): string {
+  return `${alias}.deleted_at is null and ${alias}.anonymized_at is null`;
+}
+const FICHE_ACTIVE = ficheActive('x');
+
+/**
+ * 🔴 LES FICHES QUE LA LIMITE DE CONTACTS COMPTE, écrites une fois pour les gardes de ce magasin et pour l'usage de la vue
+ * de l'offre (`PgOffresStore.usage`), qui l'importe : actives, et pas nées d'un message entrant (migration 0218), sauf dans
+ * une offre qui compte toutes les origines (`contactsToutesOrigines`, la Free, décision de Julien du 2026-10-25).
+ */
+export function ficheComptee(alias: string, toutesOrigines: boolean): string {
+  return toutesOrigines ? ficheActive(alias) : `not ${alias}.ne_entrant and ${ficheActive(alias)}`;
+}
 
 /**
  * Résolution d'un contact à partir d'un `wa_id` : E.164 exact (`'+' || wa_id`), sinon chiffres nus, sinon BSUID ;
@@ -229,13 +240,14 @@ export class PgContactStore implements ContactStore {
     private readonly pool: Pool,
     private readonly annoncerDesabonnement?: (tenantId: string, waIds: string[], messageDuStop?: string) => Promise<void>,
     /**
-     * La limite de contacts de l'offre de l'espace (lot 6, `droits.limites.contacts`), `null` = sans limite. Comptées : les
-     * fiches actives qui ne sont pas nées d'un message entrant (`ne_entrant`, migration 0218). Les trois chemins de
-     * création (`upsertByPhoneReturningId`, `upsertManyByPhone`, `creerFicheApi`) la vérifient, donc la console, le
-     * webhook entrant, l'API, l'import et le scénario aussi ; l'entrant n'est jamais refusé. Absente : sans limite
-     * (scripts et tests).
+     * La limite de contacts de l'offre de l'espace (lot 6, `limiteContactsDe`), `null` = sans limite, et l'offre qui dit ce
+     * qu'elle compte (`contactsToutesOrigines`) : en Free, toutes les fiches actives ; ailleurs, celles qui ne sont pas nées
+     * d'un message entrant (`ne_entrant`, migration 0218). Les trois chemins de création (`upsertByPhoneReturningId`,
+     * `upsertManyByPhone`, `creerFicheApi`) la vérifient, donc la console, le webhook entrant, l'API, l'import et le
+     * scénario aussi. L'entrant n'est jamais refusé ICI (`upsertFromInbound`) : en Free pleine, la réception l'écarte
+     * avant (`inconnusRefuses`, `src/webhooks/espace-plein.ts`). Absente : sans limite (scripts et tests).
      */
-    private readonly limiteContacts?: (tenantId: string) => Promise<number | null>,
+    private readonly limiteContacts?: (tenantId: string) => Promise<LimiteContacts | null>,
   ) {}
 
   /**
@@ -249,14 +261,16 @@ export class PgContactStore implements ContactStore {
     const limite = await this.limiteContacts(tenantId);
     if (limite === null) return;
     const r = await this.pool.query<{ crees: number; nouveaux: number }>(
-      `select (select count(*) from contacts x where x.tenant_id = $1 and ${FICHE_COMPTEE})::int as crees,
+      `select (select count(*) from contacts x where x.tenant_id = $1 and ${ficheComptee('x', contactsToutesOrigines(limite.offre))})::int as crees,
               (select count(*) from unnest($2::text[]) as p(numero)
                 where not exists (select 1 from contacts x
                                   where x.tenant_id = $1 and x.phone_e164 = p.numero and ${FICHE_ACTIVE}))::int as nouveaux`,
       [tenantId, [...new Set(numeros)]],
     );
     const { crees, nouveaux } = r.rows[0] ?? { crees: 0, nouveaux: 0 };
-    if (nouveaux + sansNumero > 0 && crees + nouveaux + sansNumero > limite) throw new LimiteOffreError(tenantId, 'contacts', limite);
+    if (nouveaux + sansNumero > 0 && crees + nouveaux + sansNumero > limite.max) {
+      throw new LimiteOffreError(tenantId, 'contacts', limite.max, { offre: limite.offre });
+    }
   }
 
   /**
@@ -267,14 +281,47 @@ export class PgContactStore implements ContactStore {
    */
   async placesContacts(tenantId: string, numeros: readonly string[]): Promise<{ limite: number | null; comptees: number; presents: Set<string> }> {
     const limite = this.limiteContacts ? await this.limiteContacts(tenantId) : null;
+    const toutesOrigines = limite !== null && contactsToutesOrigines(limite.offre);
     const r = await this.pool.query<{ comptees: number; presents: string[] | null }>(
-      `select (select count(*) from contacts x where x.tenant_id = $1 and ${FICHE_COMPTEE})::int as comptees,
+      `select (select count(*) from contacts x where x.tenant_id = $1 and ${ficheComptee('x', toutesOrigines)})::int as comptees,
               (select array_agg(x.phone_e164) from contacts x
                 where x.tenant_id = $1 and x.phone_e164 = any($2::text[]) and ${FICHE_ACTIVE}) as presents`,
       [tenantId, [...new Set(numeros)]],
     );
     const ligne = r.rows[0];
-    return { limite, comptees: ligne?.comptees ?? 0, presents: new Set(ligne?.presents ?? []) };
+    return { limite: limite?.max ?? null, comptees: ligne?.comptees ?? 0, presents: new Set(ligne?.presents ?? []) };
+  }
+
+  /**
+   * 🔴 LA PORTE D'UNE FREE PLEINE (décision de Julien du 2026-10-25) : parmi ces `wa_id` qui écrivent à l'espace, ceux qui
+   * n'y entrent pas, et la limite qui les refuse ; `null` quand aucun ne l'est. Refusé : l'offre compte toutes les origines
+   * (`contactsToutesOrigines`, la Free), ses fiches actives remplissent sa limite, et aucune fiche active ne porte ce
+   * `wa_id` (numéro ou BSUID, `matchWaIdPredicat`). Sous la limite, les places qui restent vont aux premiers inconnus du
+   * lot, dans l'ordre reçu. Hors Free ou sans limite, rien n'est lu. Lu par la réception (`src/webhooks/espace-plein.ts`),
+   * AVANT `upsertFromInbound`, qui ne refuse jamais rien. ⚠️ Sans verrou, comme `verifierPlaceContacts` : deux inconnus
+   * simultanés à la dernière place peuvent entrer tous les deux.
+   */
+  async inconnusRefuses(tenantId: string, waIds: readonly string[]): Promise<{ waIds: ReadonlySet<string>; limite: number } | null> {
+    if (!this.limiteContacts || waIds.length === 0) return null;
+    const limite = await this.limiteContacts(tenantId);
+    if (limite === null || !contactsToutesOrigines(limite.offre)) return null;
+    const uniques = [...new Set(waIds)];
+    const r = await this.pool.query<{ offre: string | null; comptees: number; connus: string[] | null }>(
+      `select offre_de_l_espace($1::uuid) as offre,
+              (select count(*) from contacts x where x.tenant_id = $1 and ${ficheComptee('x', true)})::int as comptees,
+              (select array_agg(w.wa_id) from unnest($2::text[]) as w(wa_id)
+                where exists (select 1 from contacts x
+                               where x.tenant_id = $1 and ${FICHE_ACTIVE} and ${matchWaIdPredicat('x.', 'w.wa_id')})) as connus`,
+      [tenantId, uniques],
+    );
+    const ligne = r.rows[0];
+    // 🔴 L'offre relue EN BASE, dans la même requête (relecture du lot) : celle du cache peut retarder de 30 s sur un
+    // paiement du Pro ou le début d'un essai, et le client qui écrirait pendant ce temps serait perdu pour de bon. Le cache
+    // ne sert qu'à ne rien lire hors Free ; une offre inconnue se lit comme la Base, comme dans `offreDe`.
+    if (!contactsToutesOrigines(estOffre(ligne?.offre) ? ligne.offre : 'base')) return null;
+    const connus = new Set(ligne?.connus ?? []);
+    const refuses = uniques.filter((w) => !connus.has(w)).slice(Math.max(0, limite.max - (ligne?.comptees ?? 0)));
+    return refuses.length === 0 ? null : { waIds: new Set(refuses), limite: limite.max };
   }
 
   /**
@@ -605,7 +652,8 @@ export class PgContactStore implements ContactStore {
    * Crée ou rafraîchit une fiche depuis un message entrant, le `wa_id` classé en numéro ou BSUID (`classifyWaId`).
    * Ne fait jamais régresser l'opt-in (`unknown` à la création, source 'inbound', sauf une personne effacée en STOP :
    * la liste de refus la fait naître `opted_out`) et ne met à jour que le nom de profil (jamais écrasé par null).
-   * Best-effort, à appeler isolé : ne doit pas casser l'inbox.
+   * Best-effort, à appeler isolé : ne doit pas casser l'inbox. Ne vérifie aucune limite : l'inconnu qu'une Free pleine
+   * refuse est écarté AVANT par la réception (`inconnusRefuses`), et son seul STOP passe encore par ici.
    */
   async upsertFromInbound(tenantId: string, waId: string, profileName: string | null): Promise<'created' | 'updated' | 'skipped'> {
     const { phoneE164, bsuid } = classifyWaId(waId);

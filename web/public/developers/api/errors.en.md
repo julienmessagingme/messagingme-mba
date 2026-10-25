@@ -427,7 +427,7 @@ What to do: Change plan on the page upgradeUrl gives.
 
 ### `plan_limit_reached` 402, also a skip reason
 
-A workspace plan limit is reached (contacts created, templates this month…): upgradeUrl leads to the plan page. Replies within the 24-hour window are never affected.
+A workspace plan limit is reached (contacts, templates this month…): upgradeUrl leads to the plan page. Replies within the 24-hour window are never affected.
 
 What to do: Change plan on the page upgradeUrl gives, or wait for the limit to reset.
 

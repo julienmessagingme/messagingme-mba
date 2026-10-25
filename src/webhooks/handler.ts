@@ -12,6 +12,7 @@ import { processArriveesPub, type ArriveesPubDeps } from './arrivees-pub';
 import { processRoutagePub, rendreLesFilsSansReponse, type RoutagePubDeps } from './routage-pub';
 import type { RoutageDuMessage } from '../pubs/routage';
 import { ecarterLesEntrantsDelies, type NumerosDelies } from './numeros-delies';
+import { ecarterLesInconnusDesEspacesPleins, type EspacesPleins } from './espace-plein';
 import type { TarifsMetaSink } from './tarif-meta';
 import type { DeliveryStore } from './delivery';
 import type { DetenteurDuFil, InboxStore, InboundAssignation, InboundContactUpsert, InboundOptOut } from './inbound';
@@ -99,17 +100,19 @@ interface EtapesRattachees {
  *    facture pas ce message »), l'échec des messages libres et les signaux : les accusés arrivent par deux files ;
  *  - une file qui traite des entrants (`inbox`) garde les arrivées publicitaires (Meta n'envoie `ctwa_clid`
  *    qu'une fois), route les leads (`routagePub`, sans quoi un clic payé irait aux automations ordinaires), émet
- *    les signaux de réponse, écarte les entrants d'un numéro délié et enregistre le STOP (`inboundOptOut`) : une
- *    dépendance de consentement n'est jamais optionnelle, un câblage qui l'oublierait laisserait `opted_in` un
- *    contact qui a répondu STOP. Elle corrige aussi le détenteur du fil (`detenteur`) : un `standby` rend le fil à
- *    l'agent de Meta (`ControleDuFil.entrantEnStandby`, `src/inbox/fil.ts`), et un câblage qui l'oublierait
- *    laisserait notre colonne contredire Meta. Elle lit enfin la liste de l'agent de Meta (`listeALArrivee`) : un
- *    `standby` d'un contact absent de la liste est pour nous (`./standby-hors-liste.ts`), et un câblage qui
- *    l'oublierait laisserait sans réponse, en silence, toute réponse texte à un modèle. Le numéro vers l'espace se
- *    lit dans `inbox` (`NumeroVersEspace`).
+ *    les signaux de réponse, écarte les entrants d'un numéro délié, ceux d'un inconnu à une Free pleine
+ *    (`espacesPleins`, sans quoi un câblage qui l'oublierait laisserait la Free sans plafond), et enregistre le
+ *    STOP (`inboundOptOut`) : une dépendance de consentement n'est jamais optionnelle, un câblage qui l'oublierait
+ *    laisserait `opted_in` un contact qui a répondu STOP. Elle corrige aussi le détenteur du fil (`detenteur`) : un
+ *    `standby` rend le fil à l'agent de Meta (`ControleDuFil.entrantEnStandby`, `src/inbox/fil.ts`), et un câblage
+ *    qui l'oublierait laisserait notre colonne contredire Meta. Elle lit enfin la liste de l'agent de Meta
+ *    (`listeALArrivee`) : un `standby` d'un contact absent de la liste est pour nous (`./standby-hors-liste.ts`), et
+ *    un câblage qui l'oublierait laisserait sans réponse, en silence, toute réponse texte à un modèle. Le numéro vers
+ *    l'espace se lit dans `inbox` (`NumeroVersEspace`).
  * Les tests qui n'en parlent pas passent les fixtures de `tests/webhook-fixtures.ts` (`aucunTarif`,
  * `aucuneArriveePub`, `aucunRoutagePub`, `aucunSignalAccuse`, `aucunSignalReponse`, `aucunNumeroDelie`,
- * `aucuneCorrectionDuDetenteur`, `agentEteintALArrivee`, `aucunStop`), qui disent leur hypothèse.
+ * `aucunEspacePlein`, `aucuneCorrectionDuDetenteur`, `agentEteintALArrivee`, `aucunStop`), qui disent leur
+ * hypothèse.
  */
 export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
@@ -121,11 +124,13 @@ export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
     ({
       inbox: InboxStore & NumeroVersEspace; arriveesPub: ArriveesPubDeps; routagePub: RoutagePubDeps; signalReponse: SignalReponse;
-      numerosDelies: NumerosDelies; inboundOptOut: InboundOptOut; detenteur: DetenteurDuFil; listeALArrivee: ListeALArrivee;
+      numerosDelies: NumerosDelies; espacesPleins: EspacesPleins; inboundOptOut: InboundOptOut; detenteur: DetenteurDuFil;
+      listeALArrivee: ListeALArrivee;
     } & EtapesRattachees)
     | ({
       inbox?: undefined; arriveesPub?: undefined; routagePub?: undefined; signalReponse?: undefined;
-      numerosDelies?: undefined; inboundOptOut?: undefined; detenteur?: undefined; listeALArrivee?: undefined;
+      numerosDelies?: undefined; espacesPleins?: undefined; inboundOptOut?: undefined; detenteur?: undefined;
+      listeALArrivee?: undefined;
     } & { [K in keyof EtapesRattachees]?: undefined })
   );
 
@@ -141,11 +146,26 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
     tarifsMeta, echecsLibres, arriveesPub, routagePub, signauxAccuse, signalReponse, numerosDelies,
   } = deps;
   /**
+   * La lecture du numéro vers l'espace, une par numéro distinct pour tout le job (`uneLectureParNumero`) : la porte d'une
+   * Free pleine et le rattachement des entrants la partagent. Sans Inbox (la file des accusés), rien n'est jamais lu.
+   */
+  const espaceDe = deps.inbox ? uneLectureParNumero(deps.inbox) : null;
+  /**
    * 🔴 En tout premier : l'écart des entrants d'un numéro délié, avant le journal brut, l'extraction des entrants et
    * les étapes qui lisent le payload : écarter plus bas laisserait passer ce qu'une étape antérieure aurait enregistré.
    * Garde les accusés, ne lève jamais (`./numeros-delies.ts`).
    */
-  const raw = numerosDelies ? await ecarterLesEntrantsDelies(recu, numerosDelies) : recu;
+  const sansDelies = numerosDelies ? await ecarterLesEntrantsDelies(recu, numerosDelies) : recu;
+  /**
+   * 🔴 Juste après, et pour la même raison : le message d'un inconnu à une Free pleine (décision de Julien du 2026-10-25),
+   * retiré avant le journal brut et chaque étape ; son STOP seul est retenu, par les deux écritures de `processInbound`.
+   * Garde les accusés, ne lève jamais (`./espace-plein.ts`).
+   */
+  const raw = deps.espacesPleins && espaceDe
+    ? await ecarterLesInconnusDesEspacesPleins(sansDelies, espaceDe, deps.espacesPleins, {
+      upsertContact: inboundContactUpsert, optOut: deps.inboundOptOut,
+    })
+    : sansDelies;
   const events = parseWebhook(raw);
   // `insertEvent` rend false quand l'événement était déjà enregistré : le signal d'un rejeu (redélivrance Meta,
   // job pg-boss réessayé), retenu pour les étapes non idempotentes par ailleurs, comme le démarrage d'un test (un
@@ -196,12 +216,12 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
       }
     : undefined;
   /**
-   * Les entrants, extraits une fois et rattachés à leur espace : une lecture par numéro distinct pour tout le job, et
-   * aucune étape ne relit le numéro, sinon un message coûterait une lecture par étape. Une lecture en échec lève ici,
-   * avant tout enregistrement, et fait rejouer le job : l'enregistrement, cœur du webhook, ne se fait pas sans
-   * l'espace. Sans Inbox (la file des accusés), aucune étape n'a besoin d'un espace et rien n'est lu.
+   * Les entrants, extraits une fois et rattachés à leur espace par la lecture du job (`espaceDe`, plus haut) : une
+   * lecture par numéro distinct pour tout le job, et aucune étape ne relit le numéro, sinon un message coûterait une
+   * lecture par étape. Une lecture en échec lève ici, avant tout enregistrement, et fait rejouer le job :
+   * l'enregistrement, cœur du webhook, ne se fait pas sans l'espace. Sans Inbox (la file des accusés), aucune étape n'a
+   * besoin d'un espace et rien n'est lu.
    */
-  const espaceDe = deps.inbox ? uneLectureParNumero(deps.inbox) : null;
   let entrants: readonly EntrantRattache[] = [];
   // Les messages qui viennent de rouvrir leur conversation (« Traité » ou Archivé retiré), su par leur écriture même.
   let rouvertes: ReadonlySet<string> = new Set();

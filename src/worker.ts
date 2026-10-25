@@ -123,7 +123,8 @@ import { PgLiberationStore } from './numero/liberation.pg';
 import { creerAvisAbonnement } from './numero/avis-abonnement';
 import { creerClientDidww } from './didww/client';
 import { creerTravailEmail, reprendreLesEnvois } from './emails-produit/envoi';
-import { balayerLimites, limitesAlertables } from './emails-produit/alertes';
+import { balayerLimites, creerAlerteEspacePlein, limitesAlertables } from './emails-produit/alertes';
+import type { EspacesPleins } from './webhooks/espace-plein';
 import { balayerAccompagnement, balayerRecap } from './emails-produit/accompagnement';
 import { PgOffresStore } from './offres/offre.pg';
 import { moisDeParis } from './offres/compteurs';
@@ -464,6 +465,20 @@ export async function demarrerWorker(): Promise<void> {
   };
   await queue.work(FILE_OUBLI_MODELE, async (data) => { await traiterOubli(oubliShopify, data); });
 
+  /**
+   * 🔴 LA PORTE D'UNE FREE PLEINE (décision de Julien du 2026-10-25, `src/webhooks/espace-plein.ts`), sur les deux files
+   * qui enregistrent des entrants : `webhook` (Meta et 360dialog) et `application-entrant`. Le compte est celui du magasin
+   * des contacts (l'offre en cache, `contactsToutesOrigines`) ; l'alerte part par les e-mails du produit, une par jour.
+   */
+  const espacesPleins: EspacesPleins = {
+    refuses: (t, waIds) => contactStore.inconnusRefuses(t, waIds),
+    prevenir: creerAlerteEspacePlein({
+      emettre: (e) => emetteurEmails.emettre(e),
+      fuseau: async (t) => (await settingsStore.horairesEffectifs(t)).timezone,
+      pageOffre: `${config.APP_URL.trim().replace(/\/+$/, '')}/offre`,
+    }),
+  };
+
   await queue.work('webhook', async (data) => {
     await handleWebhookJob(data, {
       store: eventStore,
@@ -502,6 +517,8 @@ export async function demarrerWorker(): Promise<void> {
       // reçoit jamais, et les accusés sont gardés). Sans cache : une lecture par clé primaire par lot, et
       // « Relier » prend effet au message suivant.
       numerosDelies: (ids) => numeroDelieStore.numerosDelies(ids),
+      // Juste après : le message d'un inconnu à une Free pleine, écarté de la même façon, son STOP seul retenu.
+      espacesPleins,
       // L'arrivée publicitaire (`ctwa_clid` compris) : un message entrant n'arrive que par cette file.
       arriveesPub: {
         enregistrer: (t, w, a) => arriveesPubStore.enregistrer(t, w, a),
@@ -678,6 +695,8 @@ export async function demarrerWorker(): Promise<void> {
     }
     await traiterEntrantApplication(job, {
       dejaRecu: creerDejaRecu(pool),
+      // La même porte que la file `webhook` : l'inconnu d'une Free pleine n'entre pas, son STOP seul est retenu.
+      espacesPleins,
       inbox: inboxStore,
       entrants: {
         upsertContact: (tenant, m) => contactStore.upsertFromInbound(tenant, m.waId, m.profileName),

@@ -139,7 +139,8 @@ function OffreInner({ session }: { session: Session }) {
 
   const libelleLimite = (k: (typeof LIGNES_LIMITES)[number]): string => ({
     utilisateurs: t('Utilisateurs', 'Users'),
-    contacts: t('Contacts créés', 'Contacts created'),
+    // La grille compare les trois offres : la Free compte aussi ceux qui écrivent (`contactsToutesOrigines`, 2026-10-25).
+    contacts: t('Contacts (en Free, ceux qui vous écrivent compris)', 'Contacts (on Free, including those who write to you)'),
     envoisModelesMois: t('Modèles envoyés par mois', 'Templates sent per month'),
     automations: t('Automations allumées', 'Active automations'),
     adressesWebhook: t('Adresses de webhook sortant actives', 'Active outgoing webhook addresses'),
@@ -180,8 +181,13 @@ function OffreInner({ session }: { session: Session }) {
   const suivante: NomOffre | null = vue.offre === 'free' ? 'pro' : vue.offre === 'pro' ? 'entreprise' : null;
   const offreDemandee = demandee ? offreQuiOuvre(vue, demandee) : null;
   const jauges: Array<{ cle: string; libelle: string; utilise: number | null; max: number | null; note?: string }> = [
-    { cle: 'contacts', libelle: t('Contacts créés', 'Contacts created'), utilise: vue.usage.contacts, max: vue.limites.contacts,
-      note: t('Un contact qui vous écrit le premier n’est jamais compté.', 'A contact who writes to you first is never counted.') },
+    // Ce qui compte vient du serveur (`contactsToutesOrigines`) : en Free, tous les contacts, ceux qui écrivent compris.
+    vue.contactsToutesOrigines
+      ? { cle: 'contacts', libelle: t('Contacts', 'Contacts'), utilise: vue.usage.contacts, max: vue.limites.contacts,
+        note: t('Tous comptent, ceux qui vous écrivent compris : au-delà, un nouveau client qui vous écrit n’entre pas dans Messaging Me.',
+          'All of them count, including those who write to you: beyond that, a new customer who writes to you does not get into Messaging Me.') }
+      : { cle: 'contacts', libelle: t('Contacts créés', 'Contacts created'), utilise: vue.usage.contacts, max: vue.limites.contacts,
+        note: t('Un contact qui vous écrit le premier n’est jamais compté.', 'A contact who writes to you first is never counted.') },
     { cle: 'modeles', libelle: t('Modèles envoyés ce mois-ci', 'Templates sent this month'), utilise: vue.usage.envoisModelesMois, max: vue.limites.envoisModelesMois,
       note: t('Les réponses dans les 24 h qui suivent un message du client ne sont jamais comptées.', 'Replies within 24 hours of a customer message are never counted.') },
     { cle: 'automations', libelle: t('Automations allumées', 'Active automations'), utilise: vue.usage.automations, max: vue.limites.automations },

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { destinataireDuStatut, instantDuStatut, type AccuseDuStatut } from '../src/webhooks/delivery';
 import { processInbound, type InboundMessage } from '../src/webhooks/inbound';
-import { agentEteintALArrivee, aucunTarif, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
+import { aucunEspacePlein, agentEteintALArrivee, aucunTarif, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 
 /**
@@ -122,6 +122,7 @@ describe('les entrants Meta passent au puits des signaux', () => {
       routagePub: aucunRoutagePub,
       signalReponse: async (_t, m) => { vus.push(`${m.type}:${m.body}`); },
       numerosDelies: aucunNumeroDelie,
+      espacesPleins: aucunEspacePlein,
       inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,
     });
     expect(vus).toEqual(['button:Oui']);

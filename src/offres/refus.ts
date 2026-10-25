@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { DROITS, type Fonction, type Limites, type Offre } from './offres';
+import { DROITS, contactsToutesOrigines, type Fonction, type Limites, type Offre } from './offres';
 import { refus, type Refus } from '../lib/issue';
 
 /**
@@ -49,10 +49,14 @@ const LIBELLE_FONCTION: Record<Fonction, string> = {
 /** Un nombre écrit à la française (« 5 000 contacts ») : la phrase est lue par une personne, ou redite par Claude. */
 const nb = (m: number): string => m.toLocaleString('fr-FR');
 
-const LIBELLE_LIMITE: Record<NomLimite, (max: number) => string> = {
+const LIBELLE_LIMITE: Record<NomLimite, (max: number, contexte: ContexteLimite) => string> = {
   utilisateurs: (m) => `${m} utilisateur${m > 1 ? 's' : ''}`,
   admins: (m) => `${m} administrateur${m > 1 ? 's' : ''}`,
-  contacts: (m) => `${nb(m)} contacts créés (ceux qui vous écrivent ne comptent pas)`,
+  // Ce qui compte dépend de l'offre (`contactsToutesOrigines`) : celle que le refus connaît, sinon celle dont c'est la limite
+  // dans la grille ; une limite hors grille (une Entreprise réglée sur devis) ne compte pas ceux qui écrivent.
+  contacts: (m, c) => (contactsToutesOrigines(c.offre ?? offreDeLaLimite('contacts', m) ?? 'entreprise')
+    ? `${nb(m)} contacts, ceux qui vous écrivent compris`
+    : `${nb(m)} contacts créés (ceux qui vous écrivent ne comptent pas)`),
   envoisModelesMois: (m) => `${nb(m)} envois de modèles par mois (les réponses dans les 24 h ne comptent pas)`,
   automations: (m) => `${nb(m)} automations`,
   suppressionsJour: (m) => `${nb(m)} suppressions de contacts par jour`,
@@ -70,15 +74,20 @@ export function adresseOffre(): string {
 const ORDRE: readonly Offre[] = ['base', 'pro', 'entreprise'];
 const NOM_OFFRE: Record<Offre, string> = { base: 'Free', pro: 'Pro', entreprise: 'Entreprise' };
 
+/** L'offre dont c'est la limite dans la grille, la moins chère d'abord ; `null` pour une valeur hors grille (un devis). */
+function offreDeLaLimite(limite: NomLimite, max: number): Offre | null {
+  return ORDRE.find((o) => DROITS[o].limites[limite] === max) ?? null;
+}
+
 /**
  * L'offre qui lève une limite (spec offres v2) : la première, après celle dont c'est la limite dans la grille, qui va plus
  * haut. Le refus ne connaît pas l'offre de l'espace, mais la grille la dit : 100 contacts est la limite de la Free, 3
  * utilisateurs celle du Pro. `null` pour une limite qui n'est pas dans la grille (une Entreprise réglée sur devis).
  */
 function offreQuiLeve(limite: NomLimite, max: number): Offre | null {
-  const i = ORDRE.findIndex((o) => DROITS[o].limites[limite] === max);
-  if (i < 0) return null;
-  return ORDRE.slice(i + 1).find((o) => {
+  const de = offreDeLaLimite(limite, max);
+  if (de === null) return null;
+  return ORDRE.slice(ORDRE.indexOf(de) + 1).find((o) => {
     const v = DROITS[o].limites[limite];
     return v === null || v > max;
   }) ?? null;
@@ -87,7 +96,7 @@ function offreQuiLeve(limite: NomLimite, max: number): Offre | null {
 export function phraseLimite(limite: NomLimite, max: number, contexte: ContexteLimite = {}): string {
   // Le Pro a lui-même un quota de stockage : « passez en Pro » serait faux pour lui. Ce qui libère, c'est de supprimer.
   if (limite === 'stockageOctets') {
-    return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. Supprimez des fichiers inutilisés, ou changez d’offre : ${adresseOffre()}`;
+    return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max, contexte)}. Supprimez des fichiers inutilisés, ou changez d’offre : ${adresseOffre()}`;
   }
   // Les utilisateurs d'un Pro (livraison 7) : un siège les lève, au prix de sa formule ; sans siège en vente, l'Entreprise.
   if (limite === 'utilisateurs' && contexte.offre === 'pro') {
@@ -95,11 +104,11 @@ export function phraseLimite(limite: NomLimite, max: number, contexte: ContexteL
     const suite = s
       ? `Ajoutez un utilisateur (${nb(s.prixHtCentimes / 100)} € HT par ${s.periodicite}) en invitant le membre depuis « Compte & équipe », ou passez en Entreprise`
       : 'Passez en Entreprise pour la lever';
-    return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. ${suite} : ${adresseOffre()}`;
+    return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max, contexte)}. ${suite} : ${adresseOffre()}`;
   }
   const o = offreQuiLeve(limite, max);
   const suite = o === null ? 'Contactez-nous pour la relever' : `Passez en ${NOM_OFFRE[o]} pour la lever`;
-  return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max)}. ${suite} : ${adresseOffre()}`;
+  return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max, contexte)}. ${suite} : ${adresseOffre()}`;
 }
 
 export function corpsRefusFonction(fonction: Fonction): { error: string; code: 'plan_feature_unavailable'; fonction: Fonction; upgradeUrl: string } {

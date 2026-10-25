@@ -167,7 +167,8 @@ const CONSIGNES = {
     + 'téléphone. Son numéro y reste : les messages qu’elle y tape restent gratuits, ceux qui partent par Messaging Me sont '
     + 'des modèles facturés par Meta. Pas encore de compte Meta Business ? La fenêtre le crée en chemin, avec un profil '
     + 'Facebook ; avant le premier modèle, Meta demandera un moyen de paiement sur le compte WhatsApp. Appelle ensuite '
-    + 'watch_whatsapp_connection avec mode égal à « coexistence » pour savoir quand le numéro est relié en coexistence.'
+    + 'watch_whatsapp_connection avec mode égal à « coexistence » pour savoir quand le numéro est relié à l’API, '
+    + 'l’application gardée.'
     + SI_ELLE_REVIENT,
 } as const;
 
@@ -177,7 +178,8 @@ const RAPPEL_ATTENTE = 'Rappelle watch_whatsapp_connection avec etat_connu égal
  * La coexistence pas encore faite (plan 2026-10-24) : un espace relié par QR code reste « connecté » par son compte de
  * l'application jusqu'à ce que Meta relie le numéro, et WhatsApp en délie l'appareil en chemin. Rien de cela n'est la fin.
  */
-const COEXISTENCE_EN_COURS = 'La coexistence n’est pas encore faite. Redis à la personne, si elle en a besoin : dans la fenêtre '
+const COEXISTENCE_EN_COURS = 'Le numéro n’est pas encore relié à l’API, l’application WhatsApp Business gardée. Redis à la '
+  + 'personne, si elle en a besoin : dans la fenêtre '
   + 'de Meta, elle saisit le numéro de son application WhatsApp Business, puis confirme dans l’application, sur son '
   + 'téléphone. Le branchement s’achève quand coexistence vaut true (un numéro relié par QR code reste dit connecté '
   + `jusque-là). ${RAPPEL_ATTENTE}`;
@@ -476,7 +478,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       + 'returned by the previous call (etat_connu), only something new wakes it up; without it, the state is returned '
       + 'at once. When `code` is present, it is the code the person copies into Meta\'s window. Successive calls follow '
       + 'the connection until `connecte: true`; with mode `coexistence`, until `coexistence: true`, a number linked by QR '
-      + 'code staying `connecte` until Meta links it in coexistence.',
+      + 'code staying `connecte` until Meta links it to the API, the WhatsApp Business app kept.',
     // Écriture parce qu'il rend un code de vérification, pas parce qu'il modifie quoi que ce soit.
     annotations: ecriture('Follow the WhatsApp number connection', true),
     entree: {

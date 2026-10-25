@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: 6baf25
+source_empreinte: fe1475
 publique: oui
 rubrique: demarrer
 rang: 1
@@ -14,8 +14,8 @@ Votre espace a une offre : **Free** (gratuite), **Pro** (un abonnement, au mois 
 (sur devis). Elle décide des fonctions ouvertes, et des limites de ce que vous pouvez créer ou envoyer.
 
 **1. Voir où vous en êtes.** Le menu Paramètres > Offre montre votre offre, ce que votre espace consomme de chaque
-limite (contacts créés, modèles envoyés ce mois-ci, automations allumées, utilisateurs), et la grille des trois
-offres côte à côte.
+limite (contacts, modèles envoyés ce mois-ci, automations allumées, utilisateurs), et la grille des trois offres côte
+à côte.
 
 **2. Passer en Pro.** Sur la page Offre, choisissez « Mensuel » ou « Annuel » : vous payez sur la page sécurisée de
 Stripe, où un code promo se saisit, et votre espace passe en Pro dès que le paiement est confirmé, en général dans
@@ -34,7 +34,7 @@ payée ; votre espace revient alors en Free.
 ## Ce que comprend chaque offre
 
 **Ce que l'offre Free comprend.** Votre numéro WhatsApp, l'API et la connexion à Claude, avec des plafonds :
-contacts créés, modèles envoyés chaque mois, un seul utilisateur. Claude et l'API lisent vos conversations,
+contacts, modèles envoyés chaque mois, un seul utilisateur. Claude et l'API lisent vos conversations,
 répondent à vos clients dans les 24 heures, envoient vos modèles et construisent votre agent IA. Dans la console,
 la Free garde l'accueil (votre numéro), les clés d'API, la documentation, l'offre, votre compte et le support.
 
@@ -45,9 +45,15 @@ soit facturé. La page Offre en retire un, sans remboursement, une fois le membr
 conversations, les publicités, les chaînes, le RCS, les connecteurs CRM et le Performance Lab complet demandent
 l'Entreprise.
 
-**Ce qui n'est jamais compté.** Un contact qui vous écrit le premier n'entre pas dans votre limite de contacts.
-Une réponse envoyée dans les 24 heures qui suivent un message du client n'est pas un envoi de modèle : elle n'est
-pas comptée non plus.
+**Ce que compte la limite de contacts.** En Free, tous vos contacts comptent, ceux qui vous écrivent les premiers
+compris. Quand votre espace Free est plein, créer ou importer un contact est refusé, et un nouveau client qui vous
+écrit n'entre pas dans Messaging Me : son message n'est pas enregistré et votre agent IA ne lui répond pas. Un e-mail
+vous prévient, une fois par jour au plus. Vos contacts déjà présents vous écrivent comme avant, et un contact supprimé
+(par l'API) libère sa place. En Pro et en Entreprise, un contact qui vous écrit le premier n'est jamais
+compté ni refusé.
+
+**Ce qui n'est jamais compté.** Une réponse envoyée dans les 24 heures qui suivent un message du client n'est pas un
+envoi de modèle : elle n'est pas comptée.
 
 **Quand quelque chose n'est pas dans votre offre.** Le menu reste visible, grisé, avec un cadenas : il vous mène à
 la page Offre. Si une action est refusée parce qu'une limite est atteinte, un message vous le dit, avec un bouton
@@ -65,7 +71,8 @@ Rien n'est effacé, et tout revient quand vous reprenez le Pro. En attendant, se
 anciennes lancent encore leurs scénarios (vos widgets ne démarrent plus le leur), l'agent de Meta ne prend plus de
 nouvelles conversations, et les membres au-delà de la limite de l'offre Free voient leur accès suspendu
 (l'administrateur le plus ancien garde le sien) : dès que l'espace repasse en Pro, « Réessayer » leur rend la
-console.
+console. Vos contacts restent tous, même au-delà de la limite de la Free : tant qu'il y en a trop, vous ne pouvez plus
+en créer ni en importer, et un nouveau client qui vous écrit n'entre pas.
 
 ## Votre numéro fourni
 

@@ -338,7 +338,10 @@ describe('ce que la revue a corrigé', () => {
  * lecture chez Meta, même si Meta rendait pour lui un statut autre que `CONNECTED`.
  */
 describe('un numéro relié en coexistence', () => {
-  const PHRASE = 'Ce numéro est relié en coexistence : il sert déjà dans l’application WhatsApp Business, il n’y a rien à activer.';
+  const PHRASE = 'Ce numéro est déjà relié à l’API officielle, et il reste dans l’application WhatsApp Business : il n’y a rien à activer.';
+  it('🔴 le refus ne dit pas le mot de Meta (Julien, 2026-10-25 : le client ne le comprend pas)', () => {
+    expect(PHRASE).not.toMatch(/coexistence/i);
+  });
   const enCoexistence = () => {
     const lus: string[] = [];
     return { lus, over: { enCoexistence: async () => true, etatNumero: async (_t: string, pn: string) => { lus.push(pn); return { status: 'PENDING', codeVerificationStatus: 'NOT_VERIFIED' }; } } };

@@ -34,8 +34,9 @@ describe('le câblage de l’offre', () => {
   it('🔴 les magasins qui créent (contacts, automations, webhooks entrants, membres) reçoivent la limite de l’offre', () => {
     const socle = lire('socle.ts');
     const api = lire('index.ts');
-    // Les contacts, les automations et les webhooks entrants : dans le socle, partagé par l'API et le worker.
-    expect(socle).toMatch(/async \(tenant\) => \(await offres\.offreDe\(tenant\)\)\.droits\.limites\.contacts,/);
+    // Les contacts, les automations et les webhooks entrants : dans le socle, partagé par l'API et le worker. Les contacts
+    // reçoivent aussi l'offre, qui dit ce que la limite compte (`contactsToutesOrigines`, 2026-10-25).
+    expect(socle).toMatch(/async \(tenant\) => limiteContactsDe\(await offres\.offreDe\(tenant\)\),/);
     expect(socle).toMatch(/new PgAutomationStore\(pool, async \(tenant\) => \(await offres\.offreDe\(tenant\)\)\.droits\.limites\.automations\)/);
     expect(socle).toMatch(/new PgWebhookStore\(pool, async \(tenant\) => \(await offres\.offreDe\(tenant\)\)\.droits\.limites\.automations\)/);
     // Les membres et les suppressions du jour : dans l'API, seule à inviter et à purger.
@@ -43,6 +44,16 @@ describe('le câblage de l’offre', () => {
     // Une seule instance (lot 13, domaine 5) : la purge de la console et `DELETE /v1/contacts/{id}` comptent ensemble.
     expect(api).toMatch(/const quotaSuppressions = new QuotaSuppressions\(\{ offres, compteur: compteurDebit \}\);/);
     expect(api).toMatch(/suppressionsDuJour: quotaSuppressions,\s*createOneContact:/);
+  });
+
+  it('🔴 la porte d’une Free pleine (2026-10-25) : le worker la pose sur les deux files d’entrants, sur le magasin des contacts', () => {
+    const worker = lire('worker.ts');
+    expect(worker).toMatch(/refuses: \(t, waIds\) => contactStore\.inconnusRefuses\(t, waIds\),/);
+    expect(worker).toMatch(/prevenir: creerAlerteEspacePlein\(\{/);
+    for (const file of ["await queue.work('webhook',", "await queue.work('application-entrant',"]) {
+      const bloc = worker.slice(worker.indexOf(file));
+      expect(bloc.slice(0, bloc.indexOf('}, { concurrency')), file).toMatch(/^\s+espacesPleins,$/m);
+    }
   });
 
   it('🔴 la console, Claude, l’exploitation et le badge lisent la MÊME offre en cache', () => {

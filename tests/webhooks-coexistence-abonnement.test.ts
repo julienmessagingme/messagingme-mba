@@ -4,7 +4,7 @@ import { cleDeContact, nAQueDesAccuses } from '../src/webhooks/parse';
 import type { InboundMessage } from '../src/webhooks/inbound';
 import type { StoredEvent } from '../src/webhooks/store';
 import {
-  agentEteintALArrivee, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunSignalAccuse, aucunSignalReponse, aucunTarif,
+  aucunEspacePlein, agentEteintALArrivee, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunSignalAccuse, aucunSignalReponse, aucunTarif,
 } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 
@@ -102,6 +102,7 @@ function reception() {
     },
     arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse, inboundOptOut: aucunStop,
     numerosDelies: async (ids) => { vu.delies.push([...ids]); return new Set(); },
+    espacesPleins: aucunEspacePlein,
     detenteur: { entrantEnStandby: async (_t, waId) => { vu.standby.push(waId); } },
     listeALArrivee: agentEteintALArrivee,
     handover: {

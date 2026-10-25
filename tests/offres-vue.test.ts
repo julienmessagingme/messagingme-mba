@@ -46,6 +46,13 @@ describe('creerVueOffre', () => {
     expect(v.upgradeUrl).toMatch(/\/offre$/);
   });
 
+  it('🔴 la vue dit ce que compte la limite de contacts : tous en Free, les fiches créées ailleurs (2026-10-25)', async () => {
+    // La console et Claude le lisent ici, jamais en recopiant la règle : `contactsToutesOrigines` la décide seule.
+    expect((await vue('base', null)('t1')).contactsToutesOrigines).toBe(true);
+    expect((await vue('pro', null)('t1')).contactsToutesOrigines).toBe(false);
+    expect((await vue('entreprise', null)('t1')).contactsToutesOrigines).toBe(false);
+  });
+
   it('un Pro : ses fonctions dans l’ordre de la grille, et les modèles du mois non comptés (sans limite)', async () => {
     const v = await vue('pro', null)('t1');
     expect(v.fonctions).toEqual(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console']);

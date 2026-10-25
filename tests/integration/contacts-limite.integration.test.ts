@@ -7,8 +7,9 @@ import { LimiteOffreError } from '../../src/offres/refus';
 
 /**
  * LA LIMITE DE CONTACTS DE L'OFFRE (lot 6, tâche 5), sur une vraie base. Une fiche créée par import, API, console ou
- * scénario compte ; une fiche née d'un message entrant ne compte jamais, et elle n'est jamais refusée. Mettre à jour une
- * fiche existante n'est jamais refusé ; une fiche supprimée libère sa place.
+ * scénario compte ; en Pro, une fiche née d'un message entrant ne compte jamais, et elle n'est jamais refusée. En Free
+ * (décision de Julien du 2026-10-25), toutes comptent, et un inconnu qui écrit à une Free pleine est refusé à la porte
+ * (`inconnusRefuses`). Mettre à jour une fiche existante n'est jamais refusé ; une fiche supprimée libère sa place.
  *
  * ⚠️ Ne PAS le lancer en local : le `DATABASE_URL` du `.env` local pointe sur la base de PRODUCTION. La CI monte un
  * Postgres jetable pour ça (job `integration`).
@@ -16,15 +17,21 @@ import { LimiteOffreError } from '../../src/offres/refus';
 const url = process.env.DATABASE_URL ?? '';
 const LIMITE = 3;
 const tel = (n: number) => `+3369990${String(n).padStart(4, '0')}`;
+/** Le `wa_id` que Meta envoie pour ce numéro : ses chiffres, sans le « + ». */
+const waId = (n: number) => tel(n).slice(1);
 
 describe.skipIf(!url)('la limite de contacts de l’offre', () => {
   let pool: Pool;
+  /** Un Pro dont la limite est basse : la règle des fiches créées seules, sans en écrire 5 000. */
   let store: PgContactStore;
+  /** Une Free, à la même limite : toutes les origines comptent. */
+  let free: PgContactStore;
   let t = '';
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
-    store = new PgContactStore(pool, undefined, async () => LIMITE);
+    store = new PgContactStore(pool, undefined, async () => ({ max: LIMITE, offre: 'pro' }));
+    free = new PgContactStore(pool, undefined, async () => ({ max: LIMITE, offre: 'base' }));
     t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-limite-contacts') returning id`)).rows[0]!.id;
   });
   beforeEach(async () => { await pool.query('delete from contacts where tenant_id = $1', [t]); });
@@ -61,6 +68,35 @@ describe.skipIf(!url)('la limite de contacts de l’offre', () => {
     const r = await pool.query<{ ne_entrant: boolean }>('select ne_entrant from contacts where tenant_id = $1 and phone_e164 = $2', [t, tel(50)]);
     expect(r.rows[0]!.ne_entrant).toBe(true);
     await expect(creer(51)).rejects.toBeInstanceOf(LimiteOffreError);
+  });
+
+  it('🔴 Free : une fiche née d’un entrant compte, et la création suivante est refusée ; le Pro ne la compte pas', async () => {
+    await creer(1);
+    await creer(2);
+    expect(await free.upsertFromInbound(t, waId(50), 'Inconnu')).toBe('created');
+    await expect(free.upsertByPhoneReturningId({ tenantId: t, phoneE164: tel(51), profileName: null, fields: {}, optInStatus: 'unknown' }))
+      .rejects.toBeInstanceOf(LimiteOffreError);
+    expect(await free.placesContacts(t, [tel(50)])).toMatchObject({ limite: LIMITE, comptees: 3 });
+    expect((await store.placesContacts(t, [tel(50)])).comptees).toBe(2);
+  });
+
+  it('🔴 la porte d’une Free pleine : l’inconnu est refusé, le connu entre par son numéro comme par son BSUID', async () => {
+    await creer(1);
+    expect(await free.upsertFromInbound(t, waId(50), 'Inconnu')).toBe('created');
+    expect(await free.upsertFromInbound(t, 'BSUID.itest.limite', null)).toBe('created');
+    // Pleine : trois fiches actives sur trois, dont deux nées d'un entrant.
+    expect(await free.inconnusRefuses(t, [waId(1), waId(50), 'BSUID.itest.limite', waId(70)]))
+      .toEqual({ waIds: new Set([waId(70)]), limite: LIMITE });
+    // Le Pro, plein de la même façon, ne refuse jamais l'entrant.
+    expect(await store.inconnusRefuses(t, [waId(70)])).toBeNull();
+  });
+
+  it('🔴 la porte d’une Free : une fiche supprimée libère une place, qui va au premier inconnu du lot', async () => {
+    for (let n = 1; n <= LIMITE; n++) await creer(n);
+    await pool.query('update contacts set deleted_at = now() where tenant_id = $1 and phone_e164 = $2', [t, tel(1)]);
+    // La fiche supprimée ne protège plus son numéro : il redevient un inconnu, et prend la place libre.
+    expect(await free.inconnusRefuses(t, [waId(1), waId(70)])).toEqual({ waIds: new Set([waId(70)]), limite: LIMITE });
+    expect(await free.inconnusRefuses(t, [waId(70)])).toBeNull();
   });
 
   it('🔴 vigilance 6 : une fiche supprimée libère sa place', async () => {

@@ -4,7 +4,8 @@ import { OPTIONS_SOCKET, completerNumero, envoyeur, memoireDesEnvois, memoiresDe
 import { lireJobEntrant, traiterEntrantApplication, versInboundMessage, type DepsEntrantApplication } from '../src/application/entrant';
 import type { JobEntrant } from '../src/application/sessions';
 import type { InboundMessage } from '../src/webhooks/inbound';
-import { aucuneCorrectionDuDetenteur } from './webhook-fixtures';
+import type { EspacesPleins } from '../src/webhooks/espace-plein';
+import { aucunEspacePlein, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
 
 /**
  * RECEVOIR, FILIÈRE APPLICATION (plan 2026-10-22, tâche 4). Le service de connexions verse chaque message dans la file
@@ -153,10 +154,16 @@ describe('le job de la file, côté worker', () => {
   });
 });
 
-function banc(o: { enAttente?: boolean; filiere?: 'api' | 'application' | null } = {}) {
+function banc(o: { enAttente?: boolean; filiere?: 'api' | 'application' | null; pleine?: boolean } = {}) {
   const traces: string[] = [];
   const enregistres = new Set<string>();
+  // Une Free pleine où personne n'a de fiche : tout correspondant est un inconnu refusé (`PgContactStore.inconnusRefuses`).
+  const pleine: EspacesPleins = {
+    refuses: async (_t, waIds) => ({ waIds: new Set(waIds), limite: 100 }),
+    prevenir: async (_t, limite) => { traces.push(`plein:${limite}`); },
+  };
   const deps: DepsEntrantApplication = {
+    espacesPleins: o.pleine ? pleine : aucunEspacePlein,
     dejaRecu: async (_t, id) => enregistres.has(id),
     inbox: {
       async recordInbound(_t, m: InboundMessage) {
@@ -239,5 +246,29 @@ describe('traiter un message reçu', () => {
     await traiterEntrantApplication(job({ deMoi: true }), deps);
     await traiterEntrantApplication(job({ deMoi: true }), deps);
     expect(traces.filter((t) => t.startsWith('main:'))).toHaveLength(1);
+  });
+});
+
+/**
+ * LA PORTE D'UNE FREE PLEINE (2026-10-25, `src/webhooks/espace-plein.ts`), la même que la réception de Meta : un inconnu
+ * n'entre pas, son STOP seul est retenu, et l'espace est prévenu.
+ */
+describe('🔴 une Free pleine, filière application', () => {
+  it('le message d’un inconnu n’entre pas : ni fiche, ni message, ni avance, ni remise ; l’espace est prévenu', async () => {
+    const { traces, deps } = banc({ pleine: true });
+    await traiterEntrantApplication(job(), deps);
+    expect(traces).toEqual(['plein:100']);
+  });
+
+  it('le STOP d’un inconnu crée sa fiche en STOP, et rien d’autre : pas même l’alerte, qui parle d’un client écarté', async () => {
+    const { traces, deps } = banc({ pleine: true });
+    await traiterEntrantApplication(job({ texte: 'STOP' }), deps);
+    expect(traces).toEqual(['contact:33612345678', `stop:33612345678:${ID}`]);
+  });
+
+  it('un message tapé sur le téléphone garde son chemin : c’est une prise de main, pas un entrant', async () => {
+    const { traces, deps } = banc({ pleine: true });
+    await traiterEntrantApplication(job({ deMoi: true, texte: 'Je m’en occupe' }), deps);
+    expect(traces).toEqual([`out:33612345678:${ID}:humain`, 'main:33612345678']);
   });
 });

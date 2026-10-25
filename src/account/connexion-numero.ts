@@ -123,7 +123,8 @@ export type IssueActivationNumero =
  * Le refus des deux gestes d'activation sur un numéro relié en coexistence (relecture du lot 1, plan 2026-10-24) : rien à
  * activer, et jamais de `/register`, même si Meta rendait pour lui un statut autre que `CONNECTED`.
  */
-export const NUMERO_EN_COEXISTENCE = 'Ce numéro est relié en coexistence : il sert déjà dans l’application WhatsApp Business, il n’y a rien à activer.';
+export const NUMERO_EN_COEXISTENCE = 'Ce numéro est déjà relié à l’API officielle, et il reste dans l’application WhatsApp '
+  + 'Business : il n’y a rien à activer.';
 
 /** Délai minimal entre deux demandes : Meta ne permet que dix essais par numéro sur 72 heures. */
 export const DELAI_ENTRE_CODES_MS = 60_000;

@@ -8,7 +8,7 @@ import { TYPE_HORS_PARCOURS, TYPE_MESSAGE_SANS_SUITE } from '../src/mba/evenemen
 import type { InboundMessage } from '../src/webhooks/inbound';
 import type { ControlOwner } from '../src/inbox/store.pg';
 import { bancDuFil, type OptionsBanc } from './banc-du-fil';
-import { aucunNumeroDelie, aucunRoutagePub, aucunSignalReponse, aucuneArriveePub } from './webhook-fixtures';
+import { aucunEspacePlein, aucunNumeroDelie, aucunRoutagePub, aucunSignalReponse, aucuneArriveePub } from './webhook-fixtures';
 import { aucunStop, jamaisDesabonne } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 
@@ -49,6 +49,7 @@ function monterLeJob(o: { depart?: ControlOwner; banc?: Omit<OptionsBanc, 'conve
     routagePub: aucunRoutagePub,
     signalReponse: aucunSignalReponse,
     numerosDelies: aucunNumeroDelie,
+    espacesPleins: aucunEspacePlein,
     inboundOptOut: aucunStop,
     detenteur: b.fil,
     listeALArrivee: { standbyPourNous: async () => o.banc?.mbaEnabled ?? true, presents: (t, w) => b.liste.presents(t, w) },

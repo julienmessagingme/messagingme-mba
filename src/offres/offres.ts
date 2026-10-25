@@ -31,7 +31,10 @@ export type Fonction = (typeof FONCTIONS)[number];
 export interface Limites {
   utilisateurs: number | null;
   admins: number | null;
-  /** Fiches créées par import, API, MCP, console ou scénario ; une fiche née d'un message entrant ne compte jamais. */
+  /**
+   * Les fiches vivantes que l'offre compte (`contactsToutesOrigines`) : en Free, toutes, nées d'un message entrant
+   * comprises ; ailleurs, celles créées par import, API, MCP, console ou scénario (une fiche née d'un entrant n'y compte pas).
+   */
   contacts: number | null;
   /** Modèles (messages à l'initiative de l'entreprise) par mois civil de Paris ; un message dans la fenêtre ne compte pas. */
   envoisModelesMois: number | null;
@@ -127,6 +130,31 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
     },
   },
 };
+
+/**
+ * 🔴 CE QUE COMPTE LA LIMITE DE CONTACTS, ET LE SEUL ENDROIT QUI LE DÉCIDE (décision de Julien du 2026-10-25, plan
+ * `docs/superpowers/plans/2026-10-25-free-100-contacts.md`). La Free ne gère jamais plus de contacts différents que sa
+ * limite, quelle que soit leur origine : une fiche née d'un message entrant y compte, et un inconnu qui écrit à une Free
+ * pleine n'entre pas (`src/webhooks/espace-plein.ts`). Le Pro et l'Entreprise ne comptent que les fiches créées : une
+ * fiche née d'un entrant n'y compte jamais, et l'entrant n'y est jamais refusé. Les gardes du magasin des contacts
+ * (`PgContactStore`), l'usage de la vue de l'offre (`PgOffresStore.usage`, donc ses courriels de franchissement) et la
+ * phrase du refus (`phraseLimite`) le lisent ici.
+ */
+export function contactsToutesOrigines(offre: Offre): boolean {
+  return offre === 'base';
+}
+
+/** La limite de contacts d'un espace, et l'offre qui la fixe : c'est elle qui dit ce qu'on compte (`contactsToutesOrigines`). */
+export interface LimiteContacts {
+  max: number;
+  offre: Offre;
+}
+
+/** La limite de contacts de cette offre et de ses droits ; `null` sans limite, et rien n'est alors compté ni refusé. */
+export function limiteContactsDe(o: { offre: Offre; droits: Droits }): LimiteContacts | null {
+  const max = o.droits.limites.contacts;
+  return max === null ? null : { max, offre: o.offre };
+}
 
 /**
  * La conservation de la Base ne s'applique que 30 jours après l'entrée en Base (spec § 7, lot 6, C) : la création de

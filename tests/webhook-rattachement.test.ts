@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { handleWebhookJob, type WebhookJobDeps } from '../src/webhooks/handler';
 import type { InboundMessage } from '../src/webhooks/inbound';
-import { agentEteintALArrivee, aucunNumeroDelie, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
+import { aucunEspacePlein, agentEteintALArrivee, aucunNumeroDelie, aucuneArriveePub, aucunRoutagePub, aucunSignalReponse, aucuneCorrectionDuDetenteur } from './webhook-fixtures';
 import { aucunStop, jamaisDesabonne } from './consentement';
 import { offresToutOuvert } from './gardes';
 
@@ -64,6 +64,7 @@ function toutesLesEtapes(inbox: ReturnType<typeof inboxQuiCompte>['inbox'], vus:
     store: { insertEvent: async () => true },
     inbox,
     numerosDelies: aucunNumeroDelie,
+    espacesPleins: aucunEspacePlein,
     inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,
     inboundContactUpsert: async (t) => { vus.push(`upsert:${t}`); return 'updated'; },
     signalReponse: async (t) => { vus.push(`signal:${t}`); },

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DROITS, droitsDe, FONCTIONS, type Fonction, type Limites, type Offre } from '../src/offres/offres';
+import { DROITS, contactsToutesOrigines, droitsDe, FONCTIONS, limiteContactsDe, type Fonction, type Limites, type Offre } from '../src/offres/offres';
 import { corpsRefusFonction, phraseLimite } from '../src/offres/refus';
 
 const MO = 1024 * 1024;
@@ -93,6 +93,35 @@ describe('les refus nomment l’offre qui lève la limite ou ouvre la fonction (
     }
     expect(phraseLimite('contacts', DROITS.pro.limites.contacts!)).toMatch(/5.000 contacts.*Passez en Entreprise/);
     expect(phraseLimite('contacts', DROITS.base.limites.contacts!)).toMatch(/Passez en Pro/);
+  });
+});
+
+/**
+ * CE QUE COMPTE LA LIMITE DE CONTACTS (décision de Julien du 2026-10-25) : la Free ne gère jamais plus de contacts que sa
+ * limite, quelle que soit leur origine ; le Pro et l'Entreprise ne comptent que les fiches créées. Une seule fonction le dit,
+ * et la phrase du refus la suit.
+ */
+describe('🔴 ce que compte la limite de contacts : toutes les origines en Free, les fiches créées ailleurs', () => {
+  it('la Free compte toutes les origines ; le Pro et l’Entreprise, seulement les fiches créées', () => {
+    expect(contactsToutesOrigines('base')).toBe(true);
+    expect(contactsToutesOrigines('pro')).toBe(false);
+    expect(contactsToutesOrigines('entreprise')).toBe(false);
+  });
+
+  it('la limite de contacts des droits, avec l’offre qui la fixe ; sans limite, rien', () => {
+    expect(limiteContactsDe({ offre: 'base', droits: DROITS.base })).toEqual({ max: 100, offre: 'base' });
+    expect(limiteContactsDe({ offre: 'pro', droits: DROITS.pro })).toEqual({ max: 5000, offre: 'pro' });
+    expect(limiteContactsDe({ offre: 'entreprise', droits: DROITS.entreprise })).toBeNull();
+    const devis = droitsDe('entreprise', { utilisateurs: null, conservationJours: null, contacts: 300 });
+    expect(limiteContactsDe({ offre: 'entreprise', droits: devis })).toEqual({ max: 300, offre: 'entreprise' });
+  });
+
+  it('la phrase du refus dit ce qui compte : ceux qui écrivent compris en Free, jamais ailleurs', () => {
+    expect(phraseLimite('contacts', DROITS.base.limites.contacts!)).toMatch(/100 contacts, ceux qui vous écrivent compris\. Passez en Pro/);
+    expect(phraseLimite('contacts', DROITS.pro.limites.contacts!)).toMatch(/5.000 contacts créés \(ceux qui vous écrivent ne comptent pas\)\. Passez en Entreprise/);
+    // L'offre connue prime sur la grille : une Entreprise réglée à 100 contacts ne compte pas ceux qui lui écrivent.
+    expect(phraseLimite('contacts', 100, { offre: 'entreprise' })).toMatch(/100 contacts créés \(ceux qui vous écrivent ne comptent pas\)/);
+    expect(phraseLimite('contacts', 123_456)).toMatch(/contacts créés \(ceux qui vous écrivent ne comptent pas\)/);
   });
 });
 

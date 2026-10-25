@@ -1,6 +1,6 @@
 ---
 slug: choose-my-plan
-traduit_de: 325768
+traduit_de: 52c3df
 ---
 # Choose my plan
 
@@ -8,7 +8,7 @@ Your workspace has a plan: **Free**, **Pro** (a subscription, monthly or yearly)
 decides which features are open, and the limits on what you can create or send.
 
 **1. See where you stand.** The Settings > Plan menu shows your plan, how much of each limit your workspace uses
-(contacts created, templates sent this month, automations switched on, users), and the three plans side by side.
+(contacts, templates sent this month, automations switched on, users), and the three plans side by side.
 
 **2. Upgrade to Pro.** On the Plan page, choose “Monthly” or “Yearly”: you pay on Stripe’s secure page, where a
 promo code can be entered, and your workspace switches to Pro as soon as the payment is confirmed, usually within the
@@ -26,8 +26,8 @@ period; your workspace then goes back to Free.
 
 ## What each plan includes
 
-**What the Free plan includes.** Your WhatsApp number, the API and the connection to Claude, with caps: contacts
-created, templates sent each month, a single user. Claude and the API read your conversations, reply to your
+**What the Free plan includes.** Your WhatsApp number, the API and the connection to Claude, with caps: contacts,
+templates sent each month, a single user. Claude and the API read your conversations, reply to your
 customers within 24 hours, send your templates and build your AI agent. In the console, Free keeps the Home screen
 (your number), the API keys, the documentation, the plan, your account and support.
 
@@ -37,8 +37,14 @@ price is shown when you invite the member, before anything is billed. The Plan p
 once the extra member is deactivated. Conversation analysis, ads, channels, RCS, the CRM connectors and the full
 Performance Lab require Enterprise.
 
-**What is never counted.** A contact who writes to you first does not count toward your contact limit. A reply sent
-within 24 hours of a customer’s message is not a template send: it is not counted either.
+**What the contact limit counts.** On Free, all your contacts count, including those who write to you first. When
+your Free workspace is full, creating or importing a contact is refused, and a new customer who writes to you does not
+get into Messaging Me: their message is not recorded and your AI agent does not reply to them. An email lets you know,
+at most once a day. Your existing contacts write to you as before, and a deleted contact (through the API) frees its
+place. On Pro and Enterprise, a contact who writes to you first is never counted nor refused.
+
+**What is never counted.** A reply sent within 24 hours of a customer’s message is not a template send: it is not
+counted.
 
 **When something is not in your plan.** The menu stays visible, greyed out, with a padlock: it takes you to the Plan
 page. If an action is refused because a limit is reached, a message tells you so, with a “See plans” button.
@@ -54,7 +60,9 @@ entering Free: when the workspace is created, when your Pro ends or when you lea
 Nothing is deleted, and everything comes back when you take Pro again. Meanwhile, only your 10 oldest automations
 still start their scenarios (your widgets no longer start theirs), Meta’s agent no longer takes new conversations,
 and members beyond the Free plan’s limit have their access suspended (the oldest administrator keeps theirs): as
-soon as the workspace is back on Pro, “Retry” gives them the console back.
+soon as the workspace is back on Pro, “Retry” gives them the console back. All your contacts stay, even beyond the
+Free plan’s limit: as long as there are too many, you can no longer create or import any, and a new customer who
+writes to you does not get in.
 
 ## Your provided number
 

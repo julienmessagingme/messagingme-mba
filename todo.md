@@ -1,5 +1,39 @@
 # todo.md : backlog
 
+## 🟡 La Free limitée à 100 contacts de toutes origines : ce que le lot laisse ouvert (2026-10-25)
+
+Plan `docs/superpowers/plans/2026-10-25-free-100-contacts.md`. Relu sans rouge ; corrigés dans le lot : un STOP dont
+l'écriture échoue n'est plus écarté (il passe par le chemin commun), l'offre relue en base dans la requête de la porte
+(le cache du worker retarde de 30 s sur un paiement du Pro), l'alerte qui ne part plus pour un STOP seul, un faux qui
+levait sans rien prouver, et le mot « coexistence » de la doc publique d'un outil. Ce qui reste :
+
+1. **Un inconnu qui a dit STOP à une Free pleine devient un contact connu** (sa fiche désabonnée existe) : s'il réécrit,
+   son message entre comme celui de tout contact présent (conversation, aucune réponse d'une machine, STOP oblige).
+   L'espace gère alors une personne au-delà de sa limite, inerte. L'écarter supposerait de distinguer sa fiche de celle
+   d'un contact présent qui a dit STOP, que rien ne marque.
+2. **Un message tapé sur le téléphone d'un numéro relié par QR code (`deMoi`) vers un inconnu d'une Free pleine** est
+   encore enregistré (une conversation sans fiche, comme avant ce lot) ; ses réponses, elles, sont écartées. La règle de
+   l'écho de la coexistence (lot 2, tâche 5 : un inconnu devient une fiche qui compte, à la limite rien n'est enregistré)
+   est la référence si on veut l'aligner.
+3. **La réception RCS** (`traiterMessageEntrantRcs`, Entreprise seule) n'a pas la porte : une Free descendue de
+   l'Entreprise avec un agent RCS encore branché recevrait les réponses d'un inconnu.
+4. **Les textes publics qui disent encore « 100 contacts créés, les contacts entrants sont illimités »** sont à la
+   session Vitrine : la page Tarifs (FR et EN, `scripts/vitrine/anglais/tarifs.json`), les pages développeurs, les cas
+   d'usage, la page Shopify, et le plugin (`scripts/plugin/generer.ts`, `scripts/plugin/faq.ts`, puis
+   `npm run plugin:generer` et une montée de version). Les deux fiches d'aide qui citent les sections changées
+   (« Choisir mon offre », « Recevoir les e-mails de Messaging Me ») ont suivi dans le lot.
+5. **Les échos de l'agent de Meta** (`recordAgentMessage`, `src/worker.ts`) : un `standby` d'un inconnu à une Free pleine
+   est retiré, mais l'écho de la réponse de l'agent s'enregistre, une conversation sans fiche. Rare en Free, où l'agent
+   de Meta ne prend plus de nouvelles conversations.
+6. **`PgOffresStore.usage` parcourt deux fois les contacts** (un seul `count(*) filter (where not c.ne_entrant)`
+   suffirait), et la vue prend son libellé dans l'offre en cache, son compte dans l'offre lue en base : 30 s d'écart
+   possible.
+7. **Les points mineurs** : `src/http/contacts.ts` construit le refus sans l'offre (devinée d'après la grille) ; au
+   rejeu d'un job, le STOP d'un inconnu est devenu un contact connu, qui entre et crée une conversation ; un écart
+   d'identité (le `@lid` de la filière application, les numéros brésiliens ou mexicains) est refusé dans une Free
+   pleine, là où une seconde fiche naissait ; **à trancher par Julien** : à la fin d'un essai Pro avec plus de 100
+   contacts, l'espace est plein d'un coup, et la Free ne supprime que 10 contacts par jour (`suppressionsJour`).
+
 ## 🟡 Le consentement déclaré par Claude : ce que la relecture laisse (2026-10-25)
 
 Aucun rouge (d405ed44, en production le même jour). Décision de Julien : par Claude, l'accord des contacts est déclaré
@@ -282,10 +316,9 @@ Plan : `docs/superpowers/plans/2026-10-21-connecteur-shopify.md`.
   de son panier (sept jours) écrit une ligne neuve, relançable une seconde fois : la clé d'envoi ne vit que 24 h.
 - **Ce que la relecture du lot 3 (import des clients) laisse** : (1) aucun test ne joue `importerClients` avec le vrai
   `importContacts` et un vrai magasin, ni l'attente préventive du seau de Shopify, ni l'épuisement des cinq freinages ;
-  (2) `src/offres/offre.pg.ts` garde sa propre copie du prédicat « fiche comptée », que `FICHE_COMPTEE` ne tient pas :
-  l'écran d'offre et le refus peuvent dériver si l'un change seul ; (3) le refus « au-delà des places libres » ne porte
-  pas le lien de l'offre que `LimiteOffreError` donne ; (4) lire `extensions.search` (l'avertissement de Shopify sur
-  un champ de recherche invalide) dirait si le filtre des abonnés cesse un jour d'être reconnu.
+  (2) le refus « au-delà des places libres » ne porte pas le lien de l'offre que `LimiteOffreError` donne ; (3) lire
+  `extensions.search` (l'avertissement de Shopify sur un champ de recherche invalide) dirait si le filtre des abonnés
+  cesse un jour d'être reconnu.
 - **La mesure sur une boutique en PRODUCTION** (décision 13 de Julien) : le téléphone arrive-t-il dans les webhooks sans
   déclarer à la main l'accès aux données protégées ? Sinon, la skill guide ce geste.
 - **Les jaunes de la relecture** : l'affirmation du consentement n'a que sa colonne et une ligne de journal (pas

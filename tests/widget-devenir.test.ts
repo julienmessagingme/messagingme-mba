@@ -22,7 +22,7 @@ import { aucunStop } from './consentement';
 import { offresToutOuvert } from './gardes';
 import { plusAnciennesJamaisLues } from './gardes';
 import {
-  agentEteintALArrivee, aucuneArriveePub, aucuneCorrectionDuDetenteur, aucunNumeroDelie, aucunRoutagePub,
+  aucunEspacePlein, agentEteintALArrivee, aucuneArriveePub, aucuneCorrectionDuDetenteur, aucunNumeroDelie, aucunRoutagePub,
   aucunSignalReponse, entrantsDe,
 } from './webhook-fixtures';
 
@@ -260,7 +260,7 @@ describe('🔴 non-régression : un message SANS phrase de widget ne change RIEN
         store: { insertEvent: async () => true },
         inbox: { phoneNumberTenant: async () => T, recordInbound: async () => ({ rouverte: false }) },
         arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse,
-        numerosDelies: aucunNumeroDelie, inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
+        numerosDelies: aucunNumeroDelie, espacesPleins: aucunEspacePlein, inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
         listeALArrivee: agentEteintALArrivee,
         triggers: { run: async (_t, ev) => { automations.push(ev); return 0; } },
         workflowAdvance: { advance: async (_t, _w, id) => { avances.push(id); return false; } },
@@ -603,7 +603,7 @@ describe('🔴 le message pris par un widget n’est donné à personne d’autr
       store: { insertEvent: async () => true },
       inbox: { phoneNumberTenant: async () => T, recordInbound: async () => ({ rouverte: false }) },
       arriveesPub: aucuneArriveePub, routagePub: aucunRoutagePub, signalReponse: aucunSignalReponse,
-      numerosDelies: aucunNumeroDelie, inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
+      numerosDelies: aucunNumeroDelie, espacesPleins: aucunEspacePlein, inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur,
       listeALArrivee: agentEteintALArrivee,
       // Une automation « nouveau contact » démarrerait un second scénario par-dessus celui du widget. Elle rend 0
       // (évaluée, rien de parti) : sinon elle consommerait le message voisin, et l'avance ne le verrait plus.

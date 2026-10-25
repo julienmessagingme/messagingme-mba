@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
-import { droitsDe, type Droits, type Offre } from './offres';
+import { ficheComptee } from '../crm/contact-store.pg';
+import { contactsToutesOrigines, droitsDe, type Droits, type Offre } from './offres';
 
 /**
  * L'OFFRE D'UN ESPACE (lot 6, spec `docs/superpowers/specs/2026-10-07-offres-et-limites-design.md`, § 3).
@@ -65,19 +66,26 @@ export class PgOffresStore implements SourceOffres {
   }
 
   /**
-   * Ce que l'espace a consommé de ses limites, en une requête : les fiches créées actives (pas nées d'un entrant), les
+   * Ce que l'espace a consommé de ses limites, en une requête : les fiches que la limite de contacts compte (toutes les
+   * fiches actives en Free, les créées ailleurs : `contactsToutesOrigines`, sur l'offre lue par la seule définition), les
    * automations allumées du client (aucun propriétaire), les membres actifs (invitations en attente comprises). Les mêmes
-   * comptes que les gardes (`PgContactStore.verifierPlaceContacts`, `src/offres/automations.ts`, `src/offres/membres.ts`).
+   * comptes que les gardes (`PgContactStore.verifierPlaceContacts`, dont le prédicat est importé, `src/offres/automations.ts`,
+   * `src/offres/membres.ts`) ; ce que voient la console et `get_plan`, et ce que lisent les courriels de franchissement.
    */
   async usage(tenantId: string): Promise<{ contacts: number; automations: number; membres: number }> {
-    const r = await this.pool.query<{ contacts: number; automations: number; membres: number }>(
-      `select (select count(*) from contacts c
-                where c.tenant_id = $1 and not c.ne_entrant and c.deleted_at is null and c.anonymized_at is null)::int as contacts,
-              (select count(*) from automations a where a.tenant_id = $1 and a.enabled and a.possede_par is null)::int as automations,
-              (select count(*) from users u where u.tenant_id = $1 and u.disabled_at is null)::int as membres`,
+    const r = await this.pool.query<{ offre: string; toutes_origines: number; creees: number; automations: number; membres: number }>(
+      `select offre_de_l_espace($1::uuid) as offre,
+              (select count(*) from contacts c where c.tenant_id = $1::uuid and ${ficheComptee('c', true)})::int as toutes_origines,
+              (select count(*) from contacts c where c.tenant_id = $1::uuid and ${ficheComptee('c', false)})::int as creees,
+              (select count(*) from automations a where a.tenant_id = $1::uuid and a.enabled and a.possede_par is null)::int as automations,
+              (select count(*) from users u where u.tenant_id = $1::uuid and u.disabled_at is null)::int as membres`,
       [tenantId],
     );
-    return r.rows[0] ?? { contacts: 0, automations: 0, membres: 0 };
+    const l = r.rows[0];
+    if (!l) return { contacts: 0, automations: 0, membres: 0 };
+    // Une offre inconnue se lit comme la Base, comme dans `offreDe`.
+    const offre: Offre = OFFRES.has(l.offre) ? (l.offre as Offre) : 'base';
+    return { contacts: contactsToutesOrigines(offre) ? l.toutes_origines : l.creees, automations: l.automations, membres: l.membres };
   }
 
   /** L'Entreprise d'un espace telle que l'exploitation l'a posée, `null` pour un espace inconnu. */

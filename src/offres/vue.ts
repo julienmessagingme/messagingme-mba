@@ -1,4 +1,7 @@
-import { DROITS, ESSAI_PRO_JOURS, FONCTIONS, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_HT_CENTIMES, type Fonction, type Limites, type Offre } from './offres';
+import {
+  DROITS, ESSAI_PRO_JOURS, FONCTIONS, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_HT_CENTIMES, contactsToutesOrigines, type Fonction, type Limites,
+  type Offre,
+} from './offres';
 import type { SourceOffres } from './offre.pg';
 import { adresseOffre } from './refus';
 
@@ -31,6 +34,13 @@ export interface VueOffre {
   fonctions: Fonction[];
   limites: Limites;
   usage: UsageOffre;
+  /**
+   * Ce que compte la limite de contacts de l'espace (`contactsToutesOrigines`, décision de Julien du 2026-10-25) : vrai en
+   * Free, où tous les contacts comptent, ceux qui ont écrit les premiers compris, et où un inconnu qui écrit à un espace
+   * plein n'entre pas ; faux ailleurs, où seules les fiches créées comptent. La console et Claude le lisent ici, sans
+   * recopier la règle.
+   */
+  contactsToutesOrigines: boolean;
   /**
    * La grille des trois offres, lue dans `DROITS` : la page `/offre` de la console et Claude (`get_plan`) la montrent sans
    * jamais la recopier. Les limites de l'Entreprise y sont celles du devis par défaut (`null` = sans limite).
@@ -94,6 +104,7 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
       fonctions: FONCTIONS.filter((f) => droits.fonctions.has(f)),
       limites: { ...droits.limites },
       usage: { envoisModelesMois: mois === null ? null : mois.max - mois.reste, ...usage },
+      contactsToutesOrigines: contactsToutesOrigines(offre),
       grille: grilleDesOffres(),
       prixPro: d.proEnVente ? { moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an } : null,
       suiteDuNumero: suite === null ? null : { finPrevueLe: suite.finPrevueLe?.toISOString() ?? null, rendreNumero: suite.rendreNumero },

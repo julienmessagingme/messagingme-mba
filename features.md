@@ -3236,8 +3236,11 @@ boîte par sous-menu.
     envois du numéro seraient coupés ;
   - le numéro fourni suspendu, le rappel deux jours avant sa libération, sa libération, et l'annonce de la suite du
     numéro à la fin du Pro ;
-  - en offre Free, 80 % puis 100 % des modèles du mois (une fois par mois) et des contacts (une fois à chaque
-    franchissement) ; l'alerte de 100 % propose de passer en Pro, et cite la limite de contacts du Pro ;
+  - en offre Free, 80 % puis 100 % des modèles du mois (une fois par mois) et des contacts, ceux qui ont écrit les
+    premiers compris (une fois à chaque franchissement) ; l'alerte de 100 % propose de passer en Pro, et cite la limite
+    de contacts du Pro ;
+  - en offre Free pleine, un nouveau client qui a écrit et n'est pas entré (une fois par jour au plus, quel que soit le
+    nombre de clients écartés) : passer en Pro, ou supprimer des contacts ;
   - en offre Pro, 80 % puis 100 % des contacts, à chaque franchissement ; ces alertes renvoient à l'Entreprise.
 - ✅ **Une conversation attend l'équipe** : quand un agent IA, l'agent de Meta ou un scénario passe la main à l'équipe
   alors que le contact vient d'écrire, les administrateurs reçoivent un e-mail avec le nom du contact (ou son numéro
@@ -4043,7 +4046,7 @@ envoyer. Les chiffres exacts vivent à un seul endroit (`src/offres/offres.ts`) 
 cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
 
 - ✅ **L'offre Free** se pilote par l'API et Claude (le serveur MCP) : le numéro, les contacts, les envois de modèles et
-  l'agent IA, avec des plafonds (contacts créés, modèles envoyés par mois civil, un seul utilisateur). Dans la console,
+  l'agent IA, avec des plafonds (contacts de toutes origines, modèles envoyés par mois civil, un seul utilisateur). Dans la console,
   elle ne garde que l'accueil, les clés d'API, la documentation, l'offre, le compte et le support (spec offres v2).
 - ✅ **Le Pro** ouvre la console complète (l'Inbox, les scénarios, les statistiques, l'agent de Meta, l'e-mail, les
   assistants), porte la limite de contacts plus haut, lève celles des envois et des automations, et donne trois
@@ -4053,8 +4056,18 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   mais leurs automations se taisent, comme en Free. Côté statistiques : l'accueil, les coûts de chaque campagne et le
   journal des erreurs restent ouverts à tous ; le Quantitatif est au Pro ; la Synthèse, l'analyse des
   conversations et « Mes tableaux » sont à l'Entreprise.
-- ✅ **Ce qui n'est jamais compté** : un contact qui écrit le premier (il n'entre pas dans la limite de contacts,
-  même complété ensuite), et une réponse dans les 24 h qui suivent un message du client (seuls les modèles
+- ✅ **La Free ne gère jamais plus de contacts que sa limite, quelle que soit leur origine** (décision de Julien,
+  2026-10-25) : importés, créés par l'API, par Claude ou par un scénario, ou venus d'eux-mêmes en écrivant les premiers,
+  tous comptent. Quand elle est pleine, créer ou importer un contact est refusé, et **un nouveau client qui écrit
+  n'entre pas** : ni fiche, ni conversation, ni réponse de l'agent IA, ni scénario, ni automation. Les administrateurs
+  reçoivent un e-mail, une fois par jour au plus, qui propose de passer en Pro ou de supprimer des contacts (par l'API).
+  Seul son **STOP** est retenu : sa fiche naît désabonnée, sans conversation, pour que personne ne lui écrive plus
+  (elle ne reçoit rien et ne libère aucune place). Un contact déjà présent écrit et reçoit comme avant, et une fiche
+  supprimée libère sa place. Ce qui compte vient de l'offre de l'espace, sur la réception de Meta, celle de 360dialog et
+  l'application WhatsApp Business reliée par QR code.
+- ✅ **Le Pro et l'Entreprise ne comptent que les contacts créés** : un client qui écrit le premier n'y est jamais
+  compté (même complété ensuite), ni jamais refusé.
+- ✅ **Ce qui n'est jamais compté** : une réponse dans les 24 h qui suivent un message du client (seuls les modèles
   comptent).
 - ✅ **Dans la console** : les menus et les onglets d'une fonction fermée restent visibles, grisés, avec un cadenas
   et l'offre qui l'ouvre ; ils mènent à la page Offre. Ouvrir l'adresse d'un écran fermé montre « Cet écran fait
@@ -4062,8 +4075,8 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   (RCS, chaîne, publicités, agent de Meta, Batch) disent « Inclus dans l'offre Pro » ou « Entreprise ». Un geste
   refusé (une fiche au-delà de la limite, par exemple) affiche la raison et un bouton « Voir les offres », au-dessus de la fenêtre
   ouverte.
-- ✅ **La page Offre** (admins) : l'offre de l'espace, ce qu'il consomme de chaque limite (avec une jauge), la
-  grille des trois offres, et le passage en Pro.
+- ✅ **La page Offre** (admins) : l'offre de l'espace, ce qu'il consomme de chaque limite (avec une jauge ; en Free,
+  celle des contacts dit que ceux qui écrivent les premiers comptent aussi), la grille des trois offres, et le passage en Pro.
 - ✅ **Le Pro se paie en ligne** (livraison B1) : un espace en Free choisit « Mensuel » ou « Annuel » sur la page Offre et
   paie sur la page de Stripe, code promo accepté. L'espace passe en Pro dès que Stripe confirme le paiement (dans la
   minute), et la page Offre le dit au retour. Un Pro y trouve « Gérer mon abonnement », le portail de Stripe : carte,
@@ -4106,10 +4119,13 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   choisis ; l'agent IA répondeur continue. Les membres au-delà des limites perdent l'accès (le plus ancien
   administrateur garde le sien) : la console leur montre une page « accès suspendu », avec « Réessayer » pour revenir
   dès que l'espace repasse en Pro, et Claude leur répond par le même refus. Cette suspension ne vaut qu'en Free et en
-  Pro : en Entreprise, une limite de membres ne bloque que les nouvelles invitations.
+  Pro : en Entreprise, une limite de membres ne bloque que les nouvelles invitations. Ses contacts restent tous, même
+  au-delà de la limite de la Free : tant qu'il en a trop, créer ou importer un contact est refusé et aucun nouveau
+  client qui écrit n'y entre, quand ses contacts déjà présents écrivent comme avant.
 - ✅ **Par l'API et Claude** : un refus rend le statut **402** avec un code, `plan_feature_unavailable` (fonction
   absente de l'offre) ou `plan_limit_reached` (limite atteinte), et le lien `upgradeUrl`. L'outil MCP `get_plan`
-  rend l'offre, ses limites, ce qui est consommé et la grille. Étiqueter et affecter une conversation restent listés
+  rend l'offre, ses limites, ce qui est consommé, ce que compte la limite de contacts (`contactsToutesOrigines`) et la
+  grille. Étiqueter et affecter une conversation restent listés
   en Free et refusent avec le lien de l'offre ; LIRE les fils et leurs messages (`list_conversations`,
   `get_conversation`, `get_messages`, et l'API `/v1/conversations`) et y RÉPONDRE dans la fenêtre de 24 h
   (`reply_in_open_window`, comme `POST /v1/messages/whatsapp`) sont ouverts dans toutes les offres depuis le

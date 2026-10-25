@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { arriveeDepuisMessage, processArriveesPub, type ArriveePub, type IssueArrivee } from '../src/webhooks/arrivees-pub';
 import { handleWebhookJob } from '../src/webhooks/handler';
-import { agentEteintALArrivee, aucunSignalReponse, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
+import { aucunEspacePlein, agentEteintALArrivee, aucunSignalReponse, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 import { offresToutOuvert } from './gardes';
 
@@ -111,6 +111,7 @@ describe('handleWebhookJob : l’arrivée publicitaire', () => {
       inbox: { phoneNumberTenant: async () => 't1', recordInbound: async () => ({ rouverte: false }) },
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      espacesPleins: aucunEspacePlein,
       inboundOptOut: aucunStop, detenteur: aucuneCorrectionDuDetenteur, listeALArrivee: agentEteintALArrivee,
       inboundContactUpsert: async () => { ordre.push('upsert'); return 'created'; },
       arriveesPub: {

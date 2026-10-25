@@ -24,7 +24,8 @@ const personne: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity 
 
 const VUE_BASE: VueOffre = {
   offre: 'free', fonctions: [], limites: { ...DROITS.base.limites },
-  usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 }, grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
+  usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 }, contactsToutesOrigines: true,
+  grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
   suiteDuNumero: null, essai: { jours: 14, possible: true, finLe: null }, sieges: null, prixSiege: { moisCentimes: 1500, anCentimes: 15000 },
   upgradeUrl: 'https://console.test/offre',
 };
@@ -91,5 +92,12 @@ describe('l’outil MCP get_plan', () => {
     expect(outil!.description).toContain('plan_feature_unavailable');
     // En anglais depuis le 2026-10-14 (répertoire de Claude).
     expect(outil!.description).toContain('24-hour window');
+  });
+
+  it('🔴 sa description dit ce que compte la limite de contacts, et ce que devient un nouveau client d’une Free pleine (2026-10-25)', () => {
+    expect(outil!.description).toContain('contactsToutesOrigines');
+    expect(outil!.description).toMatch(/in Free every contact counts, including those who wrote first/);
+    expect(outil!.description).toMatch(/a full Free workspace does not let a new customer in/);
+    expect(outil!.description).not.toMatch(/contacts created, automations on/);
   });
 });

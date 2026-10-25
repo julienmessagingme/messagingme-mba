@@ -1056,8 +1056,11 @@ export const OUTILS: OutilMcp[] = [
     fonction: null,
     description:
       'The workspace plan (free, pro or entreprise): the features it includes, its limits (null = no limit) and what '
-      + 'is used of them (contacts created, automations on, members, templates sent this month), plus the upgradeUrl '
+      + 'is used of them (contacts, automations on, members, templates sent this month), plus the upgradeUrl '
       + 'link to the Pro plan, and the Pro trial (essai: whether the 14-day trial is possible, and the end of a running one). '
+      + 'contactsToutesOrigines tells what the contact limit counts: in Free every contact counts, including those who wrote '
+      + 'first, and a full Free workspace does not let a new customer in (their message is not recorded, the admins get an '
+      + 'email); in Pro and Entreprise only the contacts created count, and a customer who writes is never refused. '
       + 'A Pro includes 3 users; sieges gives the extra users it pays for and prixSiege the price of one more, offered to the '
       + 'admin when an invitation goes beyond (in the console). '
       + 'It explains an action refused with plan_limit_reached or plan_feature_unavailable; '

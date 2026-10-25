@@ -123,7 +123,7 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     )).rejects.toThrow(/abonnements_offre_fin_raison_chk/);
   });
 
-  it('🔴 l’usage compte ce que les gardes comptent : fiches créées actives, automations allumées du client, membres actifs', async () => {
+  it('🔴 l’usage compte ce que les gardes comptent : fiches actives, automations allumées du client, membres actifs', async () => {
     const t = await espace('itest-offre-usage');
     const contacts = new PgContactStore(pool);
     const tel = (n: number) => `+3369991${String(n).padStart(4, '0')}`;
@@ -131,7 +131,7 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
       await contacts.upsertByPhoneReturningId({ tenantId: t, phoneE164: tel(n), profileName: null, fields: {}, optInStatus: 'unknown' });
     }
     await pool.query('update contacts set deleted_at = now() where tenant_id = $1 and phone_e164 = $2', [t, tel(3)]);
-    // Née d'un entrant : jamais comptée.
+    // Née d'un entrant : comptée en Free (décision de Julien du 2026-10-25), jamais en Pro (plus bas).
     await contacts.upsertFromInbound(t, tel(4).slice(1), 'Inconnu');
 
     const wf = (await pool.query<{ id: string }>(`insert into workflows (tenant_id, name) values ($1, 'itest-usage') returning id`, [t])).rows[0]!.id;
@@ -150,6 +150,10 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     await users.createPending(t, 'itest-usage-3@offre.test', 'agent');
     expect(await users.setDisabled(t, b.id, true)).toBe('ok');
 
+    // Un espace sans Pro ni Entreprise est en Free : les deux fiches créées actives et celle de l'entrant.
+    expect(await offres.usage(t)).toEqual({ contacts: 3, automations: 1, membres: 2 });
+    // En Pro, la fiche née d'un entrant ne compte plus.
+    await pro(t, 'sub_itestoffreusage', null);
     expect(await offres.usage(t)).toEqual({ contacts: 2, automations: 1, membres: 2 });
   });
 

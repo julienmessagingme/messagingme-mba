@@ -5,6 +5,7 @@ import type { RoutagePubDeps } from '../src/webhooks/routage-pub';
 import type { SignalAccuse } from '../src/webhooks/delivery';
 import type { DetenteurDuFil, SignalReponse } from '../src/webhooks/inbound';
 import type { NumerosDelies } from '../src/webhooks/numeros-delies';
+import type { EspacesPleins } from '../src/webhooks/espace-plein';
 import type { ListeALArrivee } from '../src/webhooks/standby-hors-liste';
 import { extractInbound } from '../src/webhooks/inbound';
 import { rattacherLesEntrants, type EntrantRattache, type EspaceDuNumero } from '../src/webhooks/rattachement';
@@ -36,6 +37,16 @@ export const agentEteintALArrivee: ListeALArrivee = {
 
 /** Aucun numéro délié (migration 0180) : le test ne porte pas sur le geste de l'Accueil, et le DIT. */
 export const aucunNumeroDelie: NumerosDelies = async () => new Set();
+
+/**
+ * Aucun espace n'est une Free pleine (la porte du 2026-10-25, `src/webhooks/espace-plein.ts`) : le test ne porte pas sur la
+ * limite de contacts, et le DIT. Personne n'est refusé, donc personne n'est prévenu. Un test qui VÉRIFIE la porte câble sa
+ * propre lecture (`tests/espace-plein.test.ts`).
+ */
+export const aucunEspacePlein: EspacesPleins = {
+  refuses: async () => null,
+  prevenir: async () => { throw new Error('aucunEspacePlein : prevenir ne devrait pas être appelée'); },
+};
 
 /**
  * Aucune correction du détenteur du fil : le test ne porte pas sur le `field` d'un entrant, et le DIT. Requise

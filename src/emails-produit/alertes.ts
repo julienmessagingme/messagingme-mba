@@ -1,6 +1,7 @@
 import { journaliser } from '../lib/journal';
 import type { EmetteurEmails } from './emission';
 import { DROITS } from '../offres/offres';
+import { jourDans } from '../repondeur/alerte-credit';
 
 /**
  * LES ALERTES DE LA LIVRAISON B (lot 7, spec `docs/superpowers/specs/2026-10-14-emails-produit-design.md`) : ce qui
@@ -205,6 +206,37 @@ export async function balayerLimites(d: DepsLimites): Promise<number> {
     }
   }
   return n;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// L'espace Free plein qui écarte un nouveau client
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * L'ALERTE DE L'ESPACE PLEIN (décision de Julien du 2026-10-25) : un inconnu a écrit à une Free qui a déjà tous ses
+ * contacts, et son message n'est pas entré (`src/webhooks/espace-plein.ts`). Aux administrateurs, au plus une fois par
+ * jour et par espace : l'occasion est le jour, dans le fuseau de l'espace, et la réservation en base arrête la seconde,
+ * quel que soit le nombre de copies qui voient passer des inconnus (comme `credit_epuise`). Elle ne cite que la limite :
+ * jamais rien de la personne qui a écrit. Ne lève jamais : l'alerte ne doit pas faire tomber la réception qu'elle accompagne.
+ */
+export function creerAlerteEspacePlein(d: {
+  emettre: Emettre;
+  /** Le fuseau IANA de l'espace (`tenant_settings.timezone`, défaut du serveur). */
+  fuseau(tenantId: string): Promise<string>;
+  pageOffre: string;
+  now?: () => Date;
+}): (tenantId: string, limite: number) => Promise<void> {
+  return async (tenantId, limite) => {
+    try {
+      const jour = jourDans(await d.fuseau(tenantId), d.now ? d.now() : new Date());
+      await d.emettre({
+        cle: 'espace_plein_entrant', tenantId, occasion: `plein:${jour}`, a: 'admins',
+        valeurs: { limite: String(limite), lien_offre: d.pageOffre },
+      });
+    } catch (err) {
+      journaliser('error', 'alerte_espace_plein_impossible', { err, tenantId });
+    }
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

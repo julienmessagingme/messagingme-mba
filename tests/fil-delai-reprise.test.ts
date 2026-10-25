@@ -6,7 +6,7 @@ import { handleWebhookJob, type WebhookJobDeps } from '../src/webhooks/handler';
 import { processRemiseMbaEntrant } from '../src/webhooks/remise-mba-entrant';
 import { TYPE_MESSAGE_SANS_SUITE } from '../src/mba/evenement';
 import { DELAI_REPRISE_DEFAUT_MS, bancDuFil, type OptionsBanc } from './banc-du-fil';
-import { aucunNumeroDelie, aucunRoutagePub, aucunSignalReponse, aucuneArriveePub, entrantsDe } from './webhook-fixtures';
+import { aucunEspacePlein, aucunNumeroDelie, aucunRoutagePub, aucunSignalReponse, aucuneArriveePub, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 
 /**
@@ -217,6 +217,7 @@ describe('du webhook à la demande, sur le vrai job', () => {
       routagePub: aucunRoutagePub,
       signalReponse: aucunSignalReponse,
       numerosDelies: aucunNumeroDelie,
+      espacesPleins: aucunEspacePlein,
       inboundOptOut: aucunStop,
       detenteur: b.fil,
       listeALArrivee: { standbyPourNous: async () => true, presents: (t, w) => b.liste.presents(t, w) },
