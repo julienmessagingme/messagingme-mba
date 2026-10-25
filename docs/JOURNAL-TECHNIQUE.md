@@ -35,7 +35,11 @@ illimités ».
 - **Relecture indépendante** : aucun rouge. Jaunes repris : la clé `contacts:admin` (une clé créée par Claude n'a pas
   ce droit, `create_api_key` le refuse), le Pro limité à « ceux qui vous écrivent les premiers » (un contact importé
   qui écrit compte toujours), la phrase du STOP désambiguïsée, la cause ajoutée à l'agent muet, l'import Shopify, le
-  cas support. Relevé pour le lot serveur : le libellé de refus `LIBELLE_LIMITE.contacts` (`src/offres/refus.ts`).
+  cas support. Le libellé de refus du serveur qu'elle signalait (`LIBELLE_LIMITE.contacts`, `src/offres/refus.ts`)
+  était déjà repris par le lot serveur.
+- **Publié le 2026-10-25** : `04a397b2`, poussé après le déploiement de `d3b0b071` ; CI verte (unit, intégration,
+  sécurité, CodeQL) ; la vitrine relue en ligne dans les deux langues ; puis le plugin 0.3.11 par `plugin.yml`, son
+  contenu publié identique à `plugin/` de `04a397b2`, fichier par fichier.
 
 ## 2026-10-25 (nuit) : la Free ne gère jamais plus de 100 contacts, quelle que soit leur origine
 
