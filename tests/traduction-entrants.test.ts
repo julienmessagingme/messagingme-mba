@@ -6,6 +6,7 @@ import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { InboxDep, InboxRouteDeps } from '../src/http/inbox';
 import type { ConversationMessage } from '../src/inbox/store.pg';
+import { creerOuvertureConversationInbox, type DepsOuvertureConversationInbox } from '../src/inbox/ouverture';
 import { traduireFil, candidats, texteATraduire, type DepsFil, type MessageATraduire } from '../src/traduction/fil';
 import { TRADUCTIONS_MAX_PAR_REQUETE, type CauseSansTraduction, type Traducteur, type Traduction } from '../src/traduction/traduire';
 import { inboxDepInerte, inboxInerte } from './routes-inertes';
@@ -284,23 +285,37 @@ beforeAll(async () => { token = await signSession({ userId: 'u1', tenantId: 't1'
 const noUsers: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 const auth = () => ({ headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 
-function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<InboxDep> } = {}) {
-  const { inbox, ...reste } = over;
+type ConversationsTest = InboxDep & DepsOuvertureConversationInbox['conversations'];
+type SurchargeApp = Partial<Omit<InboxRouteDeps, 'inbox' | 'ouvrirConversation'>> & {
+  inbox?: Partial<ConversationsTest>;
+  traduireFil?: DepsOuvertureConversationInbox['traduireFil'];
+};
+
+function app(over: SurchargeApp = {}) {
+  const { inbox, traduireFil, ...reste } = over;
+  const conversations: ConversationsTest = {
+    ...inboxDepInerte,
+    listConversations: async () => [],
+    getConversationContext: async (id) => (id === 'c1'
+      ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-09-12T00:00:00.000Z', langueContact: 'es' }
+      : null),
+    getMessages: async (): Promise<ConversationMessage[]> => [
+      { id: 'm1', direction: 'in', type: 'text', body: 'Hola', buttonPayload: null, createdAt: '2026-09-12T00:00:00.000Z' },
+    ],
+    getControlOwner: async () => 'app_workflow',
+    markConversationRead: async () => {},
+    recordOutbound: async () => {},
+    ...inbox,
+  };
   const deps: InboxRouteDeps = {
     ...inboxInerte,
     estDesabonne: jamaisDesabonne,
-    inbox: {
-      ...inboxDepInerte,
-      listConversations: async () => [],
-      getConversationContext: async (id) => (id === 'c1'
-        ? { waId: '33611', windowOpen: true, lastInboundAt: '2026-09-12T00:00:00.000Z', langueContact: 'es' }
-        : null),
-      getMessages: async (): Promise<ConversationMessage[]> => [
-        { id: 'm1', direction: 'in', type: 'text', body: 'Hola', buttonPayload: null, createdAt: '2026-09-12T00:00:00.000Z' },
-      ],
-      recordOutbound: async () => {},
-      ...inbox,
-    },
+    inbox: conversations,
+    ouvrirConversation: creerOuvertureConversationInbox({
+      conversations,
+      lireMediaMessage: async () => null,
+      ...(traduireFil ? { traduireFil } : {}),
+    }),
     repo: {
       getTenantPhoneNumberId: async () => 'pn1',
     },

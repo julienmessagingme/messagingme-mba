@@ -48,7 +48,6 @@ const inbox: InboxRouteDeps = {
     ...inboxDepInerte,
     listConversations: async () => [],
     getConversationContext: async () => null,
-    getMessages: async () => [],
     recordOutbound: async () => {},
   },
   repo: {

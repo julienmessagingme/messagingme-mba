@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Guard, PreHandler } from '../auth/middleware';
-import type { ConversationSummary, ConversationMessage, ListConversationsOptions, CompteursInbox } from '../inbox/store.pg';
+import type { ConversationSummary, ListConversationsOptions, CompteursInbox } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
 import { espaceVerifie, nonEmpty, estUuid } from './scope';
 import { RCS_TEXTE_MAX } from '../../web/lib/partage/rcs';
@@ -15,11 +15,11 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
 import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible, phrasePremierMessage } from '../application/envoi';
 import { journaliserEnvoiAccepte } from '../inbox/journal-sortant';
-import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type CauseSansTraduction, type LangueConsole, type Traduction } from '../traduction/traduire';
-import type { FilTraduit } from '../traduction/fil';
+import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type CauseSansTraduction, type Traduction } from '../traduction/traduire';
 import { messageDe } from '../lib/erreur';
 import type { AuteurDuChangement, DetailConversation } from '../inbox/evenements';
 import { AgentDeMetaGardeLeFil } from '../inbox/fil';
+import type { OuvertureConversationInbox } from '../inbox/ouverture';
 
 /**
  * Durée de vie du micro-cache des compteurs de l'Inbox : 5 secondes, ce qui mutualise les utilisateurs d'un même
@@ -103,20 +103,6 @@ export interface InboxDep extends ConversationsRepondre {
    * sélecteur ne propose que « Non affectée ».
    */
   membresPourAffectation(tenantId: string): Promise<Array<{ id: string; nom: string }>>;
-  /** Marque un fil comme lu (un opérateur vient de l'ouvrir). */
-  markConversationRead(tenantId: string, conversationId: string): Promise<void>;
-  /**
-   * wa_id et état de la fenêtre de service 24 h. `null` si conversation absente, ou d'un autre espace.
-   * `langueContact` : la langue apprise du contact, `null` tant qu'on n'a rien appris (pas « français » : le
-   * bouton de traduction sortante nomme sa cible avec).
-   */
-  getConversationContext(
-    conversationId: string,
-    tenantId: string,
-  ): Promise<{ waId: string; lastInboundAt: string | null; windowOpen: boolean; langueContact?: string | null } | null>;
-  getMessages(conversationId: string, apres?: { at: string; id: string }): Promise<ConversationMessage[]>;
-  /** Détenteur courant du fil, pour l'afficher dans le détail de la conversation. */
-  getControlOwner(tenantId: string, waId: string): Promise<'app_workflow' | 'app_human' | 'mba'>;
   /**
    * Le panneau Détail : identité, résumé de l'analyse, assignation, et les 50 derniers événements. `null` =
    * inconnue dans cet espace OU invisible de cet acteur (la règle de `src/inbox/assignment.ts`) : les deux
@@ -128,43 +114,19 @@ export interface InboxDep extends ConversationsRepondre {
 export interface InboxRouteDeps extends DepsRepondre {
   inbox: InboxDep;
   /**
+   * Prouve une fois la portée de la conversation et rend les seules lectures permises sur ce fil. Les routes de
+   * lecture ne manipulent plus un identifiant nu après une garde séparée.
+   */
+  ouvrirConversation: OuvertureConversationInbox;
+  /**
    * Journal d'audit (les fixtures qui ne l'observent pas passent `journalMuet`). Au mieux à l'appel : une action
    * bloquée par une écriture de log serait un incident.
    */
   audit: AuditSink;
   /**
-   * Transcrit le vocal d'un message, à la demande. Optionnelle : absente, la route rend 503 (une instance sans
-   * clé de modèle garde son Inbox). Rend `deja` quand le message était déjà transcrit, pour que l'écran le dise.
-   */
-  transcrireMessage?(
-    tenantId: string,
-    messageId: string,
-    conversationId?: string,
-    /**
-     * La langue du lecteur, quand la traduction est allumée dans son navigateur. On traduit la transcription, pas
-     * le corps (`[audio]` ou la légende) : un seul geste, et le texte arrive dans sa langue.
-     */
-    cible?: LangueConsole | null,
-  ): Promise<{ texte: string; deja: boolean; langue: string | null; traduction: string | null }>;
-  /**
-   * Les octets d'un message média, pour les servir au navigateur. `null` = ce message ne porte aucun média.
-   */
-  lireMediaMessage(tenantId: string, messageId: string, conversationId?: string): Promise<{ bytes: Buffer; mime: string | null; nom?: string | null } | null>;
-  /**
    * L'espace autorise-t-il ses agents à prendre une conversation du pot commun ? `false` par défaut.
    */
   agentsPeuventPrendre(tenantId: string): Promise<boolean>;
-  /**
-   * Traduit les entrants d'un fil vers la langue du lecteur, et range le résultat. Optionnelle : absente, la
-   * route rend le fil en VO avec `traductionIndisponible`, jamais une erreur. Rend les messages enrichis (même
-   * nombre, même ordre, plus `affiche`, `traduit`, `traductionEchouee`).
-   */
-  traduireFil?(
-    tenantId: string,
-    conversationId: string,
-    messages: ConversationMessage[],
-    cible: LangueConsole,
-  ): Promise<FilTraduit<ConversationMessage>>;
   /** Le traducteur des messages sortants. Absent : la route rend 503. */
   traducteur?: {
     /**
@@ -502,10 +464,10 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const tenant = espaceVerifie(req);
     const { conversationId, messageId } = req.params as { conversationId: string; messageId: string };
     if (!estUuid(messageId)) return reply.code(404).send({ error: 'message inconnu' });
-    const ctx = await deps.inbox.getConversationContext(conversationId, tenant);
-    if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
+    const conversation = await deps.ouvrirConversation(tenant, conversationId);
+    if (!conversation) return reply.code(404).send({ error: 'conversation inconnue' });
     try {
-      const f = await deps.lireMediaMessage(tenant, messageId, conversationId);
+      const f = await conversation.lireMedia(messageId);
       if (!f) return reply.code(404).send({ error: 'ce message ne porte aucun média' });
       /**
        * 🔴 `inline` pour une image affichable, `attachment` pour le reste, et `nosniff` partout (`enTetesMedia`) : un
@@ -540,9 +502,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     if (!estUuid(messageId)) return reply.code(404).send({ error: 'message inconnu' });
     // 🔴 La conversation est relue dans l'espace : c'est elle qui porte l'isolation, un identifiant de message
     // seul ne dit pas à qui il appartient.
-    const ctx = await deps.inbox.getConversationContext(conversationId, tenant);
-    if (!ctx) return reply.code(404).send({ error: 'conversation inconnue' });
-    if (!deps.transcrireMessage) return reply.code(503).send({ error: 'transcription indisponible sur cette instance' });
+    const conversation = await deps.ouvrirConversation(tenant, conversationId);
+    if (!conversation) return reply.code(404).send({ error: 'conversation inconnue' });
+    if (!conversation.transcrire) return reply.code(503).send({ error: 'transcription indisponible sur cette instance' });
     /**
      * `traduire` dans le corps : la langue de lecture vient du navigateur. Une valeur hors de nos deux langues est
      * ignorée, et on transcrit sans traduire.
@@ -550,7 +512,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const demande = (req.body ?? {}) as { traduire?: unknown };
     const cible = estLangueConsole(demande.traduire) ? demande.traduire : null;
     try {
-      const r = await deps.transcrireMessage(tenant, messageId, conversationId, cible);
+      const r = await conversation.transcrire(messageId, cible);
       return reply.code(200).send(r);
     } catch (err) {
       // 4xx, jamais 5xx (Cloudflare remplacerait le corps), et trois causes, trois actions : rien à transcrire,
@@ -639,9 +601,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
   app.post('/tenants/:tenantId/conversations/:conversationId/read', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
-    const ctx = await deps.inbox.getConversationContext(conversationId, tenant);
-    if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
-    await deps.inbox.markConversationRead(tenant, conversationId);
+    const conversation = await deps.ouvrirConversation(tenant, conversationId);
+    if (conversation === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    await conversation.marquerLue();
     // C'est le geste que la pastille doit refléter tout de suite : l'écran relit le compteur dans la foulée,
     // et sans cette invalidation il retomberait sur la valeur d'avant pendant toute la durée de vie du cache.
     invaliderCompteurs(tenant);
@@ -668,8 +630,8 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
   app.get('/tenants/:tenantId/conversations/:conversationId/messages', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const { conversationId } = req.params as { conversationId: string };
-    const ctx = await deps.inbox.getConversationContext(conversationId, tenant);
-    if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
+    const conversation = await deps.ouvrirConversation(tenant, conversationId);
+    if (conversation === null) return reply.code(404).send({ error: 'conversation inconnue' });
     // Delta : `afterAt` + `afterId` = le dernier message que l'écran a déjà (le fil se rafraîchit toutes les 4 s).
     // Les deux ou aucun, et `afterId` doit être un uuid : sinon on rend le fil entier. Le repli sûr montre trop de
     // messages, jamais trop peu.
@@ -682,7 +644,6 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * langues est ignorée et le fil sort en VO.
      */
     const cible = estLangueConsole(q.traduire) ? q.traduire : null;
-    const messages = await deps.inbox.getMessages(conversationId, apres);
     /**
      * Pas de plafond coûteux sur cette route : le fil se rafraîchit toutes les 4 secondes. La dépense est bornée
      * ailleurs : une traduction rangée n'est jamais recalculée, le lot est plafonné (40 messages, 20 000 caractères),
@@ -691,38 +652,7 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
      * elle, chaque tour relancerait une traduction complète du fil. Gardée par
      * `web/e2e/inbox-traduction-polling.spec.ts`.
      */
-    const traduit = cible !== null && deps.traduireFil
-      ? await deps.traduireFil(tenant, conversationId, messages, cible)
-      : null;
-    return reply.code(200).send({
-      waId: ctx.waId,
-      windowOpen: ctx.windowOpen,
-      lastInboundAt: ctx.lastInboundAt,
-      /**
-       * La langue apprise du contact, `null` tant qu'on n'a rien appris. C'est elle qui permet au bouton de
-       * traduction sortante de nommer sa cible au lieu de dire « Traduire » tout court.
-       */
-      langueContact: ctx.langueContact ?? null,
-      /**
-       * Rendu seulement quand une traduction a été demandée : sans `?traduire`, la réponse est inchangée. `true` =
-       * cet espace ne peut pas traduire ; ce n'est pas une panne, et c'est un 200.
-       */
-      ...(cible !== null ? { traductionIndisponible: traduit === null || traduit.indisponible !== null } : {}),
-      /**
-       * Pourquoi la traduction est indisponible, en causes qui n'appellent pas le même geste : `instance`, aucun
-       * modèle configuré (`TRADUCTION_MODELE` vide) ; `credit`, le crédit de l'espace est épuisé, et
-       * `credit_insuffisant`, il reste trop peu pour ouvrir la clé (recharger règle les deux) ; `cle_en_preparation`,
-       * la clé s'ouvre en arrière-plan ; `cle`, l'espace a du crédit mais sa clé n'a pas pu s'ouvrir. L'écran
-       * n'envoie recharger que pour les deux causes de crédit.
-       */
-      ...(cible !== null && (traduit === null || traduit.indisponible !== null)
-        ? { traductionCause: traduit === null ? 'instance' : traduit.indisponible }
-        : {}),
-      // Qui détient le fil : sans cette information, l'opérateur voit le scénario se taire sans comprendre
-      // pourquoi et ne sait pas s'il doit rendre la main.
-      controlOwner: await deps.inbox.getControlOwner(tenant, ctx.waId),
-      messages: traduit ? traduit.messages : messages,
-    });
+    return reply.code(200).send(await conversation.lire(apres, cible));
   });
 
   /**

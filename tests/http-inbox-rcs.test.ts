@@ -30,7 +30,6 @@ function app(over: Partial<Omit<InboxRouteDeps, 'inbox'>> & { inbox?: Partial<In
       ...inboxDepInerte,
       listConversations: async () => [],
       getConversationContext: async (id) => (id === 'c1' ? { waId: '33611', windowOpen, lastInboundAt: null } : null),
-      getMessages: async () => [],
       recordOutbound: async (_id, body, _msg, origine, type, _cat, _name, sender, canal) => {
         journal.push({ body, type, canal, sender: sender ?? null, origine });
       },

@@ -167,6 +167,7 @@ import type { ContexteTiers } from './ops/suppression-espace';
 import type { OpsSuppressionDeps } from './http/ops-suppression';
 import { CompteChez360dialog, TokenInvalidError } from './meta/credentials';
 import { lireMediaRecu } from './inbox/media-entrant';
+import { creerOuvertureConversationInbox } from './inbox/ouverture';
 import { PgConversationsV1 } from './api/conversations-v1.pg';
 import type { DepsRepondre } from './inbox/repondre';
 import { assurerCleGateway, creerAssureurDeCle, remonterPlafondApresRecharge, revoquerCleGateway, type DepsProvisionCle } from './agent/provisionner-cle';
@@ -1418,6 +1419,47 @@ async function main(): Promise<void> {
     plafondLePlusBas: plafondLePlusBas(config),
   } satisfies CampaignRouteDeps;
 
+  /**
+   * Les dépendances coûteuses de l'ouverture Inbox restent optionnelles, mais leur absence est enfermée dans la
+   * conversation ouverte : les routes n'ont plus à recâbler séparément contexte, fil, média et transcription.
+   */
+  const transcrireMessageInbox = config.AI_GATEWAY_API_KEY && config.TRANSCRIPTION_MODELE
+    ? (tenant: string, messageId: string, conversationId?: string, cible?: LangueConsole | null) => transcrireMessage({
+      messages: inboxStore,
+      // La traduction d'un vocal est sur le crédit du client, comme sa transcription depuis le lot 6.
+      ...(traducteur ? {
+        traducteur,
+        rangerTraduction: (t, m2, texte, langue) => traductionStore.ranger(t, null, [{ messageId: m2, texte, langue }]),
+      } : {}),
+      media: mediasRecus,
+      // Le transport du modèle (120 s), pas le transport général (30 s) : un fichier de 2 Mo part en base64.
+      transport: new FetchTransport(HTTP_TIMEOUT_MODELE_MS),
+      cle: config.AI_GATEWAY_API_KEY,
+      modele: config.TRANSCRIPTION_MODELE,
+      tailleMaxOctets: config.TRANSCRIPTION_TAILLE_MAX_KO * 1024,
+      facturation: {
+        solde: (t) => credits.solde(t),
+        commissionPour: commissionDeLEspace,
+        tauxEurParDollar: config.EUR_PER_USD,
+        debiter: async (t, montant, note) => { await credits.debiter(t, montant, { note }); },
+      },
+    }, tenant, messageId, conversationId, cible)
+    : undefined;
+  const traduireFilInbox = traducteur
+    ? (tenant: string, conversationId: string, messages: ConversationMessage[], cible: LangueConsole) => traduireFil({
+      traducteur,
+      traductions: traductionStore,
+      // Une écriture d'appoint qui échoue ne prive personne de sa lecture, mais ferait repayer au prochain tour.
+      onErreur: (err, quoi) => { journaliser('error', 'traduction_ecriture_impossible', { err, quoi, tenantId: tenant }); },
+    }, { tenantId: tenant, conversationId, messages, cible })
+    : undefined;
+  const ouvrirConversationInbox = creerOuvertureConversationInbox({
+    conversations: inboxStore,
+    lireMediaMessage,
+    ...(transcrireMessageInbox ? { transcrireMessage: transcrireMessageInbox } : {}),
+    ...(traduireFilInbox ? { traduireFil: traduireFilInbox } : {}),
+  });
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -1579,35 +1621,7 @@ async function main(): Promise<void> {
       // `inbox`, le dépôt des conversations que les routes lisent aussi.
       ...depsRepondre,
       audit: auditSink,
-      /**
-       * 🔴 Le crédit du client paie la transcription (lot 6, C), au tarif de son offre ; l'appel part sur notre clé et
-       * son coût est débité. Le pont des codes (`transcrireAppelOtp`), lui, reste à nos frais : c'est notre infrastructure.
-       */
-      ...(config.AI_GATEWAY_API_KEY && config.TRANSCRIPTION_MODELE ? {
-        transcrireMessage: (tenant: string, messageId: string, conversationId?: string, cible?: LangueConsole | null) => transcrireMessage({
-          messages: inboxStore,
-          // La traduction d'un vocal est sur le crédit du client, comme sa transcription depuis le lot 6.
-          ...(traducteur ? {
-            traducteur,
-            rangerTraduction: (t, m2, texte, langue) => traductionStore.ranger(t, null, [{ messageId: m2, texte, langue }]),
-          } : {}),
-          media: mediasRecus,
-          // Le transport du modèle (120 s), pas le transport général (30 s) : un fichier de 2 Mo part en base64
-          // (2,7 Mo à téléverser), et le défaut couperait les transcriptions les plus longues.
-          transport: new FetchTransport(HTTP_TIMEOUT_MODELE_MS),
-          cle: config.AI_GATEWAY_API_KEY,
-          modele: config.TRANSCRIPTION_MODELE,
-          tailleMaxOctets: config.TRANSCRIPTION_TAILLE_MAX_KO * 1024,
-          facturation: {
-            solde: (t) => credits.solde(t),
-            commissionPour: commissionDeLEspace,
-            tauxEurParDollar: config.EUR_PER_USD,
-            debiter: async (t, montant, note) => { await credits.debiter(t, montant, { note }); },
-          },
-        }, tenant, messageId, conversationId, cible),
-      } : {}),
-      // Lire une pièce jointe reçue : la définition unique, plus haut (hors du bloc de la transcription).
-      lireMediaMessage,
+      ouvrirConversation: ouvrirConversationInbox,
       // La prise d'une conversation du pot commun par un agent : le réglage de l'espace qui l'autorise.
       agentsPeuventPrendre: async (tenant) => (await settingsStore.get(tenant)).agentsPeuventPrendre,
       /**
@@ -1615,13 +1629,6 @@ async function main(): Promise<void> {
        * console proposerait un bouton qui rendrait 503, ou croirait la traduction branchée.
        */
       ...(traducteur ? {
-        traduireFil: (tenant: string, conversationId: string, messages: ConversationMessage[], cible: LangueConsole) => traduireFil({
-          traducteur,
-          traductions: traductionStore,
-          // Une écriture d'appoint qui échoue ne prive personne de sa lecture, mais fait repayer la même
-          // traduction à chaque ouverture : sans ce journal, la fuite ne se verrait que sur la facture.
-          onErreur: (err, quoi) => { journaliser('error', 'traduction_ecriture_impossible', { err, quoi, tenantId: tenant }); },
-        }, { tenantId: tenant, conversationId, messages, cible }),
         traducteur,
       } : {}),
       /**

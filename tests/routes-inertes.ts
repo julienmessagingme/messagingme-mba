@@ -277,10 +277,10 @@ export const priseDeFilSansEffet = async (): Promise<void> => {};
 export const COMPTEURS_VIDES = { tout: 0, aTraiter: 0, aTraiterNonLues: 0, urgentes: 0, signalees: 0, archivees: 0, traitees: 0, nonAffectees: 0, parMembre: [] };
 
 export const inboxInerte: Pick<InboxRouteDeps,
-  'audit' | 'lireMediaMessage' | 'agentsPeuventPrendre' | 'takeControl' | 'filTenuParLApplication' | 'application' | 'ecrirePremier' | 'reprendreLaMain' | 'releaseControl'
+  'audit' | 'ouvrirConversation' | 'agentsPeuventPrendre' | 'takeControl' | 'filTenuParLApplication' | 'application' | 'ecrirePremier' | 'reprendreLaMain' | 'releaseControl'
   | 'resolveTemplateParams' | 'sendRcsFromInbox' | 'categorieDuModele' | 'prepareCarousel' | 'startWorkflow'> = {
   audit: journalMuet,
-  lireMediaMessage: async () => null,
+  ouvrirConversation: async () => null,
   // Absente : `false`, le comportement d'avant le réglage.
   agentsPeuventPrendre: async () => false,
   // Absentes : l'état local du fil ne bougeait pas, et « Reprendre la main » réussissait sans rien écrire.
@@ -307,7 +307,7 @@ export const inboxInerte: Pick<InboxRouteDeps,
 export const inboxDepInerte: Pick<InboxDep,
   'effacerMessages' | 'ouvrirConversationDuContact' | 'countUnread' | 'countATraiter' | 'compterConversations'
   | 'archiverConversation' | 'signalerConversation' | 'marquerUrgente' | 'marquerTraitee' | 'getAssignee' | 'setAssignee'
-  | 'prendreSiLibre' | 'membresPourAffectation' | 'markConversationRead' | 'getControlOwner' | 'detailConversation'> = {
+  | 'prendreSiLibre' | 'membresPourAffectation' | 'detailConversation'> = {
   effacerMessages: neDevraitPasEtreAppelee('effacerMessages'),
   ouvrirConversationDuContact: async () => null,
   // Absents : 0, la pastille ne s'affichait pas.
@@ -325,9 +325,6 @@ export const inboxDepInerte: Pick<InboxDep,
   setAssignee: neDevraitPasEtreAppelee('setAssignee'),
   prendreSiLibre: async () => false,
   membresPourAffectation: async () => [],
-  markConversationRead: async () => {},
-  // Absente : `app_workflow`, l'état d'une conversation dont personne n'a pris le contrôle.
-  getControlOwner: async () => 'app_workflow',
   // Absente : la route n'existait pas, l'écran repliait le panneau. `null` rend le même 404.
   detailConversation: async () => null,
 };
