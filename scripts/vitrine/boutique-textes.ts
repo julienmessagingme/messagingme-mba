@@ -273,7 +273,7 @@ const fr = (): TexteBoutique => {
           nom: 'Free', prix: '0&nbsp;€', detail: 'sans limite de durée',
           liste: [
             'Votre boutique branchée par Claude Code : les trois messages et l’import',
-            `${milliers(limite('base', 'contacts'), 'fr')} contacts créés (chaque nouveau client de la boutique en crée un), ${milliers(limite('base', 'envoisModelesMois'), 'fr')} messages envoyés par mois`,
+            `${milliers(limite('base', 'contacts'), 'fr')} contacts (chaque nouveau client de la boutique en compte un, chaque personne qui vous écrit aussi), ${milliers(limite('base', 'envoisModelesMois'), 'fr')} messages envoyés par mois`,
             'Votre agent IA',
             `Votre numéro relié par Meta, ou un numéro fourni à ${numero} HT par mois`,
           ],
@@ -282,7 +282,7 @@ const fr = (): TexteBoutique => {
           nom: 'Pro', prix: euros(PRIX_PRO_HT_CENTIMES.mois, 'fr'), detail: `HT par mois, essai gratuit de ${ESSAI_PRO_JOURS}&nbsp;jours, carte demandée`,
           liste: [
             'La console complète, la carte de votre boutique comprise',
-            `Envois illimités, ${milliers(limite('pro', 'contacts'), 'fr')} contacts créés`,
+            `Envois illimités, ${milliers(limite('pro', 'contacts'), 'fr')} contacts créés et les contacts entrants illimités`,
             'Un numéro fourni, inclus',
             'Les campagnes et l’Inbox de l’équipe',
           ],
@@ -495,7 +495,7 @@ const en = (): TexteBoutique => {
           nom: 'Free', prix: '€0', detail: 'with no time limit',
           liste: [
             'Your store connected by Claude Code: the three messages and the import',
-            `${milliers(limite('base', 'contacts'), 'en')} contacts created (each new store customer creates one), ${milliers(limite('base', 'envoisModelesMois'), 'en')} messages sent a month`,
+            `${milliers(limite('base', 'contacts'), 'en')} contacts (each new store customer counts as one, and so does each person who writes to you), ${milliers(limite('base', 'envoisModelesMois'), 'en')} messages sent a month`,
             'Your AI agent',
             `Your number connected through Meta, or a provided number at ${numero} excl. VAT a month`,
           ],
@@ -504,7 +504,7 @@ const en = (): TexteBoutique => {
           nom: 'Pro', prix: euros(PRIX_PRO_HT_CENTIMES.mois, 'en'), detail: `excl. VAT a month, ${ESSAI_PRO_JOURS}-day free trial, card required`,
           liste: [
             'The full console, your store’s card included',
-            `Unlimited sends, ${milliers(limite('pro', 'contacts'), 'en')} contacts created`,
+            `Unlimited sends, ${milliers(limite('pro', 'contacts'), 'en')} contacts created and unlimited inbound contacts`,
             'A provided number, included',
             'Campaigns and the team Inbox',
           ],

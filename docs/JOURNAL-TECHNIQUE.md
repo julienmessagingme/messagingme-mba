@@ -4,6 +4,39 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-25 (nuit) : la Free à 100 contacts de toutes origines, dans les textes publics et le plugin 0.3.11
+
+La décision de Julien (`docs/superpowers/plans/2026-10-25-free-100-contacts.md`), dite partout où la vitrine et le
+plugin chiffraient la Free : « 100 contacts créés (les contacts entrants sont illimités) » devient « 100 contacts,
+ceux qui vous écrivent compris ». Le Pro ne change pas, et le dit : « 5 000 contacts créés et les contacts entrants
+illimités ».
+
+- **Tarifs** : la ligne « Contacts entrants illimités » passe de la carte Free à la carte Pro, qui ne la portait que
+  par « Tout ce que fait la Free, plus ». La question « Que se passe-t-il quand j'atteins une limite ? » dit qu'une
+  Free pleine ne laisse pas entrer un nouveau client qui écrit et qu'un e-mail prévient, sans « par jour », que le
+  test des limites invisibles refuse sur cette page.
+- **Pages développeurs** (le bloc de l'offre, écrit à la main dans les deux langues), **sept cas d'usage**
+  (`cas-textes.ts` : les quatre qui disaient « illimités », et les trois où le client écrit en premier, la bulle, la
+  prise de rendez-vous et le support IA, qui disaient « 100 contacts » sans dire que ceux qui écrivent comptent ; le
+  support dit désormais « suffit pour démarrer l'agent ») et **la page Shopify** (`boutique-textes.ts`).
+- **Le plugin** : le README (`generer.ts`), une entrée de FAQ neuve, « Que se passe-t-il quand mon espace Free
+  atteint ses 100 contacts ? », chiffrée depuis `DROITS` et donc aussi dans la FAQ des pages développeurs (ce qui est
+  refusé, ce qui n'entre pas, l'e-mail, le STOP gardé, et comment faire de la place : une clé au droit
+  `contacts:admin`, qui se crée dans la page Clés d'API de la console et jamais par Claude, la suppression étant
+  définitive ; le plafond de suppressions par jour n'est pas chiffré, c'est une limite invisible), une quatrième cause
+  à « Mon agent IA ne répond plus », et la skill Shopify qui prévient, avant un import en Free, qu'occuper toutes les
+  places n'en laisse aucune à un client qui écrit. Version 0.3.11, publiée après le `up` de l'API qui applique la
+  règle.
+- **Un test tient la parité** (`tests/vitrine-contacts-origines.test.ts`) : chaque phrase qui dit ce que compte la
+  limite (les deux Tarifs, les deux pages développeurs, les deux pages Shopify, chaque cas d'usage qui chiffre les
+  contacts, le README, et l'existence de l'entrée de FAQ) suit `contactsToutesOrigines`, le seul endroit du code qui
+  le décide. Vérifié dans les deux sens : la Free qui ne compterait plus ceux qui écrivent rend 8 rouges sur 8, le Pro
+  qui les compterait en rend 7 (le cas d'usage n'a pas de carte Pro).
+- **Relecture indépendante** : aucun rouge. Jaunes repris : la clé `contacts:admin` (une clé créée par Claude n'a pas
+  ce droit, `create_api_key` le refuse), le Pro limité à « ceux qui vous écrivent les premiers » (un contact importé
+  qui écrit compte toujours), la phrase du STOP désambiguïsée, la cause ajoutée à l'agent muet, l'import Shopify, le
+  cas support. Relevé pour le lot serveur : le libellé de refus `LIBELLE_LIMITE.contacts` (`src/offres/refus.ts`).
+
 ## 2026-10-25 (nuit) : la Free ne gère jamais plus de 100 contacts, quelle que soit leur origine
 
 - **La décision** (Julien) : « 100 contacts max gérés, quelle que soit l'origine : l'import et les conversations

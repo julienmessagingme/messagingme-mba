@@ -264,7 +264,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'La route, telle que Claude Code l’écrit', partie: 'webhook' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
@@ -304,7 +304,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The route, as Claude Code writes it', partie: 'webhook' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included; beyond that, Pro.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included; beyond that, Pro.',
         '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
         '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, beyond its monthly free tier, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],
@@ -346,7 +346,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'La tâche de la veille, telle que Claude Code l’écrit', partie: 'tache' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts créés (les contacts entrants sont illimités), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
@@ -386,7 +386,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The day-before job, as Claude Code writes it', partie: 'tache' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included; beyond that, Pro.',
         '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
         '<strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],
@@ -428,7 +428,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'Un fichier de la doc que l’agent apprend', partie: 'doc' },
       paie: [
-        '<strong>L’offre Free suffit pour l’agent&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris. <strong>Le relais dans l’Inbox</strong>, où votre équipe reprend la conversation, est dans l’offre Pro, avec un essai gratuit de 14&nbsp;jours.',
+        '<strong>L’offre Free suffit pour démarrer l’agent&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris. <strong>Le relais dans l’Inbox</strong>, où votre équipe reprend la conversation, est dans l’offre Pro, avec un essai gratuit de 14&nbsp;jours.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
@@ -468,7 +468,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'A file of the docs the agent learns', partie: 'docEn' },
       paie: [
-        '<strong>The Free plan is enough for the agent:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included. <strong>The handover in the Inbox</strong>, where your team takes the conversation over, is part of the Pro plan, with a 14-day free trial.',
+        '<strong>The Free plan is enough to start the agent:</strong> <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included. <strong>The handover in the Inbox</strong>, where your team takes the conversation over, is part of the Pro plan, with a 14-day free trial.',
         '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
         '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, beyond its monthly free tier, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],
@@ -510,7 +510,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'La balise que Claude Code colle dans votre page', partie: 'balise' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts, l’API et le serveur MCP compris, avec la mention «&nbsp;Propulsé par Messaging Me&nbsp;» sous la bulle&nbsp;; le Pro la retire.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris, avec la mention «&nbsp;Propulsé par Messaging Me&nbsp;» sous la bulle&nbsp;; le Pro la retire.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du visiteur.',
       ],
@@ -550,7 +550,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The tag Claude Code pastes into your page', partie: 'balise' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts, the API and the MCP server included, with “Powered by Messaging Me” under the bubble; Pro removes it.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included, with “Powered by Messaging Me” under the bubble; Pro removes it.',
         '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
         '<strong>Meta bills your business directly</strong> for each reply sent in the 24-hour window, beyond its monthly free tier, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the visitor’s country.',
       ],
@@ -592,7 +592,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'Le welcome message, tel que Claude Code l’écrit', partie: 'inscription' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts créés (les contacts entrants sont illimités), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>Meta facture directement</strong> chaque modèle marketing à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.',
       ],
       faq: [
@@ -631,7 +631,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The welcome, as Claude Code writes it', partie: 'inscription' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included; beyond that, Pro.',
         '<strong>Meta bills your business directly</strong> for each marketing template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.',
       ],
       faq: [
@@ -672,7 +672,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'Le webhook Stripe, tel que Claude Code l’écrit', partie: 'stripe' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts créés (les contacts entrants sont illimités), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.',
       ],
       faq: [
@@ -712,7 +712,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The Stripe webhook, as Claude Code writes it', partie: 'stripe' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included; beyond that, Pro.',
         '<strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.',
       ],
       faq: [
@@ -754,7 +754,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'L’envoi à l’expédition, tel que Claude Code l’écrit', partie: 'commandes' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts créés (les contacts entrants sont illimités), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
@@ -794,7 +794,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'The send on shipping, as Claude Code writes it', partie: 'commandes' },
       paie: [
-        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts created (inbound contacts are unlimited), the API and the MCP server included; beyond that, Pro.',
+        '<strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included; beyond that, Pro.',
         '<strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.',
         '<strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the customer’s country.',
       ],

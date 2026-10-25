@@ -220,14 +220,14 @@ export function readmeAJour(md: string): string {
   // Chaque mention du Pro suit les droits du code, pas seulement ses chiffres : un droit retiré disparaît du README.
   const mentionsPro = [
     pro.envoisModelesMois === null ? 'unlimited sends' : `${enAnglais(pro.envoisModelesMois!)} messages sent per month`,
-    `${enAnglais(pro.contacts!)} contacts`,
+    `${enAnglais(pro.contacts!)} contacts created and unlimited inbound contacts`,
     utilisateurs(pro.utilisateurs),
     ...(pro.numeroInclus ? ['provided number included'] : []),
     ...(DROITS.pro.fonctions.has('inbox') ? ['and the Inbox where your team takes over'] : []),
   ];
   const prix = [
-    `- **Free**: ${enAnglais(base.envoisModelesMois!)} messages sent per month, ${enAnglais(base.contacts!)} contacts created (inbound `
-      + `contacts are unlimited), ${utilisateurs(base.utilisateurs)}, the API and the MCP server included.`,
+    `- **Free**: ${enAnglais(base.envoisModelesMois!)} messages sent per month, ${enAnglais(base.contacts!)} contacts including those `
+      + `who write to you, ${utilisateurs(base.utilisateurs)}, the API and the MCP server included.`,
     `- **Your own number**, or a provided number at ${euros(PRIX_NUMERO_HT_CENTIMES)} excl. VAT per month.`,
     `- **Pay-as-you-go AI** on prepaid credit, €${offert} offered when your first number is connected.`,
     `- **Pro, ${euros(PRIX_PRO_HT_CENTIMES.mois)} excl. VAT per month** (${ESSAI_PRO_JOURS}-day free trial): ${mentionsPro.join(', ')}.`,
