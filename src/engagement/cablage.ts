@@ -10,7 +10,7 @@ import { PgRisqueStore } from './risque.pg';
  * Le câblage du balayage du risque, partagé par ses deux lanceurs (tâche de nuit du worker, `/ops` dans l'API),
  * pour que plafond, émetteur et file ne divergent pas.
  * L'enfilement passe par `enfilerEvenementAutomation`, qui pose l'espace comme clé de groupe, jamais par un
- * `enqueue` direct. Les heures d'ouverture se lisent comme pour les campagnes (`PgTenantSettingsStore.get`).
+ * `enqueue` direct. Les heures d'ouverture se lisent comme pour les campagnes, par leur politique effective.
  */
 export interface OptionsCablageRisque {
   pool: Pool;
@@ -33,7 +33,7 @@ export function depsBalayageRisque(o: OptionsCablageRisque): DepsBalayageRisque 
     declenchablesDepuis: (t, depuis) => store.declenchablesDepuis(t, depuis),
     automationRisqueActive: async (t) => (await o.automations.listEnabled(t, ['risque_eleve'])).length > 0,
     horairesOuvres: async (t) => {
-      const s = await reglages.get(t);
+      const s = await reglages.horairesEffectifs(t);
       return { timeZone: s.timezone, businessHours: s.businessHours };
     },
     // Le seul événement que ce chemin de masse publie (exception écrite au point d'émission, `balayage.ts`).

@@ -803,7 +803,7 @@ export async function demarrerWorker(): Promise<void> {
       // Horaires d'ouverture de l'espace, pour une campagne « uniquement pendant les heures ouvrées ». Demandés
       // seulement si la campagne porte le drapeau, une fois par run.
       horairesOuvres: async (tenant: string) => {
-        const s = await settingsStore.get(tenant);
+        const s = await settingsStore.horairesEffectifs(tenant);
         return { timeZone: s.timezone, businessHours: s.businessHours };
       },
       // Le run rend la main au bout de ce délai et se réenfile : la file reste équitable entre clients.
@@ -888,7 +888,7 @@ export async function demarrerWorker(): Promise<void> {
     libelleRequete: async (t, id) => (await agentRequetes.parId(t, id))?.label ?? null,
     inbox: inboxStore,
     fiche: contactStore,
-    fuseau: async (t) => (await settingsStore.get(t)).timezone,
+    fuseau: async (t) => (await settingsStore.horairesEffectifs(t)).timezone,
     // Relue à chaque appel : la fiche a pu bouger entre le refus et la reprise du job.
     contacts: contactStore,
     // eslint-disable-next-line no-console
@@ -1414,7 +1414,7 @@ export async function demarrerWorker(): Promise<void> {
         // ici c'est l'espace qui parle ; la campagne dit seulement si elle s'en affranchit
         // (`rattrapage_hors_horaires`), réponse qui voyage avec le destinataire.
         fenetreOuverte: async (tenant: string) => {
-          const s = await settingsStore.get(tenant);
+          const s = await settingsStore.horairesEffectifs(tenant);
           return fenetreDeRattrapageOuverte(new Date(), s.timezone, s.businessHours);
         },
       });
@@ -1708,7 +1708,7 @@ export async function demarrerWorker(): Promise<void> {
     const n = await runDateSweep({
       declencheurs: automationStore,
       automations: (tenant) => automationStore.listEnabled(tenant, ['avant_date']),
-      timeZone: async (tenant) => (await settingsStore.get(tenant)).timezone,
+      timeZone: async (tenant) => (await settingsStore.horairesEffectifs(tenant)).timezone,
       publish: async (tenantId, event) => { await enfilerEvenementAutomation(queue, { tenantId, event } satisfies AutomationEventJob); },
       toleranceMinutes: config.AUTOMATION_DATE_TOLERANCE_MINUTES,
       // eslint-disable-next-line no-console
@@ -2029,7 +2029,7 @@ export async function demarrerWorker(): Promise<void> {
       // `agent_action`, un démarrage unitaire comme la pose d'un tag.
       declencherAction: (input) => declencherAction({
         conversationId: (t, waId) => envoisEvenements.conversationDuContact(t, waId),
-        fuseau: async (t) => (await settingsStore.get(t)).timezone,
+        fuseau: async (t) => (await settingsStore.horairesEffectifs(t)).timezone,
         reserver: (l) => actionsAgent.reserver(l),
         annuler: (t, id) => actionsAgent.annuler(t, id),
         fiche: async (t, waId) => {
@@ -2103,7 +2103,7 @@ export async function demarrerWorker(): Promise<void> {
             // Chargées paresseusement : appelées seulement si la requête déclare une variable qui les réclame.
             inbox: inboxStore,
             fiche: contactStore,
-            fuseau: async (t) => (await settingsStore.get(t)).timezone,
+            fuseau: async (t) => (await settingsStore.horairesEffectifs(t)).timezone,
           }),
           /**
            * Sans cette ligne, un outil `origin = 'mcp'` arrête le tour : l'exécuteur dispatche sur

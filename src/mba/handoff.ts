@@ -1,6 +1,6 @@
 import { modifierSettings } from './client';
 import type { MbaClient } from './client';
-import type { MbaHandoffMode } from '../settings/store.pg';
+import type { HorairesEffectifs, MbaHandoffMode } from '../settings/store.pg';
 import { withinBusinessHours, type BusinessHours } from '../workflow/conditions';
 import { messageDe } from '../lib/erreur';
 
@@ -12,7 +12,7 @@ import { messageDe } from '../lib/erreur';
 export interface PilotageHandoffDeps {
   reglages: {
     setMbaHandoffMode(tenantId: string, mode: MbaHandoffMode): Promise<void>;
-    get(tenantId: string): Promise<{ timezone: string; businessHours: BusinessHours }>;
+    horairesEffectifs(tenantId: string): Promise<HorairesEffectifs>;
     tenantsHandoffSurHoraires(): Promise<Array<{ tenantId: string; timezone: string; businessHours: BusinessHours }>>;
   };
   meta: { mbaClientForTenant(tenantId: string): Promise<MbaClient> };
@@ -74,7 +74,7 @@ export async function reglerModeHandoff(
   mode: MbaHandoffMode,
 ): Promise<{ appliqueChezMeta: boolean }> {
   await deps.reglages.setMbaHandoffMode(tenantId, mode);
-  const horaires = mode === 'business_hours' ? await deps.reglages.get(tenantId) : undefined;
+  const horaires = mode === 'business_hours' ? await deps.reglages.horairesEffectifs(tenantId) : undefined;
   const voulu = valeurVoulue(mode, new Date(deps.now ? deps.now() : Date.now()), horaires);
   try {
     await ecrireHandoffEnabled(deps, tenantId, voulu);

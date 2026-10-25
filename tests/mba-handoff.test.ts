@@ -34,7 +34,7 @@ function pilotage(options: {
     deps: {
       reglages: {
         setMbaHandoffMode: async (_tenant, mode) => { modes.push(mode); },
-        get: async () => ({ timezone: 'Europe/Paris', businessHours: FERME }),
+        horairesEffectifs: async () => ({ timezone: 'Europe/Paris', businessHours: FERME }),
         tenantsHandoffSurHoraires: async () => [],
       },
       numeros: { getTenantPhoneNumberId: async () => options.numero === undefined ? 'PN1' : options.numero },

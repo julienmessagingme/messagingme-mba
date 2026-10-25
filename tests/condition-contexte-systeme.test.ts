@@ -29,7 +29,7 @@ function cablage(lectures: { recu?: () => Promise<Date | null>; langue?: () => P
       derniereSaisieDuContact: async () => { appels.push('saisie'); return 'bonjour'; },
       dateDernierMessageRecu: async () => { appels.push('recu'); return (lectures.recu ?? (async () => new Date('2026-10-01T08:00:00Z')))(); },
     } as never,
-    settingsStore: { get: async () => ({ timezone: 'Europe/Paris', businessHours: {} }) } as never,
+    settingsStore: { horairesEffectifs: async () => ({ timezone: 'Europe/Paris', businessHours: {} }) } as never,
     workflowStore: inerte, metaCredentials: inerte, metaFactory: inerte, rcsProvider: 'fake', emailTemplates: inerte,
     emailResolver: inerte, numeroDeLEspace: async () => null, runStore: inerte, fil: inerte,
     offres: offresToutOuvert,

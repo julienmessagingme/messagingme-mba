@@ -49,7 +49,7 @@ async function demarrer(): Promise<void> {
   const emetteur = creerEmetteurEmails({
     adminsConnectes: (t) => emailsProduit.adminsConnectes(t),
     reserver: (e) => emailsProduit.reserver(e),
-    fuseau: async (t) => (await reglages.get(t)).timezone,
+    fuseau: async (t) => (await reglages.horairesEffectifs(t)).timezone,
     enfiler: (job) => queue.enqueue(FILE_EMAILS_PRODUIT, job, { groupId: job.tenantId }),
   });
   const prevenirParCourriel = avisDeCoupure((e) => emetteur.emettre(e));

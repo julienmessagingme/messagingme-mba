@@ -2183,6 +2183,12 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 | `timezone` et `business_hours` | le fuseau (une heure murale sans fuseau est interprétée là) et les horaires |
 | `mba_handoff_mode` | `always` \| `business_hours` \| `never`. 🔴 La base est la source de vérité : `src/mba/handoff.ts` l'écrit, l'applique chez Meta (`reglerModeHandoff`) et la réconcilie à chaque balayage (`reconcilierHandoffSurHoraires`), la route et le worker appelant ce même module. Une panne de Meta n'annule pas le choix (la route rend `appliqueChezMeta: false`). ⚠️ Le balayage ne relit que les espaces en `business_hours` : c'est là seulement qu'il retente ; un échec en `always` ou `never` attend le prochain enregistrement du choix. Dans le balayage, l'échec d'un espace n'arrête pas les autres. L'état lu chez Meta a TROIS valeurs : un booléen (la valeur réelle), `'absent'` (jamais configuré : on écrit, même pour `false`), `null` (aucun numéro ou aucun agent : aucune écriture à l'aveugle) |
 
+`PgTenantSettingsStore.horairesEffectifs` est la porte des chemins d'exécution qui ne consomment que le fuseau et
+les heures d'ouverture (campagnes, scénarios, automations, risque, handoff et courriels). Elle masque la ligne
+persistée et applique ensemble `Europe/Paris` et les horaires lun-ven 9 h-18 h quand la ligne ou ses colonnes sont
+absentes. Le `select *` reste interne pour qu'un déploiement de code avant migration puisse encore lire une ancienne
+base ; les appelants ne refont ni ces défauts ni cette compatibilité.
+
 **Publicités**
 
 - `pubs_brouillons` : un FORMULAIRE mémorisé, jamais une publicité (aucun identifiant Meta, aucune dépense).
