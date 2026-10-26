@@ -25,7 +25,7 @@ const centre = pagesDuCentre();
 
 describe('le centre d’aide de la vitrine', () => {
   it('l’accueil et une page par fiche publique, dans les deux langues', () => {
-    expect(centre.length).toBe(10);
+    expect(centre.length).toBe(11);
     expect(generees.length).toBe(2 * (1 + centre.length + PAGES_CLAUDE.length));
   });
 
@@ -143,7 +143,7 @@ describe('le centre d’aide de la vitrine', () => {
         expect(contenu, `${chemin} ${m[1]}`).toContain(`<a class="aide-capture" href="${m[1]}?v=${empreinte}"`);
       }
     }
-    expect(vues).toBe(74);
+    expect(vues).toBe(92);
   });
 
   it('chaque page de la vitrine mène au centre d’aide et au blog par « Ressources », au bureau et dans le burger, et à l’aide en pied de page', () => {
@@ -244,7 +244,8 @@ describe('le centre d’aide de la vitrine', () => {
       const html = lire(`${p.fr.adresse.slice(1)}index.html`);
       expect(html.includes('class="aide-offre"'), p.cle).toBe(p.publication.offre);
     }
-    expect(centre.filter((p) => !p.publication.offre).map((p) => p.cle).sort()).toEqual(['ce-qu-il-faut-chez-meta', 'choisir-mon-offre', 'la-fenetre-de-24-heures']);
+    expect(centre.filter((p) => !p.publication.offre).map((p) => p.cle).sort())
+      .toEqual(['ce-qu-il-faut-chez-meta', 'choisir-mon-offre', 'garder-mon-application-whatsapp-business', 'la-fenetre-de-24-heures']);
   });
 
   it('le plan du site et llms.txt citent chaque page, et sont à jour', () => {

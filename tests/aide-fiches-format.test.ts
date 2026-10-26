@@ -176,13 +176,15 @@ describe('lireFicheDuDepot', () => {
 describe('les fiches publiques', () => {
   /**
    * La première vague (plan, « Global Constraints ») : rubrique et rang. Puis la boutique Shopify, rendue publique le
-   * 2026-10-24 (conception `2026-10-23-vitrine-shopify-design.md`, lot 1).
+   * 2026-10-24 (conception `2026-10-23-vitrine-shopify-design.md`, lot 1), et le guide « Garder mon application WhatsApp
+   * Business » (demandé par Julien le 2026-10-25), juste après la connexion du numéro.
    */
   const VAGUE: Record<string, [Rubrique, number]> = {
     'choisir-mon-offre': ['demarrer', 1],
     'ce-qu-il-faut-chez-meta': ['demarrer', 2],
     'connecter-mon-numero-whatsapp': ['demarrer', 3],
-    'me-reperer-dans-la-console': ['demarrer', 4],
+    'garder-mon-application-whatsapp-business': ['demarrer', 4],
+    'me-reperer-dans-la-console': ['demarrer', 5],
     'repondre-dans-l-inbox': ['parler-aux-clients', 1],
     'la-fenetre-de-24-heures': ['parler-aux-clients', 2],
     'faire-approuver-un-modele': ['parler-aux-clients', 3],
@@ -228,8 +230,9 @@ describe('les fiches publiques', () => {
   it('les pages sans capture et sans mention d’offre sont celles prévues', () => {
     expect(publiques.filter((f) => !f.publication.captures).map((f) => f.cle).sort())
       .toEqual(['ce-qu-il-faut-chez-meta', 'la-fenetre-de-24-heures']);
+    // Garder son application se fait depuis Claude Code (Free) ou l'Accueil, ouvert à la Free : aucune offre à dire.
     expect(publiques.filter((f) => !f.publication.offre).map((f) => f.cle).sort())
-      .toEqual(['ce-qu-il-faut-chez-meta', 'choisir-mon-offre', 'la-fenetre-de-24-heures']);
+      .toEqual(['ce-qu-il-faut-chez-meta', 'choisir-mon-offre', 'garder-mon-application-whatsapp-business', 'la-fenetre-de-24-heures']);
   });
 
   it('un prérequis désigne une autre fiche publique', () => {

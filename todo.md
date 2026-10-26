@@ -334,10 +334,17 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   vitrine:cas`) : le README, la FAQ et la skill `mise-en-service` du plugin ne le disent plus depuis `862f0294`
   (plugin 0.3.12). La page suit avec le lot « arbre du numéro sans QR code » (plan
   `docs/superpowers/plans/2026-10-26-numero-sans-qr-code.md`). Toujours sans le mot « coexistence » face au client.
-- **Le tutoriel de la fenêtre de Meta pour garder son application** (demandé par Julien le 2026-10-25), avec les dix
-  captures réelles de l'essai 161 (`docs/prive/captures-coexistence-2026-10-25/`, son `LISEZMOI` liste ce qu'il faut
-  masquer) : seulement après le lot 2 de la coexistence, qui corrige la fin du parcours (la page n'a pas reçu la
-  réponse de Meta au premier passage).
+- **Le guide « Garder mon application WhatsApp Business », au lot 2 de la coexistence** : retirer la phrase de relance
+  de l'étape 9 (fiche FR et EN) et la puce « La fin du parcours » de la section de `features.md` quand le lot 2 rend la
+  reprise automatique ; dire alors ce que devient le message de Meta « Messaging Me devra vérifier votre entreprise »
+  (écran 9). Refaire la capture de l'étape 9 si l'écran change (recette :
+  `docs/prive/captures-coexistence-2026-10-25/captures-guide.cjs`), et des captures anglaises si le parcours est refait
+  en anglais (la page anglaise reprend les françaises).
+- **« Ce qu'il faut chez Meta », point 3 (`PREREQUIS_META`), contredit « garder l'application »** : il dit qu'un numéro
+  relié quitte l'application WhatsApp Business, deux pages avant le guide qui la garde. À aligner avec l'arbre sans QR
+  code (la console, Claude, la fiche et le guide Meta des pages développeurs le lisent).
+- **« Connecter mon numéro WhatsApp » affiche « Avec l'offre Pro »**, alors que la Free ouvre l'Accueil et la fenêtre de
+  Meta (`MODULES_OUVERTS_AU_FREE`) : `offre: non` dans sa fiche, et la liste des pages sans offre des deux tests.
 - **La carte Codex de `/integrations/`** mène aux pages développeurs, qui n'expliquent pas encore Codex (essai 121 pas
   fait ; Julien garde la carte telle quelle en attendant, 2026-10-24).
 - **Remplacer un numéro relié par QR code par un numéro fourni** : `relierApplication` et `preparer` refusent un espace

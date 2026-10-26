@@ -2309,6 +2309,31 @@ scénario, comment importer des contacts.
   minute, il ne réessaie jamais tout seul, et il ne demande pas de code à un numéro que Meta dit déjà vérifié.
 - ✅ **Logo Meta Business Agent** sur la carte MBA (produit de Meta), à la place de notre logo MM.
 
+## Garder son application WhatsApp Business (2026-10-25)
+
+- ✅ **LIVE (lot 1, en production le 2026-10-25).** **À quoi ça sert.** Un numéro qui sert déjà dans l'application
+  WhatsApp Business du téléphone y reste, et passe aussi par l'API officielle : le client continue de répondre depuis son
+  téléphone, et ce que son site, son logiciel ou sa boutique envoie part de Messaging Me. Sans compte Meta Business, la
+  fenêtre de Meta le fait créer en chemin. Face au client, jamais le mot « coexistence » : « garder votre application
+  WhatsApp Business ».
+- ✅ **Lancer** : depuis Claude (`start_whatsapp_connection` en mode `coexistence`, puis `watch_whatsapp_connection`
+  dans le même mode), ou le bouton « Garder mon application WhatsApp Business » de l'Accueil. La fenêtre de Meta demande
+  le numéro et sa vérification, montre le profil de l'application, fait choisir ou créer le portefeuille business (nom
+  de l'entreprise, e-mail, pays, site), fait relier l'application (un code QR à scanner, ou un code d'accès), confirme le
+  compte WhatsApp Business et le partage avec Messaging Me, puis propose d'ajouter un moyen de paiement chez Meta.
+  Messaging Me ne reprend ni les contacts ni les anciennes conversations de l'application.
+- ⚠️ **La fin du parcours** : à l'essai réel 161, le premier passage (le moyen de paiement ajouté dans la fenêtre, puis
+  « Terminer ») n'a pas rattaché le numéro, la page n'ayant reçu aucune réponse de Meta ; le second, avec le
+  portefeuille et le compte déjà créés, a abouti. Relancer la connexion termine donc le rattachement.
+- ✅ **Ce qui change dans l'application** : les messages qu'on y tape restent gratuits, ceux de Messaging Me sont
+  facturés par Meta ; elle perd ses listes de diffusion, son catalogue, son message d'absence et ses étiquettes, ses
+  appareils liés sont déliés, et il faut l'ouvrir au moins toutes les deux semaines. Meta peut refuser un numéro trop
+  neuf dans l'application. Un agent IA ne voit pas ce qu'on y tape, et peut répondre en même temps.
+- ⏳ **À venir (lot 2)** : les messages tapés dans l'application qui apparaissent dans Messaging Me, et la reprise d'une
+  fenêtre de Meta fermée sans réponse.
+- 📖 **Le guide pas à pas**, avec les écrans réels de la fenêtre de Meta (données masquées) : la fiche publique
+  « Garder mon application WhatsApp Business » du centre d'aide.
+
 ## Rappels avant ou après une date (menu Automation)
 
 - ✅ **Lancer un scénario X minutes, heures ou jours AVANT OU APRÈS une date enregistrée** (2026-08-23,

@@ -4,7 +4,7 @@ source_section: Navigation (trois onglets en haut, barre latérale par onglet)
 source_empreinte: 1e81ed
 publique: oui
 rubrique: demarrer
-rang: 4
+rang: 5
 video: oui
 ---
 # Me repérer dans la console

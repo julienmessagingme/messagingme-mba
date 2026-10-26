@@ -4,6 +4,30 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : le guide « Garder mon application WhatsApp Business », avec les écrans réels de la fenêtre de Meta
+
+Demandé par Julien le 2026-10-25, publié le 2026-10-26 avant le gel de la bascule (son accord, la fin du parcours
+n'étant pas corrigée). Une fiche publique du centre d'aide, en français et en anglais, rangée sous « Démarrer » juste
+après « Connecter mon numéro » (« Me repérer dans la console » passe au rang 5), avec neuf étapes et leur capture.
+
+- **Les captures** : les écrans de l'essai 161 pris par Julien, recadrés sur la seule fenêtre de Meta (ni barre
+  d'adresse avec l'identifiant de l'application, ni navigateur autour), les données masquées ou remplacées par des
+  exemples neutres (numéro fictif « +44 7700 900123 », « Votre entreprise », un pavé « Code QR à scanner », plus aucun
+  « Session ID »), posés sur un fond de 1280 x 800 comme les autres captures. La page anglaise reprend les mêmes, faute
+  d'écrans de Meta en anglais. La recette (recadrages et masques) est rangée avec les originaux, dans `docs/prive/`.
+- **Ce que dit le guide** : la page « Connecter WhatsApp » ouverte par Claude ou l'Accueil, le numéro, le profil, le
+  portefeuille choisi ou créé en chemin, l'application reliée (code QR ou code d'accès), le partage avec Messaging Me,
+  puis « Terminer », le moyen de paiement pouvant attendre le premier modèle. Messaging Me ne reprend ni les contacts ni
+  les anciennes conversations. La fin du parcours n'est pas promise : si le numéro n'apparaît pas, on relance, ce qui a
+  abouti au second passage de l'essai 161 ; la reprise automatique vient au lot 2. Sous un intertitre, ce qui change
+  dans l'application, dont l'agent IA qui ne voit pas ce qu'on y tape et peut répondre en même temps.
+- **`features.md`** décrit enfin la fonction (« Garder son application WhatsApp Business », lot 1 en production) : la
+  fiche la cite, avec son empreinte.
+- **Relecture indépendante** : les neuf captures comparées à leurs originaux, aucune donnée restée. Un rouge repris :
+  l'étape 6 promettait la reprise des contacts et de six mois de conversations, que Messaging Me ne fait pas. Jaunes
+  repris : la fin du parcours, l'agent IA, le bloc « Ce qui change » sorti du détail de la dernière étape, les boutons
+  de la page anglaise, la connexion par le profil Facebook, le troisième droit demandé par Meta.
+
 ## 2026-10-26 : les six pages fonctionnalités pour les moteurs et les assistants IA (lot 3 du plan SEO et GEO)
 
 - **Titres de page** qui portent le mot-clé (« Chaînes WhatsApp pour les entreprises », « Analyse IA des conversations
