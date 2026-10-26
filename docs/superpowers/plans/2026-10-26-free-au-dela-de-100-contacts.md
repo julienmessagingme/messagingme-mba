@@ -6,8 +6,8 @@
 sinon ça bloque ». Puis, à ses questions : ce qui bloque est **« comme une Free pleine »** (ce qui est en production
 depuis `d3b0b071` : plus de création ni d'import, un nouveau client qui écrit n'entre pas, les contacts présents écrivent
 et reçoivent comme avant) ; le client supprime **« par Claude, en masse »** : un outil qui supprime d'un coup une
-sélection (les plus anciens, les inactifs, une étiquette), avec confirmation, et plus de plafond de 10 suppressions par
-jour tant que l'espace dépasse sa limite.
+sélection (les plus anciens, une étiquette ; « les inactifs » est reporté, voir plus bas), avec confirmation, et plus
+de plafond de 10 suppressions par jour tant que l'espace dépasse sa limite.
 
 **Aujourd'hui** (relevé dans le code le 2026-10-26) : la suppression passe par `effacerContacts` (`src/crm/effacement.ts`),
 qui consomme d'abord le quota du jour (`QuotaSuppressions.consommer`, `src/offres/compteurs.ts`, 10 en Free, tout ou
@@ -37,9 +37,13 @@ supprime sur confirmation sans buter sur les 10 par jour ; ensuite un nouveau cl
    - `delete_contacts` : le code seul ; il re-résout la sélection, refuse si elle n'a plus la même empreinte (des fiches
      ont changé depuis l'aperçu), puis efface par `effacerContacts` et rend le bilan.
    - La sélection : les champs de cible existants (`CHAMPS_CIBLE_FILTRES` et `contact_ids`, `src/mcp/cible.ts`, sans
-     l'analyse), plus `inactive_days` (aucun message, reçu ou envoyé, depuis au moins N jours, ou jamais) et `oldest`
-     (les N fiches les plus anciennes, par date de création, parmi la sélection). Une sélection sans aucun critère est
-     refusée ; au plus 5 000 fiches par appel. Une fiche déjà supprimée n'est jamais comptée ni rendue.
+     l'analyse), plus `oldest` (les N fiches les plus anciennes, par date de création, parmi la sélection). Une sélection
+     sans aucun critère est refusée ; au plus 1 000 fiches par appel (relecture du lot : la durée d'une transaction de
+     5 000 fiches et de leur audit n'était pas mesurée). Une fiche déjà supprimée n'est jamais comptée ni rendue.
+     🔴 **Pas de critère « inactifs depuis N jours »** (retiré à la relecture du lot) : il lisait la date du dernier
+     message des conversations, or elles sont purgées par la conservation (30 jours en Free) et toutes effacées à la
+     déconnexion du numéro, donc un client qui a écrit il y a trois mois paraissait « jamais actif ». Il reviendra quand
+     la fiche gardera sa propre date de dernier message (`todo.md`).
    - Le code : lié à l'espace, à la sélection et à l'empreinte des identifiants, usage unique, 30 minutes. Sans
      migration si possible (un jeton signé par `AUTH_SECRET` le permet : re-résolue après l'effacement, la sélection
      n'a plus la même empreinte) ; si une table est nécessaire, la migration part seule, avant le code.
@@ -60,9 +64,9 @@ supprime sur confirmation sans buter sur les 10 par jour ; ensuite un nouveau cl
 
 ## Tests attendus
 
-- La sélection : chaque critère seul et combinés, `oldest` qui garde les plus anciennes, `inactive_days` qui compte les
-  messages dans les deux sens, une fiche supprimée jamais rendue, un autre espace jamais touché, une sélection vide
-  refusée, plus de 5 000 refusé.
+- La sélection : chaque critère seul et combinés, `oldest` qui garde les plus anciennes, `inactive_days` refusé comme
+  une clé inconnue, une fiche supprimée jamais rendue, un autre espace jamais touché, une sélection vide refusée, plus
+  de 1 000 refusé.
 - La confirmation : un code d'un autre espace, périmé, déjà servi, ou dont la sélection a changé est refusé ; rien
   n'est effacé sans code valide.
 - Le plafond : au-delà de la limite, 50 suppressions d'un coup passent en Free ; sous la limite, la 11e du jour est

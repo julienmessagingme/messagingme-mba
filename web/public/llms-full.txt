@@ -4907,6 +4907,8 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | search_contacts | mcp:read | Chercher un contact par nom ou par numéro, avec sa dernière analyse. |
 | get_contact | mcp:read | La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci. |
 | block_contact | mcp:write connexion OAuth requise | Bloquer ou débloquer un contact : plus rien ne lui part, ses messages restent enregistrés. |
+| prepare_contacts_deletion | mcp:write connexion OAuth requise | Préparer la suppression d’une sélection de contacts sans rien effacer (étiquettes, consentement, une liste, les N plus anciens, 1 000 au plus) : leur nombre, 10 fiches au plus et un code de confirmation. |
+| delete_contacts | mcp:write connexion OAuth requise | Supprimer pour de bon les contacts d’une sélection préparée, avec la même sélection et son code : fiches, conversations et messages effacés, comme dans la console ; refusé si la sélection ne désigne plus les mêmes contacts. |
 | list_members | mcp:read | Les membres de l’espace, pour pouvoir leur confier un fil. |
 | reply_in_open_window | mcp:write | Répondre, uniquement si la fenêtre de 24 h est ouverte ; sur un numéro relié par QR code, hors de la fenêtre, la réponse à un client qui a écrit part en file ; ce numéro n’écrit jamais en premier. |
 | tag_conversation | mcp:write | Poser des tags sur le contact d’un fil. |

@@ -114,10 +114,14 @@ describe('creerModelesDuLancement', () => {
   });
 });
 
+/** Les fiches qu'une limite de contacts compte, comme `placesContacts` les rend : l'hypothèse de chaque test, dite. */
+const places = (etat: { comptees: number; limite: number | null }) => ({ placesContacts: async () => ({ ...etat }) });
+const SOUS_LA_LIMITE = places({ comptees: 42, limite: 100 });
+
 describe('QuotaSuppressions (10 suppressions de contacts par jour en Base)', () => {
   it('🔴 la 11e suppression du jour est refusée, une purge qui dépasserait l’est en entier, le lendemain repart à zéro', async () => {
     let t = OCT;
-    const q = new QuotaSuppressions({ offres: offres({}), compteur: new CompteurDebitMemoire(() => t), maintenant: () => t });
+    const q = new QuotaSuppressions({ offres: offres({}), compteur: new CompteurDebitMemoire(() => t), contacts: SOUS_LA_LIMITE, maintenant: () => t });
     expect(await q.consommer('t1', 8)).toEqual({ ok: true });
     expect(await q.consommer('t1', 3)).toEqual({ ok: false, max: 10 });
     expect(await q.consommer('t1', 2)).toEqual({ ok: true });
@@ -126,8 +130,41 @@ describe('QuotaSuppressions (10 suppressions de contacts par jour en Base)', () 
     expect(await q.consommer('t1', 10)).toEqual({ ok: true });
   });
 
-  it('sans limite (Pro) : rien n’est compté', async () => {
-    const q = new QuotaSuppressions({ offres: offres({ t1: 'pro' }), compteur: { compter: async () => { throw new Error('jamais'); }, lister: async () => [] }, maintenant: () => OCT });
+  it('sans limite (Pro) : rien n’est compté, ni les fiches lues', async () => {
+    const q = new QuotaSuppressions({
+      offres: offres({ t1: 'pro' }), compteur: { compter: async () => { throw new Error('jamais'); }, lister: async () => [] },
+      contacts: { placesContacts: async () => { throw new Error('jamais : sans plafond du jour, rien n’est lu'); } }, maintenant: () => OCT,
+    });
     expect(await q.consommer('t1', 500)).toEqual({ ok: true });
+  });
+
+  /**
+   * 🔴 PLUS DE PLAFOND TANT QUE L'ESPACE DÉPASSE SA LIMITE DE CONTACTS (décision de Julien du 2026-10-26) : un espace revenu
+   * en Free avec 3 000 contacts ne mettrait pas 290 jours à revenir sous les 100. Rien n'est compté pendant ce temps :
+   * revenu à la limite, il a ses dix suppressions du jour entières.
+   */
+  it('🔴 au-delà de la limite, 50 suppressions d’un coup passent en Free, sans rien compter ; pile à la limite, le plafond reprend', async () => {
+    const etat = { comptees: 3000, limite: 100 as number | null };
+    const q = new QuotaSuppressions({ offres: offres({}), compteur: new CompteurDebitMemoire(() => OCT), contacts: places(etat), maintenant: () => OCT });
+    expect(await q.consommer('t1', 50)).toEqual({ ok: true });
+    expect(await q.consommer('t1', 2850)).toEqual({ ok: true });
+    // Pile à la limite : l'espace ne la dépasse plus, les dix du jour sont là, entières, et la onzième est refusée.
+    etat.comptees = 100;
+    expect(await q.consommer('t1', 10)).toEqual({ ok: true });
+    expect(await q.consommer('t1', 1)).toEqual({ ok: false, max: 10 });
+    // Une offre au plafond du jour mais sans limite de contacts n'est jamais « au-delà » : son plafond tient.
+    etat.limite = null;
+    etat.comptees = 3000;
+    expect(await q.consommer('t1', 1)).toEqual({ ok: false, max: 10 });
+  });
+
+  it('une lecture des fiches en panne laisse passer et se journalise, comme un compteur qui ne répond pas', async () => {
+    const vus: string[] = [];
+    const q = new QuotaSuppressions({
+      offres: offres({}), compteur: new CompteurDebitMemoire(() => OCT), maintenant: () => OCT,
+      contacts: { placesContacts: async () => { throw new Error('base'); } }, journaliser: (m) => { vus.push(m); },
+    });
+    expect(await q.consommer('t1', 50)).toEqual({ ok: true });
+    expect(vus).toEqual(['quota_suppressions_injoignable']);
   });
 });

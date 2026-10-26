@@ -589,7 +589,7 @@ export const mcpOffreInerte: Pick<DepsMcp, 'offre' | 'offres' | 'cles'> = {
   offre: {
     vue: async () => ({
       offre: 'entreprise', fonctions: [...FONCTIONS], limites: { ...DROITS.entreprise.limites },
-      usage: { envoisModelesMois: null, contacts: 0, automations: 0, membres: 0 }, contactsToutesOrigines: false,
+      usage: { envoisModelesMois: null, contacts: 0, automations: 0, membres: 0 }, contactsToutesOrigines: false, contactsEnTrop: 0,
       grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
       suiteDuNumero: null, essai: { jours: 14, possible: false, finLe: null }, sieges: null, prixSiege: null, abonnement: null,
       upgradeUrl: 'https://console.inerte.test/offre',
@@ -836,4 +836,22 @@ export const mcpShopifyInerte: Pick<DepsMcp, 'shopify'> = {
 export const mcpChampsInertes: Pick<DepsMcp, 'champs' | 'ensureSocleField'> = {
   champs: { list: async () => [], create: neDevraitPasEtreAppelee('champs.create') },
   ensureSocleField: neDevraitPasEtreAppelee('ensureSocleField'),
+};
+
+/**
+ * La suppression de contacts en masse (2026-10-26), pour les montages qui n'en parlent pas : la sélection ne désigne
+ * personne, et l'effacement lève. Ses outils ont leur fichier, `tests/mcp-suppression.test.ts`.
+ */
+export const mcpSuppressionInerte: Pick<DepsMcp, 'suppression'> = {
+  suppression: {
+    selection: async () => [],
+    effacement: {
+      contacts: { purgeMany: neDevraitPasEtreAppelee('suppression.purgeMany') },
+      suppressionsDuJour: { consommer: neDevraitPasEtreAppelee('suppression.suppressionsDuJour') },
+      listeDeLAgent: { oublierChezMeta: neDevraitPasEtreAppelee('suppression.oublierChezMeta') },
+      enVol: creerTravauxEnVol(),
+    },
+    audit: neDevraitPasEtreAppelee('suppression.audit'),
+    secret: 'secret-inerte-des-suppressions',
+  },
 };

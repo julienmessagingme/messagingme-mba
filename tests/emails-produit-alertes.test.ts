@@ -316,10 +316,89 @@ describe('les limites de la Free et du Pro', () => {
     await balayerLimites(d);
     expect(e.emissions.map((x) => [x.cle, x.occasion])).toEqual([
       ['limite_contacts_pro_100', 'franchissement:1'],
-      ['limite_contacts_100', 'franchissement:1'],
+      // Revenu en Free avec 5 000 contacts pour 100 : au-delà de la limite, c'est « dépassée » (2026-10-26), pas 100 %.
+      ['limite_contacts_depassee', 'franchissement:1'],
       // Le seuil de 80 % du Pro avait été posé au premier tour (seul le plus haut s'écrit) : relâché, il repart neuf.
       ['limite_contacts_pro_80', 'franchissement:2'],
     ]);
+  });
+
+  /**
+   * 🔴 AU-DELÀ DE LA LIMITE, LA FREE REÇOIT « DÉPASSÉE », UNE FOIS (plan du 2026-10-26) : il dit combien de contacts
+   * supprimer et comment (Claude), au lieu du « limite atteinte » de 100 %, qui ne le dit pas.
+   */
+  it('🔴 un espace qui passe à 3 000 contacts reçoit limite_contacts_depassee une fois, pas limite_contacts_100', async () => {
+    const { d, e, espaces } = banc({ free: { modelesMois: null, contacts: 100, crees: 50 } });
+    await balayerLimites(d);
+    espaces.free!.crees = 3000;
+    await balayerLimites(d);
+    await balayerLimites(d);
+    expect(e.emissions.map((x) => [x.cle, x.occasion])).toEqual([['limite_contacts_depassee', 'franchissement:1']]);
+    expect(e.emissions[0]!.valeurs).toEqual({
+      contacts: '3000', limite: '100', a_supprimer: '2900', limite_pro: String(DROITS.pro.limites.contacts), lien_offre: 'https://c/offre',
+    });
+  });
+
+  it('🔴 « dépassée » se compte strictement au-dessus de la limite : pile à 100, c’est l’alerte de 100 % ; revenu à 100 puis de nouveau au-dessus, le redit', async () => {
+    const { d, e, espaces } = banc({ free: { modelesMois: null, contacts: 100, crees: 100 } });
+    await balayerLimites(d);
+    espaces.free!.crees = 101;
+    await balayerLimites(d);
+    espaces.free!.crees = 100;
+    await balayerLimites(d);
+    espaces.free!.crees = 150;
+    await balayerLimites(d);
+    expect(e.emissions.map((x) => [x.cle, x.occasion, x.valeurs.a_supprimer])).toEqual([
+      ['limite_contacts_100', 'franchissement:1', undefined],
+      ['limite_contacts_depassee', 'franchissement:1', '1'],
+      ['limite_contacts_depassee', 'franchissement:2', '50'],
+    ]);
+  });
+
+  it('🔴 « dépassée » se relâche hors de la Free : une Free à 3 000 passée en Pro, puis revenue, le reçoit de nouveau', async () => {
+    const { d, e, espaces } = banc({ t: { modelesMois: null, contacts: 100, crees: 3000 } });
+    await balayerLimites(d);
+    espaces.t = { modelesMois: null, contacts: 5000, crees: 3000, offre: 'pro' };
+    await balayerLimites(d);
+    espaces.t = { modelesMois: 1000, contacts: 100, crees: 3000 };
+    await balayerLimites(d);
+    expect(e.emissions.map((x) => [x.cle, x.occasion])).toEqual([
+      ['limite_contacts_depassee', 'franchissement:1'],
+      ['limite_contacts_depassee', 'franchissement:2'],
+    ]);
+  });
+
+  it('le Pro n’a pas de seuil « dépassée » : au-delà de sa limite, c’est son alerte de 100 %', async () => {
+    const { d, e } = banc({ pro: { modelesMois: null, contacts: 5000, crees: 9000, offre: 'pro' } });
+    await balayerLimites(d);
+    expect(e.emissions.map((x) => x.cle)).toEqual(['limite_contacts_pro_100']);
+  });
+
+  it('le texte de « dépassée » dit combien supprimer, par Claude, sans plafond du jour, et ce que coûte d’attendre', () => {
+    const m = modeleDe('limite_contacts_depassee')!;
+    expect(m.categorie).toBe('service');
+    const v = { contacts: '3000', limite: '100', a_supprimer: '2900', limite_pro: '5000', lien_offre: 'https://c/offre', espace: 'A', _fuseau: 'Europe/Paris' };
+    const fr = rendre(m, m.textes.fr, v, 'fr').text;
+    expect(fr).toMatch(/compte 3000 contacts, pour 100 dans l’offre Free/);
+    expect(fr).toMatch(/Supprimez-en au moins 2900 pour revenir à la limite/);
+    expect(fr).toMatch(/en le demandant à Claude/);
+    expect(fr).toMatch(/ne sont pas limitées par jour/);
+    expect(fr).toMatch(/un nouveau client qui vous écrit n’entre pas dans Messaging Me/);
+    const en = rendre(m, m.textes.en, v, 'en').text;
+    expect(en).toMatch(/Delete at least 2900 of them/);
+    expect(en).toMatch(/by asking Claude/);
+  });
+
+  it('🔴 les alertes d’un espace plein ne disent plus de supprimer par l’API : par Claude', () => {
+    const v = { limite: '100', limite_pro: '5000', lien_offre: 'x', espace: 'A', _fuseau: 'Europe/Paris' };
+    for (const cle of ['limite_contacts_100', 'espace_plein_entrant'] as const) {
+      const m = modeleDe(cle)!;
+      for (const l of ['fr', 'en'] as const) {
+        const texte = rendre(m, m.textes[l], v, l).text;
+        expect(texte, `${cle} ${l}`).not.toMatch(/par l’API|through the API/);
+        expect(texte, `${cle} ${l}`).toMatch(/Claude/);
+      }
+    }
   });
 
   it('un espace en panne n’arrête pas les autres', async () => {

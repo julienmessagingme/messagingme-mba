@@ -88,6 +88,8 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | search_contacts | mcp:read | Find a contact by name or number, with their latest analysis. |
 | get_contact | mcp:read | A contact record from its number, with their latest analysis and its summary. |
 | block_contact | mcp:write OAuth connection required | Block or unblock a contact: nothing is sent to them anymore, their messages are still recorded. |
+| prepare_contacts_deletion | mcp:write OAuth connection required | Prepare the deletion of a selection of contacts without erasing anything (tags, consent, a list, the N oldest, 1,000 at most): their count, 10 records at most and a confirmation code. |
+| delete_contacts | mcp:write OAuth connection required | Delete for good the contacts of a prepared selection, with the same selection and its code: records, conversations and messages erased, as in the console; refused if the selection no longer designates the same contacts. |
 | list_members | mcp:read | Workspace members, to assign threads to them. |
 | reply_in_open_window | mcp:write | Reply, only while the 24 h window is open; on a number linked by QR code, outside the window, a reply to a customer who wrote is queued; this number never writes first. |
 | tag_conversation | mcp:write | Add tags to a thread’s contact. |

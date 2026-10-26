@@ -1,6 +1,6 @@
 ---
 slug: choose-my-plan
-traduit_de: 285841
+traduit_de: ba2518
 ---
 # Choose my plan
 
@@ -49,8 +49,9 @@ Performance Lab require Enterprise.
 **What the contact limit counts.** On Free, all your contacts count, including those who write to you first. When
 your Free workspace is full, creating or importing a contact is refused, and a new customer who writes to you does not
 get into Messaging Me: their message is not recorded and your AI agent does not reply to them. An email lets you know,
-at most once a day. Your existing contacts write to you as before, and a deleted contact (through the API) frees its
-place. On Pro and Enterprise, a contact who writes to you first is never counted nor refused.
+at most once a day. Your existing contacts write to you as before, and a deleted contact frees its place: ask Claude to
+delete the ones you no longer need. On Pro and Enterprise, a contact who writes to you first is never counted nor
+refused.
 
 **What is never counted.** A reply sent within 24 hours of a customer’s message is not a template send: it is not
 counted.
@@ -72,6 +73,11 @@ and members beyond the Free plan’s limit have their access suspended (the olde
 soon as the workspace is back on Pro, “Retry” gives them the console back. All your contacts stay, even beyond the
 Free plan’s limit: as long as there are too many, you can no longer create or import any, and a new customer who
 writes to you does not get in.
+
+An email, the Plan page and Claude tell you how many to delete to get back to the limit. Ask Claude to delete them, in
+one go, and a few more to let new customers in: the oldest, or those with a tag. It first shows you how many there are
+and a few records, and only deletes once you agree. As long as your workspace is above its limit, these deletions are
+not capped per day.
 
 ## Your provided number
 

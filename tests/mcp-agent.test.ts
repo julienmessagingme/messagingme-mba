@@ -16,6 +16,7 @@ import { OUTILS_OFFRE } from '../src/mcp/outils-offre';
 import { OUTILS_CAMPAGNES } from '../src/mcp/outils-campagnes';
 import { OUTILS_CHAMPS } from '../src/mcp/outils-champs';
 import { OUTILS_SHOPIFY } from '../src/mcp/outils-shopify';
+import { OUTILS_SUPPRESSION } from '../src/mcp/outils-suppression';
 import type { DepsAgentMcp } from '../src/mcp/outils-agent';
 import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 import type { AgentComplet, AgentResume, PatchAgent } from '../src/agent/agent-store';
@@ -43,7 +44,7 @@ import { cleApiDeTest } from './aide/cle-api';
 import { contactsV1Muets } from './aide/contacts-v1';
 import { bornesDesChamps, bornesZod, champsDe, muettes, type Borne } from './aide/bornes-zod';
 import { jamaisDesabonne } from './consentement';
-import { journalMuet, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpFilInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { journalMuet, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpSuppressionInerte, mcpShopifyInerte, mcpFilInerte, mcpEtiquettesInertes, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { SANS_MCP } from './outils-mcp';
 import { AUCUN_GESTE, GESTE_MUET } from './gestes';
 import { offresToutOuvert, filiereApiSeule, aucunPremierMessage } from './gardes';
@@ -407,6 +408,7 @@ function monter(o: Options & { envoyerModele?: DepsMcp['envoyerModele']; usage?:
     ...mcpOffreInerte,
     ...mcpCampagnesInertes,
     ...mcpChampsInertes,
+    ...mcpSuppressionInerte,
     ...mcpShopifyInerte,
     ...mcpFilInerte,
     estDesabonne: jamaisDesabonne,
@@ -478,13 +480,17 @@ async function lister(server: Serveur, bearer: string): Promise<string[]> {
 
 /**
  * Les outils de la connexion du numéro (lot 3c), des webhooks sortants (lot 12), la création d'un modèle (lot 13), la clé
- * et le Pro d'une Free (offres v2), les campagnes depuis l'assistant (2026-10-20) et le blocage d'un contact (2026-10-22)
- * exigent aussi une personne : ils ont leur fichier, `tests/mcp-numero.test.ts`,
- * `tests/mcp-evenements.test.ts`, `tests/mcp-serveur.test.ts` (les modèles), `tests/mcp-offre.test.ts`,
- * `tests/mcp-tag-contacts.test.ts` (et ses voisins) et `tests/mcp-block-contact.test.ts`.
+ * et le Pro d'une Free (offres v2), les campagnes depuis l'assistant (2026-10-20), le blocage d'un contact (2026-10-22) et
+ * la suppression de contacts en masse (2026-10-26) exigent aussi une personne : ils ont leur fichier,
+ * `tests/mcp-numero.test.ts`, `tests/mcp-evenements.test.ts`, `tests/mcp-serveur.test.ts` (les modèles),
+ * `tests/mcp-offre.test.ts`, `tests/mcp-tag-contacts.test.ts` (et ses voisins), `tests/mcp-block-contact.test.ts` et
+ * `tests/mcp-suppression.test.ts`.
  */
 const OUTILS_DU_NUMERO = new Set([
-  ...[...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES, ...OUTILS_OFFRE, ...OUTILS_CAMPAGNES, ...OUTILS_CHAMPS, ...OUTILS_SHOPIFY].map((o) => o.nom),
+  ...[
+    ...OUTILS_NUMERO, ...OUTILS_EVENEMENTS, ...OUTILS_MODELES, ...OUTILS_OFFRE, ...OUTILS_CAMPAGNES, ...OUTILS_CHAMPS, ...OUTILS_SHOPIFY,
+    ...OUTILS_SUPPRESSION,
+  ].map((o) => o.nom),
   'block_contact',
 ]);
 const EXIGENT_PERSONNE = OUTILS.filter((o) => o.exigePersonne === true && !OUTILS_DU_NUMERO.has(o.nom)).map((o) => o.nom);

@@ -44,6 +44,16 @@ describe('lireVueOffre', () => {
     }
   });
 
+  it('🔴 les contacts au-delà de la limite (2026-10-26) : lus quand l’API les porte ; absents ou illisibles, 0, et la vue reste lisible', () => {
+    expect(lireVueOffre({ ...BASE, contactsEnTrop: 2900 })!.contactsEnTrop).toBe(2900);
+    // La console est publiée avant l'API : une API qui ne le porte pas encore ne doit ni casser la vue, ni rien annoncer.
+    for (const v of [undefined, null, '2900', -1, 2.5]) {
+      const vue = lireVueOffre({ ...BASE, contactsEnTrop: v });
+      expect(vue, JSON.stringify(v)).not.toBeNull();
+      expect(vue!.contactsEnTrop).toBe(0);
+    }
+  });
+
   it('lit le quota de stockage de la médiathèque quand l’API le porte', () => {
     const v = lireVueOffre({ ...BASE, limites: { ...limites(100), stockageOctets: 0 } });
     expect(v!.limites.stockageOctets).toBe(0);

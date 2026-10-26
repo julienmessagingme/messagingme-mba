@@ -400,8 +400,8 @@ export const CATALOGUE = [
         corps: 'Bonjour,\n\nL’espace {{espace}} a atteint les {{limite}} contacts que l’offre Free permet, ceux qui vous ont '
           + 'écrit les premiers compris : créer ou importer un contact est refusé, et un nouveau client qui vous écrit '
           + 'n’entre plus dans Messaging Me (son message n’y est pas enregistré, et vos agents IA ne lui répondent pas).'
-          + '\n\nPassez en Pro pour en gérer jusqu’à {{limite_pro}}, tout de suite, ou supprimez par l’API des contacts dont '
-          + 'vous n’avez plus besoin.',
+          + '\n\nPassez en Pro pour en gérer jusqu’à {{limite_pro}}, tout de suite, ou supprimez des contacts dont vous '
+          + 'n’avez plus besoin, en le demandant à Claude.',
         bouton: { libelle: 'Passer en Pro', lien: '{{lien_offre}}' },
       },
       en: {
@@ -409,9 +409,48 @@ export const CATALOGUE = [
         corps: 'Hello,\n\nThe {{espace}} workspace has reached the {{limite}} contacts the Free plan allows, including those '
           + 'who wrote to you first: creating or importing a contact is refused, and a new customer who writes to you no '
           + 'longer gets into Messaging Me (their message is not recorded there, and your AI agents do not reply to them).'
-          + '\n\nUpgrade to Pro to manage up to {{limite_pro}}, right away, or delete contacts you no longer need through '
-          + 'the API.',
+          + '\n\nUpgrade to Pro to manage up to {{limite_pro}}, right away, or delete contacts you no longer need by asking '
+          + 'Claude.',
         bouton: { libelle: 'Upgrade to Pro', lien: '{{lien_offre}}' },
+      },
+    },
+  },
+  {
+    // Au-delà de 100 % (plan du 2026-10-26) : un espace revenu en Free avec plus de contacts que sa limite (fin du Pro, de
+    // l'essai, sortie de l'Entreprise). Il remplace l'alerte de 100 % au même balayage : il dit combien supprimer, et comment.
+    cle: 'limite_contacts_depassee',
+    categorie: 'service',
+    nom: 'Offre Free : limite de contacts dépassée',
+    quand: 'Un espace Free compte plus de contacts que sa limite, par exemple au retour en Free après un Pro. Une fois à chaque franchissement.',
+    variables: {
+      contacts: { description: 'Les contacts que compte l’espace, ceux qui lui ont écrit les premiers compris', forme: 'texte', exemple: '3000' },
+      limite: LIMITE,
+      a_supprimer: { description: 'Les contacts à supprimer pour revenir à la limite', forme: 'texte', exemple: '2900' },
+      limite_pro: LIMITE_PRO,
+      lien_offre: LIEN_OFFRE,
+    },
+    textes: {
+      fr: {
+        sujet: 'Votre espace Free compte trop de contacts',
+        corps: 'Bonjour,\n\nL’espace {{espace}} compte {{contacts}} contacts, pour {{limite}} dans l’offre Free (ceux qui vous ont '
+          + 'écrit les premiers compris). Supprimez-en au moins {{a_supprimer}} pour revenir à la limite, et quelques-uns de '
+          + 'plus pour faire de la place, en le demandant à Claude : tant que l’espace dépasse sa limite, ces suppressions ne '
+          + 'sont pas limitées par jour.\n\nTant que l’espace est plein, aucun contact ne peut être créé ni importé, et un '
+          + 'nouveau client qui vous écrit n’entre pas dans Messaging Me (son message n’y est pas enregistré, et vos agents IA '
+          + 'ne lui répondent pas). Vos contacts actuels vous écrivent et reçoivent vos messages comme avant.\n\nPassez en Pro '
+          + 'pour en gérer jusqu’à {{limite_pro}}, tout de suite.',
+        bouton: { libelle: 'Voir mon offre', lien: '{{lien_offre}}' },
+      },
+      en: {
+        sujet: 'Your Free workspace has too many contacts',
+        corps: 'Hello,\n\nThe {{espace}} workspace has {{contacts}} contacts, for {{limite}} on the Free plan (including those who '
+          + 'wrote to you first). Delete at least {{a_supprimer}} of them to get back to the limit, and a few more to make '
+          + 'room, by asking Claude: as long as the workspace is above its limit, these deletions are not capped per day.'
+          + '\n\nAs long as the workspace is full, no contact can be created or imported, and a new customer who writes to '
+          + 'you does not get into Messaging Me (their message is not recorded there, and your AI agents do not reply to '
+          + 'them). Your current contacts write to you and receive your messages as before.\n\nUpgrade to Pro to manage up '
+          + 'to {{limite_pro}}, right away.',
+        bouton: { libelle: 'See my plan', lien: '{{lien_offre}}' },
       },
     },
   },
@@ -474,8 +513,8 @@ export const CATALOGUE = [
         sujet: 'Votre espace Free est plein : un nouveau client n’est pas entré',
         corps: 'Bonjour,\n\nUn nouveau client vous a écrit sur WhatsApp, mais l’espace {{espace}} a déjà les {{limite}} '
           + 'contacts de l’offre Free : son message n’est pas entré dans Messaging Me. Il n’a ni fiche ni conversation, et '
-          + 'vos agents IA ne lui ont pas répondu.\n\nPassez en Pro pour recevoir tous vos clients, ou supprimez par l’API '
-          + 'des contacts dont vous n’avez plus besoin.\n\nCette alerte part une fois par jour au plus.',
+          + 'vos agents IA ne lui ont pas répondu.\n\nPassez en Pro pour recevoir tous vos clients, ou supprimez des contacts '
+          + 'dont vous n’avez plus besoin, en le demandant à Claude.\n\nCette alerte part une fois par jour au plus.',
         bouton: { libelle: 'Passer en Pro', lien: '{{lien_offre}}' },
       },
       en: {
@@ -483,7 +522,7 @@ export const CATALOGUE = [
         corps: 'Hello,\n\nA new customer wrote to you on WhatsApp, but the {{espace}} workspace already has the {{limite}} '
           + 'contacts of the Free plan: their message did not get into Messaging Me. They have no record and no '
           + 'conversation, and your AI agents did not reply to them.\n\nUpgrade to Pro to receive all your customers, or '
-          + 'delete contacts you no longer need through the API.\n\nThis alert is sent at most once a day.',
+          + 'delete contacts you no longer need by asking Claude.\n\nThis alert is sent at most once a day.',
         bouton: { libelle: 'Upgrade to Pro', lien: '{{lien_offre}}' },
       },
     },

@@ -36,6 +36,7 @@ import { OUTILS_NUMERO, type DepsNumeroMcp } from './outils-numero';
 import { OUTILS_MODELES, type DepsModelesMcp } from './outils-modeles';
 import { OUTILS_CAMPAGNES, type DepsCampagnesMcp } from './outils-campagnes';
 import { OUTILS_CHAMPS, type DepsChampsMcp } from './outils-champs';
+import { OUTILS_SUPPRESSION, type DepsSuppressionMcp } from './outils-suppression';
 import { OUTILS_SHOPIFY } from './outils-shopify';
 import type { DepsGestionShopify } from '../shopify/gestion';
 import type { ResultatEnvoiPublic } from '../api/envoi-public';
@@ -48,6 +49,7 @@ export { RefusOutil } from './saisie';
 // Les bornes d'un fichier d'outils que `tests/mcp-serveur.test.ts` relit dans les schémas : exportées d'ici.
 export { MAX_CONTACTS_TROUVES, LONGUEUR_MAX_NOM_MODELE, LONGUEUR_MAX_LANGUE, LONGUEUR_MAX_NOM_CAMPAGNE, LONGUEUR_MAX_CODE } from './outils-campagnes';
 export { LONGUEUR_MAX_LIBELLE_CHAMP, LONGUEUR_MAX_CLE_CHAMP, LONGUEUR_MAX_VALEUR_CHAMP } from './outils-champs';
+export { LONGUEUR_MAX_CODE_SUPPRESSION } from './outils-suppression';
 
 /**
  * Le catalogue d'outils exposé aux agents tiers par le serveur MCP.
@@ -154,6 +156,12 @@ export interface DepsMcp extends DepsRepondre, DepsChampsMcp {
    * `POST /v1/sends` et les codes de confirmation (`src/mcp/outils-campagnes.ts`).
    */
   campagnes: DepsCampagnesMcp['campagnes'];
+  /**
+   * La suppression de contacts en masse depuis l'assistant (2026-10-26) : la sélection du magasin des contacts,
+   * l'effacement de la purge de la console (`effacerContacts`, les MÊMES objets), son audit, et le secret des codes
+   * (`src/mcp/outils-suppression.ts`).
+   */
+  suppression: DepsSuppressionMcp;
   /**
    * L'envoi d'un modèle (lot 13, domaine 3, livraison B) : le même cycle d'envoi public que `POST /v1/sends`, lié
    * à ses dépendances par le câblage. `compter` est appelé où la route compte ; il rend `true` ou lève.
@@ -1061,6 +1069,9 @@ export const OUTILS: OutilMcp[] = [
       + 'contactsToutesOrigines tells what the contact limit counts: in Free every contact counts, including those who wrote '
       + 'first, and a full Free workspace does not let a new customer in (their message is not recorded, the admins get an '
       + 'email); in Pro and Entreprise only the contacts created count, and a customer who writes is never refused. '
+      + 'contactsEnTrop is how many counted contacts are above the limit (0 within it): as long as it is above 0, no '
+      + 'contact can be created or imported; deleting that many (prepare_contacts_deletion, then delete_contacts) brings '
+      + 'the workspace back within its limit, and in Free these deletions are not capped per day meanwhile. '
       + 'A Pro includes 3 users; sieges gives the extra users it pays for and prixSiege the price of one more, offered to the '
       + 'admin when an invitation goes beyond (in the console). '
       + 'It explains an action refused with plan_limit_reached or plan_feature_unavailable; '
@@ -1108,6 +1119,8 @@ export const OUTILS: OutilMcp[] = [
   ...OUTILS_MODELES,
   // Les campagnes depuis l'assistant (2026-10-20) : leur fichier, `src/mcp/outils-campagnes.ts`.
   ...OUTILS_CAMPAGNES,
+  // La suppression de contacts en masse (2026-10-26) : `src/mcp/outils-suppression.ts`.
+  ...OUTILS_SUPPRESSION,
   // Les champs depuis l'assistant (2026-10-20) : `src/mcp/outils-champs.ts`.
   ...OUTILS_CHAMPS,
   // Le connecteur Shopify (2026-10-21) : `src/mcp/outils-shopify.ts`.

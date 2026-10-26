@@ -18,6 +18,7 @@ import { useT } from '@/lib/i18n';
 import { oublierOffre, relireOffre, useOffre } from '@/lib/use-offre';
 import { changerSieges, payerPro, portailPro, rendreNumero } from '@/lib/api/offre';
 import { ApiError, erreurDeChargement } from '@/lib/http';
+import { fmtNum } from '@/lib/format';
 import {
   FONCTIONS_OFFRE, NOMS_OFFRES, libelleFonction, nomDeLOffre, offreQuiOuvre,
   type FonctionOffre, type LimitesOffre, type NomOffre, type VueOffre,
@@ -223,14 +224,28 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
 
   const suivante: NomOffre | null = vue.offre === 'free' ? 'pro' : vue.offre === 'pro' ? 'entreprise' : null;
   const offreDemandee = demandee ? offreQuiOuvre(vue, demandee) : null;
-  const jauges: Array<{ cle: string; libelle: string; utilise: number | null; max: number | null; note?: string }> = [
+  /**
+   * Les contacts au-delà de la limite (2026-10-26), comptés par le serveur : la marche à suivre sous la jauge. En Free, par
+   * Claude, la seule voie sans console, et sans plafond du jour tant que l'espace dépasse ; ailleurs, la liste des contacts
+   * aussi. Rien sous la limite, ni sur une API plus ancienne.
+   */
+  const enTrop = vue.contactsEnTrop;
+  const [fr, en, s] = [fmtNum(enTrop, 'fr'), fmtNum(enTrop, 'en'), enTrop > 1 ? 's' : ''];
+  const alerteContacts = enTrop === 0 ? undefined : vue.contactsToutesOrigines
+    ? t(`Votre espace compte ${fr} contact${s} de trop : tant qu’il est plein, aucun contact ne peut être créé ni importé, et un nouveau client qui vous écrit n’entre pas. Demandez à Claude d’en supprimer au moins ${fr}, et quelques-uns de plus pour laisser entrer de nouveaux clients (par exemple les plus anciens, ou ceux d’une étiquette) : tant que l’espace dépasse sa limite, ces suppressions ne sont pas limitées par jour.`,
+      `Your workspace has ${en} contact${s} too many: as long as it is full, no contact can be created or imported, and a new customer who writes to you does not get in. Ask Claude to delete at least ${en} of them, and a few more to let new customers in (for example the oldest, or those with a tag): as long as the workspace is above its limit, these deletions are not capped per day.`)
+    : t(`Votre espace a créé ${fr} contact${s} de trop : tant qu’il est plein, aucun contact ne peut être créé ni importé. Supprimez-en au moins ${fr}, et quelques-uns de plus pour pouvoir en créer de nouveaux, depuis la liste des contacts ou en le demandant à Claude.`,
+      `Your workspace has created ${en} contact${s} too many: as long as it is full, no contact can be created or imported. Delete at least ${en} of them, and a few more to be able to create new ones, from the contact list or by asking Claude.`);
+  const jauges: Array<{ cle: string; libelle: string; utilise: number | null; max: number | null; note?: string; alerte?: string }> = [
     // Ce qui compte vient du serveur (`contactsToutesOrigines`) : en Free, tous les contacts, ceux qui écrivent compris.
     vue.contactsToutesOrigines
       ? { cle: 'contacts', libelle: t('Contacts', 'Contacts'), utilise: vue.usage.contacts, max: vue.limites.contacts,
         note: t('Tous comptent, ceux qui vous écrivent compris : au-delà, un nouveau client qui vous écrit n’entre pas dans Messaging Me.',
-          'All of them count, including those who write to you: beyond that, a new customer who writes to you does not get into Messaging Me.') }
+          'All of them count, including those who write to you: beyond that, a new customer who writes to you does not get into Messaging Me.'),
+        alerte: alerteContacts }
       : { cle: 'contacts', libelle: t('Contacts créés', 'Contacts created'), utilise: vue.usage.contacts, max: vue.limites.contacts,
-        note: t('Un contact qui vous écrit le premier n’est jamais compté.', 'A contact who writes to you first is never counted.') },
+        note: t('Un contact qui vous écrit le premier n’est jamais compté.', 'A contact who writes to you first is never counted.'),
+        alerte: alerteContacts },
     { cle: 'modeles', libelle: t('Modèles envoyés ce mois-ci', 'Templates sent this month'), utilise: vue.usage.envoisModelesMois, max: vue.limites.envoisModelesMois,
       note: t('Les réponses dans les 24 h qui suivent un message du client ne sont jamais comptées.', 'Replies within 24 hours of a customer message are never counted.') },
     { cle: 'automations', libelle: t('Automations allumées', 'Active automations'), utilise: vue.usage.automations, max: vue.limites.automations },
@@ -293,6 +308,7 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
                   </div>
                 )}
                 {j.note && j.max !== null && <p className="mt-1 text-xs text-ink-400">{j.note}</p>}
+                {j.alerte && <p className="mt-1.5 text-xs text-danger" data-testid={`offre-usage-${j.cle}-en-trop`}>{j.alerte}</p>}
               </div>
             );
           })}

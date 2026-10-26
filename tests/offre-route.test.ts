@@ -24,7 +24,7 @@ const personne: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity 
 
 const VUE_BASE: VueOffre = {
   offre: 'free', fonctions: [], limites: { ...DROITS.base.limites },
-  usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 }, contactsToutesOrigines: true,
+  usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 }, contactsToutesOrigines: true, contactsEnTrop: 0,
   grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
   suiteDuNumero: null, essai: { jours: 14, possible: true, finLe: null }, sieges: null, prixSiege: { moisCentimes: 1500, anCentimes: 15000 },
   abonnement: null, upgradeUrl: 'https://console.test/offre',
@@ -99,5 +99,11 @@ describe('l’outil MCP get_plan', () => {
     expect(outil!.description).toMatch(/in Free every contact counts, including those who wrote first/);
     expect(outil!.description).toMatch(/a full Free workspace does not let a new customer in/);
     expect(outil!.description).not.toMatch(/contacts created, automations on/);
+  });
+
+  it('🔴 sa description dit ce que vaut contactsEnTrop, et nomme les deux outils qui suppriment (2026-10-26)', () => {
+    expect(outil!.description).toContain('contactsEnTrop');
+    expect(outil!.description).toContain('prepare_contacts_deletion');
+    expect(outil!.description).toContain('delete_contacts');
   });
 });

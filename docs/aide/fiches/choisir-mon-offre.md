@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: a8ff52
+source_empreinte: 7b94b6
 publique: oui
 rubrique: demarrer
 rang: 1
@@ -56,8 +56,8 @@ l'Entreprise.
 compris. Quand votre espace Free est plein, créer ou importer un contact est refusé, et un nouveau client qui vous
 écrit n'entre pas dans Messaging Me : son message n'est pas enregistré et votre agent IA ne lui répond pas. Un e-mail
 vous prévient, une fois par jour au plus. Vos contacts déjà présents vous écrivent comme avant, et un contact supprimé
-(par l'API) libère sa place. En Pro et en Entreprise, un contact qui vous écrit le premier n'est jamais
-compté ni refusé.
+libère sa place : demandez à Claude de supprimer ceux dont vous n'avez plus besoin. En Pro et en Entreprise, un contact
+qui vous écrit le premier n'est jamais compté ni refusé.
 
 **Ce qui n'est jamais compté.** Une réponse envoyée dans les 24 heures qui suivent un message du client n'est pas un
 envoi de modèle : elle n'est pas comptée.
@@ -80,6 +80,11 @@ nouvelles conversations, et les membres au-delà de la limite de l'offre Free vo
 (l'administrateur le plus ancien garde le sien) : dès que l'espace repasse en Pro, « Réessayer » leur rend la
 console. Vos contacts restent tous, même au-delà de la limite de la Free : tant qu'il y en a trop, vous ne pouvez plus
 en créer ni en importer, et un nouveau client qui vous écrit n'entre pas.
+
+Un e-mail, la page Offre et Claude vous disent combien en supprimer pour revenir à la limite. Demandez à Claude de les
+supprimer, d'un coup, et quelques-uns de plus pour laisser entrer de nouveaux clients : les plus anciens, ou ceux d'une
+étiquette. Il vous montre d'abord leur nombre et quelques fiches, et ne supprime qu'après votre accord. Tant que votre
+espace dépasse sa limite, ces suppressions ne sont pas limitées par jour.
 
 ## Votre numéro fourni
 

@@ -1,5 +1,24 @@
 # todo.md : backlog
 
+## 🟡 La Free au-delà de 100 contacts, la suppression en masse par Claude : ce que la relecture laisse (2026-10-26)
+
+Plan `docs/superpowers/plans/2026-10-26-free-au-dela-de-100-contacts.md` (`prepare_contacts_deletion`, `delete_contacts`,
+le plafond du jour levé au-delà de la limite, `limite_contacts_depassee`). Corrigé dans le lot : le critère d'inactivité
+retiré, le plafond par appel ramené à 1 000 fiches, l'aperçu compté dans les opérations lourdes, la page Offre qui dit
+d'en supprimer quelques-uns de plus. Ce qui reste :
+
+1. **L'inactivité reviendra quand la fiche gardera sa propre date de dernier message.** Aujourd'hui seul le fil la date
+   (`conversations.last_message_at`), et la conservation le purge (30 jours en Free) comme la déconnexion du numéro :
+   un critère `inactive_days` sur les fils effacerait des clients actifs. Une colonne de la fiche, avancée par chaque
+   message reçu ou envoyé et jamais purgée avec le fil, le rendrait juste (migration, puis le critère).
+2. **À trancher par Julien : le plafond anti-rotation se contourne.** Une Free pleine à 100 qui reçoit le STOP d'un
+   inconnu passe à 101 (sa fiche désabonnée naît, `src/webhooks/espace-plein.ts`), ce qui lève le plafond du jour
+   (`QuotaSuppressions`) : elle peut alors tout effacer d'un coup et réimporter 100 fiches neuves. Fermer : ne lever le
+   plafond que pour l'écart à la limite, ou ne pas compter une fiche née d'un STOP dans le dépassement.
+3. **À trancher par Julien : une insertion d'audit multi-lignes** au lieu d'une ligne par fiche (`makeJournal`, la purge
+   de la console comme `delete_contacts`) : mille fiches font mille insertions et mille lectures de l'adresse de
+   l'auteur, l'une après l'autre, avant la réponse.
+
 ## 🟡 Les restes de la relecture du lot C de l'audit de structure (envois d'un opérateur, recharge Stripe, 2026-10-26)
 
 - `src/inbox/envoi-operateur.ts` importe ses contrats (`InboxRouteDeps`, `OutboundTemplate`) du fichier de route

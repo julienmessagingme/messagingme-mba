@@ -67,6 +67,11 @@ export interface VueOffre {
    * où ceux qui écrivent les premiers comptent aussi. Faux sur une API plus ancienne, qui ne les comptait pas.
    */
   contactsToutesOrigines: boolean;
+  /**
+   * Les contacts comptés au-delà de la limite (2026-10-26), tels que le serveur les compte : ce qu'il faut supprimer pour
+   * y revenir. 0 sous la limite, et sur une API plus ancienne qui ne le porte pas (la page n'en dit alors rien).
+   */
+  contactsEnTrop: number;
   grille: Record<NomOffre, { fonctions: ReadonlySet<FonctionOffre>; limites: LimitesOffre }>;
   /** Les prix HT du Pro, en centimes (lot 6, B1). `null` : une API plus ancienne qui ne les porte pas encore. */
   prixPro: { moisCentimes: number; anCentimes: number } | null;
@@ -171,6 +176,7 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     offre, fonctions: ouvrir(fonctions), limites,
     usage: { envoisModelesMois: u.envoisModelesMois, contacts: u.contacts, automations: u.automations, membres: u.membres },
     contactsToutesOrigines: brut.contactsToutesOrigines === true,
+    contactsEnTrop: entier(brut.contactsEnTrop) ? brut.contactsEnTrop : 0,
     grille: grille as VueOffre['grille'],
     prixPro: lirePrixPro(brut.prixPro),
     suiteDuNumero: lireSuiteDuNumero(brut.suiteDuNumero),

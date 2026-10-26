@@ -43,6 +43,13 @@ export interface VueOffre {
    */
   contactsToutesOrigines: boolean;
   /**
+   * Les fiches comptées au-delà de la limite de contacts (plan du 2026-10-26), 0 sous la limite ou pile à elle, et sans
+   * limite : ce qu'il faut supprimer pour y revenir. Un espace revenu en Free avec 3 000 contacts en a 2 900 ; tant qu'il en
+   * a, rien ne se crée ni ne s'importe, et ses suppressions du jour ne sont pas plafonnées (`QuotaSuppressions`). La page
+   * de l'offre le dit sous la jauge, et Claude (`get_plan`) le lit avant de proposer la suppression.
+   */
+  contactsEnTrop: number;
+  /**
    * La grille des trois offres, lue dans `DROITS` : la page `/offre` de la console et Claude (`get_plan`) la montrent sans
    * jamais la recopier. Les limites de l'Entreprise y sont celles du devis par défaut (`null` = sans limite).
    */
@@ -165,6 +172,8 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
       limites: { ...droits.limites },
       usage: { envoisModelesMois: mois === null ? null : mois.max - mois.reste, ...usage },
       contactsToutesOrigines: contactsToutesOrigines(offre),
+      // L'usage compte comme la limite (`PgOffresStore.usage`, sur `ficheComptee`) : l'écart est celui de la porte.
+      contactsEnTrop: droits.limites.contacts === null ? 0 : Math.max(0, usage.contacts - droits.limites.contacts),
       grille: grilleDesOffres(),
       prixPro: d.proEnVente ? { moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an } : null,
       suiteDuNumero: suite === null ? null : { finPrevueLe: suite.finPrevueLe?.toISOString() ?? null, rendreNumero: suite.rendreNumero },

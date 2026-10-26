@@ -109,16 +109,32 @@ export function creerModelesDuLancement(
   };
 }
 
+export interface DepsQuotaSuppressions extends DepsQuotaModeles {
+  /**
+   * Les fiches que la limite de contacts compte, et cette limite (`PgContactStore.placesContacts`, la définition de la
+   * porte d'une Free pleine) : un espace au-delà de sa limite n'a plus de plafond du jour. Requise : les tests disent leur
+   * hypothèse (sous la limite), au lieu d'un défaut qui la cacherait.
+   */
+  contacts: { placesContacts(tenantId: string, numeros: readonly string[]): Promise<{ limite: number | null; comptees: number }> };
+}
+
 /**
  * LES SUPPRESSIONS DE CONTACTS DU JOUR (lot 6, spec § 4) : 10 par jour civil de Paris en Base, un garde-fou contre la
  * rotation (supprimer pour recréer sous la limite de contacts), pas un argument commercial. Tout ou rien : une purge qui
  * dépasserait est refusée en entier. Même compteur partagé, même conduite qu'une panne que les modèles du mois.
+ *
+ * 🔴 SANS PLAFOND TANT QUE L'ESPACE DÉPASSE SA LIMITE DE CONTACTS (décision de Julien du 2026-10-26, plan
+ * `docs/superpowers/plans/2026-10-26-free-au-dela-de-100-contacts.md`) : un espace revenu en Free avec 3 000 contacts
+ * mettrait 290 jours à revenir sous les 100 à dix par jour, et tant qu'il dépasse il ne crée rien, donc il ne peut pas
+ * faire tourner ses fiches. Rien n'est alors compté : revenu sous la limite, ou pile à elle, le plafond reprend entier.
+ * Ici, et pas dans chaque appelant : la purge de la console, `DELETE /v1/contacts/{id}` et Claude passent tous par
+ * `effacerContacts`, qui consomme ce quota. Le compte n'est lu que pour une offre qui a un plafond du jour (la Free).
  */
 export class QuotaSuppressions {
   private readonly maintenant: () => number;
   private readonly journaliser: (message: string, champs: Record<string, unknown>) => void;
 
-  constructor(private readonly d: DepsQuotaModeles) {
+  constructor(private readonly d: DepsQuotaSuppressions) {
     this.maintenant = d.maintenant ?? Date.now;
     this.journaliser = d.journaliser ?? ((m, c) => journaliserParDefaut('warn', m, c));
   }
@@ -127,6 +143,8 @@ export class QuotaSuppressions {
     try {
       const max = (await this.d.offres.offreDe(tenantId)).droits.limites.suppressionsJour;
       if (max === null) return { ok: true };
+      const places = await this.d.contacts.placesContacts(tenantId, []);
+      if (places.limite !== null && places.comptees > places.limite) return { ok: true };
       const t = this.maintenant();
       const jour = jourDeParis(t);
       const { debutMs, finMs } = bornesDuJour(jour);

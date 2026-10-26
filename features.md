@@ -2522,7 +2522,8 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
   `contacts:read` ; `POST /v1/fields` en crée un (la clé vient du libellé, comme dans Contenu > Champs) et
   `DELETE /v1/contacts/{contactId}` efface une fiche pour de vrai, avec le droit neuf `contacts:admin`. L'effacement
   est celui du mini-CRM : la fiche, ses conversations, ses messages et son analyse partent, dans la limite du jour de
-  l'offre (10 en Free, sans limite en Pro et Entreprise), et c'est journalisé. Renommer ou supprimer un champ reste
+  l'offre (10 en Free, levée tant que l'espace dépasse sa limite de contacts ; sans limite en Pro et Entreprise), et
+  c'est journalisé. Renommer ou supprimer un champ reste
   un geste de la console. Un fichier s'importe par lots de 50 avec `POST /v1/contacts/batch` (la doc de l'API en
   donne la recette) ; un très gros fichier passe par l'import CSV de la console.
 - ✅ **Un contact désabonné le reste, même effacé** (lot 13, domaine 5, livraison B, 2026-10-09) : effacer une fiche qui
@@ -3249,8 +3250,12 @@ boîte par sous-menu.
   - en offre Free, 80 % puis 100 % des modèles du mois (une fois par mois) et des contacts, ceux qui ont écrit les
     premiers compris (une fois à chaque franchissement) ; l'alerte de 100 % propose de passer en Pro, et cite la limite
     de contacts du Pro ;
+  - en offre Free au-delà de la limite de contacts (au retour en Free après un Pro, par exemple), une alerte de plus,
+    qui remplace celle de 100 % (une fois à chaque franchissement) : le nombre de contacts, combien en supprimer pour
+    revenir à la limite, en le demandant à Claude, et que ces suppressions ne sont pas limitées par jour tant que
+    l'espace dépasse ;
   - en offre Free pleine, un nouveau client qui a écrit et n'est pas entré (une fois par jour au plus, quel que soit le
-    nombre de clients écartés) : passer en Pro, ou supprimer des contacts ;
+    nombre de clients écartés) : passer en Pro, ou supprimer des contacts en le demandant à Claude ;
   - en offre Pro, 80 % puis 100 % des contacts, à chaque franchissement ; ces alertes renvoient à l'Entreprise.
 - ✅ **Une conversation attend l'équipe** : quand un agent IA, l'agent de Meta ou un scénario passe la main à l'équipe
   alors que le contact vient d'écrire, les administrateurs reçoivent un e-mail avec le nom du contact (ou son numéro
@@ -4072,7 +4077,8 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   2026-10-25) : importés, créés par l'API, par Claude ou par un scénario, ou venus d'eux-mêmes en écrivant les premiers,
   tous comptent. Quand elle est pleine, créer ou importer un contact est refusé, et **un nouveau client qui écrit
   n'entre pas** : ni fiche, ni conversation, ni réponse de l'agent IA, ni scénario, ni automation. Les administrateurs
-  reçoivent un e-mail, une fois par jour au plus, qui propose de passer en Pro ou de supprimer des contacts (par l'API).
+  reçoivent un e-mail, une fois par jour au plus, qui propose de passer en Pro ou de supprimer des contacts (en le
+  demandant à Claude).
   Seul son **STOP** est retenu : sa fiche naît désabonnée, sans conversation, pour que personne ne lui écrive plus
   (elle ne reçoit rien et ne libère aucune place). Un contact déjà présent écrit et reçoit comme avant, et une fiche
   supprimée libère sa place. Ce qui compte vient de l'offre de l'espace, sur la réception de Meta, celle de 360dialog et
@@ -4088,7 +4094,8 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   refusé (une fiche au-delà de la limite, par exemple) affiche la raison et un bouton « Voir les offres », au-dessus de la fenêtre
   ouverte.
 - ✅ **La page Offre** (admins) : l'offre de l'espace, ce qu'il consomme de chaque limite (avec une jauge ; en Free,
-  celle des contacts dit que ceux qui écrivent les premiers comptent aussi), la grille des trois offres, et le passage en Pro.
+  celle des contacts dit que ceux qui écrivent les premiers comptent aussi, et, au-delà de la limite, combien en
+  supprimer et comment), la grille des trois offres, et le passage en Pro.
   Deux onglets depuis le 2026-10-26 : **Offre** et **Crédit IA** (voir « Crédit IA »), sauf en Free, qui n'a pas l'écran du
   crédit et recharge depuis Claude.
 - ✅ **Le Pro se paie en ligne** (livraison B1) : un espace en Free choisit « Mensuel » ou « Annuel » sur la page Offre et
@@ -4148,10 +4155,22 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   Pro : en Entreprise, une limite de membres ne bloque que les nouvelles invitations. Ses contacts restent tous, même
   au-delà de la limite de la Free : tant qu'il en a trop, créer ou importer un contact est refusé et aucun nouveau
   client qui écrit n'y entre, quand ses contacts déjà présents écrivent comme avant.
+- ✅ **Revenir sous la limite de contacts en supprimant, par Claude** (décision de Julien, 2026-10-26) : un espace Free
+  qui a plus de contacts que sa limite (au retour en Free après un Pro, un essai ou l'Entreprise) le sait par un
+  e-mail, une fois à chaque franchissement, par la page Offre, sous la jauge des contacts, et par Claude (`get_plan`) :
+  combien en supprimer pour y revenir. Il les supprime en le demandant à Claude, d'un coup, et quelques-uns de plus
+  pour laisser entrer de nouveaux clients : les plus anciens, une étiquette, un consentement ou une liste. Pas encore
+  « ceux qui n'ont plus écrit depuis tant de jours » : les conversations, seules à dater un dernier message, partent
+  avec leur durée de conservation et la déconnexion du numéro. Claude montre d'abord leur nombre, dix fiches (nom,
+  numéro masqué, date de création) et un code valable 30 minutes, puis supprime sur l'accord de la personne, avec la
+  même sélection et ce code, 1 000 contacts au plus à la fois ; si la sélection ne désigne plus les mêmes contacts,
+  rien n'est supprimé. Tant que l'espace dépasse sa limite, ses
+  suppressions ne sont pas limitées par jour, sur tous les chemins (Claude, l'API, la console) ; revenu à la limite,
+  la limite du jour reprend. Dès qu'une place se libère sous la limite, un nouveau client qui écrit entre de nouveau.
 - ✅ **Par l'API et Claude** : un refus rend le statut **402** avec un code, `plan_feature_unavailable` (fonction
   absente de l'offre) ou `plan_limit_reached` (limite atteinte), et le lien `upgradeUrl`. L'outil MCP `get_plan`
-  rend l'offre, ses limites, ce qui est consommé, ce que compte la limite de contacts (`contactsToutesOrigines`) et la
-  grille. Étiqueter et affecter une conversation restent listés
+  rend l'offre, ses limites, ce qui est consommé, ce que compte la limite de contacts (`contactsToutesOrigines`), les
+  contacts au-delà de la limite (`contactsEnTrop`) et la grille. Étiqueter et affecter une conversation restent listés
   en Free et refusent avec le lien de l'offre ; LIRE les fils et leurs messages (`list_conversations`,
   `get_conversation`, `get_messages`, et l'API `/v1/conversations`) et y RÉPONDRE dans la fenêtre de 24 h
   (`reply_in_open_window`, comme `POST /v1/messages/whatsapp`) sont ouverts dans toutes les offres depuis le
@@ -5026,6 +5045,14 @@ chemin pour elle. Chacun devient un outil, qui appelle la fonction du bouton de 
 - **Le blocage d'un contact** (`block_contact`) : comme la fiche, plus rien ne lui part et aucun robot ne prend sa
   conversation, ses messages restent enregistrés. `get_contact` et `search_contacts` disent s'il est bloqué : c'est là
   que Claude le retrouve pour le débloquer.
+- **La suppression de contacts en masse** (`prepare_contacts_deletion`, `delete_contacts`, 2026-10-26, toutes les
+  offres) : une Free n'avait que la suppression par l'API, une fiche à la fois et dix par jour. Une sélection (étiquettes,
+  consentement, une liste de contacts, les plus anciens), un aperçu qui n'efface rien (le nombre, dix fiches, un code de
+  30 minutes), puis l'effacement de la console, avec la même sélection et ce code : fiches, conversations, messages et
+  analyses, journalisé au nom de la personne. Une sélection sans critère, ou de plus de 1 000 contacts, est refusée,
+  comme un critère que l'outil ne connaît pas (l'inactivité, par exemple, voir « Offres ») ; si elle ne désigne plus
+  les mêmes contacts qu'à l'aperçu, rien n'est supprimé. L'aperçu et l'effacement comptent dans les opérations lourdes ;
+  l'effacement, dans la limite du jour de la Free, levée tant que l'espace dépasse sa limite de contacts (voir « Offres »).
 - **Les freins d'une campagne** (`control_campaign`, offre Pro) : mettre en pause une campagne qui envoie, déprogrammer
   une campagne programmée, ou préparer la reprise d'une campagne en pause : un récapitulatif des destinataires
   restants et un code, puis `launch_campaign` avec ce code, comme pour un lancement. La reprise part tout de suite, et

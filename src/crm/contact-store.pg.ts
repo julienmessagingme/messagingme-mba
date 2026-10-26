@@ -172,6 +172,16 @@ export interface EditionFicheApi {
   profileName?: string | null;
 }
 
+/** Une fiche que désigne une suppression en masse (`selectionAEffacer`) : de quoi la montrer avant de l'effacer. */
+export interface FicheASupprimer {
+  id: string;
+  profileName: string | null;
+  phoneE164: string | null;
+  bsuid: string | null;
+  /** En ISO. */
+  createdAt: string;
+}
+
 /** Une violation d'index unique : un refus de saisie, pas une panne. */
 const estUnicite = (err: unknown): boolean => (err as { code?: string }).code === '23505';
 
@@ -1536,6 +1546,28 @@ export class PgContactStore implements ContactStore {
       [...sel.params, cap],
     );
     return res.rows.map((r) => r.id);
+  }
+
+  /**
+   * 🔴 LA SÉLECTION D'UNE SUPPRESSION EN MASSE DEPUIS CLAUDE (`prepare_contacts_deletion` et `delete_contacts`, plan
+   * `docs/superpowers/plans/2026-10-26-free-au-dela-de-100-contacts.md`) : les fiches VIVANTES d'une cible, par le
+   * sélecteur de l'action en masse (`buildBulkSelector`, donc `tenant_id` et `deleted_at is null` : une fiche supprimée
+   * ou d'un autre espace n'est jamais rendue, même nommée par son identifiant), les plus anciennes d'abord, au plus
+   * `limite`. ⚠️ Aucun critère d'inactivité : les fils, seuls à dater un dernier message, partent avec la conservation et
+   * la déconnexion du numéro (`src/mcp/outils-suppression.ts`).
+   * 🔴 L'ORDRE EST TOTAL (`created_at`, puis `id`) : l'aperçu et la suppression doivent désigner les MÊMES fiches, et des
+   * fiches importées ensemble peuvent partager leur `created_at`.
+   */
+  async selectionAEffacer(tenantId: string, target: BulkTarget, limite: number): Promise<FicheASupprimer[]> {
+    const sel = buildBulkSelector(tenantId, target);
+    const plafond = `$${sel.params.length + 1}`;
+    const res = await this.pool.query<{ id: string; profile_name: string | null; phone_e164: string | null; bsuid: string | null; created_at: Date }>(
+      `select id, profile_name, phone_e164, bsuid, created_at from contacts where ${sel.where} order by created_at asc, id asc limit ${plafond}`,
+      [...sel.params, Math.max(1, Math.round(limite))],
+    );
+    return res.rows.map((r) => ({
+      id: r.id, profileName: r.profile_name, phoneE164: r.phone_e164, bsuid: r.bsuid, createdAt: r.created_at.toISOString(),
+    }));
   }
 
   /**

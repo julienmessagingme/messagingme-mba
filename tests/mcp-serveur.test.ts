@@ -14,7 +14,7 @@ import * as catalogue from '../src/mcp/outils';
 import { API_SCOPES } from '../web/lib/partage/droits-api';
 import { cleApiDeTest, aucunJetonOauth } from './aide/cle-api';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, NumeroSuspenduError, MESSAGE_NUMERO_SUSPENDU } from '../src/meta/numero-delie';
-import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpShopifyInerte, mcpFilInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
+import { mcpAgentInerte, mcpNumeroInerte, mcpEvenementsInertes, mcpChiffresInertes, mcpMessagesInertes, mcpOffreInerte, mcpCampagnesInertes, mcpChampsInertes, mcpSuppressionInerte, mcpShopifyInerte, mcpFilInerte, mcpInerte, mcpWidgetsInertes } from './routes-inertes';
 import { creerPoseEtiquette, LONGUEUR_MAX_ETIQUETTE } from '../src/crm/poser-etiquette';
 import { DROITS } from '../src/offres/offres';
 import { MetaTemplateClient, type FetchLike, type TemplateSummary } from '../src/meta/templates';
@@ -136,6 +136,7 @@ function app(
     ...mcpOffreInerte,
     ...mcpCampagnesInertes,
     ...mcpChampsInertes,
+    ...mcpSuppressionInerte,
     ...mcpShopifyInerte,
     ...mcpFilInerte,
     ...reste,
@@ -868,6 +869,11 @@ describe('serveur MCP : cohérence du catalogue', () => {
       launch_campaign: [true, false, true],
       // Les freins et la reprise (2026-10-22) : rien ne part chez un tiers ; chaque reprise préparée tire un nouveau code.
       control_campaign: [true, false, false],
+      // La suppression en masse (2026-10-26) : l'aperçu n'écrit rien et tire un nouveau code à chaque appel ; l'effacement
+      // est irréversible, un second appel avec le même code est refusé, et la purge retire les contacts de la liste de
+      // l'agent de Meta, chez Meta.
+      prepare_contacts_deletion: [true, false, false],
+      delete_contacts: [true, false, true],
       // Les champs (2026-10-20) : un champ de plus à chaque appel ; poser la même valeur ne change rien.
       create_field: [true, false, false],
       set_contact_field: [true, true, false],

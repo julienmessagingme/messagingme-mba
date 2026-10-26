@@ -1,7 +1,7 @@
 import { ficheOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { BusinessHours } from '../workflow/conditions';
 import type { AnnotationsMcp, DepsMcp, OutilMcp, PersonneMcp, ProprieteEntree } from './outils';
-import { RefusOutil, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
+import { RefusOutil, entierBorne, limiteEntiere, texteObligatoire, valeurOuRefus } from './saisie';
 import { MESSAGE_OPERATIONS_LOURDES } from '../auth/plafond-partage';
 import type { AgentComplet, AgentResume } from '../agent/agent-store';
 import {
@@ -194,14 +194,6 @@ function vueLimites(a: Pick<AgentComplet, 'maxTours' | 'maxAppelsOutils' | 'budg
     max_tool_calls: a.maxAppelsOutils,
     budget_eur: a.budgetMicroEur >= BUDGET_CONVERSATION_MAX_MICRO_EUR ? null : a.budgetMicroEur / 1_000_000,
   };
-}
-
-/** Une limite entière dans ses bornes, ou un refus qui les dit : jamais ramenée en silence, Claude l'annoncerait. */
-function limiteEntiere(v: unknown, cle: string, mini: number, maxi: number): number {
-  if (typeof v !== 'number' || !Number.isInteger(v) || v < mini || v > maxi) {
-    throw new RefusOutil(`${cle} : un nombre entier entre ${mini} et ${maxi}`);
-  }
-  return v;
 }
 
 /** Le budget en micro-euros : `null` vaut « sans limite » (le maximum de la fiche). */

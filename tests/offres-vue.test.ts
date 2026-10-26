@@ -56,6 +56,22 @@ describe('creerVueOffre', () => {
     expect((await vue('entreprise', null)('t1')).contactsToutesOrigines).toBe(false);
   });
 
+  it('🔴 la vue dit combien de contacts dépassent la limite (2026-10-26) : 0 sous elle et pile à elle, 0 sans limite', async () => {
+    const avecContacts = (offre: Offre, contacts: number) => creerVueOffre({
+      offres: { offreDe: async () => ({ offre, droits: DROITS[offre], retourEnBaseLe: null }) },
+      usage: async () => ({ contacts, automations: 0, membres: 1 }),
+      modelesDuMois: { etatDuMois: async () => null },
+      proEnVente: true, suiteDuNumero: async () => null, essai: async () => ({ dejaEuUnPro: false, finLe: null }), siegesEnVente: true,
+      abonnement: async () => null,
+    })('t1');
+    expect((await avecContacts('base', 3000)).contactsEnTrop).toBe(2900);
+    expect((await avecContacts('base', 101)).contactsEnTrop).toBe(1);
+    expect((await avecContacts('base', 100)).contactsEnTrop).toBe(0);
+    expect((await avecContacts('base', 42)).contactsEnTrop).toBe(0);
+    expect((await avecContacts('pro', 5200)).contactsEnTrop).toBe(200);
+    expect((await avecContacts('entreprise', 1_000_000)).contactsEnTrop).toBe(0);
+  });
+
   it('un Pro : ses fonctions dans l’ordre de la grille, et les modèles du mois non comptés (sans limite)', async () => {
     const v = await vue('pro', null)('t1');
     expect(v.fonctions).toEqual(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console']);

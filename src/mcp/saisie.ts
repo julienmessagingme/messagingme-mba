@@ -43,6 +43,17 @@ export function entierBorne(args: Record<string, unknown>, cle: string, defaut: 
   return Math.min(Math.max(Math.trunc(n), mini), maxi);
 }
 
+/**
+ * Un entier dans ses bornes, ou un refus qui les dit : jamais ramené en silence, contrairement à `entierBorne`. Pour une
+ * valeur que Claude annoncerait (une limite d'agent), ou qui désigne ce qu'on efface (une sélection de contacts).
+ */
+export function limiteEntiere(v: unknown, cle: string, mini: number, maxi: number): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < mini || v > maxi) {
+    throw new RefusOutil(`${cle} : un nombre entier entre ${mini} et ${maxi}`);
+  }
+  return v;
+}
+
 /** Une date ISO 8601 qui DIT son fuseau (`Z` ou `+02:00`), à la seconde ou plus fin. */
 const ISO_AVEC_FUSEAU = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})$/;
 

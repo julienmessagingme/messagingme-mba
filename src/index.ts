@@ -1304,9 +1304,10 @@ async function main(): Promise<void> {
 
   /**
    * Les suppressions de contacts du jour de l'offre (lot 6), sur le compteur partagé des copies : le MÊME objet pour la
-   * purge du mini-CRM et `DELETE /v1/contacts/{id}` (lot 13, domaine 5), qui comptent donc dans la même limite.
+   * purge du mini-CRM, `DELETE /v1/contacts/{id}` (lot 13, domaine 5) et `delete_contacts` (2026-10-26), qui comptent
+   * donc dans la même limite. Le magasin des contacts dit si l'espace dépasse sa limite : il n'a alors plus de plafond.
    */
-  const quotaSuppressions = new QuotaSuppressions({ offres, compteur: compteurDebit });
+  const quotaSuppressions = new QuotaSuppressions({ offres, compteur: compteurDebit, contacts: contactStore });
 
   /**
    * Le connecteur Shopify (plan 2026-10-21, lot 1) : UNE gestion pour la carte de la console et les outils MCP, et le
@@ -3187,6 +3188,15 @@ async function main(): Promise<void> {
         // Les campagnes depuis l'assistant (2026-10-20) : le câblage de la route des campagnes, la lecture des modèles de
         // `POST /v1/sends` (catégorie lue chez Meta, numéro de l'espace) et les codes de confirmation (migration 0245).
         campagnes: { route: depsCampagnes, modeles: depsEnvois, confirmations: new PgConfirmations(pool) },
+        // La suppression de contacts en masse depuis l'assistant (2026-10-26) : la sélection du magasin, l'effacement de la
+        // purge de la console (la MÊME limite du jour, levée au-delà de la limite de contacts, le MÊME retrait chez l'agent
+        // de Meta), son audit, et le secret des sessions, qui signe les codes de confirmation sous une clé dérivée.
+        suppression: {
+          selection: (tenant, cible, limite) => contactStore.selectionAEffacer(tenant, cible, limite),
+          effacement: { contacts: contactStore, suppressionsDuJour: quotaSuppressions, listeDeLAgent, enVol: travauxEnVol },
+          audit: auditSink,
+          secret: config.AUTH_SECRET,
+        },
         // Les champs depuis l'assistant (2026-10-20) : le MÊME référentiel que l'écran et `/v1/fields`, et le champ de base
         // créé à la volée comme l'action en masse de la console.
         champs: fieldStore,

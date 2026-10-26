@@ -2602,7 +2602,11 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
     `limitesAlertables` choisit les textes de l'offre : la Free (`limite_*`, « Passez en Pro », qui citent la limite de
     contacts du Pro lue dans `DROITS`), le Pro (ses contacts seuls, `limite_contacts_pro_*`, qui renvoient à
     l'Entreprise) ; l'Entreprise, dont la limite se règle sur devis, n'en reçoit aucune. Les contacts s'y comptent par
-    `PgOffresStore.usage`, donc comme la limite (`contactsToutesOrigines`) ;
+    `PgOffresStore.usage`, donc comme la limite (`contactsToutesOrigines`). Au-dessus de 100 %, la Free a un seuil de
+    plus, `depassee` (strictement plus de fiches que la limite, `SEUILS_CONTACTS`) : un espace revenu en Free avec
+    3 000 contacts franchit les trois d'un coup et ne reçoit que `limite_contacts_depassee`, qui cite le nombre de
+    contacts et celui à supprimer. 🔴 Les seuils de la famille qui n'est pas celle de l'offre se relâchent TOUS,
+    `depassee` compris : sinon une Free passée en Pro puis revenue au-delà de sa limite ne serait plus prévenue ;
   - l'espace Free plein qui écarte un nouveau client (`creerAlerteEspacePlein`, appelée par la porte,
     `src/webhooks/espace-plein.ts`) ; occasion : le jour, dans le fuseau de l'espace (`plein:<jour>`), donc un e-mail par
     jour au plus quel que soit le nombre d'inconnus écartés ; il ne cite que la limite ;
@@ -2966,7 +2970,10 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   pas ce drapeau). La limite voyage avec son offre (`LimiteContacts`, `limiteContactsDe`, câblée par le socle) ; le
   prédicat SQL s'écrit une fois (`ficheComptee`, `src/crm/contact-store.pg.ts`), lu par les gardes du magasin et par
   `PgOffresStore.usage`, qui lit l'offre par `offre_de_l_espace` dans la même requête. La vue de l'offre le dit
-  (`contactsToutesOrigines`), et la phrase du refus aussi (« ceux qui vous écrivent compris » en Free).
+  (`contactsToutesOrigines`), et la phrase du refus aussi (« ceux qui vous écrivent compris » en Free). La vue porte
+  aussi `contactsEnTrop` (2026-10-26), l'usage au-delà de la limite (0 sous elle, pile à elle, ou sans limite) : la
+  page `/offre` le dit sous la jauge des contacts, avec la marche à suivre, et `get_plan` le rend ; la console le lit
+  en tolérant son absence (0), elle est publiée avant l'API.
 - 🔴 **La porte d'une Free pleine** (`src/webhooks/espace-plein.ts`) : quand les fiches actives d'une Free remplissent sa
   limite, le message d'un inconnu (aucune fiche active ne porte son `wa_id`, numéro ou BSUID) n'entre pas, sur les trois
   portes : la file `webhook` (Meta et 360dialog), juste après l'écart des numéros déliés et avant le journal brut, et la
@@ -2980,8 +2987,12 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   l'offre ; `upsertFromInbound` ne vérifie rien, la porte passe avant lui), automations allumées sans propriétaire
   (`src/offres/automations.ts`, webhooks entrants compris), membres actifs et invitations (`src/offres/membres.ts`),
   modèles du mois civil de Paris au point d'envoi unique (`QuotaModeles`, `src/meta/factory.ts`, tout ou rien sur
-  `compteurs_debit`), suppressions du jour dans la route de purge. Une réponse dans la fenêtre de 24 h n'est jamais
-  comptée. Un compteur qui ne répond pas laisse passer l'action et journalise l'incident.
+  `compteurs_debit`), suppressions du jour par `effacerContacts` (`QuotaSuppressions`), que la purge de la console,
+  `DELETE /v1/contacts/{id}` et `delete_contacts` appellent. 🔴 Un espace au-delà de sa limite de contacts n'a plus de
+  plafond du jour (décision de Julien du 2026-10-26) : `QuotaSuppressions.consommer` lit `placesContacts` (la définition
+  de la porte), seulement pour une offre qui a ce plafond, et ne compte rien tant que les fiches comptées dépassent la
+  limite ; pile à elle, le plafond reprend. Une réponse dans la fenêtre de 24 h n'est jamais comptée. Un compteur, ou
+  une lecture des fiches, qui ne répond pas laisse passer l'action et journalise l'incident.
 - **Le refus** : `LimiteOffreError`, traduite en 402 `plan_limit_reached` par le gestionnaire central de
   `buildServer` ; les deux corps (`corpsRefusFonction`, `corpsRefusLimite`) portent `upgradeUrl` (`APP_URL` + `/offre`).
 - **La console** lit `GET /tenants/:tenantId/offre` (`web/lib/use-offre.ts`, gardée une minute) : la barre marque
@@ -4787,6 +4798,31 @@ Ajouté par le lot 4 de l'API publique :
    `defPourEcriture` (exportée de `src/http/contacts.ts`, un champ de base absent est créé à la volée),
    `validateFieldValue` puis `canonicalizeFieldValue`, et `applyEditsMany`, qui n'émet aucun événement ; fonction
    `console`, plafond des opérations coûteuses, cible de `lireCibleMcp`.
+63. 🔴 **Une suppression de contacts en masse depuis l'assistant n'efface que les fiches montrées** (2026-10-26,
+   `src/mcp/outils-suppression.ts`, plan `docs/superpowers/plans/2026-10-26-free-au-dela-de-100-contacts.md`). Deux
+   outils ouverts à toutes les offres, au nom d'une personne : `prepare_contacts_deletion` (rien n'est écrit) rend le
+   compte, dix fiches au plus et un code ; `delete_contacts` reprend la MÊME sélection et ce code. La sélection est la
+   cible des campagnes (`lireCibleMcp`, donc `parseBulkTarget`) sans l'analyse ni les conversations, plus `oldest` ;
+   🔴 une clé inconnue est REFUSÉE, jamais ignorée (un critère jeté élargirait ce qu'on efface), une sélection sans
+   critère ou de plus de `MAX_FICHES_PAR_SUPPRESSION` fiches aussi (jamais tronquée), et une borne hors de son
+   intervalle est refusée (`limiteEntiere`), jamais ramenée. 🔴 **Aucun critère d'inactivité** (`inactive_days` est une
+   clé inconnue) : le seul dernier message daté est celui des fils (`conversations.last_message_at`), que la
+   conservation purge (`purgeConversationsOlderThan`, 30 jours en Free) et que la déconnexion du numéro efface ; une fiche
+   sans fil paraîtrait « jamais active », et l'outil effacerait des clients actifs. Elle reviendra avec une date de
+   dernier message gardée sur la fiche (`todo.md`). La sélection se résout par `PgContactStore.selectionAEffacer` : le
+   sélecteur de l'action en masse (espace, fiches vivantes) et un ordre TOTAL (`created_at`, puis `id`), sans quoi
+   l'aperçu et l'effacement désigneraient d'autres fiches à date égale. Les deux outils comptent dans le plafond des
+   opérations coûteuses, comme `prepare_campaign` et la purge de la console. Le code
+   (`src/crm/code-suppression.ts`) n'est gardé nulle part, donc sans migration : un HMAC, par une clé dérivée
+   d'`AUTH_SECRET`, de l'espace, de l'échéance (30 minutes) et de l'empreinte des identifiants. `delete_contacts`
+   re-résout la sélection et vérifie le code sur CES fiches : une fiche entrée dans la sélection ou sortie d'elle depuis
+   l'aperçu (créée, étiquetée, effacée) le rend invalide, et c'est aussi ce qui le rend à usage unique (une fiche
+   effacée n'est plus jamais rendue). ⚠️ Deux
+   appels simultanés avec le même code passent tous les deux, le second n'efface rien de plus. L'effacement est
+   `effacerContacts` sur les MÊMES objets que la console (limite du jour, purge, retrait chez l'agent de Meta), et chaque
+   fiche laisse sa ligne `contact.purged` (`{ lot, via: 'mcp' }`), signée de la personne. Le plafond par appel est de
+   mille fiches : la purge est une transaction et l'audit écrit une ligne par fiche, des durées non mesurées derrière le
+   proxy. Le code est demandé avec la sélection plutôt que seul : il aurait dû porter jusqu'à 500 identifiants.
 48. **Les webhooks sortants gérés par une clé (`/v1/webhooks`, lot 13, domaine 4) n'ont aucune logique propre** :
    `src/http/v1-webhooks.ts` appelle les fonctions de `src/evenements/gestion.ts` (celles de la console et des outils
    MCP du lot 12), traduit les noms en anglais (`WebhookV1`, `DeliveryV1`, partagées avec les outils
@@ -4796,8 +4832,9 @@ Ajouté par le lot 4 de l'API publique :
    L'essai et le rejeu en masse passent sous le plafond coûteux de la console.
 49. **Les champs et l'effacement par l'API (lot 13, domaine 5) passent par la console** : `creerChamp`
    (`src/http/fields.ts`) pour un champ personnalisé, et `effacerContacts` (`src/crm/effacement.ts`) pour une fiche, que
-   la purge du mini-CRM appelle aussi : la limite du jour de l'offre (`quotaSuppressions`, le MÊME objet), tout ou rien,
-   puis `PgContactStore.purgeMany`, puis le retrait chez l'agent de Meta APRÈS la réponse. La fiche est d'abord résolue
+   la purge du mini-CRM appelle aussi : la limite du jour de l'offre (`quotaSuppressions`, le MÊME objet, levée tant que
+   l'espace dépasse sa limite de contacts), tout ou rien, puis `PgContactStore.purgeMany`, puis le retrait chez l'agent
+   de Meta APRÈS la réponse. La fiche est d'abord résolue
    VIVANTE dans l'espace (`etatPourEnvoi`, `deleted_at is null`) : une fiche d'un autre espace ou déjà effacée rend 404
    sans entamer la limite, et l'effacement passe sous le plafond coûteux de la console. Une fiche en STOP laisse son
    empreinte dans la liste de refus (§ du consentement). Il n'y a pas de route d'import d'un fichier : le lot

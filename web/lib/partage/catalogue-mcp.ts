@@ -14,6 +14,12 @@ export const CATALOGUE_MCP = {
   get_contact: { scope: 'mcp:read' },
   /** Bloquer un contact (2026-10-22) : une décision qui coupe la relation avec un client, signée d'une personne. */
   block_contact: { scope: 'mcp:write', exigePersonne: true },
+  /**
+   * Supprimer des contacts en masse (2026-10-26) : un aperçu et son code, puis l'effacement, irréversible, au nom d'une
+   * personne, jamais d'une clé. L'aperçu n'efface rien, mais il est du scope d'écriture, comme `prepare_campaign`.
+   */
+  prepare_contacts_deletion: { scope: 'mcp:write', exigePersonne: true },
+  delete_contacts: { scope: 'mcp:write', exigePersonne: true },
   list_members: { scope: 'mcp:read' },
   reply_in_open_window: { scope: 'mcp:write' },
   send_message: { scope: 'mcp:write' },
@@ -108,5 +114,13 @@ export function ficheOutilMcp<N extends NomOutilMcp>(nom: N) {
 }
 
 export const MAX_MESSAGES_MCP = 50;
+/**
+ * Contacts au plus par suppression en masse (`prepare_contacts_deletion`, `delete_contacts`, plan du 2026-10-26) : une
+ * sélection plus grande est refusée, jamais tronquée. Mille, pas cinq mille (relecture du lot) : la purge est UNE
+ * transaction et l'audit écrit une ligne par fiche, des durées que personne n'a mesurées derrière le proxy et son délai.
+ * Et les fiches que montre l'aperçu.
+ */
+export const MAX_FICHES_PAR_SUPPRESSION = 1000;
+export const FICHES_DE_L_APERCU = 10;
 /** Nombre de fiches que l'ajout en bloc via MCP peut déposer en une fois. */
 export const MAX_FICHES_PAR_AJOUT = 50;

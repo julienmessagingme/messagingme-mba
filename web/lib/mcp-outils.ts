@@ -1,4 +1,7 @@
-import { ficheOutilMcp, MAX_FICHES_PAR_AJOUT, MAX_MESSAGES_MCP, type NomOutilMcp, type ScopeMcp } from './partage/catalogue-mcp';
+import {
+  FICHES_DE_L_APERCU, ficheOutilMcp, MAX_FICHES_PAR_AJOUT, MAX_FICHES_PAR_SUPPRESSION, MAX_MESSAGES_MCP, type NomOutilMcp, type ScopeMcp,
+} from './partage/catalogue-mcp';
+import { fmtNum } from './format';
 
 /** Les mots de la page MCP ; les droits et la présence OAuth viennent du catalogue partagé. */
 export interface OutilDocumente {
@@ -42,6 +45,8 @@ const TEXTES_MCP = {
   search_contacts: ['Chercher un contact par nom ou par numéro, avec sa dernière analyse.', 'Find a contact by name or number, with their latest analysis.'],
   get_contact: ['La fiche d’un contact à partir de son numéro, avec sa dernière analyse et le résumé de celle-ci.', 'A contact record from its number, with their latest analysis and its summary.'],
   block_contact: ['Bloquer ou débloquer un contact : plus rien ne lui part, ses messages restent enregistrés.', 'Block or unblock a contact: nothing is sent to them anymore, their messages are still recorded.'],
+  prepare_contacts_deletion: [`Préparer la suppression d’une sélection de contacts sans rien effacer (étiquettes, consentement, une liste, les N plus anciens, ${fmtNum(MAX_FICHES_PAR_SUPPRESSION, 'fr')} au plus) : leur nombre, ${FICHES_DE_L_APERCU} fiches au plus et un code de confirmation.`, `Prepare the deletion of a selection of contacts without erasing anything (tags, consent, a list, the N oldest, ${fmtNum(MAX_FICHES_PAR_SUPPRESSION, 'en')} at most): their count, ${FICHES_DE_L_APERCU} records at most and a confirmation code.`],
+  delete_contacts: ['Supprimer pour de bon les contacts d’une sélection préparée, avec la même sélection et son code : fiches, conversations et messages effacés, comme dans la console ; refusé si la sélection ne désigne plus les mêmes contacts.', 'Delete for good the contacts of a prepared selection, with the same selection and its code: records, conversations and messages erased, as in the console; refused if the selection no longer designates the same contacts.'],
   list_members: ['Les membres de l’espace, pour pouvoir leur confier un fil.', 'Workspace members, to assign threads to them.'],
   reply_in_open_window: ['Répondre, uniquement si la fenêtre de 24 h est ouverte ; sur un numéro relié par QR code, hors de la fenêtre, la réponse à un client qui a écrit part en file ; ce numéro n’écrit jamais en premier.', 'Reply, only while the 24 h window is open; on a number linked by QR code, outside the window, a reply to a customer who wrote is queued; this number never writes first.'],
   tag_conversation: ['Poser des tags sur le contact d’un fil.', 'Add tags to a thread’s contact.'],
