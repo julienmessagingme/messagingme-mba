@@ -26,10 +26,7 @@
  */
 const CONTROLES = [
   { url: 'https://api.messagingme.app/health', attendu: [200], quoi: "l'API par son nom propre" },
-  { url: 'https://api.messagingme.app/webhooks/meta', attendu: [403], quoi: 'le webhook Meta sur api.' },
-  { url: 'https://mba.messagingme.app/api/backend/health', attendu: [200], quoi: "l'API par le routage historique" },
-  { url: 'https://mba.messagingme.app/api/backend/webhooks/meta', attendu: [403], quoi: 'le webhook Meta À SON ADRESSE ACTUELLE, celle que Meta appelle' },
-  { url: 'https://mba.messagingme.app/', attendu: [200], quoi: "l'ancienne console" },
+  { url: 'https://api.messagingme.app/webhooks/meta', attendu: [403], quoi: 'le webhook Meta, celui que Meta appelle' },
   { url: 'https://console.messagingme.app/', attendu: [200, 401, 307, 308], quoi: 'la console Vercel' },
 ];
 

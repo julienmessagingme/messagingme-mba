@@ -262,10 +262,9 @@ node scripts/fumee.mjs
 ```
 
 Depuis le poste, PAS depuis le VPS : ce qu'on veut savoir, c'est ce que voit un client, à travers Cloudflare
-et NPM. Il vérifie les six chemins qui portent vraiment quelque chose, dont **le webhook Meta à l'adresse que
-Meta appelle réellement** : `api.messagingme.app/webhooks/meta` depuis le 2026-10-15. L'ancienne,
-`mba.messagingme.app/api/backend/webhooks/meta`, reste sondée jusqu'à la suppression de `mba.` (son libellé dans
-le script la dit encore « actuelle » jusque-là).
+et NPM. Il vérifie les trois adresses qui portent vraiment quelque chose, dont **le webhook Meta à l'adresse que
+Meta appelle réellement** : `api.messagingme.app/webhooks/meta` depuis le 2026-10-15. `mba.messagingme.app` n'y
+est plus sondé depuis le 2026-10-26 (lot 7 de la bascule) : plus rien ne l'appelait.
 
 ⚠️ **Ce n'est pas une formalité.** Le 502 par IP périmée est INTERMITTENT : absent au premier déploiement de
 la journée, présent au second, sur exactement la même commande. Un conteneur `healthy` et un appel interne en
@@ -560,8 +559,7 @@ CE COMMIT ; un commit antérieur au 2026-10-15 n'a pas ce fichier, et la constru
 avant de toucher à quoi que ce soit.
 
 **Après un déploiement, les gestes qui restent à la main** (ceux de la section du VPS) :
-- le contrôle de fumée public, `node scripts/fumee.mjs`, depuis le poste (il vise encore `mba.` : à repointer sur
-  `api.` au lot 7) ;
+- le contrôle de fumée public, `node scripts/fumee.mjs`, depuis le poste ;
 - `npm run oauth:fiches`, depuis le poste ;
 - si un fichier de `docs/aide/fiches/` a bougé, `aide:charger` sur la machine, avec l'image déployée :
   `ssh -J bastion@<ip de la passerelle>:61000 root@<ip privée> "docker run --rm --env-file /opt/messagingme/.env.prod rg.nl-ams.scw.cloud/messagingme/mba:<sha> npm run aide:charger"`.

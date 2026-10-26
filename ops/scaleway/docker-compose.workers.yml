@@ -64,6 +64,12 @@ services:
     container_name: mba-application
     command: ["npx", "tsx", "src/application/service.ts"]
     env_file: .env.prod
+    # 🔴 L'API n'est pas sur cette machine (conteneur serverless) : elle joint ce service par le RESEAU PRIVE, a
+    # `APPLICATION_SERVICE_URL=http://172.16.0.4:8090` (sur le VPS, son nom Docker suffisait). Lie a l'adresse privee
+    # seule : la machine n'a pas d'adresse publique, et le port ne s'ouvrirait pas si elle en recevait une. Chaque appel
+    # est signe (`APPLICATION_SERVICE_SECRET`).
+    ports:
+      - "172.16.0.4:8090:8090"
     restart: unless-stopped
     stop_grace_period: 30s
     logging:
