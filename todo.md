@@ -1,5 +1,14 @@
 # todo.md : backlog
 
+## 🟡 Les restes de la relecture du lot C de l'audit de structure (envois d'un opérateur, recharge Stripe, 2026-10-26)
+
+- `src/inbox/envoi-operateur.ts` importe ses contrats (`InboxRouteDeps`, `OutboundTemplate`) du fichier de route
+  `src/http/inbox.ts` : l'inverse de `repondre.ts`, où la route étend les dépendances du module. Les déclarer dans le
+  module et faire étendre `InboxRouteDeps` (import de type seulement, aucun cycle à l'exécution aujourd'hui).
+- `StripeWebhookRouteDeps` prend `paiements` et `apresCredit` par un `Pick` puis les retransmet un par un
+  (`src/http/credit-stripe.ts`) : une dépendance OPTIONNELLE ajoutée à `DepsTraitementRecharge` ne serait jamais
+  transmise, sans erreur. Passer l'objet de la recharge entier, comme les abonnements.
+
 ## 🟡 Les restes de la relecture du lot B de l'audit de structure (réserve de numéros, 2026-10-26)
 
 - Une déconnexion par le client sort son numéro par `sortirNumeroFourni`, le geste de la suppression d'espace : sa trace

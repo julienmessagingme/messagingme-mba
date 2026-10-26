@@ -6,11 +6,9 @@ import { journaliser } from '../lib/journal';
 import { corpsDuRefus } from '../lib/issue';
 import { lireFactureStripe, StripeError } from '../stripe/client';
 import { verifierSignatureStripe } from '../stripe/signature';
-import { creditDeLOffre, definitionOffre, OFFRES_RECHARGE } from '../stripe/offres';
 import { ouvrirPaiement, RECHARGE_INDISPONIBLE, type DepsPaiement } from '../stripe/paiement';
-import type { IssuePaiement, PaiementStripe } from '../stripe/store.pg';
-import { lienTableauStripe } from '../stripe/liens';
 import { creerTraitementAbonnements, type DepsTraitementAbonnements } from '../stripe/traitement-abonnements';
+import { creerTraitementRecharge, type DepsTraitementRecharge } from '../stripe/traitement-recharge';
 
 /**
  * Recharger le crédit IA par Stripe : la route qui ouvre un paiement, et le webhook qui crédite.
@@ -128,7 +126,8 @@ export function registerCreditPaiement(app: FastifyInstance, deps: CreditPaiemen
 /** Corps brut, capturé par le parser JSON global (celui du receveur Meta). */
 type AvecCorpsBrut = FastifyRequest & { rawBody?: Buffer };
 
-export interface StripeWebhookRouteDeps extends DepsTraitementAbonnements {
+/** Les abonnements (`traitement-abonnements.ts`) et la recharge (`traitement-recharge.ts`), plus le protocole HTTP. */
+export interface StripeWebhookRouteDeps extends DepsTraitementAbonnements, Pick<DepsTraitementRecharge, 'paiements' | 'apresCredit'> {
   /** Le secret de signature de la destination déclarée chez Stripe (`whsec_...`). Vide : tout est refusé. */
   secret: string;
   /**
@@ -137,18 +136,7 @@ export interface StripeWebhookRouteDeps extends DepsTraitementAbonnements {
    * crédite pas sur une base qui n'est pas la bonne. Requis : la configuration refuse le secret sans la clé.
    */
   livemode: boolean;
-  paiements: { crediterPaiement(p: PaiementStripe): Promise<IssuePaiement> };
-  /**
-   * Après un crédit : remonter le plafond de la clé de modèle de l'espace (`remonterPlafondApresRecharge`, qui
-   * recalcule la cible depuis le solde : le montant de CE crédit ne lui sert pas). La route ne l'attend pas (le
-   * câblage le fait suivre par l'arrêt propre du processus) ; un échec est journalisé et ne change pas la réponse :
-   * le crédit est écrit.
-   */
-  apresCredit(tenantId: string): Promise<void>;
 }
-
-/** Les deux événements qui créditent. Tout autre événement rend 200 sans effet. */
-const EVENEMENTS_CREDITANTS = new Set(['checkout.session.completed', 'checkout.session.async_payment_succeeded']);
 
 const evenementSchema = z.object({
   id: z.string(),
@@ -157,35 +145,14 @@ const evenementSchema = z.object({
   data: z.object({ object: z.unknown() }),
 });
 
-/** Ce qu'on lit d'une session Checkout, et rien de plus (`safeParse`, les autres champs sont ignorés). */
-const sessionSchema = z.object({
-  id: z.string().min(1),
-  mode: z.string(),
-  payment_status: z.string(),
-  amount_subtotal: z.number().int().nullable(),
-  amount_total: z.number().int().nullable(),
-  currency: z.string().nullable(),
-  client_reference_id: z.string().nullable().optional(),
-  metadata: z.record(z.string(), z.string()).nullable().optional(),
-  // Un identifiant, ou l'objet facture si l'événement l'a déplié.
-  invoice: z.union([z.string(), z.object({ id: z.string() })]).nullable().optional(),
-});
-
-/** NOS métadonnées. Une session qui ne les porte pas n'est pas une recharge : le compte vend peut-être autre chose. */
-const metadonneesSchema = z.object({
-  tenant_id: z.uuid(),
-  offre: z.enum(OFFRES_RECHARGE),
-});
-
-/** Nos métadonnées avec une offre quelconque : ce qui distingue une recharge d'une offre inconnue d'une vente étrangère. */
-const notreRechargeSchema = z.object({
-  tenant_id: z.uuid(),
-  offre: z.string().min(1),
-});
-
 export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookRouteDeps): void {
   const maintenant = deps.now ?? (() => Date.now());
   const abonnements = creerTraitementAbonnements(deps);
+  const recharges = creerTraitementRecharge({
+    paiements: deps.paiements,
+    apresCredit: (tenantId) => deps.apresCredit(tenantId),
+    alerter: (texte) => deps.numero.alerter(texte),
+  });
 
   app.post('/webhooks/stripe', async (req, reply) => {
     // 1. 🔴 La signature, sur le corps brut, AVANT de lire quoi que ce soit du corps.
@@ -209,7 +176,7 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       objet: ev.data.data.object,
     };
     const abonnement = abonnements.concerne(evenement);
-    if (!EVENEMENTS_CREDITANTS.has(evenement.type) && !abonnement) {
+    if (!recharges.concerne(evenement) && !abonnement) {
       return reply.code(200).send({ recu: true });
     }
 
@@ -232,83 +199,10 @@ export function registerStripeWebhook(app: FastifyInstance, deps: StripeWebhookR
       if (issue.issue === 'acquitte') return reply.code(200).send({ recu: true });
     }
 
-    // 3. Une session créditante illisible est de l'argent encaissé sans crédit : 422 pour demander le rejeu de Stripe.
-    const lue = sessionSchema.safeParse(evenement.objet);
-    if (!lue.success) {
-      journaliser('error', 'stripe_session_illisible', { evenement: evenement.id, type: evenement.type });
-      return reply.code(422).send({ error: 'session illisible' });
-    }
-    const session = lue.data;
-    const meta = metadonneesSchema.safeParse(session.metadata ?? {});
-    // Paiement différé pas encore arrivé : `async_payment_succeeded` viendra. `no_payment_required` est une session
-    // réglée à zéro par un code promo à 100 % : elle crédite, comme un paiement.
-    const reglee = session.payment_status === 'paid' || session.payment_status === 'no_payment_required';
-    const facture = session.invoice === undefined || session.invoice === null
-      ? null
-      : typeof session.invoice === 'string' ? session.invoice : session.invoice.id;
-    const lienFacture = facture === null ? '' : ` ${lienTableauStripe('invoices', facture, evenement.livemode)}`;
-    // Pas une de nos recharges : 200 sans effet, sinon Stripe rejouerait un événement qui ne nous concerne pas.
-    if (session.mode !== 'payment') return reply.code(200).send({ recu: true });
-    if (!meta.success) {
-      // 🔴 NOS métadonnées avec une offre que cette version ne connaît pas (une image revenue en arrière sous une session
-      // ouverte par une plus récente) : de l'argent encaissé sans crédit, qui partait en 200 sans trace (relecture du
-      // 2026-10-22). Toujours 200 : un rejeu qui créditerait après un crédit fait à la main paierait deux fois.
-      const notre = notreRechargeSchema.safeParse(session.metadata ?? {});
-      if (notre.success && reglee) {
-        const { tenant_id: espace, offre: inconnue } = notre.data;
-        journaliser('error', 'stripe_offre_inconnue', { evenement: evenement.id, session: session.id, tenantId: espace, offre: inconnue.slice(0, 40) });
-        // La voie sûre est nommée : un crédit fait à la main n'écrit aucune ligne de paiement, et un événement renvoyé
-        // ensuite par une version qui connaît l'offre créditerait la session une seconde fois.
-        const encaisse = session.payment_status === 'paid' ? 'payée' : 'réglée à zéro par un code promo, rien encaissé';
-        await deps.numero.alerter(`Recharge ${encaisse}, pour une offre que cette version ne connaît pas (${inconnue.slice(0, 40)}) : espace ${espace}, session ${session.id}, rien n'a été crédité. Pour créditer : revenir à une version qui connaît l'offre, puis renvoyer l'événement depuis Stripe (un seul crédit par session). Sinon rembourser ; ne jamais créditer à la main puis renvoyer.${lienFacture}`);
-        return reply.code(200).send({ recu: true, credite: false });
-      }
-      return reply.code(200).send({ recu: true });
-    }
-    if (!reglee) return reply.code(200).send({ recu: true });
-
-    // 4. 🔴 L'offre des métadonnées doit correspondre au prix HT de la ligne, en euros, pour cet espace.
-    // `amount_subtotal` est le prix avant remise : un code promo ne change pas le crédit, qui reste plein.
-    const { tenant_id: tenantId, offre } = meta.data;
-    const attendu = definitionOffre(offre).htCentimes;
-    const reference = session.client_reference_id ?? null;
-    if (session.currency !== 'eur' || session.amount_subtotal !== attendu || (reference !== null && reference !== tenantId)) {
-      journaliser('error', 'stripe_paiement_incoherent', {
-        evenement: evenement.id, session: session.id, tenantId, offre, attenduCentimes: attendu,
-        payeCentimes: session.amount_subtotal, devise: session.currency,
-        referenceConcorde: reference === null || reference === tenantId,
-      });
-      return reply.code(200).send({ recu: true, credite: false });
-    }
-
-    // 5. Une transaction : la ligne de paiement (idempotence), le crédit, le mouvement `achat`. Une panne de base
-    // lève, donc 5xx, et Stripe rejoue.
-    const credit = creditDeLOffre(offre);
-    const issue = await deps.paiements.crediterPaiement({
-      sessionId: session.id,
-      tenantId,
-      offre,
-      creditMicroEur: credit,
-      htCentimes: attendu,
-      ttcCentimes: session.amount_total,
-      factureId: facture,
-      livemode: evenement.livemode,
-    });
-    if (issue === 'espace_inconnu') {
-      journaliser('error', 'stripe_paiement_espace_inconnu', {
-        evenement: evenement.id, session: session.id, tenantId,
-      });
-      // Un espace supprimé depuis l'ouverture du paiement : de l'argent encaissé sans crédit, à rembourser.
-      await deps.numero.alerter(`Recharge payée pour un espace inexistant (supprimé ?) ${tenantId} : session ${session.id}, à rembourser chez Stripe.${lienFacture}`);
-      return reply.code(200).send({ recu: true, credite: false });
-    }
-    if (issue === 'credite') {
-      // Après la transaction et sans faire attendre Stripe. Un échec se journalise : le crédit est écrit et le plafond
-      // rattrapera au mouvement suivant.
-      deps.apresCredit(tenantId).catch((err: unknown) => {
-        journaliser('error', 'stripe_plafond_non_remonte', { tenantId, err });
-      });
-    }
-    return reply.code(200).send({ recu: true, credite: issue === 'credite' });
+    // 3. La recharge du crédit IA (`src/stripe/traitement-recharge.ts`). Une session créditante illisible est de l'argent
+    // encaissé sans crédit : 422 pour demander le rejeu de Stripe. Tout le reste est acquitté en 200.
+    const recharge = await recharges.traiter(evenement);
+    if (recharge.issue === 'illisible') return reply.code(422).send({ error: 'session illisible' });
+    return reply.code(200).send(recharge.issue === 'acquitte' && recharge.credite !== undefined ? { recu: true, credite: recharge.credite } : { recu: true });
   });
 }

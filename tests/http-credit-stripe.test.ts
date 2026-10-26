@@ -623,6 +623,21 @@ describe('POST /webhooks/stripe', () => {
     await w.srv.close();
   });
 
+  it('🔴 le corps de la réponse dit `credite` seulement pour une de NOS recharges réglées, au caractère près', async () => {
+    // Lot C de l'audit de structure : la route traduit l'issue de `traitement-recharge.ts` ; `toMatchObject` ne verrait
+    // pas une clé `credite` en trop.
+    const erreurs = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const w = webhook();
+      expect((await envoyer(w.srv, evenement(session({ metadata: {} })))).json()).toEqual({ recu: true });
+      expect((await envoyer(w.srv, evenement(session({ metadata: { tenant_id: T1, offre: 'refill_1000' } })))).json()).toEqual({ recu: true, credite: false });
+      expect((await envoyer(w.srv, evenement(session()))).json()).toEqual({ recu: true, credite: true });
+      await w.srv.close();
+    } finally {
+      erreurs.mockRestore();
+    }
+  });
+
   it('tout autre événement : 200 sans effet', async () => {
     const w = webhook();
     expect((await envoyer(w.srv, evenement({ id: 'pi_1' }, 'payment_intent.succeeded'))).statusCode).toBe(200);

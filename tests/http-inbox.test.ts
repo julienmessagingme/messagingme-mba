@@ -298,6 +298,25 @@ describe('inbox routes', () => {
     await a.close();
   });
 
+  it('🔴 POST send-template à un désabonné, modèle marketing : 409 et son corps exact, rien d’envoyé', async () => {
+    // La garde vit dans `envoyerModeleDansLeFil` (lot C de l'audit de structure) : la route doit en rendre le statut
+    // et le corps tels quels.
+    let envois = 0;
+    const a = app({
+      estDesabonne: async () => true,
+      categorieDuModele: async () => 'marketing',
+      sendTemplateMessage: async () => { envois += 1; return 'wamid.TPL'; },
+    });
+    const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/send-template', ...auth(), payload: { templateName: 'promo', language: 'fr', templateCategory: 'utility' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({
+      error: 'ce contact s’est désabonné : seuls les modèles de catégorie « Service » peuvent encore lui être envoyés. Vous pouvez lui répondre à la main si la conversation est ouverte.',
+      code: 'contact_desabonne',
+    });
+    expect(envois).toBe(0);
+    await a.close();
+  });
+
   it('POST reply texte vide -> 400', async () => {
     const a = app();
     const res = await a.inject({ method: 'POST', url: '/tenants/t1/conversations/c1/reply', ...auth(), payload: { text: '  ' } });

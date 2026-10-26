@@ -10,7 +10,8 @@ import { envoyerRcsLibre, type DepsRcsLibre, type RefusRcsLibre } from '../rcs/e
 import { schemaMessageRcs } from '../api/contrat-public';
 import { INCONNUE_POUR_UN_MESSAGE, type ReponseMessageSimple } from './v1-messages';
 import { auteurDeLEnvoi, type AuteurDuChangement } from '../inbox/evenements';
-import { journaliserEnvoiAccepte, type EtatJournalSortant } from '../inbox/journal-sortant';
+import type { EtatJournalSortant } from '../inbox/journal-sortant';
+import { prendreLeFilPuisInscrire } from '../inbox/envoi-operateur';
 
 /**
  * `POST /v1/messages/rcs` : un texte en RCS, à une personne qui a une fiche.
@@ -104,8 +105,7 @@ export function registerV1MessagesRcs(app: FastifyInstance, deps: V1MessagesRcsR
     if (!conversationId) conversationId = await ouvrirFil();
     let journal: EtatJournalSortant = 'unrecorded';
     if (conversationId) {
-      await deps.takeControl(tenantId, waId, auteurDeLEnvoi('api', null)).catch(() => {});
-      journal = await journaliserEnvoiAccepte(tenantId, conversationId, issue.messageId, () =>
+      journal = await prendreLeFilPuisInscrire(deps, tenantId, { conversationId, waId }, auteurDeLEnvoi('api', null), issue.messageId, () =>
         deps.inbox.recordOutbound(conversationId, issue.apercu, issue.messageId, 'api', 'rcs', null, null, null, 'rcs'));
     } else {
       // eslint-disable-next-line no-console

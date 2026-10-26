@@ -5,6 +5,29 @@
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
 
+## 2026-10-26 : l'envoi d'un opérateur dans un fil et la recharge Stripe sortent des routes (lot C de l'audit de structure)
+
+Plan `docs/superpowers/plans/2026-10-26-audits-simplicite-structure.md`, lot C. Deux protocoles que des routes HTTP
+possédaient passent dans des modules de domaine (invariant 60 du manuel), sans changement de comportement voulu et sans
+migration :
+
+- `src/inbox/envoi-operateur.ts` : `envoyerModeleDansLeFil` et `envoyerRcsDansLeFil`, sortis de `send-template` et
+  `send-rcs` (désabonnement et catégorie lue chez Meta, carousel, envoi), et `prendreLeFilPuisInscrire`, la queue commune
+  « prendre le fil, inscrire l'envoi accepté » (invariant 59), que `POST /v1/messages/rcs` partage désormais. Les routes
+  lisent le corps, vérifient le fil et son affectation, et traduisent l'issue.
+- `src/stripe/traitement-recharge.ts` : `creerTraitementRecharge`, la recharge du crédit IA sortie du webhook, sur le
+  modèle de `traitement-abonnements.ts`. La route garde la signature, l'enveloppe, le mode et l'aiguillage.
+
+- **Les tests de route n'ont pas bougé**, à deux exceptions : les deux tests de `optout-blocage` qui lisaient le TEXTE
+  de la route lisent maintenant le module, et vérifient en plus que la route l'appelle. Un test du module de recharge
+  s'ajoute ; la mutation du contrôle de montant y est attrapée, et aussi par les tests de la route.
+- **Relecture indépendante, aucun 🔴.** Le relecteur a rejoué 33 événements Stripe sur l'ancienne route et la nouvelle
+  (statut, corps au caractère près, effets dans l'ordre) : aucun écart. Jaunes corrigés dans le lot : le 409 de
+  désabonnement d'un modèle n'était tenu, avant comme après, que par des tests de TEXTE. Il a désormais un test du
+  module sans Fastify (`tests/inbox-envoi-operateur.test.ts`) et un test de route qui fige son corps, chacun vérifié
+  dans les deux sens. Deux `toEqual` figent le corps du webhook (la clé `credite`), et trois textes devenus faux sont
+  corrigés. Deux restes au backlog (`todo.md`).
+
 ## 2026-10-26 : la carte HubSpot lit, répond et rend au robot (lot 3 de la reprise humaine), déployé avant la bascule
 
 `cd274ff2` (plan `~/mm-hubspot/docs/2026-10-26-lot3-carte-mini-chat-plan.md`, décisions A à D validées par Julien ;
@@ -77,6 +100,9 @@ son origine, avec `droitAuNumero` et `numerosDisponibles` sortis de la route. Au
   d'« abonnement vivant ».
 - Le journal change de nom : `ops_numero_attribue_a_un_abonne` devient `numero_attribue_a_un_abonne_en_attente`, avec
   `origine` (`abandon`, `suppression_espace`, `liberation`, `declaration_ops`).
+- **Déployé** le 2026-10-26 à 10 h 50, annoncé aux sessions actives et leurs accords reçus : `mba-api`, `mba-worker` et
+  `mba-worker-analyse` à `0e194586` (aucune migration, base à 0253), aucune erreur dans les journaux, fumée publique et
+  fiches OAuth conformes. L’essai réel (n° 168 de la liste privée) reste à faire.
 
 ## 2026-10-26 : le banc du conteneur serverless, la répétition sur la vraie instance, et `mba.` supprimé
 

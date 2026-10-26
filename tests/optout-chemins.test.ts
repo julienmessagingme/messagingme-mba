@@ -84,10 +84,11 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
   'src/inbox/envoi-modele.ts': {
     verdict: 'delegue',
     pourquoi: 'L’envoi d’un MODÈLE depuis l’Inbox (`POST .../send-template`, `src/http/inbox.ts`) : il compose les '
-      + 'composants (suffixes des boutons tracés compris) et envoie ce que la route lui donne. La garde est dans la '
-      + 'ROUTE, avant l’appel : un contact désabonné ne reçoit qu’un modèle de SERVICE, sur la catégorie lue chez '
-      + 'Meta (`categorieDuModele`). Mesuré en suivant l’appel : `creerEnvoiModeleInbox` n’est branchée que sur '
-      + '`sendTemplateMessage`, que seule cette route appelle.',
+      + 'composants (suffixes des boutons tracés compris) et envoie ce que la route lui donne. La garde est dans '
+      + '`envoyerModeleDansLeFil` (`src/inbox/envoi-operateur.ts`), que la route appelle, avant l’envoi : un contact '
+      + 'désabonné ne reçoit qu’un modèle de SERVICE, sur la catégorie lue chez Meta (`categorieDuModele`). Mesuré en '
+      + 'suivant l’appel : `creerEnvoiModeleInbox` n’est branchée que sur `sendTemplateMessage`, que seul '
+      + '`envoyerModeleDansLeFil` appelle.',
   },
   'src/rcs/envoyer-libre.ts': {
     verdict: 'bloque',

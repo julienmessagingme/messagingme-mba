@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard, PreHandler } from '../auth/middleware';
 import type { ConversationSummary, ListConversationsOptions, CompteursInbox } from '../inbox/store.pg';
 import type { OutboundCarouselCard } from '../meta/template-components';
@@ -14,7 +14,7 @@ import { MediaExpire, enTetesMedia } from '../inbox/media-entrant';
 import { makeJournal, type AuditSink } from '../audit/journal';
 import { repondreDansLaFenetre, type ConversationsRepondre, type DepsRepondre } from '../inbox/repondre';
 import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible, phrasePremierMessage } from '../application/envoi';
-import { journaliserEnvoiAccepte } from '../inbox/journal-sortant';
+import { envoyerModeleDansLeFil, envoyerRcsDansLeFil, type IssueEnvoiOperateur } from '../inbox/envoi-operateur';
 import { estCodeLangue, estLangueConsole, TEXTE_MAX_CARACTERES, type CauseSansTraduction, type Traduction } from '../traduction/traduire';
 import { messageDe } from '../lib/erreur';
 import type { AuteurDuChangement, DetailConversation } from '../inbox/evenements';
@@ -242,6 +242,15 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
    * de la requête, sinon on écrirait un geste au nom d'un collègue.
    */
   const parLaSession = (req: FastifyRequest): AuteurDuChangement => ({ collaborateur: req.auth?.userId ?? null });
+  /**
+   * L'issue d'un envoi d'opérateur (`src/inbox/envoi-operateur.ts`) en réponse HTTP. Un envoi parti fait passer le fil côté
+   * humain : il entre dans « À traiter ».
+   */
+  const envoiOperateur = (reply: FastifyReply, tenant: string, issue: IssueEnvoiOperateur) => {
+    if (!issue.ok) return reply.code(issue.statut).send({ error: issue.error, ...(issue.code ? { code: issue.code } : {}) });
+    invaliderCompteurs(tenant);
+    return reply.code(200).send({ messageId: issue.messageId, journal: issue.journal });
+  };
   // Micro-cache des compteurs, un par serveur construit (deux instances de test ne partagent rien). Trois
   // compteurs (non-lus, à traiter, menu de dossiers), d'où la seconde instance juste en dessous.
   const compteurs = cacheCourt<number>(COMPTEURS_TTL_MS);
@@ -835,17 +844,9 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     const refusAff = await refusAffectation(req, tenant, conversationId);
     if (refusAff) return reply.code(403).send({ error: refusAff, code: 'assigned_to_other' });
 
-    const issue = await deps.sendRcsFromInbox(tenant, ctx.waId, contenu);
-    // 422 et non 5xx : une situation à corriger par l'opérateur (canal éteint, contact désabonné).
-    if ('refus' in issue) return reply.code(422).send({ error: issue.refus });
-
-    // L'opérateur prend le fil, comme sur une réponse texte. Au mieux et après l'envoi réussi : un échec d'état
-    // ne doit pas faire croire à un message perdu.
-    await deps.takeControl(tenant, ctx.waId, parLaSession(req)).catch(() => {});
-    invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
-    const journal = await journaliserEnvoiAccepte(tenant, conversationId, issue.messageId, () =>
-      deps.inbox.recordOutbound(conversationId, issue.apercu, issue.messageId, 'humain', 'rcs', null, null, req.auth?.userId ?? null, 'rcs'));
-    return reply.code(200).send({ messageId: issue.messageId, journal });
+    // L'envoi, la prise du fil et la trace : `src/inbox/envoi-operateur.ts`. Un refus (canal éteint, contact désabonné)
+    // est une situation à corriger par l'opérateur : 422 et non 5xx.
+    return envoiOperateur(reply, tenant, await envoyerRcsDansLeFil(deps, tenant, { conversationId, waId: ctx.waId }, contenu, req.auth?.userId ?? null));
   });
 
   /**
@@ -901,49 +902,17 @@ export function registerInbox(app: FastifyInstance, deps: InboxRouteDeps, garde:
     if (ctx === null) return reply.code(404).send({ error: 'conversation inconnue' });
     const refusTpl = await refusAffectation(req, tenant, conversationId);
     if (refusTpl) return reply.code(403).send({ error: refusTpl, code: 'assigned_to_other' });
-    const phoneNumberId = await deps.repo.getTenantPhoneNumberId(tenant);
-    if (!phoneNumberId) return reply.code(400).send({ error: 'aucun numéro pour ce tenant' });
 
-    /**
-     * 🔴 Un contact désabonné ne reçoit plus de modèle marketing, même envoyé à la main : un modèle rouvre une
-     * conversation, le geste dont la personne a demandé qu'il cesse. Le service passe (livraison, rendez-vous,
-     * compte). La catégorie est lue chez Meta, pas dans la requête, et un modèle dont la catégorie est illisible est
-     * refusé (échouer fermé). Cette lecture n'a lieu que pour un contact désabonné.
-     */
-    if (await deps.estDesabonne(tenant, ctx.waId)) {
-      const categorie = await deps.categorieDuModele(tenant, b.templateName, b.language).catch(() => null);
-      if (categorie !== 'utility') {
-        return reply.code(409).send({
-          error: categorie === null
-            ? 'ce contact s’est désabonné, et la catégorie de ce modèle n’a pas pu être vérifiée : l’envoi est refusé par prudence. Vous pouvez encore lui répondre à la main si la conversation est ouverte.'
-            : 'ce contact s’est désabonné : seuls les modèles de catégorie « Service » peuvent encore lui être envoyés. Vous pouvez lui répondre à la main si la conversation est ouverte.',
-          code: 'contact_desabonne',
-        });
-      }
-    }
-
-    // Carousel : ses cartes se relisent chez Meta et leurs visuels doivent être re-téléversés. Un refus (carte sans
-    // visuel exploitable, variable de carte) sort en 422 avant l'envoi, plutôt qu'un message accepté jamais livré.
-    let carousel: { cards: OutboundCarouselCard[] } | undefined;
-    const prep = await deps.prepareCarousel(tenant, b.templateName, b.language);
-    if (prep && 'refus' in prep) return reply.code(422).send({ error: prep.refus });
-    if (prep) carousel = prep;
-
-    const messageId = await deps.sendTemplateMessage(tenant, phoneNumberId, ctx.waId, {
+    // Le désabonnement et la catégorie lue chez Meta, le carousel, l'envoi, la prise du fil et la trace :
+    // `src/inbox/envoi-operateur.ts`.
+    return envoiOperateur(reply, tenant, await envoyerModeleDansLeFil(deps, tenant, { conversationId, waId: ctx.waId }, {
       name: b.templateName,
       language: b.language,
       bodyParams,
       ...(headerMediaUrl ? { headerMediaUrl } : {}),
       ...(headerFormat ? { headerFormat } : {}),
-      ...(carousel ? { carousel } : {}),
       ...(templateCategory ? { templateCategory } : {}),
-    });
-    // Même prise de main que sur la réponse texte : un template envoyé à la main est un acte d'opérateur.
-    await deps.takeControl(tenant, ctx.waId, parLaSession(req)).catch(() => {});
-    invaliderCompteurs(tenant); // le fil passe cote humain : il entre dans « A traiter ».
-    const journal = await journaliserEnvoiAccepte(tenant, conversationId, messageId, () =>
-      deps.inbox.recordOutbound(conversationId, `[template] ${b.templateName}`, messageId, 'humain', 'template', templateCategory, b.templateName, req.auth?.userId ?? null));
-    return reply.code(200).send({ messageId, journal });
+    }, req.auth?.userId ?? null));
   });
 
   /**
