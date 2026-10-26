@@ -1,6 +1,6 @@
 ---
 source_section: L'aide de la console (bouton flottant, sur tous les écrans) | Le centre d'aide public et « Comment faire » (vitrine et console)
-source_empreinte: 9df1ed | a7f58d
+source_empreinte: 9df1ed | ab0f47
 ---
 # Poser une question à l'aide de la console
 

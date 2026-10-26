@@ -2059,12 +2059,15 @@ scénario, comment importer des contacts.
 ## Le centre d'aide public et « Comment faire » (vitrine et console)
 
 - ✅ **Le centre d'aide** (`app.messagingme.fr/aide/`, en anglais `/en/help/`, depuis le 2026-10-21) : un mode
-  opératoire par geste, pas à pas. Démarrer : choisir son offre, ce qu'il faut chez Meta, connecter son numéro, se
-  repérer dans la console. Parler aux clients : répondre dans l'Inbox, la fenêtre de 24 heures, faire approuver un
-  modèle, importer ses contacts, lancer une campagne, brancher sa boutique Shopify (depuis le 2026-10-24 : le chemin
-  de la console, et sa dernière section dit celui de Claude Code).
+  opératoire par geste, pas à pas. Démarrer : choisir son offre, ce qu'il faut chez Meta, connecter son numéro,
+  garder son application WhatsApp Business, se repérer dans la console, relier HubSpot. Parler aux clients : répondre
+  dans l'Inbox, la fenêtre de 24 heures, faire approuver un modèle, importer ses contacts, lancer une campagne,
+  brancher sa boutique Shopify (depuis le 2026-10-24 : le chemin de la console, et sa dernière section dit celui de
+  Claude Code), poser une bulle WhatsApp sur son site, publier sur sa chaîne, envoyer un message RCS, construire un
+  agent IA, régler le Meta Business Agent, lancer une publicité Click-to-WhatsApp.
   - Chaque étape a sa **capture de la vraie console** (avec des données inventées), qui s'ouvre en grand d'un clic ;
-    la suite de l'étape se déplie sous « En détail ».
+    la suite de l'étape se déplie sous « En détail ». Les sept fiches publiées le 2026-10-26 (HubSpot, bulle, chaîne,
+    RCS, agent IA, Meta Business Agent, publicité) sont en texte seul, sans capture.
   - Un menu à gauche, avec une recherche qui ignore les accents ; la page dit l'offre qu'elle demande, mène à l'écran
     de la console (d'abord au plugin de Claude Code, gratuit, quand le geste s'y fait aussi : Shopify), et son lien « Une question sans réponse ? » ouvre le formulaire de contact en citant la page.
   - **Les mêmes textes que l'aide de la console** : une page est une fiche du mode d'emploi publiée, corriger l'une

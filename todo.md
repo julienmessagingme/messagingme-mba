@@ -1,5 +1,13 @@
 # todo.md : backlog
 
+## 🟡 Le lot 5 du plan SEO de la vitrine : les pages nouvelles (plan validé par Julien le 2026-10-26)
+
+`docs/superpowers/plans/2026-10-26-seo-geo-vitrine.md`, lot 5 : le glossaire `/glossaire/` et `/en/glossary/` (N1, les
+définitions de départ y sont), la page qui regroupe les solutions `/solutions/` avec `/industries/` redirigée (N2), les
+pages par concurrent sous `/comparatif/` (N3 : Brevo et 360dialog exclus, chaque affirmation sourcée et datée, relue par
+Julien), puis la page Intégrations (N4). Les lots 1 à 4 et les sept fiches d'aide sont en ligne ; le hors-site (Search
+Console, Bing, annuaires) est à Julien (`docs/prive/ESSAIS-REELS.md`).
+
 ## 🟡 aide:charger en production, pour les sept fiches publiées le 2026-10-26 (plan SEO, C6)
 
 Les sept fiches choisies par Julien sont publiques sur la vitrine. Trois corps ont changé et le bot d'aide lit encore
