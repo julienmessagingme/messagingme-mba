@@ -442,7 +442,10 @@ plus forte qui manque), sur le gabarit des cas, film compris.
 - **D3** : aucun prix Meta recopié sur la vitrine ; les FAQ disent qui facture et renvoient à la grille de Meta.
 - **D4** : Brevo et Pipedrive sont reliés par les webhooks ou l'API ; HubSpot et Salesforce par un connecteur. Les
   logos restent, les textes le disent ainsi.
-- **D5, encore ouverte** : quelles fiches d'aide publier (C6).
+- **D5** : les sept fiches de C6 (`creer-une-publicite`, `construire-un-agent-ia`, `le-repondeur-de-meta`,
+  `publier-sur-ma-chaine-whatsapp`, `envoyer-un-message-rcs`, `hubspot-sur-l-accueil`,
+  `poser-une-bulle-whatsapp-sur-mon-site`), APRÈS la bascule Scaleway, parce que leur publication finit par un
+  `aide:charger` en production.
 
 ## Ordre et rayon de souffle
 

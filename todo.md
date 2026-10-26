@@ -1,5 +1,15 @@
 # todo.md : backlog
 
+## 🟡 Publier sept fiches d'aide sur la vitrine, APRÈS la bascule Scaleway (plan SEO, C6, décision D5 du 2026-10-26)
+
+Julien a choisi les sept fiches de `docs/superpowers/plans/2026-10-26-seo-geo-vitrine.md` § C6 : `creer-une-publicite`,
+`construire-un-agent-ia`, `le-repondeur-de-meta`, `publier-sur-ma-chaine-whatsapp`, `envoyer-un-message-rcs`,
+`hubspot-sur-l-accueil`, `poser-une-bulle-whatsapp-sur-mon-site`. Par fiche : `publique: oui`, `rubrique`, `rang`, une
+`description:` de 155 caractères au plus si le chapeau dépasse 160, sa version `docs/aide/fiches/en/` (avec `slug` et
+`traduit_de`), les captures (`npm run aide:captures`), `npm run vitrine:aide`, puis `aide:charger` en production après le
+push. `tests/aide-proposer.test.ts` avant le push. Rendu montré à Julien avant le push (pages d'un genre neuf sur la
+vitrine).
+
 ## 🟡 Deux réponses de l'Inbox jamais arrivées à l'API (essai réel du lot 2b HubSpot, 2026-10-26)
 
 Sur SANDBOX, conversation du +44 1555 479304, deux réponses tapées dans l'Inbox par Julien (vers 15 h 55 et 16 h 25,
