@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import type { Pool } from 'pg';
 import { relancerPaniers, type DepsRelance } from '../src/shopify/relance';
-import type { PanierDu } from '../src/shopify/store.pg';
+import { PgShopifyStore, type PanierDu } from '../src/shopify/store.pg';
 import type { RapportEnvoi, ResultatEnvoiPublic } from '../src/api/envoi-public';
 import type { Emission } from '../src/emails-produit/emission';
 import type { Filiere } from '../src/application/comptes';
@@ -68,8 +69,28 @@ function monter(
   return { deps, journal };
 }
 
+/**
+ * LES PANIERS DUS, DANS LE SQL DU STORE (2026-10-26) : plus aucune affirmation du marchand n'y est lue. Le test
+ * d'intégration le prouve sur une vraie base, mais seulement en CI ; celui-ci le voit partout, sur le SQL lui-même.
+ */
+describe('les paniers dus, dans le SQL du store', () => {
+  it('🔴 ni la réclamation ni l’examen des relances en texte ne lisent l’affirmation du consentement', async () => {
+    const lus: string[] = [];
+    const pool = { query: async (sql: string) => { lus.push(sql); return { rows: [] }; } } as unknown as Pool;
+    const store = new PgShopifyStore(pool, 'cle-de-test');
+    expect(await store.reclamerPaniersDus(50, [])).toEqual([]);
+    expect(await store.espacesAPaniersDusEnTexte(10)).toEqual([]);
+    expect(lus).toHaveLength(2);
+    for (const sql of lus) {
+      // L'affirmation n'est plus exigée ; la boutique connectée et le message actif, si.
+      expect(sql).not.toMatch(/consentement/);
+      expect(sql).toContain("b.etat = 'connectee' and m.actif");
+    }
+  });
+});
+
 describe('la relance d’un panier réclamé', () => {
-  it('🔴 part consentante (le marchand l’a affirmé), avec le lien de reprise et le prénom, sous sa clé métier', async () => {
+  it('🔴 part consentante (le marchand en répond, sans affirmation), avec le lien de reprise et le prénom, sous sa clé métier', async () => {
     const { deps, journal } = monter([panier()]);
     const bilan = await relancerPaniers(deps);
     expect(bilan).toEqual({ reclames: 1, issues: { envoye: 1 } });

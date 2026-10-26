@@ -1,7 +1,7 @@
 ---
 ecran: integrations
 source_section: Boutique Shopify : les messages de commande sur WhatsApp (Claude Code ou console, 2026-10-21)
-source_empreinte: 411389
+source_empreinte: 985b62
 publique: oui
 rubrique: parler-aux-clients
 rang: 6
@@ -57,13 +57,12 @@ Chaque nouveau texte crée un nouveau modèle chez Meta : vous pouvez donc le re
 s'il a été créé ici, est supprimé peu après l'approbation du nouveau. Les modèles créés par l'assistant (leur nom
 commence par « shopify_ ») servent à la boutique : ne les réutilisez pas dans un scénario ou une campagne.
 
-**5. Régler le délai et le consentement.** Pour la relance, choisissez le délai après le panier (1 h par défaut), puis
-affirmez le consentement de vos clients, obligatoire pour elle et facultatif pour un message de commande. Enfin,
+**5. Régler le délai, puis envoyer.** Pour la relance, choisissez le délai après le panier (1 h par défaut). Enfin,
 « Envoyer à Meta et activer dès l'approbation ».
 
 Le message s'active tout seul quand Meta l'approuve, en général en quelques minutes, et un e-mail vous prévient (ou
 vous dit pourquoi Meta l'a refusé). Modifier un message actif ne l'arrête pas : l'ancien part jusqu'à l'approbation du
-nouveau. Changer seulement le délai ou la case s'applique tout de suite, sans repasser par Meta.
+nouveau. Changer seulement le délai de la relance s'applique tout de suite, sans repasser par Meta.
 
 **6. Importer vos clients.** « Importer » ouvre l'import des clients de la boutique abonnés à votre marketing (e-mail
 ou SMS) qui ont un téléphone. Ils sont comptés d'abord, avec les places que votre offre laisse ; vous choisissez
@@ -77,17 +76,17 @@ les chiffres des 30 derniers jours : messages partis, clients écartés et pourq
 L'app reste alors installée sur votre boutique : désinstallez-la depuis la page des apps de la boutique, dont le lien
 est sur la carte. Vous pourrez la rebrancher depuis la carte ou depuis Claude Code.
 
-**Bon à savoir.** Shopify ne recueille aucun accord pour WhatsApp. Affirmer que vos clients ont accepté vos messages
-rend leurs fiches consentantes partout, campagnes comprises, sous votre responsabilité, et l'affirmation est gardée
-(qui, quand). Elle vaut pour toute la boutique : la retirer met la relance des paniers en pause.
+**Bon à savoir.** Shopify ne recueille aucun accord pour WhatsApp : le consentement de vos clients relève de vous, et
+aucune question ne vous le demande. Chaque message de la boutique rend la fiche du client consentante partout,
+campagnes comprises ; un client qui a répondu STOP le reste et ne reçoit rien.
 
 ## La relance des paniers abandonnés
 
 Un client qui remplit le paiement avec son téléphone sans commander reçoit UNE relance sur WhatsApp, avec le lien qui
 rouvre son panier, au délai que vous choisissez après sa dernière modification (de 15 min à 72 h). Rien ne part si une
-commande en est née entre-temps, même non payée. C'est un message marketing : elle ne s'active qu'une fois que vous
-avez affirmé le consentement de vos clients, et elle porte en bas la mention « Répondez STOP pour ne plus recevoir ces
-messages ». La carte compte les relances parties, les paniers devenus une commande à temps, et ceux en attente.
+commande en est née entre-temps, même non payée. C'est un message marketing : elle porte en bas la mention « Répondez
+STOP pour ne plus recevoir ces messages ». La carte compte les relances parties, les paniers devenus une commande à
+temps, et ceux en attente.
 
 **Bon à savoir.** Le prénom est facultatif chez Shopify : beaucoup de clients ne le donnent pas, surtout avant
 d'abandonner leur panier. Un message qui contient le prénom part quand même, avec « à vous » à sa place (« Bonjour à

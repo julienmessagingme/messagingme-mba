@@ -27,7 +27,7 @@ const URL_T1 = '/tenants/t1/integrations/shopify';
 const CIBLE = { kind: 'integration', id: 'shopify' };
 const VUE: VueBoutique = {
   domaine: 'b.myshopify.com', nom: 'Essai', pays: 'FR', devise: 'EUR', etat: 'connectee', motifCoupure: null, coupeeLe: null,
-  connecteeLe: '2026-10-22T00:00:00.000Z', dernierEvenementLe: null, consentement: null, delaiPanierMinutes: 60, origine: 'console',
+  connecteeLe: '2026-10-22T00:00:00.000Z', dernierEvenementLe: null, delaiPanierMinutes: 60, origine: 'console',
 };
 
 function monter() {
@@ -37,7 +37,7 @@ function monter() {
   const store = {
     lire: async () => boutique,
     connecter: async (_t: string, c: Connexion) => { trace.connexions.push(c); boutique = { ...VUE, domaine: c.domaine }; return 'ok' as const; },
-    couper: non, messages: async () => [], brancher: non, affirmerConsentement: async () => undefined, retirerConsentement: non,
+    couper: non, messages: async () => [], brancher: non,
     compteurs: async () => ({}), reglerDelaiPanier: async (_t: string, m: number) => { trace.delais.push(m); },
     compteursPaniers: async () => ({ relances: {}, fermesATemps: 0, enAttente: 0 }), acces: async () => null,
     attentes: async () => [], retirerAttente: async () => null, poserAttente: async () => undefined, message: async () => null,
@@ -94,17 +94,35 @@ describe('le branchement depuis la console', () => {
 });
 
 describe('l’assistant et les réglages', () => {
-  it('préparer la relance (consentement affirmé dans l’appel) : en validation, journalisé', async () => {
+  it('🔴 préparer la relance sans aucune affirmation du consentement (2026-10-26) : en validation, journalisé', async () => {
     const { app, trace, brancher } = monter();
     brancher();
     const r = await app.inject({
       method: 'POST', url: `${URL_T1}/messages`, ...en(admin),
-      payload: { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', delaiMinutes: 60, consentementAffirme: true },
+      payload: { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', delaiMinutes: 60 },
     });
     expect(r.statusCode).toBe(200);
     expect(r.json()).toMatchObject({ etat: 'en_validation' });
     expect(trace.modeles).toHaveLength(1);
-    expect(trace.audit).toMatchObject([{ action: 'shopify.message', detail: { evenement: 'checkout_abandoned', etat: 'en_validation', consentementAffirme: true } }]);
+    expect(trace.audit).toEqual([{ action: 'shopify.message', cible: CIBLE, detail: { evenement: 'checkout_abandoned', modele: expect.stringMatching(/^shopify_checkout_abandoned_/), etat: 'en_validation' } }]);
+  });
+
+  it('🔴 un onglet resté sur l’ancienne console envoie encore consentementAffirme : accepté, ignoré, absent du journal', async () => {
+    const { app, trace, brancher } = monter();
+    brancher();
+    const prepare = await app.inject({
+      method: 'POST', url: `${URL_T1}/messages`, ...en(admin),
+      payload: { evenement: 'order_paid', texte: TEXTES_PROPOSES.order_paid.fr, langue: 'fr', consentementAffirme: true },
+    });
+    expect(prepare.statusCode).toBe(200);
+    for (const consentementAffirme of [true, false]) {
+      const regle = await app.inject({ method: 'PATCH', url: `${URL_T1}/messages/checkout_abandoned`, ...en(admin), payload: { delaiMinutes: 90, consentementAffirme } });
+      expect(regle.statusCode, String(consentementAffirme)).toBe(200);
+      expect(regle.json()).toEqual({});
+    }
+    expect(trace.delais).toEqual([90, 90]);
+    expect(JSON.stringify(trace.audit)).not.toContain('consentement');
+    expect(trace.audit.map((a) => a.detail)).toMatchObject([{ evenement: 'order_paid' }, { evenement: 'checkout_abandoned', delaiMinutes: 90 }, { evenement: 'checkout_abandoned', delaiMinutes: 90 }]);
   });
 
   it('un corps d’assistant hors contrat est refusé ; le délai se règle sans Meta', async () => {

@@ -46,8 +46,6 @@ export interface VueBoutique {
   coupeeLe: string | null;
   connecteeLe: string;
   dernierEvenementLe: string | null;
-  /** Le marchand a affirmé que ses clients consentent : qui (identifiant d'utilisateur) et quand. */
-  consentement: { par: string | null; le: string } | null;
   delaiPanierMinutes: number;
   origine: OrigineBoutique;
 }
@@ -73,7 +71,6 @@ export interface BoutiqueSignee {
   etat: EtatBoutique;
   secret: string;
   pays: string | null;
-  consentementAffirme: boolean;
   origine: OrigineBoutique;
 }
 
@@ -120,15 +117,16 @@ export const BAIL_EVENEMENT_S = 120;
 
 /**
  * Ce qui rend un panier DÛ : ouvert, jamais relancé, avec un téléphone et un lien, dont la dernière modification a dépassé
- * le délai de SA boutique, connectée, au consentement affirmé, et dont le message `checkout_abandoned` est actif. Les
- * deux lectures de la relance (`reclamerPaniersDus`, `espacesAPaniersDusEnTexte`) le reprennent mot pour mot ; la suite
- * de la requête commence par `and`.
+ * le délai de SA boutique, connectée, et dont le message `checkout_abandoned` est actif. Aucune affirmation du marchand
+ * n'est exigée (décision de Julien du 2026-10-26 : le consentement de ses clients est sa responsabilité). Les deux
+ * lectures de la relance (`reclamerPaniersDus`, `espacesAPaniersDusEnTexte`) le reprennent mot pour mot ; la suite de la
+ * requête commence par `and`.
  */
 const PANIERS_DUS = `from shopify_paniers p
            join shopify_boutiques b on b.tenant_id = p.tenant_id
            join shopify_messages m on m.tenant_id = p.tenant_id and m.evenement = 'checkout_abandoned'
           where p.ferme_le is null and p.relance_le is null and p.telephone is not null and p.lien is not null
-            and b.etat = 'connectee' and b.consentement_le is not null and m.actif
+            and b.etat = 'connectee' and m.actif
             and p.maj_le < now() - make_interval(mins => b.delai_panier_minutes)`;
 
 export type Reservation = 'nouveau' | 'en_cours' | 'servi';
@@ -136,7 +134,7 @@ export type Reservation = 'nouveau' | 'en_cours' | 'servi';
 interface LigneBoutique {
   domaine: string; nom: string | null; pays: string | null; devise: string | null; etat: EtatBoutique;
   motif_coupure: string | null; coupee_le: Date | null; connectee_le: Date; dernier_evenement_le: Date | null;
-  consentement_par: string | null; consentement_le: Date | null; delai_panier_minutes: number; origine: OrigineBoutique;
+  delai_panier_minutes: number; origine: OrigineBoutique;
 }
 
 export class PgShopifyStore {
@@ -145,7 +143,7 @@ export class PgShopifyStore {
   async lire(tenantId: string): Promise<VueBoutique | null> {
     const res = await this.pool.query<LigneBoutique>(
       `select domaine, nom, pays, devise, etat, motif_coupure, coupee_le, connectee_le, dernier_evenement_le,
-              consentement_par, consentement_le, delai_panier_minutes, origine
+              delai_panier_minutes, origine
          from shopify_boutiques where tenant_id = $1`,
       [tenantId],
     );
@@ -155,7 +153,6 @@ export class PgShopifyStore {
       domaine: r.domaine, nom: r.nom, pays: r.pays, devise: r.devise, etat: r.etat, motifCoupure: r.motif_coupure,
       coupeeLe: r.coupee_le?.toISOString() ?? null, connecteeLe: r.connectee_le.toISOString(),
       dernierEvenementLe: r.dernier_evenement_le?.toISOString() ?? null,
-      consentement: r.consentement_le ? { par: r.consentement_par, le: r.consentement_le.toISOString() } : null,
       delaiPanierMinutes: r.delai_panier_minutes, origine: r.origine,
     };
   }
@@ -179,25 +176,22 @@ export class PgShopifyStore {
    * pour vérifier la signature, et à personne d'autre.
    */
   async boutiqueParDomaine(domaine: string): Promise<BoutiqueSignee | null> {
-    const res = await this.pool.query<{ tenant_id: string; etat: EtatBoutique; secret_chiffre: string; pays: string | null; consentement_le: Date | null; origine: OrigineBoutique }>(
-      `select tenant_id, etat, secret_chiffre, pays, consentement_le, origine from shopify_boutiques where domaine = $1`,
+    const res = await this.pool.query<{ tenant_id: string; etat: EtatBoutique; secret_chiffre: string; pays: string | null; origine: OrigineBoutique }>(
+      `select tenant_id, etat, secret_chiffre, pays, origine from shopify_boutiques where domaine = $1`,
       [domaine],
     );
     const r = res.rows[0];
     if (!r) return null;
-    return {
-      tenantId: r.tenant_id, etat: r.etat, secret: decryptSecret(r.secret_chiffre, this.cle), pays: r.pays,
-      consentementAffirme: r.consentement_le !== null, origine: r.origine,
-    };
+    return { tenantId: r.tenant_id, etat: r.etat, secret: decryptSecret(r.secret_chiffre, this.cle), pays: r.pays, origine: r.origine };
   }
 
   /**
    * Relie la boutique à l'espace, ou la reprend. Un espace qui se reconnecte remplace son secret et repasse `connectee`.
-   * 🔴 TOUTE CONNEXION EFFACE L'AFFIRMATION DU CONSENTEMENT : elle vaut pour les clients d'UNE boutique, affirmée par
-   * une personne pour CE branchement. Gardée, une boutique de production branchée après une boutique d'essai ferait
-   * écrire consentants des clients pour qui personne n'a rien affirmé (relecture du lot 1).
    * Une boutique tenue par un AUTRE espace : refusée si elle y est connectée ; reprise si elle y est coupée (l'identifiant
    * et le secret valides prouvent qu'on la tient), et l'autre espace perd son branchement, pas ses fiches.
+   * ⚠️ `consentement_par` et `consentement_le` ne sont plus lus depuis le 2026-10-26 (plus aucune affirmation n'est
+   * demandée au marchand), et la connexion les efface encore : l'image d'avant, qui les lit, reste un retour arrière sûr
+   * (une affirmation gardée d'une boutique d'essai y ferait écrire consentants les clients d'une autre boutique).
    */
   async connecter(tenantId: string, c: Connexion): Promise<IssueConnexionBoutique> {
     const secret = encryptSecret(c.secretClair, this.cle);
@@ -230,8 +224,8 @@ export class PgShopifyStore {
            consentement_par = null, consentement_le = null`,
         [tenantId, c.domaine, c.clientId, secret, c.nom, c.pays, c.devise, c.par, c.origine],
       );
-      // 🔴 Les paniers notés sous l'ancienne connexion partent avec son affirmation : les commandes d'une boutique coupée
-      // ne les ont pas fermés, et ceux d'une autre boutique porteraient son lien (relecture du lot 2).
+      // 🔴 Les paniers notés sous l'ancienne connexion partent avec elle : les commandes d'une boutique coupée ne les ont
+      // pas fermés, et ceux d'une autre boutique porteraient son lien (relecture du lot 2).
       await client.query(`delete from shopify_paniers where tenant_id = $1`, [tenantId]);
       return 'ok';
     });
@@ -351,26 +345,6 @@ export class PgShopifyStore {
       [minutes, limite],
     );
     return res.rows.map((r) => ({ ...versAttente(r), tenantId: r.tenant_id }));
-  }
-
-  /** Le marchand affirme que ses clients consentent (décision de Julien) : qui et quand, pour la trace. */
-  async affirmerConsentement(tenantId: string, par: string | null): Promise<void> {
-    await this.pool.query(
-      `update shopify_boutiques set consentement_par = $2, consentement_le = now(), maj_le = now() where tenant_id = $1`,
-      [tenantId, par],
-    );
-  }
-
-  /** Le marchand retire son affirmation : plus aucune fiche n'est écrite consentante. Celles qui le sont le restent. */
-  async retirerConsentement(tenantId: string): Promise<void> {
-    await this.pool.query(
-      `update shopify_boutiques set consentement_par = null, consentement_le = null, maj_le = now() where tenant_id = $1`,
-      [tenantId],
-    );
-    // Les paniers ouverts notés sous l'affirmation partent avec elle, comme à une reconnexion (relecture du lot 3 de la
-    // console) : sinon la réaffirmer relancerait d'un coup des paniers de plusieurs jours. Ceux déjà relancés ou fermés
-    // restent, pour les chiffres de la carte.
-    await this.pool.query(`delete from shopify_paniers where tenant_id = $1 and ferme_le is null and relance_le is null`, [tenantId]);
   }
 
   async reglerDelaiPanier(tenantId: string, minutes: number): Promise<void> {
@@ -494,8 +468,8 @@ export class PgShopifyStore {
 
   /**
    * EXCEPTION TRANSVERSE 4 : le balayage des relances, toutes boutiques confondues. Un panier DÛ : ouvert, jamais relancé,
-   * avec un téléphone et un lien, dont la dernière modification a dépassé le délai de SA boutique, connectée, au
-   * consentement affirmé, et dont le message `checkout_abandoned` est actif. 🔴 La réclamation POSE `relance_le` dans la
+   * avec un téléphone et un lien, dont la dernière modification a dépassé le délai de SA boutique, connectée, et dont le
+   * message `checkout_abandoned` est actif (`PANIERS_DUS`). 🔴 La réclamation POSE `relance_le` dans la
    * même écriture (`for update skip locked`) : deux balayages, de deux copies de l'API, ne relancent jamais le même panier.
    * Les espaces d'`exclus` ne sont pas examinés : leurs paniers restent dus (la relance y met ceux qui n'ont plus de
    * messages du mois, plan 2026-10-23, tâche 5).

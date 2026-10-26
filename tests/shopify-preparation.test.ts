@@ -12,16 +12,15 @@ import { EVENEMENTS_SHOPIFY } from '../src/shopify/donnees';
  * L'ASSISTANT DES MESSAGES SHOPIFY DE LA CONSOLE (conception 2026-10-22) : un texte devient un modèle chez Meta, puis le
  * message s'active seul à l'approbation.
  *
- * 🔴 Ce qui se joue : une relance de panier (marketing) ne se prépare jamais sans consentement affirmé et ne s'active
- * jamais avant l'approbation ; le message actif n'est jamais touché par une préparation ni par un refus de Meta.
+ * 🔴 Ce qui se joue : un message ne s'active jamais avant l'approbation ; le message actif n'est jamais touché par une
+ * préparation ni par un refus de Meta. Aucune affirmation du consentement n'est demandée, relance comprise (2026-10-26).
  */
 
 const T = 't1';
 const VUE: VueBoutique = {
   domaine: 'b.myshopify.com', nom: 'Essai', pays: 'FR', devise: 'EUR', etat: 'connectee', motifCoupure: null, coupeeLe: null,
-  connecteeLe: '2026-10-22T00:00:00.000Z', dernierEvenementLe: null, consentement: null, delaiPanierMinutes: 60, origine: 'console',
+  connecteeLe: '2026-10-22T00:00:00.000Z', dernierEvenementLe: null, delaiPanierMinutes: 60, origine: 'console',
 };
-const AFFIRMEE: VueBoutique = { ...VUE, consentement: { par: 'u1', le: '2026-10-22T00:00:00.000Z' } };
 /** L'heure des tests, après la mise en service de l'assistant : les noms qu'il crée sont alors les siens. */
 const MAINTENANT = Date.UTC(2026, 9, 23, 12);
 /** Un nom de l'assistant, horodaté à une heure donnée du 22 octobre 2026. */
@@ -33,7 +32,7 @@ function monter(o: {
 } = {}) {
   const journal = {
     modeles: [] as CreateTemplateInput[], branches: [] as unknown[], attentes: [] as unknown[], retraits: [] as unknown[],
-    affirmations: [] as Array<string | null>, retraitsConsentement: 0, delais: [] as number[], programmes: [] as JobOubli[],
+    delais: [] as number[], programmes: [] as JobOubli[],
   };
   // Comme le vrai store : brancher remplace le message de l'événement, poser une attente remplace la précédente.
   let messages: MessageBranche[] = o.actif ? [o.actif] : [];
@@ -57,8 +56,6 @@ function monter(o: {
       },
       messages: async () => messages,
       attentes: async () => attentes,
-      affirmerConsentement: async (_t, par) => { journal.affirmations.push(par); },
-      retirerConsentement: async () => { journal.retraitsConsentement += 1; },
       reglerDelaiPanier: async (_t, m) => { journal.delais.push(m); },
       message: async (_t, e) => messages.find((x) => x.evenement === e) ?? null,
     },
@@ -91,27 +88,26 @@ describe('le texte de l’assistant devient un corps de modèle', () => {
 });
 
 describe('préparer un message', () => {
-  it('🔴 une relance sans consentement affirmé est refusée, et rien n’est créé chez Meta', async () => {
+  it('🔴 une relance se prépare sans aucune affirmation du consentement (décision de Julien du 2026-10-26)', async () => {
     const { deps, journal } = monter();
     const r = await preparerMessage(deps, T, { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr' }, 'u1');
-    expect(r).toMatchObject({ ok: false, statut: 409 });
-    expect(journal.modeles).toEqual([]);
+    expect(r).toMatchObject({ ok: true, valeur: { etat: 'en_validation' } });
+    expect(journal.modeles).toHaveLength(1);
   });
 
-  it('une relance : modèle marketing, pied STOP, consentement affirmé dans l’appel ; en validation, l’attente porte le délai', async () => {
+  it('une relance : modèle marketing, pied STOP ; en validation, l’attente porte le délai', async () => {
     const { deps, journal } = monter();
     const r = await preparerMessage(deps, T, {
-      evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', delaiMinutes: 15, consentementAffirme: true,
+      evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', delaiMinutes: 15,
     }, 'u1');
     expect(r).toEqual({ ok: true, valeur: { etat: 'en_validation', modele: `shopify_checkout_abandoned_${MAINTENANT.toString(36)}` } });
-    expect(journal.affirmations).toEqual(['u1']);
     expect(journal.modeles[0]).toMatchObject({ category: 'MARKETING', language: 'fr', footer: PIED_STOP.fr, example: ['https://ma-boutique.myshopify.com/checkouts/recover'] });
     expect(journal.attentes).toEqual([{ evenement: 'checkout_abandoned', modele: `shopify_checkout_abandoned_${MAINTENANT.toString(36)}`, langue: 'fr', variables: ['checkout_url'], delaiMinutes: 15, par: 'u1' }]);
     // 🔴 Le message actif n'est pas touché : il part jusqu'à l'approbation du nouveau.
     expect(journal.branches).toEqual([]);
   });
 
-  it('un message de commande : modèle de service, sans pied STOP, sans consentement exigé', async () => {
+  it('un message de commande : modèle de service, sans pied STOP', async () => {
     const { deps, journal } = monter();
     await preparerMessage(deps, T, { evenement: 'order_paid', texte: TEXTES_PROPOSES.order_paid.en, langue: 'en_US' }, 'u1');
     expect(journal.modeles[0]).toMatchObject({ category: 'UTILITY', language: 'en_US' });
@@ -119,7 +115,7 @@ describe('préparer un message', () => {
   });
 
   it('approuvé tout de suite : branché, délai posé, attente retirée', async () => {
-    const { deps, journal } = monter({ boutique: AFFIRMEE, creation: { ok: true, statut: 'approved', categorie: 'marketing' } });
+    const { deps, journal } = monter({ creation: { ok: true, statut: 'approved', categorie: 'marketing' } });
     const r = await preparerMessage(deps, T, { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', delaiMinutes: 30 }, 'u1');
     expect(r).toMatchObject({ ok: true, valeur: { etat: 'actif' } });
     expect(journal.branches).toMatchObject([{ evenement: 'checkout_abandoned', actif: true, variables: ['checkout_url'] }]);
@@ -137,14 +133,6 @@ describe('préparer un message', () => {
     expect(journal.branches).toEqual([]);
   });
 
-  it('retirer l’affirmation ne passe pas par la préparation : refusé, rien créé chez Meta', async () => {
-    const { deps, journal } = monter({ boutique: AFFIRMEE });
-    expect(await preparerMessage(deps, T, { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', consentementAffirme: false }, 'u1'))
-      .toMatchObject({ ok: false, statut: 400 });
-    expect(journal.modeles).toEqual([]);
-    expect(journal.retraitsConsentement).toBe(0);
-  });
-
   it('🔴 un message de commande que Meta reclasse en marketing est refusé, sans attente', async () => {
     const { deps, journal } = monter({ creation: { ok: true, statut: 'pending', categorie: 'marketing' } });
     expect(await preparerMessage(deps, T, { evenement: 'order_fulfilled', texte: TEXTES_PROPOSES.order_fulfilled.fr, langue: 'fr' }, 'u1'))
@@ -158,7 +146,7 @@ describe('préparer un message', () => {
     expect(await preparerMessage(monter({ boutique: null }).deps, T, { evenement: 'order_paid', texte, langue: 'fr' }, null)).toMatchObject({ ok: false, statut: 409 });
     expect(await preparerMessage(monter({ boutique: { ...VUE, etat: 'coupee' } }).deps, T, { evenement: 'order_paid', texte, langue: 'fr' }, null)).toMatchObject({ ok: false, statut: 409 });
     expect(await preparerMessage(monter().deps, T, { evenement: 'order_paid', texte, langue: 'fr', delaiMinutes: 60 }, null)).toMatchObject({ ok: false, statut: 400 });
-    expect(await preparerMessage(monter({ boutique: AFFIRMEE }).deps, T, { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', delaiMinutes: 5 }, null))
+    expect(await preparerMessage(monter().deps, T, { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr', delaiMinutes: 5 }, null))
       .toMatchObject({ ok: false, statut: 400 });
     expect(await preparerMessage(monter({ creation: { ok: false, message: 'nom déjà pris' } }).deps, T, { evenement: 'order_paid', texte, langue: 'fr' }, null))
       .toMatchObject({ ok: false, statut: 422, message: expect.stringContaining('nom déjà pris') });
@@ -182,20 +170,20 @@ describe('le ménage des modèles remplacés (2026-10-23)', () => {
   });
 
   it('🔴 le nom que crée la préparation est bien reconnu (le format créé et le format reconnu ne dérivent pas)', async () => {
-    const { deps } = monter({ boutique: AFFIRMEE });
+    const { deps } = monter();
     const r = await preparerMessage(deps, T, { evenement: 'order_paid', texte: TEXTES_PROPOSES.order_paid.fr, langue: 'fr' }, 'u1');
     expect(r.ok && estModeleDeLAssistant(r.valeur.modele, MAINTENANT)).toBe(true);
   });
 
   it('🔴 une nouvelle version remplace celle qui attendait Meta : son oubli est programmé dans un quart d’heure, le message en place reste', async () => {
-    const { deps, journal } = monter({ boutique: AFFIRMEE, actif: enPlace, attentePrecedente: precedente });
+    const { deps, journal } = monter({ actif: enPlace, attentePrecedente: precedente });
     expect(await preparerMessage(deps, T, { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr' }, 'u1'))
       .toMatchObject({ ok: true, valeur: { etat: 'en_validation' } });
     expect(journal.programmes).toEqual([{ tenantId: T, modele: precedente.modele, essai: 0 }]);
   });
 
   it('🔴 approuvée tout de suite : l’oubli du message remplacé et de l’attente retirée est programmé', async () => {
-    const { deps, journal } = monter({ boutique: AFFIRMEE, actif: enPlace, attentePrecedente: precedente, creation: { ok: true, statut: 'approved', categorie: 'marketing' } });
+    const { deps, journal } = monter({ actif: enPlace, attentePrecedente: precedente, creation: { ok: true, statut: 'approved', categorie: 'marketing' } });
     expect(await preparerMessage(deps, T, { evenement: 'checkout_abandoned', texte: TEXTES_PROPOSES.checkout_abandoned.fr, langue: 'fr' }, 'u1'))
       .toMatchObject({ ok: true, valeur: { etat: 'actif' } });
     expect(journal.programmes.map((j) => j.modele).sort()).toEqual([enPlace.modele, precedente.modele].sort());
@@ -297,15 +285,14 @@ describe('la suppression liée par le câblage', () => {
 });
 
 describe('régler un message sans repasser par Meta', () => {
-  it('le délai seulement pour la relance ; retirer l’affirmation arrête une relance active, et le dit', async () => {
-    const a = monter({ boutique: AFFIRMEE });
-    expect(await reglerMessage(a.deps, T, { evenement: 'checkout_abandoned', delaiMinutes: 120 }, 'u1')).toEqual({ ok: true, valeur: { relanceArretee: false } });
+  it('le délai seulement pour la relance, dans ses bornes ; sans boutique, refusé', async () => {
+    const a = monter();
+    expect(await reglerMessage(a.deps, T, { evenement: 'checkout_abandoned', delaiMinutes: 120 })).toEqual({ ok: true, valeur: {} });
     expect(a.journal.delais).toEqual([120]);
-    expect(await reglerMessage(a.deps, T, { evenement: 'order_paid', delaiMinutes: 120 }, 'u1')).toMatchObject({ ok: false, statut: 400 });
-    const relance: MessageBranche = { evenement: 'checkout_abandoned', modele: 'm', texte: null, langue: 'fr', variables: [], actif: true, modifieLe: '' };
-    const b = monter({ boutique: AFFIRMEE, actif: relance });
-    expect(await reglerMessage(b.deps, T, { evenement: 'order_paid', consentementAffirme: false }, 'u1')).toEqual({ ok: true, valeur: { relanceArretee: true } });
-    expect(b.journal.retraitsConsentement).toBe(1);
+    expect(await reglerMessage(a.deps, T, { evenement: 'order_paid', delaiMinutes: 120 })).toMatchObject({ ok: false, statut: 400 });
+    expect(await reglerMessage(a.deps, T, { evenement: 'checkout_abandoned', delaiMinutes: 5 })).toMatchObject({ ok: false, statut: 400 });
+    expect(a.journal.delais).toEqual([120]);
+    expect(await reglerMessage(monter({ boutique: null }).deps, T, { evenement: 'checkout_abandoned', delaiMinutes: 120 })).toMatchObject({ ok: false, statut: 409 });
   });
 });
 
@@ -319,7 +306,7 @@ describe('l’activation au statut tranché par Meta', () => {
     let messages: MessageBranche[] = o.actif ? [o.actif] : [];
     const deps: DepsActivation = {
       store: {
-        lire: async () => (o.boutique === undefined ? AFFIRMEE : o.boutique),
+        lire: async () => (o.boutique === undefined ? VUE : o.boutique),
         attenteDuModele: async (_t, modele, langue) => (restante !== null && restante.modele === modele && restante.langue === langue ? restante : null),
         brancher: async (_t, m) => {
           if (o.panne) throw new Error('base perdue');
@@ -400,17 +387,19 @@ describe('l’activation au statut tranché par Meta', () => {
     expect(journal.emails).toHaveLength(1);
   });
 
-  it('🔴 une relance approuvée après le retrait de l’affirmation, ou une boutique coupée : branchée, mais aucun e-mail « actif »', async () => {
-    for (const boutique of [VUE, { ...AFFIRMEE, etat: 'coupee' as const }]) {
-      const { deps, journal } = monterActivation(ATTENTE, { boutique });
-      expect(await activerSelonStatut(deps, T, { modele: ATTENTE.modele, langue: 'fr', statut: 'APPROVED', raison: null })).toBe('active');
-      expect(journal.branches).toHaveLength(1);
-      expect(journal.emails).toEqual([]);
+  it('🔴 une boutique coupée pendant la validation : branché, mais aucun e-mail « actif » (rien ne part)', async () => {
+    const { deps, journal } = monterActivation(ATTENTE, { boutique: { ...VUE, etat: 'coupee' } });
+    expect(await activerSelonStatut(deps, T, { modele: ATTENTE.modele, langue: 'fr', statut: 'APPROVED', raison: null })).toBe('active');
+    expect(journal.branches).toHaveLength(1);
+    expect(journal.emails).toEqual([]);
+  });
+
+  it('🔴 une relance approuvée part sans aucune affirmation du consentement (2026-10-26) : l’e-mail « actif » le dit, comme pour une commande', async () => {
+    for (const attente of [ATTENTE, { ...ATTENTE, evenement: 'order_paid' as const, delaiMinutes: null }]) {
+      const { deps, journal } = monterActivation(attente, { boutique: VUE });
+      expect(await activerSelonStatut(deps, T, { modele: ATTENTE.modele, langue: 'fr', statut: 'APPROVED', raison: null }), attente.evenement).toBe('active');
+      expect(journal.emails, attente.evenement).toMatchObject([{ cle: 'shopify_message_actif' }]);
     }
-    // Un message de commande, lui, part sans affirmation : l'e-mail le dit.
-    const commande = monterActivation({ ...ATTENTE, evenement: 'order_paid', delaiMinutes: null }, { boutique: VUE });
-    expect(await activerSelonStatut(commande.deps, T, { modele: ATTENTE.modele, langue: 'fr', statut: 'APPROVED', raison: null })).toBe('active');
-    expect(commande.journal.emails).toMatchObject([{ cle: 'shopify_message_actif' }]);
   });
 
   it('🔴 REJECTED retire l’attente et prévient, sans rien brancher : le message actif reste', async () => {

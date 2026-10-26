@@ -809,26 +809,35 @@ describe('POST /v1/sends : le consentement par destinataire', () => {
  * LE CONNECTEUR SHOPIFY PASSE PAR LE VRAI CYCLE (relecture du lot 1, 2026-10-21) : le corps que construit son adaptateur
  * (`envoyerShopify`) est donné à `lancerEnvoiPublic` lui-même, pas à un faux. Un corps refusé par `schemaCorps`, ou un
  * consentement qui n'atteindrait pas le tri, ne se verraient sinon qu'en production.
+ *
+ * 🔴 Depuis le 2026-10-26, chaque envoi Shopify porte le consentement (le marchand en répond, aucune question ne le lui
+ * demande) : c'est ici, sur le VRAI `appliquerConsentement`, que se prouve qu'il ne lève jamais un STOP.
  */
 describe('le connecteur Shopify, par le vrai cycle d’envoi public', () => {
   const envoiShopify = (over: Partial<EnvoiShopify> = {}): EnvoiShopify => ({
     tenantId: 't1', cle: 'shopify:b.myshopify.com:orders/paid:1002', nomLigne: 'Shopify · commande payée · #1002',
-    modele: 'confirmation', langue: 'fr', variables: [], valeurs: {}, telephone: PHONE(1), sourceConsentement: null, ...over,
+    modele: 'confirmation', langue: 'fr', variables: [], valeurs: {}, telephone: PHONE(1), sourceConsentement: 'shopify:b.myshopify.com', ...over,
   });
   const branche = (sends: DepsEnvoiPublic) => (t: string, corps: unknown, compter: (n: number) => Promise<boolean>, options: OptionsEnvoiPublic) =>
     lancerEnvoiPublic(sends, t, corps, undefined, compter, options);
 
-  it('🔴 un MARKETING vers une fiche sans consentement : écarté, aucune ligne de campagne', async () => {
+  it('🔴 une fiche sans consentement devient consentante, source shopify:<boutique>, et passe le tri marketing du même envoi', async () => {
     const { sends, cap } = app({}, { modele: { statut: 'approuve', categorie: 'marketing', variables: 0 }, fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'unknown' })]]) });
-    expect(await envoyerShopify(branche(sends), envoiShopify())).toBe('sans_consentement');
-    expect(cap.sends).toHaveLength(0);
+    expect(await envoyerShopify(branche(sends), envoiShopify())).toBe('envoye');
+    expect(cap.consentements).toMatchObject([{ contactId: C1, consent: 'opted_in', source: 'shopify:b.myshopify.com' }]);
+    expect(cap.ecritures).toEqual([{ contactId: C1, consent: 'opted_in' }]);
+    expect(cap.sends[0]!.input.name).toBe('Shopify · commande payée · #1002');
   });
 
-  it('🔴 le consentement affirmé du marchand est écrit avec sa source, et passe le tri du même envoi', async () => {
-    const { sends, cap } = app({}, { modele: { statut: 'approuve', categorie: 'marketing', variables: 0 }, fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'unknown' })]]) });
-    expect(await envoyerShopify(branche(sends), envoiShopify({ sourceConsentement: 'shopify:b.myshopify.com' }))).toBe('envoye');
-    expect(cap.consentements).toMatchObject([{ contactId: C1, consent: 'opted_in', source: 'shopify:b.myshopify.com' }]);
-    expect(cap.sends[0]!.input.name).toBe('Shopify · commande payée · #1002');
+  it('🔴 un client qui a dit STOP le reste : le consentement d’un événement Shopify ne le lève pas, rien ne part ni ne s’écrit', async () => {
+    for (const categorie of ['marketing', 'utility'] as const) {
+      const { sends, cap, m } = app({}, { modele: { statut: 'approuve', categorie, variables: 0 }, fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'opted_out' })]]) });
+      expect(await envoyerShopify(branche(sends), envoiShopify()), categorie).toBe('desabonne');
+      // La demande atteint le dépôt, qui la refuse : ni écriture, ni journal, ni campagne.
+      expect(cap.consentements, categorie).toMatchObject([{ contactId: C1, consent: 'opted_in', source: 'shopify:b.myshopify.com' }]);
+      expect([cap.ecritures, cap.audits, cap.sends], categorie).toEqual([[], [], []]);
+      expect(m.fiches.get(C1)!.optInStatus, categorie).toBe('opted_out');
+    }
   });
 
   it('un utility avec ses variables : le corps passe la forme, et les valeurs partent avec le destinataire', async () => {

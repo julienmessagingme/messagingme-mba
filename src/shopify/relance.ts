@@ -18,8 +18,9 @@ import type { Emission } from '../emails-produit/emission';
  * réclamation laisse le panier réclamé, avec son issue, et il ne repart pas. Pour un message marketing, une relance
  * manquée vaut mieux qu'une relance en double.
  *
- * Le consentement est celui que le marchand a affirmé (la réclamation l'exige) : la fiche naît consentante, avec la
- * source `shopify:<boutique>`, et l'envoi public applique ensuite le STOP, `optInAllows` et les limites de l'offre.
+ * Le consentement des clients est la responsabilité du marchand (décision de Julien du 2026-10-26 : aucune affirmation
+ * ne lui est demandée) : la fiche naît consentante, avec la source `shopify:<boutique>`, et l'envoi public applique
+ * ensuite le STOP (jamais levé par ce consentement), `optInAllows` et les limites de l'offre.
  *
  * 🔴 SUR UN NUMÉRO RELIÉ PAR QR CODE (plan 2026-10-23, tâche 5), la relance est un texte qui part par la porte « écrire
  * en premier », comptée dans les messages du mois. Une limite atteinte ne doit consommer AUCUNE relance : les espaces

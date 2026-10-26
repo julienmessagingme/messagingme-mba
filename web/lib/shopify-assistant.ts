@@ -77,20 +77,17 @@ export type EtatMessage =
   | 'actif'
   | 'actif_nouvelle_version'
   | 'arrete'
-  | 'arrete_nouvelle_version'
-  | 'en_pause';
+  | 'arrete_nouvelle_version';
 
 /**
  * L'état d'un message sur la carte. Une attente PASSE DEVANT un message arrêté (elle le remplacera) mais pas devant
  * un message actif : l'ancien continue de partir pendant la validation du nouveau (conception, « Modifier un message
- * actif ne l'arrête pas »). Une relance active dont l'affirmation du consentement a été retirée est EN PAUSE : rien ne
- * part tant qu'elle n'est pas affirmée de nouveau (les gardes du serveur), et la carte doit le dire.
+ * actif ne l'arrête pas »).
  */
-export function etatDuMessage(vue: Pick<EtatShopifyVue, 'messages' | 'attentes' | 'boutique'>, evenement: EvenementShopify): EtatMessage {
+export function etatDuMessage(vue: Pick<EtatShopifyVue, 'messages' | 'attentes'>, evenement: EvenementShopify): EtatMessage {
   const m = vue.messages.find((x) => x.evenement === evenement);
   const enAttente = vue.attentes.some((x) => x.evenement === evenement);
   if (!m) return enAttente ? 'en_validation' : 'a_regler';
-  if (m.actif && evenement === 'checkout_abandoned' && !vue.boutique?.consentementLe) return 'en_pause';
   if (m.actif) return enAttente ? 'actif_nouvelle_version' : 'actif';
   return enAttente ? 'arrete_nouvelle_version' : 'arrete';
 }

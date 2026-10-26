@@ -32,7 +32,6 @@ const ETATS: Record<EtatMessage, readonly [string, string]> = {
   actif_nouvelle_version: ['actif, nouvelle version en validation chez Meta', 'active, new version awaiting Meta’s approval'],
   arrete: ['arrêté', 'stopped'],
   arrete_nouvelle_version: ['arrêté, nouvelle version en validation chez Meta', 'stopped, new version awaiting Meta’s approval'],
-  en_pause: ['en pause : affirmez le consentement de vos clients', 'paused: confirm your customers’ consent'],
 };
 const GESTE: Record<EtatMessage, readonly [string, string]> = {
   a_regler: ['Mettre en place', 'Set up'],
@@ -41,7 +40,6 @@ const GESTE: Record<EtatMessage, readonly [string, string]> = {
   actif_nouvelle_version: ['Voir', 'View'],
   arrete: ['Modifier', 'Edit'],
   arrete_nouvelle_version: ['Voir', 'View'],
-  en_pause: ['Reprendre', 'Resume'],
 };
 
 const ISSUES: Record<string, [string, string]> = {
@@ -169,9 +167,6 @@ export function ReglageShopify({ tenantId }: { tenantId: string }) {
                     <span className="text-ink-900">
                       {t(...LIBELLES_EVENEMENTS[e])}
                       <span className={actif ? 'ml-2 font-medium text-succes-700' : 'ml-2 text-ink-500'}>{t(...ETATS[etat])}</span>
-                      {etat === 'en_pause' && vue!.attentes.some((x) => x.evenement === e) && (
-                        <span className="ml-2 text-ink-500">{t('(nouvelle version en validation chez Meta)', '(new version awaiting Meta’s approval)')}</span>
-                      )}
                       {e === 'checkout_abandoned' && actif && (
                         <span className="ml-2 text-ink-500">
                           {t(`(${delaiEnClair(b.delaiPanierMinutes ?? 60)} après le panier)`, `(${delaiEnClair(b.delaiPanierMinutes ?? 60)} after the checkout)`)}
@@ -188,14 +183,6 @@ export function ReglageShopify({ tenantId }: { tenantId: string }) {
                 );
               })}
             </ul>
-          )}
-          {b.consentementLe && (
-            <p className="text-ink-500">
-              {t(
-                `Vous avez affirmé le ${new Date(b.consentementLe).toLocaleDateString()} que vos clients consentent à recevoir vos messages WhatsApp.`,
-                `On ${new Date(b.consentementLe).toLocaleDateString()} you affirmed that your customers agree to receive your WhatsApp messages.`,
-              )}
-            </p>
           )}
           {['actif', 'actif_nouvelle_version'].includes(etatDuMessage(vue!, 'checkout_abandoned')) && (
             <p className="text-ink-500" data-testid="integration-shopify-paniers">

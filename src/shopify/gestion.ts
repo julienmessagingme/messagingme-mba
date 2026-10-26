@@ -23,7 +23,7 @@ import type { AttenteMessage, MessageBranche, OrigineBoutique, PgShopifyStore, V
  */
 
 export interface DepsGestionShopify {
-  store: Pick<PgShopifyStore, 'lire' | 'connecter' | 'couper' | 'messages' | 'brancher' | 'affirmerConsentement' | 'retirerConsentement' | 'compteurs'
+  store: Pick<PgShopifyStore, 'lire' | 'connecter' | 'couper' | 'messages' | 'brancher' | 'compteurs'
     | 'reglerDelaiPanier' | 'compteursPaniers' | 'acces' | 'attentes' | 'retirerAttente'>;
   /** `verifierBoutique` lié à `fetchPublic` par le câblage. */
   verifier(domaine: string, clientId: string, secret: string): Promise<IssueVerification>;
@@ -149,8 +149,6 @@ export interface Branchement {
   langue: unknown;
   variables: unknown;
   actif: unknown;
-  /** Le marchand affirme que ses clients consentent : la fiche devient consentante partout (décision de Julien). */
-  consentementAffirme: unknown;
   /** La relance de panier seulement : le délai après la dernière modification du panier, en minutes. */
   delaiMinutes?: unknown;
 }
@@ -203,8 +201,6 @@ export async function brancherMessage(
       variables.push(v);
     }
   }
-  const affirme = b.consentementAffirme === true;
-  if (b.consentementAffirme !== undefined && typeof b.consentementAffirme !== 'boolean') return refus(400, 'customers_consented : vrai ou faux.');
   const panier = evenement === 'checkout_abandoned';
   if (b.delaiMinutes !== undefined && (!panier || typeof b.delaiMinutes !== 'number' || !Number.isInteger(b.delaiMinutes)
     || b.delaiMinutes < DELAI_PANIER_MIN || b.delaiMinutes > DELAI_PANIER_MAX)) {
@@ -214,15 +210,12 @@ export async function brancherMessage(
   const boutique = await deps.store.lire(tenantId);
   if (boutique === null) return refus(409, 'Aucune boutique Shopify n’est branchée à cet espace : connect_shopify d’abord.');
   if (boutique.etat === 'coupee') return refus(409, 'La boutique est coupée : rebranchez-la avec connect_shopify avant d’y brancher un message.');
-  // 🔴 Une relance de panier est un message marketing à des gens qui n'ont rien demandé sur WhatsApp : elle ne s'active
-  // que si le marchand a affirmé le consentement de ses clients (décision de Julien), dans cet appel ou avant.
-  const consentApres = affirme || (boutique.consentement !== null && b.consentementAffirme !== false);
-  if (panier && actif && !consentApres) {
-    return refus(409, 'La relance de panier exige que vous affirmiez le consentement de vos clients à recevoir vos messages WhatsApp (customers_consented: true).');
-  }
+  // Aucune affirmation n'est demandée, relance de panier comprise (décision de Julien du 2026-10-26) : le consentement des
+  // clients est la responsabilité du marchand, chaque envoi écrit la fiche consentante (`servir`, `relancerPaniers`), et
+  // un STOP reste un STOP (`appliquerConsentement`).
 
   const langue = b.langue.trim();
-  if (texte !== null) return brancherTexte(deps, tenantId, b, { evenement, texte, langue, variables, actif, affirme, par });
+  if (texte !== null) return brancherTexte(deps, tenantId, b, { evenement, texte, langue, variables, actif, par });
 
   if (modele === null) return refus(400, 'template : le nom du modèle WhatsApp.');
   if (actif) {
@@ -243,17 +236,10 @@ export async function brancherMessage(
   // Le dernier geste gagne (conception 2026-10-22) : un message préparé par la console pour cet événement, encore en
   // validation chez Meta, ne remplacera pas celui qu'on branche ici à son approbation.
   const retiree = await deps.store.retirerAttente(tenantId, { evenement });
-  await reglerApresBranchement(deps, tenantId, b, affirme, par);
+  if (typeof b.delaiMinutes === 'number') await deps.store.reglerDelaiPanier(tenantId, b.delaiMinutes);
   await oublierPlusTard(deps, tenantId, actifAvant?.modele, modele);
   await oublierPlusTard(deps, tenantId, retiree?.modele, modele);
   return { ok: true, valeur: await deps.store.messages(tenantId) };
-}
-
-/** Le délai de la relance, et l'affirmation : vrai affirme, faux RETIRE (plus aucune fiche n'est écrite consentante), absent ne change rien. */
-async function reglerApresBranchement(deps: DepsGestionShopify, tenantId: string, b: Branchement, affirme: boolean, par: string | null): Promise<void> {
-  if (typeof b.delaiMinutes === 'number') await deps.store.reglerDelaiPanier(tenantId, b.delaiMinutes);
-  if (affirme) await deps.store.affirmerConsentement(tenantId, par);
-  else if (b.consentementAffirme === false) await deps.store.retirerConsentement(tenantId);
 }
 
 /**
@@ -264,11 +250,11 @@ async function reglerApresBranchement(deps: DepsGestionShopify, tenantId: string
  */
 async function brancherTexte(
   deps: DepsGestionShopify, tenantId: string, b: Branchement,
-  m: { evenement: EvenementShopify; texte: string; langue: string; variables: DonneeShopify[]; actif: boolean; affirme: boolean; par: string | null },
+  m: { evenement: EvenementShopify; texte: string; langue: string; variables: DonneeShopify[]; actif: boolean; par: string | null },
 ): Promise<Issue<MessageBranche[]>> {
   await deps.store.brancher(tenantId, { evenement: m.evenement, modele: null, texte: m.texte, langue: m.langue, variables: m.variables, actif: m.actif, par: m.par });
   await deps.store.retirerAttente(tenantId, { evenement: m.evenement });
-  await reglerApresBranchement(deps, tenantId, b, m.affirme, m.par);
+  if (typeof b.delaiMinutes === 'number') await deps.store.reglerDelaiPanier(tenantId, b.delaiMinutes);
   return { ok: true, valeur: await deps.store.messages(tenantId) };
 }
 

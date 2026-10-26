@@ -35,7 +35,6 @@ export interface EtatShopifyVue {
     nom: string | null;
     etat: 'connectee' | 'coupee';
     dernierEvenementLe: string | null;
-    consentementLe: string | null;
     delaiPanierMinutes: number | null;
     /** `console` : branchée par la carte ; `claude_code` : par la skill du plugin. */
     origine: 'console' | 'claude_code';
@@ -61,7 +60,6 @@ export function lireEtatShopify(brut: unknown): EtatShopifyVue | null {
     ? {
       domaine: b.domaine, nom: texte(b.nom), etat: b.etat === 'coupee' ? 'coupee' as const : 'connectee' as const,
       dernierEvenementLe: texte(b.dernierEvenementLe),
-      consentementLe: texte((b.consentement as Record<string, unknown> | null | undefined)?.le),
       delaiPanierMinutes: typeof b.delaiPanierMinutes === 'number' ? b.delaiPanierMinutes : null,
       origine: b.origine === 'console' ? 'console' as const : 'claude_code' as const,
     }
@@ -113,7 +111,6 @@ export interface PreparationShopify {
   texte: string;
   langue: string;
   delaiMinutes?: number;
-  consentementAffirme?: boolean;
 }
 
 /** `actif` : Meta a approuvé tout de suite ; `en_validation` : le message s'activera seul à l'approbation. */
@@ -121,9 +118,8 @@ export function preparerMessageShopify(tenantId: string, corps: PreparationShopi
   return request(`${base(tenantId)}/messages`, { method: 'POST', body: JSON.stringify(corps) });
 }
 
-export function reglerMessageShopify(
-  tenantId: string, evenement: string, corps: { delaiMinutes?: number; consentementAffirme?: boolean },
-): Promise<{ relanceArretee: boolean }> {
+/** Le délai de la relance, sans repasser par Meta. */
+export function reglerMessageShopify(tenantId: string, evenement: string, corps: { delaiMinutes?: number }): Promise<unknown> {
   return request(`${base(tenantId)}/messages/${encodeURIComponent(evenement)}`, { method: 'PATCH', body: JSON.stringify(corps) });
 }
 

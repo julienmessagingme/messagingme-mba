@@ -20,10 +20,10 @@ export { PIED_STOP, TEXTES_PROPOSES };
  * L'ASSISTANT DES MESSAGES SHOPIFY DE LA CONSOLE (conception 2026-10-22, plan lot 1) : préparer un message (le texte
  * devient un modèle créé chez Meta), puis l'activer SEUL à l'approbation de Meta.
  *
- * 🔴 Ce qui se joue : une relance de panier est un message marketing. Elle ne se prépare jamais sans le consentement
- * affirmé (celui de la boutique, ou celui de l'appel), et ne s'active jamais avant l'approbation de Meta. Le message
- * ACTIF n'est jamais touché par une préparation : il continue de partir jusqu'à l'approbation du nouveau, et reste en
- * place si Meta refuse (le marchand le sait par e-mail).
+ * 🔴 Ce qui se joue : un message ne s'active jamais avant l'approbation de Meta. Le message ACTIF n'est jamais touché par
+ * une préparation : il continue de partir jusqu'à l'approbation du nouveau, et reste en place si Meta refuse (le marchand
+ * le sait par e-mail). Aucune affirmation du consentement n'est demandée, relance de panier comprise (décision de Julien
+ * du 2026-10-26) : chaque envoi écrit la fiche consentante, sous la responsabilité du marchand, et un STOP reste un STOP.
  *
  * Le dernier geste gagne : une nouvelle préparation remplace l'attente de l'événement, un branchement direct (Claude
  * Code, set_shopify_message) la retire.
@@ -132,8 +132,7 @@ export async function traiterOubli(
 }
 
 export interface DepsPreparation {
-  store: Pick<PgShopifyStore, 'lire' | 'brancher' | 'poserAttente' | 'retirerAttente' | 'affirmerConsentement'
-    | 'retirerConsentement' | 'reglerDelaiPanier' | 'message' | 'messages' | 'attentes'>;
+  store: Pick<PgShopifyStore, 'lire' | 'brancher' | 'poserAttente' | 'retirerAttente' | 'reglerDelaiPanier' | 'message' | 'messages' | 'attentes'>;
   /** Le ménage : programmer l'oubli du modèle remplacé, s'il vient de l'assistant (`oublierPlusTard`). */
   programmerOubli: ProgrammerOubli;
   /** La création de l'écran Modèles (creerUnModele), traduite : statut et catégorie de Meta, en minuscules. */
@@ -249,8 +248,6 @@ export interface Preparation {
   langue: unknown;
   /** checkout_abandoned seulement. */
   delaiMinutes?: unknown;
-  /** L'affirmation de la boutique (une par boutique) : true l'affirme, absente la laisse telle quelle. */
-  consentementAffirme?: unknown;
 }
 
 export interface IssuePreparation {
@@ -276,17 +273,9 @@ export async function preparerMessage(deps: DepsPreparation, tenantId: string, p
       return refus(400, `delaiMinutes : un nombre entier de minutes, de ${DELAI_PANIER_MIN} à ${DELAI_PANIER_MAX}.`);
     }
   }
-  if (p.consentementAffirme !== undefined && typeof p.consentementAffirme !== 'boolean') return refus(400, 'consentementAffirme : true ou false.');
-  // Retirer l'affirmation vaut pour toute la boutique : c'est le réglage qui le fait, et qui le dit (relecture des lots 0
-  // et 1 : ici, `false` était accepté sans rien faire).
-  if (p.consentementAffirme === false) return refus(400, 'consentementAffirme : true pour affirmer ; le retrait se fait par le réglage du message.');
-  if (relance && boutique.consentement === null && p.consentementAffirme !== true) {
-    return refus(409, 'La relance de panier est un message marketing : affirmez d’abord que vos clients ont accepté de recevoir vos messages WhatsApp.');
-  }
   const c = versCorps(evenement, p.texte);
   if (!c.ok) return refus(400, c.message);
 
-  if (p.consentementAffirme === true) await deps.store.affirmerConsentement(tenantId, par);
   const modele = `shopify_${evenement}_${(deps.maintenant ?? Date.now)().toString(36)}`;
   // Ce que ce geste remplacera, lu AVANT : l'attente précédente de l'événement, et le message en place.
   const [attenteAvant, actifAvant] = await Promise.all([
@@ -338,14 +327,10 @@ async function activer(
 export interface Reglage {
   evenement: unknown;
   delaiMinutes?: unknown;
-  consentementAffirme?: unknown;
 }
 
-/**
- * Le délai et la case, sans repasser par Meta (le texte n'a pas changé). Retirer l'affirmation la retire pour toute la
- * boutique : la relance cesse alors de noter et de relancer (gardes du traitement et du balayage), et la réponse le dit.
- */
-export async function reglerMessage(deps: Pick<DepsPreparation, 'store'>, tenantId: string, r: Reglage, par: string | null): Promise<Issue<{ relanceArretee: boolean }>> {
+/** Le délai de la relance, sans repasser par Meta (le texte n'a pas changé). */
+export async function reglerMessage(deps: Pick<DepsPreparation, 'store'>, tenantId: string, r: Reglage): Promise<Issue<Record<string, never>>> {
   if (!estEvenementShopify(r.evenement)) return refus(400, `evenement : un de ${EVENEMENTS_DISPONIBLES.join(', ')}.`);
   const boutique = await deps.store.lire(tenantId);
   if (boutique === null) return refus(409, 'Aucune boutique Shopify n’est branchée.');
@@ -355,15 +340,8 @@ export async function reglerMessage(deps: Pick<DepsPreparation, 'store'>, tenant
       return refus(400, `delaiMinutes : un nombre entier de minutes, de ${DELAI_PANIER_MIN} à ${DELAI_PANIER_MAX}.`);
     }
   }
-  if (r.consentementAffirme !== undefined && typeof r.consentementAffirme !== 'boolean') return refus(400, 'consentementAffirme : true ou false.');
   if (typeof r.delaiMinutes === 'number') await deps.store.reglerDelaiPanier(tenantId, r.delaiMinutes);
-  let relanceArretee = false;
-  if (r.consentementAffirme === true) await deps.store.affirmerConsentement(tenantId, par);
-  if (r.consentementAffirme === false && boutique.consentement !== null) {
-    await deps.store.retirerConsentement(tenantId);
-    relanceArretee = (await deps.store.message(tenantId, 'checkout_abandoned'))?.actif === true;
-  }
-  return { ok: true, valeur: { relanceArretee } };
+  return { ok: true, valeur: {} };
 }
 
 /**
@@ -391,9 +369,8 @@ export async function activerSelonStatut(
     if (boutique !== null) await activer(deps.store, tenantId, attente);
     const retiree = await deps.store.retirerAttente(tenantId, { modele: s.modele, langue: s.langue });
     if (retiree === null || boutique === null) return 'rien';
-    // L'e-mail « actif » ne dit que la vérité : une boutique coupée, ou une relance dont l'affirmation a été retirée
-    // pendant la validation, ne part pas (les gardes de l'envoi la retiennent ; la carte la montre en pause).
-    const part = boutique.etat === 'connectee' && (attente.evenement !== 'checkout_abandoned' || boutique.consentement !== null);
+    // L'e-mail « actif » ne dit que la vérité : le message d'une boutique coupée pendant la validation ne part pas.
+    const part = boutique.etat === 'connectee';
     if (part) await deps.emails.emettre({ cle: 'shopify_message_actif', tenantId, a: 'admins', occasion: s.modele, valeurs }).catch(() => undefined);
     journaliser('info', 'shopify_message_active', { tenantId, evenement: attente.evenement, modele: s.modele, part });
     await oublierPlusTard(deps, tenantId, actifAvant?.modele, s.modele);

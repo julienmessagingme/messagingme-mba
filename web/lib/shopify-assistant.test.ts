@@ -47,21 +47,22 @@ it('l’aperçu remplace les repères connus par leurs exemples, et laisse le re
 describe('l’état d’un message sur la carte', () => {
   const m = (actif: boolean) => ({ evenement: 'checkout_abandoned', modele: 'm', langue: 'fr', variables: [], actif });
   const a = { evenement: 'checkout_abandoned', modele: 'n', langue: 'fr', variables: [], creeLe: null };
-  const boutique = { domaine: 'b.myshopify.com', nom: null, etat: 'connectee' as const, dernierEvenementLe: null, consentementLe: '2026-10-22T00:00:00Z', delaiPanierMinutes: 60, origine: 'console' as const };
   it('🔴 un message actif le reste pendant la validation de sa nouvelle version', () => {
-    expect(etatDuMessage({ messages: [m(true)], attentes: [a], boutique }, 'checkout_abandoned')).toBe('actif_nouvelle_version');
-    expect(etatDuMessage({ messages: [m(true)], attentes: [], boutique }, 'checkout_abandoned')).toBe('actif');
+    expect(etatDuMessage({ messages: [m(true)], attentes: [a] }, 'checkout_abandoned')).toBe('actif_nouvelle_version');
+    expect(etatDuMessage({ messages: [m(true)], attentes: [] }, 'checkout_abandoned')).toBe('actif');
   });
-  it('🔴 une relance active sans affirmation du consentement est en pause : rien ne part, la carte le dit', () => {
-    expect(etatDuMessage({ messages: [m(true)], attentes: [], boutique: null }, 'checkout_abandoned')).toBe('en_pause');
-    expect(etatDuMessage({ messages: [{ ...m(true), evenement: 'order_paid' }], attentes: [], boutique: null }, 'order_paid')).toBe('actif');
+  it('🔴 une relance active est active : aucune affirmation du consentement ne la met en pause (2026-10-26)', () => {
+    // L'état lu ne porte plus d'affirmation : la relance se lit comme un message de commande.
+    const vue = lireEtatShopify({ boutique: { domaine: 'b.myshopify.com', etat: 'connectee' }, messages: [{ ...m(true) }, { ...m(true), evenement: 'order_paid' }] })!;
+    expect(etatDuMessage(vue, 'checkout_abandoned')).toBe('actif');
+    expect(etatDuMessage(vue, 'order_paid')).toBe('actif');
   });
   it('les autres états', () => {
-    expect(etatDuMessage({ messages: [], attentes: [], boutique }, 'checkout_abandoned')).toBe('a_regler');
-    expect(etatDuMessage({ messages: [], attentes: [a], boutique }, 'checkout_abandoned')).toBe('en_validation');
-    expect(etatDuMessage({ messages: [m(false)], attentes: [], boutique }, 'checkout_abandoned')).toBe('arrete');
-    expect(etatDuMessage({ messages: [m(false)], attentes: [a], boutique }, 'checkout_abandoned')).toBe('arrete_nouvelle_version');
-    expect(etatDuMessage({ messages: [m(true)], attentes: [a], boutique }, 'order_paid')).toBe('a_regler');
+    expect(etatDuMessage({ messages: [], attentes: [] }, 'checkout_abandoned')).toBe('a_regler');
+    expect(etatDuMessage({ messages: [], attentes: [a] }, 'checkout_abandoned')).toBe('en_validation');
+    expect(etatDuMessage({ messages: [m(false)], attentes: [] }, 'checkout_abandoned')).toBe('arrete');
+    expect(etatDuMessage({ messages: [m(false)], attentes: [a] }, 'checkout_abandoned')).toBe('arrete_nouvelle_version');
+    expect(etatDuMessage({ messages: [m(true)], attentes: [a] }, 'order_paid')).toBe('a_regler');
   });
 });
 
@@ -76,7 +77,9 @@ describe('la lecture de l’état', () => {
       messages: [{ evenement: 'order_paid', modele: 'm', langue: 'fr', variables: ['first_name', 3], actif: true }, { evenement: 1 }],
       attentes: [{ evenement: 'checkout_abandoned', modele: 'n', langue: 'fr', variables: ['checkout_url'], creeLe: '2026-10-22T00:00:00Z' }, null],
     });
-    expect(v?.boutique).toMatchObject({ origine: 'console', consentementLe: '2026-10-22T00:00:00Z' });
+    expect(v?.boutique).toMatchObject({ origine: 'console' });
+    // L'affirmation qu'une API d'avant le 2026-10-26 rend encore n'est plus lue.
+    expect(v?.boutique).not.toHaveProperty('consentementLe');
     expect(v?.messages).toEqual([{ evenement: 'order_paid', modele: 'm', langue: 'fr', variables: ['first_name'], actif: true }]);
     expect(v?.attentes).toEqual([{ evenement: 'checkout_abandoned', modele: 'n', langue: 'fr', variables: ['checkout_url'], creeLe: '2026-10-22T00:00:00Z' }]);
   });

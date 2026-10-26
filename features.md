@@ -2410,13 +2410,14 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
   (utility), la relance un modèle marketing, tous approuvés par Meta ; les données de la commande ou du panier (prénom,
   numéro, montant payé, lien de la commande, suivi, lien du panier) remplissent leurs variables. Un message par
   événement : le rebrancher le remplace.
-- **Les règles des envois s'appliquent** : STOP, consentement, modèles du mois, limite de contacts de l'offre (la
-  fiche d'un nouveau client compte). Chaque message fait une ligne dans Campagnes (« Shopify · commande payée ·
-  #1002 ») ; un client écarté (STOP, limite) n'en fait aucune. Le message part même quand l'agent ou un opérateur tient
-  la conversation, et ne la coupe pas.
-- **Le consentement** : Shopify ne recueille aucun consentement WhatsApp. Le marchand peut affirmer que ses clients
-  ont accepté ; leurs fiches deviennent alors consentantes partout (campagnes comprises), sous sa responsabilité, et
-  l'affirmation est tracée (qui, quand).
+- **Les règles des envois s'appliquent** : STOP, modèles du mois, limite de contacts de l'offre (la fiche d'un nouveau
+  client compte). Chaque message fait une ligne dans Campagnes (« Shopify · commande payée · #1002 ») ; un client
+  écarté (STOP, limite) n'en fait aucune. Le message part même quand l'agent ou un opérateur tient la conversation, et
+  ne la coupe pas.
+- **Le consentement** (décision de Julien du 2026-10-26) : Shopify ne recueille aucun consentement WhatsApp, et le
+  consentement de ses clients relève du marchand : aucune question ne le lui demande. Chaque message né d'un événement
+  de la boutique (commande payée, expédition, relance) rend la fiche du client consentante partout, campagnes comprises
+  (source `shopify:<boutique>`) ; un client qui a dit STOP le reste et ne reçoit rien.
 - **Limite de contacts atteinte** : les nouveaux clients ne reçoivent plus leurs messages ; la carte et l'outil d'état
   les comptent, et un e-mail part aux admins au premier refus du mois.
 - **Tools > Intégrations > Shopify** (Pro et Entreprise, 2026-10-22) :
@@ -2424,11 +2425,11 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
     développeur (son adresse et ses droits se copient d'un clic), l'installer sur la boutique, copier son identifiant et
     son secret ; puis les coller dans la carte, qui branche la boutique et abonne ses événements ;
   - **avec une boutique**, les trois messages, chacun avec son état (actif, en validation chez Meta, pas encore réglé,
-    en pause) et un assistant : le texte proposé, modifiable, où les données de la boutique s'écrivent `{prénom}`,
-    `{lien du panier}`... avec un aperçu WhatsApp ; le délai pour la relance ; le consentement. « Envoyer à Meta et
-    activer dès l'approbation » crée le modèle chez Meta, et le message s'active seul à l'approbation (un e-mail le dit,
-    ou dit le refus de Meta et sa raison). Modifier un message actif ne l'arrête pas : l'ancien part jusqu'à
-    l'approbation du nouveau ; changer seulement le délai ou la case s'applique tout de suite. Chaque nouveau texte crée
+    arrêté) et un assistant : le texte proposé, modifiable, où les données de la boutique s'écrivent `{prénom}`,
+    `{lien du panier}`... avec un aperçu WhatsApp ; le délai pour la relance. « Envoyer à Meta et activer dès
+    l'approbation » crée le modèle chez Meta, et le message s'active seul à l'approbation (un e-mail le dit, ou dit le
+    refus de Meta et sa raison). Modifier un message actif ne l'arrête pas : l'ancien part jusqu'à l'approbation du
+    nouveau ; changer seulement le délai de la relance s'applique tout de suite. Chaque nouveau texte crée
     un NOUVEAU modèle (aucune modification de modèle chez Meta, donc pas sa limite d'une par 24 h) ; celui qu'il
     remplace, s'il a été créé par l'assistant, est supprimé chez Meta un quart d'heure après (2026-10-23), plus tard
     si une campagne active s'en sert ;
@@ -2444,8 +2445,8 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
 - **La relance de panier abandonné** (2026-10-22) : un client qui remplit le checkout avec son téléphone sans
   commander reçoit UNE relance (un modèle marketing, le lien de son panier en variable), au délai choisi par le marchand
   après la dernière modification du panier (1 h par défaut, de 15 min à 72 h). Rien ne part si une commande en est née
-  entre-temps, même non payée. Elle exige que le marchand ait affirmé le consentement de ses clients. Les paniers en
-  attente ne se gardent qu'une semaine, et seulement quand la relance est branchée.
+  entre-temps, même non payée. Comme les messages de commande, elle ne demande aucune affirmation du consentement
+  (2026-10-26). Les paniers en attente ne se gardent qu'une semaine, et seulement quand la relance est branchée.
 - **Le prénom absent** (2026-10-23) : il est facultatif au paiement de Shopify. Un message qui le demande sans l'avoir
   part quand même, le prénom remplacé par « à vous » (« there » en anglais) : « Bonjour à vous ». Le texte que
   l'assistant propose pour la relance n'en porte pas (« Bonjour, vous avez laissé des articles… »).

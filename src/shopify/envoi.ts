@@ -17,9 +17,12 @@ import type { MessageBranche, PgShopifyStore } from './store.pg';
  * Meta, applique `optInAllows` (un MARKETING ne part qu'à une fiche consentante), le STOP, la limite des modèles du mois
  * et les gardes du numéro, et crée la fiche (limite de contacts comprise).
  *
- * Trois choix d'adaptateur, et rien d'autre :
+ * Quatre choix d'adaptateur, et rien d'autre :
  *   - la clé d'idempotence est la clé métier (`shopify:<boutique>:orders/paid:<id>`) : un webhook rejoué relit le rapport
  *     au lieu de renvoyer ;
+ *   - 🔴 le destinataire porte TOUJOURS `consent: opted_in` et sa source (décision de Julien du 2026-10-26 : le
+ *     consentement des clients est la responsabilité du marchand, aucune question ne le lui demande). La fiche devient
+ *     consentante, et `appliquerConsentement` ne lève jamais un STOP : la fiche reste désabonnée, le tri l'écarte ;
  *   - le compteur ne décompte rien : le plafond de l'API publique est fait pour les intégrations, une vente flash ne doit
  *     pas y buter (la limite des modèles du mois, elle, s'applique dans le cycle) ;
  *   - les valeurs partent en variables du destinataire, jamais écrites sur la fiche (le lien de commande porte une clé
@@ -41,8 +44,8 @@ export interface EnvoiShopify {
   variables: readonly DonneeShopify[];
   valeurs: Partial<Record<DonneeShopify, string>>;
   telephone: string;
-  /** La source du consentement affirmé par le marchand, ou `null` : la fiche ne devient pas consentante. */
-  sourceConsentement: string | null;
+  /** La source du consentement écrit sur la fiche (`shopify:<boutique>`, bornée par `MAX_OPT_IN_SOURCE`). */
+  sourceConsentement: string;
 }
 
 /** Ce que devient un événement : l'issue inscrite, comptée par la carte. `en_cours` n'en est pas une (on réessaie). */
@@ -56,8 +59,7 @@ export async function envoyerShopify(envoyer: EnvoyerPublic, e: EnvoiShopify): P
     target: { template: { name: e.modele, language: e.langue } },
     params: e.variables.map((cle, i) => ({ position: i + 1, source: { type: 'variable', key: cle } })),
     recipients: [{
-      phone: e.telephone,
-      ...(e.sourceConsentement !== null ? { consent: 'opted_in', consentSource: e.sourceConsentement } : {}),
+      phone: e.telephone, consent: 'opted_in', consentSource: e.sourceConsentement,
       ...(e.variables.length > 0 ? { variables: Object.fromEntries(e.variables.map((cle) => [cle, e.valeurs[cle] ?? ''])) } : {}),
     }],
   };
@@ -120,8 +122,8 @@ export interface MessageShopify {
   valeurs: Partial<Record<DonneeShopify, string>>;
   /** En E.164. */
   telephone: string;
-  /** La source du consentement affirmé par le marchand, ou `null`. */
-  sourceConsentement: string | null;
+  /** La source du consentement écrit sur la fiche (`shopify:<boutique>`). */
+  sourceConsentement: string;
 }
 
 /**
@@ -134,9 +136,6 @@ export async function envoyerMessageShopify(d: DepsEnvoiShopify, e: MessageShopi
   const filiere = await d.filiere(e.tenantId);
   if (e.message.texte !== null) {
     if (filiere === 'api') return 'filiere_differente';
-    // 🔴 Sur un numéro relié par QR code, aucun des trois messages ne part sans l'accord affirmé du marchand (décision de
-    // Julien du 2026-10-23) : la politique de WhatsApp vise tout message d'entreprise.
-    if (e.sourceConsentement === null) return 'sans_consentement';
     const texte = composerTexteShopify(e.message.texte, e.evenement, e.valeurs, e.message.langue);
     if (texte.length > TEXTE_SHOPIFY_MAX) return 'texte_trop_long';
     const r = await d.ecrirePremier({

@@ -3,13 +3,14 @@ import { NAVIGATEUR, REGLAGES_DEMO, capturer, communs, langue, type Locale } fro
 
 /**
  * « Brancher ma boutique Shopify » : la carte de Paramètres > Général sans boutique, le mode opératoire chez Shopify, les
- * clés collées, l'assistant d'un message (le texte, puis le consentement), l'import des clients abonnés, et la carte
- * d'une boutique branchée. Les états sont ceux que lit `web/e2e/shopify.spec.ts` ; rien n'est branché, rien n'est envoyé.
+ * clés collées, l'assistant d'un message (le texte, puis le délai de la relance), l'import des clients abonnés, et la
+ * carte d'une boutique branchée. Les états sont ceux que lit `web/e2e/shopify.spec.ts` ; rien n'est branché, rien n'est
+ * envoyé.
  */
 const CLE = 'brancher-ma-boutique-shopify';
 const BOUTIQUE = {
   domaine: 'votre-marque.myshopify.com', nom: 'Votre marque', etat: 'connectee', dernierEvenementLe: '2026-10-24T09:42:00.000Z',
-  consentement: null, delaiPanierMinutes: 60, origine: 'console',
+  delaiPanierMinutes: 60, origine: 'console',
 };
 const VIDE = { boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null, attentes: [] };
 const message = (evenement: string, variables: string[]) => ({ evenement, modele: `shopify_${evenement}_demo`, langue: 'fr', variables, actif: true });
@@ -19,10 +20,9 @@ const EXPEDITION = message('order_fulfilled', ['first_name', 'order_number', 'ca
 const A_REGLER = {
   ...VIDE, boutique: BOUTIQUE, pageApps: 'https://admin.shopify.com/store/votre-marque/settings/apps', messages: [COMMANDE, EXPEDITION],
 };
-/** Branchée depuis un mois : les trois messages actifs, le consentement affirmé, les chiffres des 30 jours. */
+/** Branchée depuis un mois : les trois messages actifs, les chiffres des 30 jours. */
 const EN_SERVICE = {
   ...A_REGLER,
-  boutique: { ...BOUTIQUE, consentement: { le: '2026-09-29T08:00:00.000Z', par: 'lea@votre-marque.test' } },
   messages: [COMMANDE, EXPEDITION, message('checkout_abandoned', ['checkout_url'])],
   compteurs: { envoye: 148, desabonne: 3, sans_telephone: 6 },
   paniers: { relances: { envoye: 21 }, fermesATemps: 7, enAttente: 4 },
@@ -78,11 +78,9 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       await expect(assistant.getByTestId('shopify-assistant-texte')).toBeVisible();
       await capturer(page, CLE, 4, locale, assistant, 'haut', assistant.getByTestId('shopify-assistant-texte'));
 
-      // 5. Le délai par défaut, puis le consentement affirmé, juste avant « Envoyer à Meta ». Rien n'est envoyé.
+      // 5. Le délai par défaut, la dernière étape, juste avant « Envoyer à Meta ». Rien n'est envoyé.
       await assistant.getByTestId('shopify-assistant-suivant').click();
       await assistant.getByTestId('shopify-delai-60').click();
-      await assistant.getByTestId('shopify-assistant-suivant').click();
-      await assistant.getByTestId('shopify-assistant-consentement').check();
       const envoyer = assistant.getByTestId('shopify-assistant-envoyer');
       await expect(envoyer).toBeEnabled();
       await capturer(page, CLE, 5, locale, assistant, 'haut', envoyer);

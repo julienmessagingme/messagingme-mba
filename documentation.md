@@ -2350,23 +2350,28 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   anonymise la fiche, la cascade sur `contacts` ne joue pas). L'effacement demandé par Shopify passe par
   `effacerContacts` HORS limite du jour.
 
-- 🔴 **l'affirmation du consentement vaut pour UNE boutique et UN branchement** : toute connexion l'efface, et
-  `customers_consented: false` la retire. Gardée, une boutique de production branchée après une boutique d'essai ferait
-  écrire consentants des clients pour qui personne n'a rien affirmé ;
+- 🔴 **chaque envoi né d'un événement Shopify écrit la fiche consentante** (décision de Julien du 2026-10-26 : le
+  consentement des clients relève du marchand, aucune affirmation ne lui est demandée, ni par Claude ni par la
+  console) : `consent: opted_in` et la source `shopify:<boutique>`, bornée par `MAX_OPT_IN_SOURCE`, pour la commande,
+  l'expédition et la relance. `appliquerConsentement` ne lève jamais un STOP : la fiche reste désabonnée et le tri
+  l'écarte (tenu par `tests/v1-sends.test.ts`, sur le vrai cycle de l'envoi public). Les colonnes `consentement_par` et
+  `consentement_le` de `shopify_boutiques` ne sont plus lues ; la connexion les efface encore, pour que l'image d'avant,
+  qui les lit, reste un retour arrière sûr. Les routes de la console acceptent encore `consentementAffirme` et
+  l'ignorent : un onglet resté sur l'ancien bundle l'envoie ;
 - **le secret qui vérifie doit être celui de la boutique relue** : le cache d'une minute ne laisse pas passer un
   webhook de l'ancienne app après une reconnexion, et `shop/redact` n'efface jamais une boutique `connectee` ;
 - 🔴 **la relance de panier est balayée DANS L'API** (`src/shopify/relance.ts`, la minuterie d'une minute de
   `src/index.ts`), pour la même raison que le traitement : l'envoi public n'existe qu'ici. Chaque copie balaie ; la
   réclamation (`reclamerPaniersDus`, `for update skip locked`) pose `relance_le` dans la même écriture, donc un panier
   n'est relancé qu'une fois, et une relance qui échoue après sa réclamation est perdue, pas renvoyée. Un panier dû :
-  ouvert, avec téléphone et lien, sa dernière modification au-delà du délai de SA boutique (connectée, consentement
-  affirmé, message `checkout_abandoned` actif). Un panier ne se garde que si ce message est actif ET le consentement
-  déjà affirmé (une affirmation ultérieure ne relance pas d'un coup des paniers notés sans elle), et toute connexion
-  efface les paniers de l'espace, comme son affirmation. 🔴 Une commande (`orders/create` ou `orders/paid`, par
-  `checkout_token`) ou un `completed_at` ferme TOUJOURS le panier qui existe, relance éteinte comprise (éteinte puis
-  rallumée, elle relancerait sinon un client qui a commandé), et ne l'ÉCRIT fermé d'avance que relance active ; elle
-  ferme aussi les autres paniers ouverts de son numéro. Un panier fermé ne se rouvre jamais, l'envoi le relit juste
-  avant de partir, et il part au bout de sept jours (minuterie `shopify-evenements` du worker).
+  ouvert, avec téléphone et lien, sa dernière modification au-delà du délai de SA boutique (connectée, message
+  `checkout_abandoned` actif). Un panier ne se garde que si ce message est actif (une relance branchée plus tard ne
+  relance pas d'un coup des paniers notés sans elle), et toute connexion efface les paniers de l'espace. 🔴 Une
+  commande (`orders/create` ou `orders/paid`, par `checkout_token`) ou un `completed_at` ferme TOUJOURS le panier qui
+  existe, relance éteinte comprise (éteinte puis rallumée, elle relancerait sinon un client qui a commandé), et ne
+  l'ÉCRIT fermé d'avance que relance active ; elle ferme aussi les autres paniers ouverts de son numéro. Un panier
+  fermé ne se rouvre jamais, l'envoi le relit juste avant de partir, et il part au bout de sept jours (minuterie
+  `shopify-evenements` du worker).
 - 🔴 **l'import des clients ne retient que les ABONNÉS, revérifiés client par client** (`src/shopify/clients.ts`) :
   Shopify ignore en silence un filtre de recherche inconnu, et `customersCount` ignore tout filtre (mesuré). Le filtre
   envoyé ne sert qu'à lire moins de pages ; c'est `estAbonne` (e-mail ou SMS `SUBSCRIBED`) qui décide. Seul le
@@ -2395,12 +2400,10 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   relit toutes les dix minutes vingt attentes de plus de dix minutes, TIRÉES AU HASARD pour que des attentes bloquées
   n'affament pas les autres). 🔴 L'activation BRANCHE avant de retirer l'attente : une panne entre les deux laisse
   l'attente au rejeu et au filet, et un second passage ne trouve plus rien à retirer, donc l'e-mail ne part qu'une fois.
-  Cet e-mail « actif » ne part que si le message part vraiment (boutique branchée, et pour la relance, consentement
-  affirmé). Le message ACTIF n'est jamais touché par une préparation ni par un refus ; le dernier geste gagne
-  (`set_shopify_message` retire l'attente du même événement). Une relance ne se prépare jamais sans consentement
-  affirmé, et porte en pied « Répondez STOP... » (une réponse texte désabonne ; un bouton, non). Retirer l'affirmation
-  passe par le réglage (`PATCH .../messages/:evenement`), jamais par la préparation : la relance reste branchée mais ne
-  part plus (gardes de la prise de panier et du balayage), et la carte la dit EN PAUSE ;
+  Cet e-mail « actif » ne part que si le message part vraiment (boutique branchée). Le message ACTIF n'est jamais
+  touché par une préparation ni par un refus ; le dernier geste gagne (`set_shopify_message` retire l'attente du même
+  événement). Une relance porte en pied « Répondez STOP... » (une réponse texte désabonne ; un bouton, non). Le
+  réglage (`PATCH .../messages/:evenement`) ne porte que le délai de la relance, sans repasser par Meta ;
 - 🔴 **le ménage des modèles remplacés** (2026-10-23) : l'assistant ne MODIFIE jamais un modèle chez Meta, il en crée un
   nouveau (`shopify_<événement>_<horodatage base 36>`), donc la limite de Meta d'une modification par 24 h ne s'applique
   pas. Le modèle remplacé (à l'approbation, à une nouvelle préparation, au branchement direct par Claude Code), refusé

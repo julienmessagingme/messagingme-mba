@@ -10,13 +10,14 @@ import type { DemandePremierMessage, ResultatPremier } from '../src/application/
 /**
  * LE TRAITEMENT D'UN WEBHOOK SHOPIFY VÉRIFIÉ, ET SON ENVOI (plan 2026-10-21, lot 1).
  *
- * 🔴 Ce qui se joue : un message parti ne se rappelle pas. Un webhook rejoué qui renverrait, un STOP ignoré, un
- * consentement écrit sans que le marchand l'ait affirmé, une fiche créée pour un événement sans message (elle compterait
- * dans la limite de l'offre) : aucun ne lève d'exception. Aucun envoi réel ici, l'envoi public est simulé.
+ * 🔴 Ce qui se joue : un message parti ne se rappelle pas. Un webhook rejoué qui renverrait, un STOP ignoré, une fiche
+ * créée pour un événement sans message (elle compterait dans la limite de l'offre) : aucun ne lève d'exception. Aucun
+ * envoi réel ici, l'envoi public est simulé (le STOP face au consentement écrit : `tests/v1-sends.test.ts`, par le vrai
+ * cycle).
  */
 
 const T = '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01';
-const BOUTIQUE: BoutiqueRecue = { tenantId: T, domaine: 'b.myshopify.com', etat: 'connectee', pays: 'FR', consentementAffirme: false, origine: 'claude_code' };
+const BOUTIQUE: BoutiqueRecue = { tenantId: T, domaine: 'b.myshopify.com', etat: 'connectee', pays: 'FR', origine: 'claude_code' };
 
 const commande = (over: Record<string, unknown> = {}) => ({
   id: 1002, name: '#1002', checkout_token: 'ck', customer: { id: 77, phone: null, first_name: 'Julien' },
@@ -106,13 +107,15 @@ describe('une commande payée', () => {
     expect(journal.liees).toEqual([[T, '1002', '77', 'fiche-1']]);
   });
 
-  it('🔴 sans consentement affirmé, la fiche n’est PAS écrite consentante ; affirmé, elle l’est, avec sa source', async () => {
-    const a = monter();
-    await traiterWebhookShopify(a.deps, BOUTIQUE, 'orders/paid', commande());
-    expect((a.journal.envois[0]!.corps as { recipients: Array<Record<string, unknown>> }).recipients[0]).not.toHaveProperty('consent');
-    const b = monter();
-    await traiterWebhookShopify(b.deps, { ...BOUTIQUE, consentementAffirme: true }, 'orders/paid', commande());
-    expect((b.journal.envois[0]!.corps as { recipients: Array<Record<string, unknown>> }).recipients[0]).toMatchObject({ consent: 'opted_in', consentSource: 'shopify:b.myshopify.com' });
+  it('🔴 la fiche est écrite consentante, source shopify:<boutique>, sans aucune affirmation du marchand (2026-10-26)', async () => {
+    const { deps, journal } = monter({ messages: [MESSAGE, { ...MESSAGE, evenement: 'order_fulfilled', modele: 'colis_parti', variables: [] }] });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande());
+    await traiterWebhookShopify(deps, BOUTIQUE, 'fulfillments/create', expedition);
+    const destinataires = journal.envois.map((e) => (e.corps as { recipients: Array<Record<string, unknown>> }).recipients[0]);
+    expect(destinataires).toMatchObject([
+      { phone: '+33633921577', consent: 'opted_in', consentSource: 'shopify:b.myshopify.com' },
+      { phone: '+33633921577', consent: 'opted_in', consentSource: 'shopify:b.myshopify.com' },
+    ]);
   });
 
   it('🔴 aucun message branché (ou éteint) : rien ne se réserve, rien ne part, aucune fiche ne se crée', async () => {
@@ -195,12 +198,10 @@ describe('les paniers (lot 2) : noter, fermer, sans ordre entre sujets', () => {
     shipping_address: { first_name: 'Julien', phone: '+33633921577', country_code: 'FR' }, billing_address: null, ...over,
   });
 
-  const AFFIRMEE: BoutiqueRecue = { ...BOUTIQUE, consentementAffirme: true };
-
-  it('un checkout avec téléphone note le panier : jeton, téléphone, prénom, lien de reprise ; aucune fiche, aucun envoi', async () => {
+  it('🔴 un checkout avec téléphone note le panier dès que la relance est active, sans aucune affirmation (2026-10-26) : jeton, téléphone, prénom, lien de reprise ; aucune fiche, aucun envoi', async () => {
     const { deps, journal } = monter({ messages: [PANIER] });
     for (const sujet of ['checkouts/create', 'checkouts/update']) {
-      expect(await traiterWebhookShopify(deps, AFFIRMEE, sujet, checkout())).toEqual({ statut: 200 });
+      expect(await traiterWebhookShopify(deps, BOUTIQUE, sujet, checkout())).toEqual({ statut: 200 });
     }
     expect(journal.paniers).toEqual([
       { jeton: 'jeton-du-checkout', telephone: '+33633921577', nom: 'Julien', lien: 'https://b.myshopify.com/1/checkouts/ac/x/recover?key=k' },
@@ -215,7 +216,7 @@ describe('les paniers (lot 2) : noter, fermer, sans ordre entre sujets', () => {
       for (const forme of [[], ['Paris'], 'rue inconnue', 0]) {
         const { deps, journal } = monter({ messages: [PANIER] });
         const corps = checkout({ phone: '+33612345678', shipping_address: forme, billing_address: forme, customer: forme });
-        expect(await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/create', corps)).toEqual({ statut: 200 });
+        expect(await traiterWebhookShopify(deps, BOUTIQUE, 'checkouts/create', corps)).toEqual({ statut: 200 });
         expect(journal.paniers, JSON.stringify(forme)).toEqual([{ jeton: 'jeton-du-checkout', telephone: '+33612345678', nom: null, lien: 'https://b.myshopify.com/1/checkouts/ac/x/recover?key=k' }]);
       }
       const traces = espion.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('shopify_forme_inattendue'));
@@ -229,21 +230,15 @@ describe('les paniers (lot 2) : noter, fermer, sans ordre entre sujets', () => {
 
   it('le numéro de l’acheteur passe avant celui de la livraison (un cadeau ne relance pas son destinataire)', async () => {
     const { deps, journal } = monter({ messages: [PANIER] });
-    await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/update', checkout({ billing_address: { first_name: 'Julien', phone: '+33612345678', country_code: 'FR' } }));
+    await traiterWebhookShopify(deps, BOUTIQUE, 'checkouts/update', checkout({ billing_address: { first_name: 'Julien', phone: '+33612345678', country_code: 'FR' } }));
     expect(journal.paniers).toMatchObject([{ telephone: '+33612345678' }]);
-  });
-
-  it('🔴 sans consentement affirmé, aucun panier ne se garde : une affirmation ultérieure les relancerait d’un coup', async () => {
-    const { deps, journal } = monter({ messages: [PANIER] });
-    await traiterWebhookShopify(deps, BOUTIQUE, 'checkouts/update', checkout());
-    expect(journal.paniers).toEqual([]);
   });
 
   it('🔴 sans message de relance actif, rien ne se garde ; une commande ferme quand même le panier qui EXISTE, sans en écrire', async () => {
     for (const messages of [[], [{ ...PANIER, actif: false }]]) {
       const { deps, journal } = monter({ messages });
-      await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/update', checkout());
-      await traiterWebhookShopify(deps, AFFIRMEE, 'orders/create', commande({ checkout_token: 'jeton-du-checkout' }));
+      await traiterWebhookShopify(deps, BOUTIQUE, 'checkouts/update', checkout());
+      await traiterWebhookShopify(deps, BOUTIQUE, 'orders/create', commande({ checkout_token: 'jeton-du-checkout' }));
       expect([journal.paniers, journal.fermes]).toEqual([[], []]);
       // Éteinte puis rallumée, la relance aurait sinon relancé le client qui a commandé pendant la pause.
       expect(journal.fermesExistants).toEqual(['jeton-du-checkout']);
@@ -252,19 +247,19 @@ describe('les paniers (lot 2) : noter, fermer, sans ordre entre sujets', () => {
 
   it('sans téléphone, rien ; payé (completed_at), le panier se ferme, relance éteinte comprise', async () => {
     const { deps, journal } = monter({ messages: [PANIER] });
-    await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/update', checkout({ shipping_address: null }));
+    await traiterWebhookShopify(deps, BOUTIQUE, 'checkouts/update', checkout({ shipping_address: null }));
     expect(journal.paniers).toEqual([]);
-    await traiterWebhookShopify(deps, AFFIRMEE, 'checkouts/update', checkout({ completed_at: '2026-10-22T10:00:00Z' }));
+    await traiterWebhookShopify(deps, BOUTIQUE, 'checkouts/update', checkout({ completed_at: '2026-10-22T10:00:00Z' }));
     expect(journal.fermes).toEqual(['jeton-du-checkout']);
     const eteinte = monter({ messages: [] });
-    await traiterWebhookShopify(eteinte.deps, AFFIRMEE, 'checkouts/update', checkout({ completed_at: '2026-10-22T10:00:00Z' }));
+    await traiterWebhookShopify(eteinte.deps, BOUTIQUE, 'checkouts/update', checkout({ completed_at: '2026-10-22T10:00:00Z' }));
     expect([eteinte.journal.fermes, eteinte.journal.fermesExistants]).toEqual([[], ['jeton-du-checkout']]);
   });
 
   it('🔴 une commande, créée OU payée, ferme son panier par son checkout_token ET ceux de son numéro, quel que soit l’ordre', async () => {
     const { deps, journal } = monter({ messages: [PANIER, MESSAGE] });
-    await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', commande({ checkout_token: 'jeton-du-checkout' }));
-    await traiterWebhookShopify(deps, AFFIRMEE, 'orders/create', commande({ checkout_token: 'jeton-du-checkout' }));
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande({ checkout_token: 'jeton-du-checkout' }));
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/create', commande({ checkout_token: 'jeton-du-checkout' }));
     expect(journal.fermes).toEqual(['jeton-du-checkout', 'jeton-du-checkout']);
     // Un achat express passe par un autre checkout : les paniers ouverts du même numéro se ferment aussi.
     expect(journal.fermesParNumero).toEqual(['+33633921577', '+33633921577']);
@@ -274,7 +269,7 @@ describe('les paniers (lot 2) : noter, fermer, sans ordre entre sujets', () => {
 
   it('une boutique coupée ne note aucun panier', async () => {
     const { deps, journal } = monter({ messages: [PANIER] });
-    await traiterWebhookShopify(deps, { ...AFFIRMEE, etat: 'coupee' }, 'checkouts/update', checkout());
+    await traiterWebhookShopify(deps, { ...BOUTIQUE, etat: 'coupee' }, 'checkouts/update', checkout());
     expect(journal.paniers).toEqual([]);
   });
 
@@ -305,7 +300,7 @@ describe('une boutique coupée, la désinstallation et les sujets RGPD', () => {
   it('la source du consentement reste dans sa borne, même pour un long domaine', async () => {
     const { deps, journal } = monter();
     const long = `${'a'.repeat(90)}.myshopify.com`;
-    await traiterWebhookShopify(deps, { ...BOUTIQUE, domaine: long, consentementAffirme: true }, 'orders/paid', commande());
+    await traiterWebhookShopify(deps, { ...BOUTIQUE, domaine: long }, 'orders/paid', commande());
     const r = (journal.envois[0]!.corps as { recipients: Array<{ consentSource: string }> }).recipients[0]!;
     expect(r.consentSource.length).toBeLessThanOrEqual(100);
   });
@@ -386,12 +381,11 @@ describe('une commande sur un numéro relié par QR code', () => {
     ...MESSAGE, modele: null, texte: 'Bonjour {{first_name}}, merci pour {{order_number}} : {{order_status_url}}',
     variables: ['first_name', 'order_number', 'order_status_url'],
   };
-  const AFFIRMEE: BoutiqueRecue = { ...BOUTIQUE, consentementAffirme: true };
   const sansPrenom = () => commande({ customer: { id: 77, phone: null, first_name: null }, shipping_address: { first_name: null, phone: '+33633921577', country_code: 'FR' } });
 
   it('🔴 une commande payée enfile le texte composé (données remplies, prénom de secours, sans pied STOP), sous la clé de l’événement', async () => {
     const { deps, journal } = monter({ messages: [TEXTE], filiere: 'application' });
-    expect(await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', sansPrenom())).toEqual({ statut: 200 });
+    expect(await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', sansPrenom())).toEqual({ statut: 200 });
     expect(journal.envois).toEqual([]);
     expect(journal.premiers).toEqual([{
       tenantId: T, cle: CLE, telephone: '33633921577',
@@ -405,27 +399,20 @@ describe('une commande sur un numéro relié par QR code', () => {
   it('une expédition enfile son texte, le transporteur et le suivi remplis', async () => {
     const colis: MessageBranche = { ...TEXTE, evenement: 'order_fulfilled', texte: 'Votre commande {{order_number}} part avec {{carrier}} : {{tracking_url}}', variables: ['order_number', 'carrier', 'tracking_url'] };
     const { deps, journal } = monter({ messages: [colis], filiere: 'application' });
-    await traiterWebhookShopify(deps, AFFIRMEE, 'fulfillments/create', expedition);
+    await traiterWebhookShopify(deps, BOUTIQUE, 'fulfillments/create', expedition);
     expect(journal.premiers).toMatchObject([{ cle: 'shopify:b.myshopify.com:fulfillments/create:5001', texte: 'Votre commande #1002 part avec Colissimo : https://suivi/6A1' }]);
-  });
-
-  it('🔴 sans l’accord affirmé du marchand, rien ne part en file : sans_consentement', async () => {
-    const { deps, journal } = monter({ messages: [TEXTE], filiere: 'application' });
-    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande());
-    expect(journal.premiers).toEqual([]);
-    expect(journal.issues).toEqual([[CLE, 'sans_consentement']]);
   });
 
   it('🔴 un croisement (un texte sur l’API, un modèle sur un numéro relié par QR code) rend filiere_differente, sans rien envoyer', async () => {
     const texteSurApi = monter({ messages: [TEXTE], filiere: 'api' });
-    await traiterWebhookShopify(texteSurApi.deps, AFFIRMEE, 'orders/paid', commande());
+    await traiterWebhookShopify(texteSurApi.deps, BOUTIQUE, 'orders/paid', commande());
     expect([texteSurApi.journal.premiers, texteSurApi.journal.envois, texteSurApi.journal.issues]).toEqual([[], [], [[CLE, 'filiere_differente']]]);
     const modeleSurQr = monter({ filiere: 'application' });
-    await traiterWebhookShopify(modeleSurQr.deps, AFFIRMEE, 'orders/paid', commande());
+    await traiterWebhookShopify(modeleSurQr.deps, BOUTIQUE, 'orders/paid', commande());
     expect([modeleSurQr.journal.premiers, modeleSurQr.journal.envois, modeleSurQr.journal.issues]).toEqual([[], [], [[CLE, 'filiere_differente']]]);
     // Un modèle sans filière (le numéro retiré) suit sa voie d'avant : l'envoi public, qui le dit.
     const sansFiliere = monter({ filiere: null });
-    await traiterWebhookShopify(sansFiliere.deps, AFFIRMEE, 'orders/paid', commande());
+    await traiterWebhookShopify(sansFiliere.deps, BOUTIQUE, 'orders/paid', commande());
     expect(sansFiliere.journal.envois).toHaveLength(1);
   });
 
@@ -440,7 +427,7 @@ describe('une commande sur un numéro relié par QR code', () => {
       [{ ok: true, id: 'p1', prevuLe: new Date(), dejaEnFile: true }, 'en_file'],
     ] as const) {
       const { deps, journal } = monter({ messages: [TEXTE], filiere: 'application', premier });
-      await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', commande());
+      await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande());
       expect(journal.issues, issue).toEqual([[CLE, issue]]);
       expect(journal.emails, issue).toEqual([]);
     }
@@ -449,13 +436,13 @@ describe('une commande sur un numéro relié par QR code', () => {
   it('un texte qui dépasse ce qu’un message porte, une fois les données remplies, ne part pas', async () => {
     const long: MessageBranche = { ...TEXTE, texte: `${'x'.repeat(4090)} {{order_status_url}}` };
     const { deps, journal } = monter({ messages: [long], filiere: 'application' });
-    await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', commande());
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande());
     expect([journal.premiers, journal.issues]).toEqual([[], [[CLE, 'texte_trop_long']]]);
   });
 
   it('🔴 en_file, puis l’issue finale du job par noterIssueShopify, sur le même événement de l’espace (le panier par son jeton)', async () => {
     const { deps, journal } = monter({ messages: [TEXTE], filiere: 'application' });
-    await traiterWebhookShopify(deps, AFFIRMEE, 'orders/paid', commande());
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande());
     const paniers: Array<[string, string, string]> = [];
     const noter = noterIssueShopify({ noterIssue: deps.store.noterIssue, noterIssuePanier: async (t, jeton, issue) => { paniers.push([t, jeton, issue]); } });
     await noter('shopify_commande', T, CLE, 'envoye');
@@ -472,7 +459,7 @@ describe('une commande sur un numéro relié par QR code', () => {
 });
 
 describe('l’adaptateur de l’envoi public : l’issue de chaque réponse', () => {
-  const envoi = { tenantId: T, cle: 'k', nomLigne: 'n', modele: 'm', langue: 'fr', variables: [], valeurs: {}, telephone: '+33600000000', sourceConsentement: null };
+  const envoi = { tenantId: T, cle: 'k', nomLigne: 'n', modele: 'm', langue: 'fr', variables: [], valeurs: {}, telephone: '+33600000000', sourceConsentement: 'shopify:b.myshopify.com' };
   const rendant = (r: ResultatEnvoiPublic): EnvoyerPublic => async () => r;
   const ecarte = (reason: RapportEnvoi['skipped'][number]['reason']) => rendant({ statut: 200, corps: rapport({ sendId: '', recipientCount: 0, skipped: [{ index: 0, reason }] }) });
 
@@ -489,10 +476,12 @@ describe('l’adaptateur de l’envoi public : l’issue de chaque réponse', ()
     expect(await envoyerShopify(rendant({ statut: 422, corps: { code: 'template_not_approved' } }), envoi)).toBe('modele_refuse');
   });
 
-  it('un modèle sans variable ne porte ni params ni variables', async () => {
+  it('un modèle sans variable ne porte ni params ni variables ; le destinataire porte toujours son consentement', async () => {
     let corps: unknown;
     await envoyerShopify(async (_t, c) => { corps = c; return { statut: 201, corps: rapport() }; }, envoi);
-    expect(corps).toMatchObject({ params: [], recipients: [{ phone: '+33600000000' }] });
-    expect((corps as { recipients: Array<Record<string, unknown>> }).recipients[0]).not.toHaveProperty('variables');
+    expect(corps).toMatchObject({ params: [] });
+    expect((corps as { recipients: Array<Record<string, unknown>> }).recipients).toEqual([
+      { phone: '+33600000000', consent: 'opted_in', consentSource: 'shopify:b.myshopify.com' },
+    ]);
   });
 });

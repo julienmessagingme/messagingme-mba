@@ -37,9 +37,9 @@ describe.skipIf(!url)('le store Shopify', () => {
   it('connecte la boutique ; `lire` ne rend pas le secret, `boutiqueParDomaine` le rend déchiffré', async () => {
     expect(await store.connecter(A, connexion())).toBe('ok');
     const vue = await store.lire(A);
-    expect(vue).toMatchObject({ domaine, nom: 'Itest', pays: 'FR', devise: 'EUR', etat: 'connectee', consentement: null });
+    expect(vue).toMatchObject({ domaine, nom: 'Itest', pays: 'FR', devise: 'EUR', etat: 'connectee' });
     expect(JSON.stringify(vue)).not.toContain('shpss_itest');
-    expect(await store.boutiqueParDomaine(domaine)).toMatchObject({ tenantId: A, etat: 'connectee', secret: 'shpss_itest', consentementAffirme: false });
+    expect(await store.boutiqueParDomaine(domaine)).toMatchObject({ tenantId: A, etat: 'connectee', secret: 'shpss_itest' });
     // L'accès de l'import des clients (lot 3) : la boutique de L'ESPACE, secret déchiffré ; un autre espace n'a rien.
     expect(await store.acces(A)).toEqual({ domaine, clientId: 'cid', secret: 'shpss_itest', pays: 'FR', etat: 'connectee', origine: 'claude_code' });
     expect(await store.acces(B)).toBeNull();
@@ -59,36 +59,21 @@ describe.skipIf(!url)('le store Shopify', () => {
     expect(await store.boutiqueParDomaine(domaine)).toMatchObject({ tenantId: B, etat: 'connectee' });
   });
 
-  it('brancher remplace le message de l’événement, et l’affirmation du consentement se note', async () => {
+  it('brancher remplace le message de l’événement', async () => {
     await store.brancher(B, { evenement: 'order_paid', modele: 'a', texte: null, langue: 'fr', variables: ['first_name'], actif: true, par: null });
     await store.brancher(B, { evenement: 'order_paid', modele: 'b', texte: null, langue: 'fr', variables: ['order_number'], actif: false, par: null });
     const m = await store.messages(B);
     expect(m.map((x) => [x.evenement, x.modele, x.variables, x.actif])).toEqual([['order_paid', 'b', ['order_number'], false]]);
-    await store.affirmerConsentement(B, null);
-    expect((await store.lire(B))!.consentement).not.toBeNull();
-    expect((await store.boutiqueParDomaine(domaine))!.consentementAffirme).toBe(true);
   });
 
-  it('🔴 l’affirmation du consentement ne survit à aucune connexion, et se retire', async () => {
-    // Relecture du lot 1 : gardée, une boutique branchée après une autre ferait écrire consentants ses clients.
-    expect((await store.lire(B))!.consentement).not.toBeNull();
-    expect(await store.connecter(B, { ...connexion(), domaine: `itest-${randomUUID().slice(0, 8)}.myshopify.com` })).toBe('ok');
-    expect((await store.lire(B))!.consentement).toBeNull();
+  it('🔴 une connexion efface encore les colonnes de l’ancienne affirmation : l’image d’avant, qui les lit, reste un retour arrière sûr', async () => {
+    // Plus rien ne les lit ni ne les écrit depuis le 2026-10-26 ; une ligne affirmée avant ce jour les porte encore.
+    await pool.query(`update shopify_boutiques set consentement_le = now() where tenant_id = $1`, [B]);
     expect(await store.connecter(B, connexion())).toBe('ok');
-    await store.affirmerConsentement(B, null);
-    expect(await store.connecter(B, connexion())).toBe('ok');
-    expect((await store.lire(B))!.consentement).toBeNull();
-    await store.affirmerConsentement(B, null);
-    // Retirer l'affirmation écarte les paniers ouverts notés sous elle ; un panier déjà relancé reste, pour les chiffres.
-    await store.noterPanier(B, { jeton: 'ouvert-retrait', telephone: '+33600000951', nom: null, lien: 'https://l' });
-    await store.noterPanier(B, { jeton: 'relance-retrait', telephone: '+33600000952', nom: null, lien: 'https://l' });
-    await pool.query(`update shopify_paniers set relance_le = now() where tenant_id = $1 and jeton = 'relance-retrait'`, [B]);
-    await store.retirerConsentement(B);
-    expect((await store.boutiqueParDomaine(domaine))!.consentementAffirme).toBe(false);
-    const restants = await pool.query<{ jeton: string }>(`select jeton from shopify_paniers where tenant_id = $1 and jeton like '%-retrait' order by jeton`, [B]);
-    expect(restants.rows.map((r) => r.jeton)).toEqual(['relance-retrait']);
-    // Rien ne reste derrière ce test : la purge, plus bas, compte TOUS les paniers de l'espace.
-    await pool.query(`delete from shopify_paniers where tenant_id = $1 and jeton like '%-retrait'`, [B]);
+    const r = (await pool.query<{ consentement_par: string | null; consentement_le: Date | null }>(
+      `select consentement_par, consentement_le from shopify_boutiques where tenant_id = $1`, [B],
+    )).rows[0]!;
+    expect(r).toEqual({ consentement_par: null, consentement_le: null });
   });
 
   it('🔴 un événement se réserve une fois ; sans issue au-delà du bail, il se reprend ; servi, il ne repart plus', async () => {
@@ -132,7 +117,8 @@ describe.skipIf(!url)('le store Shopify', () => {
 /**
  * LES PANIERS (lot 2) : ce qu'aucun faux ne prouve. La réclamation pose `relance_le` dans la même écriture, donc un panier
  * ne se relance qu'une fois même sous deux balayages simultanés ; un panier fermé ne se rouvre jamais ; la fermeture peut
- * précéder le panier ; seuls les paniers d'une boutique connectée, au consentement affirmé et au message actif sont dus.
+ * précéder le panier ; seuls les paniers d'une boutique connectée et au message actif sont dus, sans aucune affirmation du
+ * marchand (2026-10-26).
  */
 describe.skipIf(!url)('le store Shopify : les paniers', () => {
   let pool: Pool;
@@ -169,10 +155,8 @@ describe.skipIf(!url)('le store Shopify : les paniers', () => {
     expect(r).toEqual({ telephone: '+33600000948', nom: 'Julien', lien: 'https://lien-1' });
   });
 
-  it('🔴 rien n’est dû sans consentement affirmé, puis une seule réclamation sous deux balayages simultanés', async () => {
+  it('🔴 un panier échu est dû sans aucune affirmation du marchand (2026-10-26), et une seule réclamation sous deux balayages simultanés', async () => {
     await due('p1');
-    expect((await store.reclamerPaniersDus(50, [])).filter((p) => p.tenantId === C)).toEqual([]);
-    await store.affirmerConsentement(C, null);
     const [a, b] = await Promise.all([store.reclamerPaniersDus(50, []), store.reclamerPaniersDus(50, [])]);
     const miens = [...a, ...b].filter((p) => p.tenantId === C);
     expect(miens.map((p) => [p.jeton, p.telephone, p.lien, p.domaine, p.modele, p.variables])).toEqual([
@@ -227,7 +211,6 @@ describe.skipIf(!url)('le store Shopify : les paniers', () => {
   it('🔴 reconnecter efface les paniers ; le délai se compte en MINUTES de la boutique ; un panier verrouillé est sauté', async () => {
     await store.connecter(C, { domaine, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null, origine: 'claude_code' });
     expect((await pool.query('select 1 from shopify_paniers where tenant_id = $1', [C])).rowCount).toBe(0);
-    await store.affirmerConsentement(C, null);
     await store.reglerDelaiPanier(C, 60);
     await store.noterPanier(C, { jeton: 'delai', telephone: '+33600000954', nom: null, lien: 'https://l' });
     await pool.query(`update shopify_paniers set maj_le = now() - interval '30 minutes' where tenant_id = $1 and jeton = 'delai'`, [C]);
@@ -319,7 +302,6 @@ describe.skipIf(!url)('le store Shopify : le texte d’un numéro relié par QR 
     F = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-shopify-texte-f') returning id`)).rows[0]!.id;
     for (const t of [E, F]) {
       await store.connecter(t, { domaine: `itest-t-${randomUUID().slice(0, 8)}.myshopify.com`, clientId: 'cid', secretClair: 'shpss_itest', nom: null, pays: 'FR', devise: 'EUR', par: null, origine: 'claude_code' });
-      await store.affirmerConsentement(t, null);
     }
   });
 

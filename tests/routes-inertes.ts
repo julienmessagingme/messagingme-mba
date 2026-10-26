@@ -812,9 +812,7 @@ export const mcpShopifyInerte: Pick<DepsMcp, 'shopify'> = {
   shopify: {
     store: {
       lire: async () => null, connecter: neDevraitPasEtreAppelee('shopify.connecter'), couper: neDevraitPasEtreAppelee('shopify.couper'),
-      messages: async () => [], brancher: neDevraitPasEtreAppelee('shopify.brancher'),
-      affirmerConsentement: neDevraitPasEtreAppelee('shopify.affirmerConsentement'),
-      retirerConsentement: neDevraitPasEtreAppelee('shopify.retirerConsentement'), compteurs: async () => ({}),
+      messages: async () => [], brancher: neDevraitPasEtreAppelee('shopify.brancher'), compteurs: async () => ({}),
       reglerDelaiPanier: neDevraitPasEtreAppelee('shopify.reglerDelaiPanier'),
       compteursPaniers: async () => ({ relances: {}, fermesATemps: 0, enAttente: 0 }),
       acces: async () => null,

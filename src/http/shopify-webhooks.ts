@@ -15,7 +15,7 @@ import type { BoutiqueRecue, ReponseTraitement } from '../shopify/traitement';
  *      publics ne coûte pas une lecture et un déchiffrement chacune. 🔴 Et AUCUN plafond de débit avant la
  *      vérification : un tiers ferait refuser en 429 les vrais webhooks d'un marchand ;
  *   3. le HMAC du corps brut (401 s'il est faux ou absent) ;
- *   4. la boutique relue sans cache (son état, son consentement), puis le traitement, qui rend 200 ou 503.
+ *   4. la boutique relue sans cache (son état), puis le traitement, qui rend 200 ou 503.
  */
 
 type AvecCorpsBrut = FastifyRequest & { rawBody?: Buffer };
@@ -71,7 +71,7 @@ export function registerShopifyWebhooks(app: FastifyInstance, deps: ShopifyWebho
       return reply.code(401).send(refus);
     }
     const r = await deps.traiter(
-      { tenantId: b.tenantId, domaine, etat: b.etat, pays: b.pays, consentementAffirme: b.consentementAffirme, origine: b.origine },
+      { tenantId: b.tenantId, domaine, etat: b.etat, pays: b.pays, origine: b.origine },
       entete(req, 'x-shopify-topic') ?? '',
       req.body,
     );

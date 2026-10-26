@@ -23,7 +23,7 @@ export { DONNEES_PAR_EVENEMENT, DONNEES_SHOPIFY, EVENEMENTS_SHOPIFY, type Donnee
 
 /**
  * La catégorie de modèle admise par événement : une confirmation et une expédition sont des messages de service
- * (UTILITY) ; une relance de panier est du marketing, admise seulement après l'affirmation du consentement.
+ * (UTILITY) ; une relance de panier admet un modèle marketing ou de service.
  */
 export const CATEGORIES_ADMISES: Readonly<Record<EvenementShopify, ReadonlyArray<'marketing' | 'utility'>>> = {
   order_paid: ['utility'],

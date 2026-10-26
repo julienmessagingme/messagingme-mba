@@ -28,12 +28,15 @@ export interface ShopifyRouteDeps {
 const CIBLE = { kind: 'integration', id: 'shopify' };
 
 // Les corps se lisent par safeParse ; les bornes métier (domaine, clés, repères, délai) sont celles de la gestion.
+// ⚠️ `consentementAffirme` est encore ACCEPTÉ, et ignoré : la console ne pose plus la question depuis le 2026-10-26, mais
+// un onglet ouvert avec l'ancien bundle l'envoie encore, et un corps strict lui rendrait 400.
+const consentementIgnore = { consentementAffirme: z.boolean().optional() };
 const corpsBranchement = z.object({ boutique: z.string().max(200), clientId: z.string().max(300), secret: z.string().max(300) }).strict();
 const corpsMessage = z.object({
   evenement: z.string().max(40), texte: z.string().max(2000), langue: z.string().max(20),
-  delaiMinutes: z.number().int().optional(), consentementAffirme: z.boolean().optional(),
+  delaiMinutes: z.number().int().optional(), ...consentementIgnore,
 }).strict();
-const corpsReglage = z.object({ delaiMinutes: z.number().int().optional(), consentementAffirme: z.boolean().optional() }).strict();
+const corpsReglage = z.object({ delaiMinutes: z.number().int().optional(), ...consentementIgnore }).strict();
 const corpsImport = z.object({ maximum: z.number().int() }).strict();
 
 const raisonCorps = (e: z.ZodError): string => {
@@ -74,11 +77,10 @@ export function registerShopify(app: FastifyInstance, deps: ShopifyRouteDeps, ga
     const tenant = espaceVerifie(req);
     const corps = corpsMessage.safeParse(req.body ?? {});
     if (!corps.success) return reply.code(400).send({ error: raisonCorps(corps.error) });
-    const r = await preparerMessage(deps.preparation, tenant, corps.data, req.auth?.userId ?? null);
+    const { consentementAffirme: _ignore, ...preparation } = corps.data;
+    const r = await preparerMessage(deps.preparation, tenant, preparation, req.auth?.userId ?? null);
     if (!r.ok) return reply.code(r.statut).send({ error: r.message });
-    await journal(tenant, req, 'shopify.message', CIBLE, {
-      evenement: corps.data.evenement, modele: r.valeur.modele, etat: r.valeur.etat, consentementAffirme: corps.data.consentementAffirme === true,
-    });
+    await journal(tenant, req, 'shopify.message', CIBLE, { evenement: preparation.evenement, modele: r.valeur.modele, etat: r.valeur.etat });
     return reply.code(200).send(r.valeur);
   });
 
@@ -87,9 +89,10 @@ export function registerShopify(app: FastifyInstance, deps: ShopifyRouteDeps, ga
     const corps = corpsReglage.safeParse(req.body ?? {});
     if (!corps.success) return reply.code(400).send({ error: raisonCorps(corps.error) });
     const { evenement } = req.params as { evenement: string };
-    const r = await reglerMessage(deps.preparation, tenant, { evenement, ...corps.data }, req.auth?.userId ?? null);
+    const { consentementAffirme: _ignore, ...reglage } = corps.data;
+    const r = await reglerMessage(deps.preparation, tenant, { evenement, ...reglage });
     if (!r.ok) return reply.code(r.statut).send({ error: r.message });
-    await journal(tenant, req, 'shopify.reglage', CIBLE, { evenement, ...corps.data });
+    await journal(tenant, req, 'shopify.reglage', CIBLE, { evenement, ...reglage });
     return reply.code(200).send(r.valeur);
   });
 

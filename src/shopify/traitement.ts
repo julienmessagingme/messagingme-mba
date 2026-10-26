@@ -25,6 +25,10 @@ import type { EtatBoutique, OrigineBoutique, PgShopifyStore } from './store.pg';
  *
  * Une boutique `coupee` n'envoie plus rien, mais ses trois sujets RGPD se traitent encore : Shopify envoie `shop/redact`
  * environ 48 h après la désinstallation.
+ *
+ * 🔴 CHAQUE ENVOI NÉ D'UN ÉVÉNEMENT SHOPIFY ÉCRIT LA FICHE CONSENTANTE (décision de Julien du 2026-10-26, suite de celle du
+ * 2026-10-25 : « par principe, les contacts sont opt in, c'est la responsabilité du client ; on respecte le STOP ») :
+ * source `shopify:<boutique>`, et `appliquerConsentement` refuse toujours de lever un STOP (chemin partagé).
  */
 
 export interface BoutiqueRecue {
@@ -32,7 +36,6 @@ export interface BoutiqueRecue {
   domaine: string;
   etat: EtatBoutique;
   pays: string | null;
-  consentementAffirme: boolean;
   /** `console` : une boutique désinstallée perd son branchement, `shop/redact` ne viendra jamais (conception 2026-10-22). */
   origine: OrigineBoutique;
 }
@@ -208,9 +211,9 @@ async function noterCheckout(deps: DepsTraitementShopify, b: BoutiqueRecue, suje
     await fermerSiPanier(deps, b, c.data.token, null);
     return OK;
   }
-  // Un panier ne se garde qu'avec la relance active ET le consentement affirmé : sinon c'est un téléphone sans usage,
-  // qu'une affirmation ultérieure ferait relancer d'un coup (relecture du lot 2).
-  if (!b.consentementAffirme || !(await relanceActive(deps, b))) return OK;
+  // Un panier ne se garde qu'avec la relance active : sinon c'est un téléphone sans usage, qu'une relance branchée plus
+  // tard ferait relancer d'un coup.
+  if (!(await relanceActive(deps, b))) return OK;
   const telephone = telephoneDeCheckout(c.data, b.pays);
   if (telephone === null) return OK;
   await deps.store.noterPanier(b.tenantId, {
@@ -270,7 +273,7 @@ async function servir(deps: DepsTraitementShopify, b: BoutiqueRecue, s: Service)
         tenantId: b.tenantId, cle, origine: 'shopify_commande', reference: cle, evenement: s.evenement,
         nomLigne: `Shopify · ${LIBELLE[s.evenement]} · ${s.numero}`, message: m, valeurs, telephone: s.telephone,
         // Bornée comme toute source de consentement (`MAX_OPT_IN_SOURCE`) : trop longue, le destinataire serait écarté.
-        sourceConsentement: b.consentementAffirme ? `shopify:${b.domaine}`.slice(0, MAX_OPT_IN_SOURCE) : null,
+        sourceConsentement: `shopify:${b.domaine}`.slice(0, MAX_OPT_IN_SOURCE),
       });
     }
     // Un autre traitement tient la même clé d'envoi : le laisser finir, Shopify réessaiera.

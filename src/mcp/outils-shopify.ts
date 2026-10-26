@@ -16,9 +16,9 @@ import type { MessageBranche } from '../shopify/store.pg';
  * Shopify chez le marchand (création et publication de l'app, lien d'installation, `app env show`), puis ces outils
  * gardent la boutique et branchent les messages. La MÊME gestion que la carte de la console (`src/shopify/gestion.ts`).
  *
- * 🔴 TOUS EXIGENT UNE PERSONNE NOMMÉE (OAuth) : l'affirmation du consentement des clients se signe, et une clé
- * `mcp:write` donnée à un agent qui lit des messages de clients ne doit ni brancher ni débrancher la boutique, ni en
- * importer les clients (lot 3).
+ * 🔴 TOUS EXIGENT UNE PERSONNE NOMMÉE (OAuth) : l'import déclare l'accord des clients au nom de la personne connectée, et
+ * une clé `mcp:write` donnée à un agent qui lit des messages de clients ne doit ni brancher ni débrancher la boutique, ni
+ * en importer les clients (lot 3).
  * Ouverts à toutes les offres (décision de Julien), Base comprise, qui n'a pas de console.
  */
 
@@ -76,13 +76,11 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
       + `Events and their data: ${evenements}. `
       + 'An order message must be a utility template, approved at Meta (create_template, then get_template_status), and a '
       + 'checkout_abandoned reminder a marketing template. A checkout_abandoned reminder is sent once, delay_minutes after '
-      + 'the checkout last changed and only if no order came out of it; it requires the merchant to affirm customer '
-      + 'consent. A missing first name is replaced by a neutral word. Links go in the body (a URL button takes no '
-      + 'variable). One message per event: setting it again replaces it. customers_consented: true records that the '
-      + 'merchant affirms its customers agreed to receive WhatsApp messages; the customers\' records then become opted in '
-      + 'everywhere, campaigns included, and the merchant is responsible for it; false withdraws it (records already opted '
-      + 'in stay so), and every new connect_shopify clears it. Every message goes through the sends rules (STOP, consent, '
-      + 'monthly templates, contact limit) and appears in Campaigns.',
+      + 'the checkout last changed and only if no order came out of it. A missing first name is replaced by a neutral '
+      + 'word. Links go in the body (a URL button takes no variable). One message per event: setting it again replaces '
+      + 'it. Each message records the customer as opted in (source shopify:<store>), for campaigns too: the merchant is '
+      + 'responsible for its customers\' consent, and a customer who said STOP stays opted out and receives nothing. '
+      + 'Every message goes through the sends rules (STOP, monthly templates, contact limit) and appears in Campaigns.',
     annotations: { title: 'Set a Shopify message', readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     entree: {
       type: 'object',
@@ -100,7 +98,6 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
           description: 'The Shopify data of {{1}}, {{2}}..., in order.',
         },
         active: { type: 'boolean', description: 'false stops the message (default true).' },
-        customers_consented: { type: 'boolean', description: 'The merchant affirms its customers agreed to receive WhatsApp messages.' },
         delay_minutes: {
           type: 'integer', minimum: DELAI_PANIER_MIN, maximum: DELAI_PANIER_MAX,
           description: `checkout_abandoned only: minutes after the checkout last changed (default ${DELAI_PANIER_DEFAUT}).`,
@@ -110,20 +107,14 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
       additionalProperties: false,
     },
     async executer(deps: DepsMcp, tenantId, args, personne) {
+      // Un plugin d'avant le 2026-10-26 envoie encore `customers_consented` : le serveur ne valide pas les arguments contre
+      // le schéma, la valeur n'est simplement pas lue.
       const messages = valeur(await brancherMessage(deps.shopify, tenantId, {
         evenement: args.event, modele: args.template, texte: args.text, langue: args.language, variables: args.variables, actif: args.active,
         delaiMinutes: args.delay_minutes,
-        consentementAffirme: args.customers_consented,
       }, personne?.userId ?? null));
-      journaliser('info', 'mcp_shopify_message', {
-        tenantId, userId: personne?.userId ?? null, evenement: args.event, consentementAffirme: args.customers_consented === true,
-      });
-      return {
-        messages: messages.map(versMessage),
-        ...(args.customers_consented === false
-          ? { consentement: 'retiré : plus aucune fiche ne sera écrite consentante ; celles qui le sont déjà le restent' }
-          : {}),
-      };
+      journaliser('info', 'mcp_shopify_message', { tenantId, userId: personne?.userId ?? null, evenement: args.event });
+      return { messages: messages.map(versMessage) };
     },
   },
   {
@@ -131,7 +122,7 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
     fonction: null,
     description:
       'The Shopify store connected to the workspace: its state (connected or cut), the messages set on its events, the last '
-      + 'event received, whether the merchant affirmed customer consent, and the last 30 days of events by outcome (sent, '
+      + 'event received, and the last 30 days of events by outcome (sent, '
       + 'opted out, without consent, contact limit, monthly templates limit, without phone...; on a number linked by QR code '
       + 'also premier_contact: such a number never writes first, so its Shopify messages cannot go out; and for a message '
       + 'queued before that rule, en_file, pas_sur_whatsapp, gele, numero_coupe, refuse_whatsapp, filiere_differente), and '
@@ -145,7 +136,7 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
       return {
         connected: e.boutique.etat === 'connectee',
         store: e.boutique.domaine, name: e.boutique.nom, state: e.boutique.etat, cut_reason: e.boutique.motifCoupure,
-        last_event_at: e.boutique.dernierEvenementLe, customers_consented_at: e.boutique.consentement?.le ?? null,
+        last_event_at: e.boutique.dernierEvenementLe,
         messages: e.messages.map(versMessage),
         last_30_days: e.compteurs,
         checkouts: {

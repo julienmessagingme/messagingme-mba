@@ -8,12 +8,17 @@ import { test, expect, type Page } from './aide/test';
  */
 const BOUTIQUE = {
   domaine: 'ma-boutique.myshopify.com', nom: 'Ma Boutique', etat: 'connectee', dernierEvenementLe: null,
-  consentement: null, delaiPanierMinutes: 60, origine: 'claude_code',
+  delaiPanierMinutes: 60, origine: 'claude_code',
 };
 const VIDE = { boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null, attentes: [] };
 const BRANCHEE = {
   ...VIDE, boutique: BOUTIQUE, pageApps: 'https://admin.shopify.com/store/ma-boutique/settings/apps',
   messages: [{ evenement: 'order_paid', modele: 'confirmation_commande', langue: 'fr', variables: ['first_name', 'order_number'], actif: true }],
+};
+/** La relance aussi active : son modèle est relu chez Meta comme celui de la commande. */
+const RELANCE_ACTIVE = {
+  ...BRANCHEE,
+  messages: [...BRANCHEE.messages, { evenement: 'checkout_abandoned', modele: 'relance_panier', langue: 'fr', variables: ['checkout_url'], actif: true }],
 };
 
 interface Trace { branchements: unknown[]; preparations: unknown[]; reglages: Array<{ evenement: string; corps: unknown }> }
@@ -30,7 +35,7 @@ async function monter(page: Page, o: { etat?: Record<string, unknown> | 'absente
     const reglage = /\/integrations\/shopify\/messages\/([a-z_]+)$/.exec(chemin);
     if (reglage && req.method() === 'PATCH') {
       trace.reglages.push({ evenement: reglage[1]!, corps: req.postDataJSON() });
-      return json({ relanceArretee: false });
+      return json({});
     }
     if (chemin.endsWith('/integrations/shopify/messages') && req.method() === 'POST') {
       trace.preparations.push(req.postDataJSON());
@@ -47,7 +52,10 @@ async function monter(page: Page, o: { etat?: Record<string, unknown> | 'absente
       return json(etat);
     }
     if (chemin.endsWith('/templates')) {
-      return json({ templates: [{ id: '1', name: 'confirmation_commande', status: 'APPROVED', category: 'UTILITY', language: 'fr', body: 'Bonjour {{1}}, votre commande {{2}} est bien payée. Merci !', isCarousel: false }] });
+      return json({ templates: [
+        { id: '1', name: 'confirmation_commande', status: 'APPROVED', category: 'UTILITY', language: 'fr', body: 'Bonjour {{1}}, votre commande {{2}} est bien payée. Merci !', isCarousel: false },
+        { id: '2', name: 'relance_panier', status: 'APPROVED', category: 'MARKETING', language: 'fr', body: 'Votre panier vous attend : {{1}} À très vite !', isCarousel: false },
+      ] });
     }
     if (chemin.endsWith('/settings')) return json({ mbaEnabled: false, timezone: 'Europe/Paris', businessHours: {} });
     if (chemin.endsWith('/account-status')) return json({ hasNumber: false, hubspotPortal: { connected: false } });
@@ -81,7 +89,7 @@ test.describe('Tools > Intégrations > Shopify : la carte de la console', () => 
     await expect(carte.getByTestId('integration-shopify-message')).toContainText('Boutique branchée');
   });
 
-  test('🔴 la relance : texte proposé à repères, délai, consentement obligatoire, puis le corps envoyé au serveur', async ({ page }) => {
+  test('🔴 la relance : texte proposé à repères, délai, puis le corps envoyé au serveur, sans aucune question du consentement', async ({ page }) => {
     const trace = await monter(page, {});
     await expect(page.getByTestId('integration-shopify-message-checkout_abandoned')).toContainText('pas encore réglé');
     await page.getByTestId('integration-shopify-regler-checkout_abandoned').click();
@@ -94,14 +102,13 @@ test.describe('Tools > Intégrations > Shopify : la carte de la console', () => 
     await expect(assistant).toContainText('Répondez STOP pour ne plus recevoir ces messages');
     await assistant.getByTestId('shopify-assistant-suivant').click();
     await assistant.getByTestId('shopify-delai-15').click();
-    await assistant.getByTestId('shopify-assistant-suivant').click();
-    const envoyer = assistant.getByTestId('shopify-assistant-envoyer');
-    await expect(envoyer).toBeDisabled();
-    await assistant.getByTestId('shopify-assistant-consentement').check();
-    await envoyer.click();
+    // Le délai est la dernière étape (2026-10-26) : aucune case à cocher avant d'envoyer.
+    await expect(assistant).toContainText('Étape 2 sur 2');
+    await expect(assistant.getByTestId('shopify-assistant-suivant')).toHaveCount(0);
+    await assistant.getByTestId('shopify-assistant-envoyer').click();
     await expect.poll(() => trace.preparations.length).toBe(1);
     expect(trace.preparations[0]).toEqual({
-      evenement: 'checkout_abandoned', langue: 'fr', delaiMinutes: 15, consentementAffirme: true,
+      evenement: 'checkout_abandoned', langue: 'fr', delaiMinutes: 15,
       texte: 'Bonjour, vous avez laissé des articles dans votre panier.\nIl vous attend ici : {{checkout_url}}\nÀ très vite !',
     });
     await expect(page.getByTestId('integration-shopify-message')).toContainText('Envoyé à Meta');
@@ -120,20 +127,53 @@ test.describe('Tools > Intégrations > Shopify : la carte de la console', () => 
     expect(trace.preparations).toEqual([]);
   });
 
-  test('🔴 un message actif dont seule la case change : réglé tout de suite, sans repasser par Meta', async ({ page }) => {
+  test('🔴 un message de commande n’a que son texte : inchangé, rien à enregistrer ; modifié, il part chez Meta', async ({ page }) => {
     const trace = await monter(page, {});
     await expect(page.getByTestId('integration-shopify-message-order_paid')).toContainText('actif');
     await page.getByTestId('integration-shopify-regler-order_paid').click();
     const assistant = page.getByTestId('shopify-assistant');
     // Le texte du modèle en place, relu chez Meta, avec les repères du marchand.
-    await expect(assistant.getByTestId('shopify-assistant-texte')).toHaveValue('Bonjour {prénom}, votre commande {numéro de commande} est bien payée. Merci !');
+    const texte = assistant.getByTestId('shopify-assistant-texte');
+    await expect(texte).toHaveValue('Bonjour {prénom}, votre commande {numéro de commande} est bien payée. Merci !');
     // Un texte avec le prénom : l'assistant dit ce que le message écrit quand Shopify ne l'a pas.
     await expect(assistant.getByTestId('shopify-assistant-prenom-secours')).toContainText('à vous');
-    await assistant.getByTestId('shopify-assistant-suivant').click();
-    await assistant.getByTestId('shopify-assistant-consentement').check();
+    // Une seule étape, et plus aucune case du consentement (2026-10-26).
+    await expect(assistant.getByTestId('shopify-assistant-suivant')).toHaveCount(0);
+    const envoyer = assistant.getByTestId('shopify-assistant-envoyer');
+    await expect(envoyer).toBeDisabled();
+    await expect(assistant.getByTestId('shopify-assistant-inchange')).toBeVisible();
+    await texte.fill('Bonjour {prénom}, votre commande {numéro de commande} est payée. Merci !');
+    await expect(assistant.getByTestId('shopify-assistant-inchange')).toHaveCount(0);
+    await envoyer.click();
+    await expect.poll(() => trace.preparations.length).toBe(1);
+    expect(trace.preparations[0]).toEqual({ evenement: 'order_paid', langue: 'fr', texte: 'Bonjour {{first_name}}, votre commande {{order_number}} est payée. Merci !' });
+    expect(trace.reglages).toEqual([]);
+  });
+
+  test('🔴 un message de commande au texte refusé : l’erreur est dite à l’envoi, rien ne part', async ({ page }) => {
+    const trace = await monter(page, {});
+    await page.getByTestId('integration-shopify-regler-order_paid').click();
+    const assistant = page.getByTestId('shopify-assistant');
+    await expect(assistant.getByTestId('shopify-assistant-texte')).toHaveValue(/Merci !$/);
+    await assistant.getByTestId('shopify-assistant-texte').fill('Bonjour {prenon}, votre commande {numéro de commande} est payée');
     await assistant.getByTestId('shopify-assistant-envoyer').click();
+    await expect(assistant.getByTestId('shopify-assistant-erreur')).toContainText('{prenon}');
+    expect(trace.preparations).toEqual([]);
+  });
+
+  test('🔴 une relance active dont seul le délai change : réglée tout de suite, sans repasser par Meta', async ({ page }) => {
+    const trace = await monter(page, { etat: RELANCE_ACTIVE });
+    await expect(page.getByTestId('integration-shopify-message-checkout_abandoned')).toContainText('actif');
+    await page.getByTestId('integration-shopify-regler-checkout_abandoned').click();
+    const assistant = page.getByTestId('shopify-assistant');
+    await expect(assistant.getByTestId('shopify-assistant-texte')).toHaveValue('Votre panier vous attend : {lien du panier} À très vite !');
+    await assistant.getByTestId('shopify-assistant-suivant').click();
+    await assistant.getByTestId('shopify-delai-15').click();
+    const enregistrer = assistant.getByTestId('shopify-assistant-envoyer');
+    await expect(enregistrer).toHaveText('Enregistrer');
+    await enregistrer.click();
     await expect.poll(() => trace.reglages.length).toBe(1);
-    expect(trace.reglages[0]).toEqual({ evenement: 'order_paid', corps: { consentementAffirme: true } });
+    expect(trace.reglages[0]).toEqual({ evenement: 'checkout_abandoned', corps: { delaiMinutes: 15 } });
     expect(trace.preparations).toEqual([]);
   });
 

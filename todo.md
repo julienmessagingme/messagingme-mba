@@ -89,9 +89,9 @@ levait sans rien prouver, et le mot « coexistence » de la doc publique d'un ou
 Aucun rouge (d405ed44, en production le même jour). Décision de Julien : par Claude, l'accord des contacts est déclaré
 par le client, le STOP toujours respecté.
 
-- **À trancher par Julien** : deux régimes pour les mêmes clients Shopify. Importés par Claude, ils sont consentants
-  (campagnes comprises), mais la relance de panier exige toujours que le marchand affirme l'accord de ses clients
-  (`customers_consented`), que Claude lui demande. Supprimer aussi cette affirmation ?
+- **Tranché par Julien le 2026-10-26 : oui**, l'affirmation de la relance de panier est supprimée (plan
+  `docs/superpowers/plans/2026-10-26-shopify-sans-question-de-consentement.md`). Plus aucune question, ni par Claude
+  ni par la console : chaque message né d'un événement Shopify écrit la fiche consentante, le STOP toujours respecté.
 - **L'audit** : l'import Shopify par Claude n'écrit aucune ligne d'audit (un journal seulement, `outils-shopify.ts`),
   alors que la console écrit `shopify.import` ; le `contact.optin` d'un envoi n'a pas d'acteur et porte `source: api` ;
   le « qui » n'existe qu'en UUID dans `opt_in_source`, que ni la console ni `get_contact` ne montrent.

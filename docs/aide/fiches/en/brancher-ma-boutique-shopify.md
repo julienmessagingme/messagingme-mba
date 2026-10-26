@@ -1,6 +1,6 @@
 ---
 slug: connect-my-shopify-store
-traduit_de: 15dd61
+traduit_de: d1bdee
 bouton_claude: Connect Shopify from Claude Code, for free
 bouton_console: Connect Shopify in the console
 ---
@@ -49,13 +49,12 @@ Each new text creates a new template at Meta: you can therefore rework it as oft
 was created here, is deleted shortly after the new one is approved. The templates created by the assistant (their name
 starts with “shopify_”) serve the store: do not reuse them in a scenario or a campaign.
 
-**5. Set the delay and the consent.** For the reminder, choose the delay after the checkout (1 h by default), then
-confirm your customers’ consent, required for it and optional for an order message. Finally, “Send to Meta and switch
-on once approved”.
+**5. Set the delay, then send.** For the reminder, choose the delay after the checkout (1 h by default). Finally, “Send
+to Meta and switch on once approved”.
 
 The message switches on by itself when Meta approves it, usually within minutes, and an email lets you know (or tells
 you why Meta refused it). Editing an active message does not stop it: the old one goes out until the new one is
-approved. Changing only the delay or the box applies right away, without going back through Meta.
+approved. Changing only the reminder’s delay applies right away, without going back through Meta.
 
 **6. Import your customers.** “Import” opens the import of the store’s customers subscribed to your marketing (email or
 SMS) who have a phone number. They are counted first, along with the room your plan leaves; you choose how many to
@@ -69,17 +68,17 @@ the figures for the last 30 days: messages sent, customers left out and why. “
 The app then stays installed on your store: uninstall it from the store apps page, whose link is on the card. You can
 reconnect it from the card or from Claude Code.
 
-**Good to know.** Shopify collects no agreement for WhatsApp. Confirming that your customers accepted your messages
-makes their records consenting everywhere, campaigns included, under your responsibility, and the statement is kept
-(who, when). It applies to the whole store: withdrawing it pauses the checkout reminder.
+**Good to know.** Shopify collects no agreement for WhatsApp: your customers’ consent is your responsibility, and no
+question asks you about it. Each message from the store makes the customer’s record consenting everywhere, campaigns
+included; a customer who replied STOP stays opted out and gets nothing.
 
 ## The abandoned checkout reminder
 
 A customer who fills in the checkout with their phone number without ordering gets ONE reminder on WhatsApp, with the
 link that reopens their checkout, at the delay you choose after its last change (from 15 min to 72 h). Nothing goes out
-if an order came of it in the meantime, even an unpaid one. It is a marketing message: it only switches on once you
-have confirmed your customers’ consent, and it carries at the bottom the line “Reply STOP to stop these messages” (in
-a French template, “Répondez STOP pour ne plus recevoir ces messages”). The card counts the reminders sent, the checkouts that turned into an order in time, and those waiting.
+if an order came of it in the meantime, even an unpaid one. It is a marketing message: it carries at the bottom the
+line “Reply STOP to stop these messages” (in a French template, “Répondez STOP pour ne plus recevoir ces messages”). The
+card counts the reminders sent, the checkouts that turned into an order in time, and those waiting.
 
 **Good to know.** The first name is optional at Shopify: many customers do not give it, especially before abandoning
 their checkout. A message that contains the first name still goes out, with “there” in its place (“Hello there”; “à

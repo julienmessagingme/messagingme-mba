@@ -22,7 +22,7 @@ import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
 const T = 't1';
 const VUE: VueBoutique = {
   domaine: 'b.myshopify.com', nom: 'Essai', pays: 'FR', devise: 'EUR', etat: 'connectee', motifCoupure: null, coupeeLe: null,
-  connecteeLe: '2026-10-21T00:00:00.000Z', dernierEvenementLe: null, consentement: null, delaiPanierMinutes: 60, origine: 'claude_code',
+  connecteeLe: '2026-10-21T00:00:00.000Z', dernierEvenementLe: null, delaiPanierMinutes: 60, origine: 'claude_code',
 };
 
 function monter(o: {
@@ -32,7 +32,7 @@ function monter(o: {
   actifs?: MessageBranche[]; attenteRetiree?: AttenteMessage; filiere?: Filiere | null;
 } = {}) {
   let boutique: VueBoutique | null = o.boutique === undefined ? VUE : o.boutique;
-  const journal = { connexions: [] as unknown[], branches: [] as unknown[], consentements: [] as Array<string | null>, retraits: 0, coupes: 0, verifs: 0, delais: [] as number[], attentesRetirees: [] as unknown[], abonnements: [] as unknown[], lecturesModele: 0 };
+  const journal = { connexions: [] as unknown[], branches: [] as unknown[], coupes: 0, verifs: 0, delais: [] as number[], attentesRetirees: [] as unknown[], abonnements: [] as unknown[], lecturesModele: 0 };
   const messages: MessageBranche[] = [...(o.actifs ?? [])];
   let attenteRetiree = o.attenteRetiree ?? null;
   const programmes: string[] = [];
@@ -49,8 +49,6 @@ function monter(o: {
         const ligne: MessageBranche = { evenement: m.evenement, modele: m.modele, texte: m.texte, langue: m.langue, variables: m.variables, actif: m.actif, modifieLe: '' };
         if (i >= 0) messages[i] = ligne; else messages.push(ligne);
       },
-      affirmerConsentement: async (_t, par) => { journal.consentements.push(par); },
-      retirerConsentement: async () => { journal.retraits += 1; },
       compteurs: async () => ({ envoye: 3 }),
       reglerDelaiPanier: async (_t, m) => { journal.delais.push(m); },
       compteursPaniers: async () => ({ relances: { envoye: 1 }, fermesATemps: 2, enAttente: 3 }),
@@ -138,27 +136,14 @@ describe('brancher une boutique depuis la console (conception 2026-10-22)', () =
 });
 
 describe('brancher un message', () => {
-  const branchement = { evenement: 'order_paid', modele: 'commande_payee', texte: undefined, langue: 'fr', variables: ['first_name', 'order_number'], actif: true, consentementAffirme: undefined };
+  const branchement = { evenement: 'order_paid', modele: 'commande_payee', texte: undefined, langue: 'fr', variables: ['first_name', 'order_number'], actif: true };
 
-  it('un modèle utility approuvé, autant de variables que lui : branché, et le consentement noté s’il est affirmé', async () => {
+  it('un modèle utility approuvé, autant de variables que lui : branché', async () => {
     const { deps, journal } = monter();
-    expect((await brancherMessage(deps, T, { ...branchement, consentementAffirme: true }, 'u1')).ok).toBe(true);
+    expect((await brancherMessage(deps, T, branchement, 'u1')).ok).toBe(true);
     expect(journal.branches).toEqual([{ evenement: 'order_paid', modele: 'commande_payee', texte: null, langue: 'fr', variables: ['first_name', 'order_number'], actif: true, par: 'u1' }]);
-    expect(journal.consentements).toEqual(['u1']);
     // Le dernier geste gagne : un message préparé par la console pour cet événement ne le remplacera pas.
     expect(journal.attentesRetirees).toEqual([{ evenement: 'order_paid' }]);
-  });
-
-  it('🔴 customers_consented : vrai affirme, FAUX RETIRE l’affirmation, absent ne change rien', async () => {
-    const vrai = monter();
-    await brancherMessage(vrai.deps, T, { ...branchement, consentementAffirme: true }, 'u1');
-    expect([vrai.journal.consentements, vrai.journal.retraits]).toEqual([['u1'], 0]);
-    const faux = monter();
-    expect((await brancherMessage(faux.deps, T, { ...branchement, consentementAffirme: false }, 'u1')).ok).toBe(true);
-    expect([faux.journal.consentements, faux.journal.retraits]).toEqual([[], 1]);
-    const absent = monter();
-    await brancherMessage(absent.deps, T, branchement, 'u1');
-    expect([absent.journal.consentements, absent.journal.retraits]).toEqual([[], 0]);
   });
 
   it('🔴 refusé : modèle marketing, non approuvé, ou dont le nombre de variables diffère', async () => {
@@ -189,7 +174,7 @@ describe('le ménage des modèles remplacés (2026-10-23)', () => {
   // Des noms de l'assistant : son horodatage en base 36, après sa mise en service.
   const ASSISTANT = `shopify_order_paid_${Date.UTC(2026, 9, 22, 9).toString(36)}`;
   const attente: AttenteMessage = { evenement: 'order_paid', modele: `shopify_order_paid_${Date.UTC(2026, 9, 22, 10).toString(36)}`, langue: 'fr', variables: ['first_name'], delaiMinutes: null, creeLe: '' };
-  const branchement = { evenement: 'order_paid', modele: 'commande_payee', texte: undefined, langue: 'fr', variables: ['first_name', 'order_number'], actif: true, consentementAffirme: undefined };
+  const branchement = { evenement: 'order_paid', modele: 'commande_payee', texte: undefined, langue: 'fr', variables: ['first_name', 'order_number'], actif: true };
   const actif = (modele: string): MessageBranche => ({ evenement: 'order_paid', modele, texte: null, langue: 'fr', variables: ['first_name', 'order_number'], actif: true, modifieLe: '' });
 
   it('🔴 Claude Code branche par-dessus un message de l’assistant : l’oubli de l’ancien modèle et de l’attente retirée est programmé', async () => {
@@ -210,32 +195,23 @@ describe('le ménage des modèles remplacés (2026-10-23)', () => {
 });
 
 describe('la relance de panier (lot 2)', () => {
-  const panier = { evenement: 'checkout_abandoned', modele: 'relance', texte: undefined, langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, consentementAffirme: undefined };
+  const panier = { evenement: 'checkout_abandoned', modele: 'relance', texte: undefined, langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true };
   const marketing: LectureModele = { statut: 'approuve', categorie: 'marketing', variables: 2 };
 
-  it('🔴 elle ne s’active pas sans consentement affirmé, ni dans l’appel ni avant', async () => {
+  it('🔴 elle s’active sans aucune affirmation du consentement (décision de Julien du 2026-10-26)', async () => {
     const { deps, journal } = monter({ modele: marketing });
-    expect(await brancherMessage(deps, T, panier, null)).toMatchObject({ ok: false, statut: 409 });
-    expect(journal.branches).toEqual([]);
-    // Affirmé dans l’appel : branchée, consentement noté.
-    expect((await brancherMessage(deps, T, { ...panier, consentementAffirme: true }, 'u1')).ok).toBe(true);
-    expect(journal.consentements).toEqual(['u1']);
-  });
-
-  it('affirmé avant : branchée sans le redire ; retiré dans le même appel : refusée', async () => {
-    const avant = monter({ modele: marketing, boutique: { ...VUE, consentement: { par: 'u1', le: '2026-10-21T00:00:00.000Z' } } });
-    expect((await brancherMessage(avant.deps, T, panier, null)).ok).toBe(true);
-    expect(await brancherMessage(avant.deps, T, { ...panier, consentementAffirme: false }, null)).toMatchObject({ ok: false, statut: 409 });
+    expect((await brancherMessage(deps, T, panier, 'u1')).ok).toBe(true);
+    expect(journal.branches).toEqual([{ evenement: 'checkout_abandoned', modele: 'relance', texte: null, langue: 'fr', variables: ['first_name', 'checkout_url'], actif: true, par: 'u1' }]);
   });
 
   it('un modèle marketing est admis pour le panier, et le délai se règle dans ses bornes', async () => {
     const { deps, journal } = monter({ modele: marketing });
-    expect((await brancherMessage(deps, T, { ...panier, consentementAffirme: true, delaiMinutes: 30 }, null)).ok).toBe(true);
+    expect((await brancherMessage(deps, T, { ...panier, delaiMinutes: 30 }, null)).ok).toBe(true);
     expect(journal.delais).toEqual([30]);
     for (const delaiMinutes of [14, 4321, 30.5, '60']) {
-      expect(await brancherMessage(deps, T, { ...panier, consentementAffirme: true, delaiMinutes }, null)).toMatchObject({ ok: false, statut: 400 });
+      expect(await brancherMessage(deps, T, { ...panier, delaiMinutes }, null)).toMatchObject({ ok: false, statut: 400 });
     }
-    const commande = { evenement: 'order_paid', modele: 'commande_payee', texte: undefined, langue: 'fr', variables: [], actif: true, consentementAffirme: undefined };
+    const commande = { evenement: 'order_paid', modele: 'commande_payee', texte: undefined, langue: 'fr', variables: [], actif: true };
     expect(await brancherMessage(deps, T, { ...commande, delaiMinutes: 30 }, null)).toMatchObject({ ok: false, statut: 400 });
   });
 
@@ -254,10 +230,10 @@ describe('la relance de panier (lot 2)', () => {
 describe('un message Shopify sur un numéro relié par QR code', () => {
   const texte = (over: Partial<Record<string, unknown>> = {}) => ({
     evenement: 'order_paid', modele: undefined, texte: '  Bonjour {{first_name}}, votre commande {{order_number}} est payée, merci {{first_name}}.  ',
-    langue: 'fr', variables: undefined, actif: undefined, consentementAffirme: true, ...over,
+    langue: 'fr', variables: undefined, actif: undefined, ...over,
   });
 
-  it('🔴 un message actif est refusé (409, la phrase de ce numéro), texte ou modèle, pour chacun des trois, même consenti', async () => {
+  it('🔴 un message actif est refusé (409, la phrase de ce numéro), texte ou modèle, pour chacun des trois', async () => {
     for (const [evenement, corps] of [
       ['order_paid', 'Merci pour la commande {{order_number}}.'],
       ['order_fulfilled', 'Votre colis part avec {{carrier}} : {{tracking_url}}'],
@@ -267,9 +243,9 @@ describe('un message Shopify sur un numéro relié par QR code', () => {
         texte({ evenement, texte: corps }), texte({ evenement, texte: corps, actif: true }),
         texte({ evenement, texte: undefined, modele: 'commande_payee', variables: ['order_number'] }),
       ]) {
-        const { deps, journal } = monter({ filiere: 'application', boutique: { ...VUE, consentement: { par: 'u1', le: '2026-10-21T00:00:00.000Z' } } });
+        const { deps, journal } = monter({ filiere: 'application' });
         expect(await brancherMessage(deps, T, b, 'u1'), evenement).toEqual({ ok: false, statut: 409, message: PHRASE_SHOPIFY_QR_CODE });
-        expect([journal.branches, journal.consentements, journal.attentesRetirees, journal.lecturesModele], evenement).toEqual([[], [], [], 0]);
+        expect([journal.branches, journal.attentesRetirees, journal.lecturesModele], evenement).toEqual([[], [], 0]);
       }
     }
     // La coexistence (plan 2026-10-24, tâche 4) : le même numéro, l'application gardée, et les messages partent en modèles.
@@ -281,18 +257,18 @@ describe('un message Shopify sur un numéro relié par QR code', () => {
     expect(PHRASE_SHOPIFY_QR_CODE).not.toMatch(/coexistence/i);
   });
 
-  it('🔴 l’arrêter reste permis : active false, avec son texte, sans lecture de modèle chez Meta ni oubli, sans accord exigé', async () => {
+  it('🔴 l’arrêter reste permis : active false, avec son texte, sans lecture de modèle chez Meta ni oubli', async () => {
     const { deps, journal, programmes } = monter({
       filiere: 'application',
       actifs: [{ evenement: 'order_paid', modele: null, texte: 'Merci {{first_name}}', langue: 'fr', variables: ['first_name'], actif: true, modifieLe: '' }],
     });
-    const r = await brancherMessage(deps, T, texte({ actif: false, consentementAffirme: undefined }), 'u1');
+    const r = await brancherMessage(deps, T, texte({ actif: false }), 'u1');
     expect(r.ok).toBe(true);
     expect(journal.branches).toEqual([{
       evenement: 'order_paid', modele: null, texte: 'Bonjour {{first_name}}, votre commande {{order_number}} est payée, merci {{first_name}}.',
       langue: 'fr', variables: ['first_name', 'order_number'], actif: false, par: 'u1',
     }]);
-    expect([journal.lecturesModele, programmes, journal.consentements]).toEqual([0, [], []]);
+    expect([journal.lecturesModele, programmes]).toEqual([0, []]);
     // Le dernier geste gagne : une préparation de la console encore en attente ne le remplacera pas par un modèle.
     expect(journal.attentesRetirees).toEqual([{ evenement: 'order_paid' }]);
     expect(r.ok && r.valeur).toMatchObject([{ evenement: 'order_paid', modele: null, actif: false }]);
@@ -387,7 +363,7 @@ describe('les outils MCP du connecteur', () => {
     const { deps } = monter({ filiere: 'application' });
     const mcp = { shopify: deps } as unknown as DepsMcp;
     const outil = OUTILS.find((x) => x.nom === 'set_shopify_message')!;
-    await expect(outil.executer(mcp, T, { event: 'order_paid', text: 'Merci pour {{order_number}}.', language: 'fr', customers_consented: true }, { userId: 'u1' } as never))
+    await expect(outil.executer(mcp, T, { event: 'order_paid', text: 'Merci pour {{order_number}}.', language: 'fr' }, { userId: 'u1' } as never))
       .rejects.toThrow(PHRASE_SHOPIFY_QR_CODE);
     const regle = await outil.executer(mcp, T, {
       event: 'order_paid', text: 'Merci pour {{order_number}}.', language: 'fr', active: false,
@@ -395,6 +371,28 @@ describe('les outils MCP du connecteur', () => {
     expect(regle).toMatchObject({ messages: [{ event: 'order_paid', template: null, text: 'Merci pour {{order_number}}.', variables: ['order_number'], active: false }] });
     const etat = await OUTILS.find((x) => x.nom === 'get_shopify_state')!.executer(mcp, T, {}, { userId: 'u1' } as never);
     expect(etat).toMatchObject({ messages: [{ event: 'order_paid', template: null, text: 'Merci pour {{order_number}}.' }] });
+  });
+
+  it('🔴 plus aucune question du consentement (2026-10-26) : ni annoncée ni rendue, et celle d’un ancien plugin est ignorée', async () => {
+    const regler = OUTILS.find((x) => x.nom === 'set_shopify_message')!;
+    const etat = OUTILS.find((x) => x.nom === 'get_shopify_state')!;
+    expect(Object.keys(regler.entree.properties)).not.toContain('customers_consented');
+    for (const o of [regler, etat]) expect(o.description, o.nom).not.toMatch(/customers_consented|affirm/i);
+    // Le serveur MCP ne valide pas les arguments contre le schéma : un plugin d'avant le 2026-10-26 envoie encore
+    // `customers_consented`, vrai ou faux. La relance s'active pareil, et rien d'autre n'est rendu.
+    for (const customers_consented of [false, true]) {
+      const { deps, journal } = monter({ modele: { statut: 'approuve', categorie: 'marketing', variables: 1 } });
+      const r = await regler.executer({ shopify: deps } as unknown as DepsMcp, T, {
+        event: 'checkout_abandoned', template: 'relance', language: 'fr', variables: ['checkout_url'], customers_consented,
+      }, { userId: 'u1' } as never);
+      expect(r, String(customers_consented)).toEqual({
+        messages: [{ event: 'checkout_abandoned', template: 'relance', text: null, language: 'fr', variables: ['checkout_url'], active: true }],
+      });
+      expect(journal.branches, String(customers_consented)).toHaveLength(1);
+    }
+    const lu = await etat.executer({ shopify: monter().deps } as unknown as DepsMcp, T, {}, { userId: 'u1' } as never);
+    expect(lu).toMatchObject({ connected: true, store: 'b.myshopify.com' });
+    expect(lu).not.toHaveProperty('customers_consented_at');
   });
 });
 
