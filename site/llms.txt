@@ -38,8 +38,8 @@
 - [Appointment reminders](https://app.messagingme.fr/en/use-cases/appointment-reminders/) : The evening before, a reminder with two buttons: the customer confirms or reschedules, and your calendar follows.
 - [Support IA et relais à l’équipe](https://app.messagingme.fr/cas-d-usage/support-ia-relais-humain/) : Un agent IA répond à vos clients avec votre doc, et votre équipe reprend la main quand il faut.
 - [AI support and human handover](https://app.messagingme.fr/en/use-cases/ai-support-human-handover/) : An AI agent answers your customers from your docs, and your team takes over when needed.
-- [Bulle WhatsApp sur un site Lovable](https://app.messagingme.fr/cas-d-usage/bulle-whatsapp-site-lovable/) : Une bulle WhatsApp sur votre site, et un agent IA qui répond avec votre contenu.
-- [WhatsApp bubble on a Lovable site](https://app.messagingme.fr/en/use-cases/whatsapp-bubble-lovable-site/) : A WhatsApp bubble on your site, and an AI agent that answers from your content.
+- [Bulle WhatsApp sur votre site](https://app.messagingme.fr/cas-d-usage/bulle-whatsapp-site-lovable/) : Une bulle WhatsApp sur votre site, et un agent IA qui répond avec votre contenu.
+- [WhatsApp bubble on your website](https://app.messagingme.fr/en/use-cases/whatsapp-bubble-lovable-site/) : A WhatsApp bubble on your site, and an AI agent that answers from your content.
 - [Accueil des utilisateurs d’un SaaS](https://app.messagingme.fr/cas-d-usage/accueil-activation-saas/) : À l’inscription, le welcome message sur WhatsApp, avec un bouton vers le premier usage. Seulement à qui a coché la case.
 - [SaaS onboarding and activation](https://app.messagingme.fr/en/use-cases/saas-onboarding-activation/) : At sign-up, the welcome on WhatsApp, with a button to the first use. Only to those who ticked the box.
 - [Relance d’un paiement échoué](https://app.messagingme.fr/cas-d-usage/relance-paiement-echoue/) : Stripe signale l’échec, l’utilisateur reçoit sur WhatsApp le lien pour mettre à jour sa carte.

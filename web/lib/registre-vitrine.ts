@@ -79,8 +79,8 @@ export const ENTREES: readonly EntreeVitrine[] = [
   },
   {
     cle: 'bulle-lovable', nature: 'cas',
-    fr: { adresse: '/cas-d-usage/bulle-whatsapp-site-lovable/', titre: 'Bulle WhatsApp sur un site Lovable' },
-    en: { adresse: '/en/use-cases/whatsapp-bubble-lovable-site/', titre: 'WhatsApp bubble on a Lovable site' },
+    fr: { adresse: '/cas-d-usage/bulle-whatsapp-site-lovable/', titre: 'Bulle WhatsApp sur votre site' },
+    en: { adresse: '/en/use-cases/whatsapp-bubble-lovable-site/', titre: 'WhatsApp bubble on your website' },
     profils: ['lovable'], vague: 1, recherche: 'bulle whatsapp site lovable', chemin: 'console', film: 'cas-bulle', enLigne: true,
   },
   {

@@ -1015,6 +1015,42 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 @keyframes as-flux{0%{stroke-dasharray:0 100;stroke-dashoffset:0;opacity:0}15%{opacity:1}70%{stroke-dasharray:16 100;stroke-dashoffset:-84;opacity:1}85%,100%{stroke-dasharray:0 100;stroke-dashoffset:-100;opacity:0}}
 @keyframes as-onde{0%,55%{scale:.9;opacity:0}62%{opacity:.9}100%{scale:1.45;opacity:0}}
 @media (max-width:960px){.assistants{width:min(100%,460px)}}
+/* La une des pages de cas : la marque au centre, Claude Code, Codex, Lovable et WhatsApp en orbite (cas.ts, orbite()). Chaque
+   satellite se place sur l'ellipse (42 x 19 cqw) par cos() et sin() de l'angle --t, animé sur la figure ; devant
+   (sin > 0) il grossit et passe au-dessus de la marque, derrière il rapetisse et passe dessous. */
+@property --t{syntax:"<angle>";inherits:true;initial-value:0deg}
+.orbite{position:relative;width:min(100%,580px);aspect-ratio:100 / 86;margin:0 auto;container-type:inline-size;isolation:isolate}
+.or-halo{position:absolute;left:50%;top:50%;width:66cqw;aspect-ratio:1;translate:-50% -50%;border-radius:50%;background:radial-gradient(closest-side,rgb(0 155 255 / .34),rgb(23 199 78 / .1) 58%,rgb(0 155 255 / 0));z-index:0}
+.or-arc{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.or-arc path{fill:none;stroke:rgb(111 194 254 / .3);stroke-width:1.5;stroke-dasharray:2 7;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.or-arriere{z-index:3}
+.or-avant{z-index:11}
+.or-avant path{stroke:rgb(111 194 254 / .55)}
+.or-centre{position:absolute;left:50%;top:50%;width:31cqw;aspect-ratio:1;translate:-50% -50%;z-index:10;perspective:900px}
+.or-bloc{position:absolute;inset:0;transform-style:preserve-3d;transform:rotateX(12deg) rotateY(-16deg)}
+.or-bloc i{position:absolute;inset:0;border-radius:24%;background:#040833;transform:translateZ(calc(var(--z) * -2px))}
+.or-face{position:absolute;inset:0;display:grid;place-items:center;border-radius:24%;background:linear-gradient(150deg,#1D33C9,#0B137A 55%,#060B4F);box-shadow:inset 0 1px 0 rgb(255 255 255 / .35),inset 0 -18px 34px rgb(0 0 0 / .25),0 0 70px rgb(0 155 255 / .38)}
+.or-marque{width:70%;aspect-ratio:858 / 432;height:auto}
+.or-sat{position:absolute;left:50%;top:50%;width:18cqw;aspect-ratio:1;--ang:calc(var(--a) + var(--t));translate:calc(-50% + cos(var(--ang)) * 42cqw) calc(-50% + sin(var(--ang)) * 19cqw);scale:calc(.8 + sin(var(--ang)) * .2);z-index:calc(12 + sin(var(--ang)) * 8);filter:brightness(calc(.86 + sin(var(--ang)) * .14))}
+.or-tuile{display:grid;place-items:center;width:100%;height:100%;border-radius:26%;background:var(--face);transform:perspective(600px) rotateY(calc(cos(var(--ang)) * -26deg));box-shadow:inset 0 1px 0 rgb(255 255 255 / .5),inset 0 -10px 22px rgb(0 0 0 / .12),0 1cqw 0 var(--bord),0 3.4cqw 5cqw rgb(0 2 20 / .6)}
+.or-logo{width:54%;height:54%}
+.or-claude{--face:#F0EEE6;--bord:#B3AB9A}
+.or-claude .or-logo{fill:#D97757}
+.or-codex{--face:#FFFFFF;--bord:#A9B2C6}
+.or-codex .or-logo{fill:#0B0E24}
+.or-lovable{--face:#15151B;--bord:#020205}
+.or-whatsapp{--face:#25D366;--bord:#128C4A}
+.or-whatsapp .or-logo{width:82%;height:82%}
+.or-point{position:absolute;left:50%;top:50%;width:1.8cqw;aspect-ratio:1;border-radius:50%;background:#25D366;box-shadow:0 0 0 .7cqw rgb(37 211 102 / .18),0 0 3cqw rgb(37 211 102 / .9);--ang:calc(var(--a) + var(--t) * 2);translate:calc(-50% + cos(var(--ang)) * 42cqw) calc(-50% + sin(var(--ang)) * 19cqw);z-index:calc(12 + sin(var(--ang)) * 8)}
+.or-nom{position:absolute;left:50%;top:calc(100% + 2.6cqw);translate:-50% 0;color:#FFFFFF;font-size:clamp(.78rem,2.7cqw,.98rem);font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+@media (prefers-reduced-motion:no-preference){
+  .js .orbite{animation:or-tourne 18s linear infinite}
+  .js .or-bloc{animation:or-balance 9s ease-in-out infinite}
+  .js .or-centre::after{content:"";position:absolute;inset:0;border-radius:24%;border:2px solid rgb(37 211 102 / .5);animation:as-onde 3.2s ease-out infinite}
+}
+@keyframes or-tourne{to{--t:360deg}}
+@keyframes or-balance{0%,100%{transform:rotateX(12deg) rotateY(-16deg) translateY(0)}50%{transform:rotateX(16deg) rotateY(16deg) translateY(-1.8cqw)}}
+@media (max-width:960px){.orbite{width:min(100%,440px)}}
 .cas-schema{padding:56px 0}
 .dessin{margin:28px 0 0}
 .dessin svg{display:block;width:100%;height:auto}

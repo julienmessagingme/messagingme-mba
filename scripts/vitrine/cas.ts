@@ -130,6 +130,38 @@ export function extraitDe(cle: string, partie: string): ExempleCode {
   return ex;
 }
 
+/**
+ * La une de chaque page de cas, à droite du titre (Julien, 2026-10-26 : « le logo Messaging Me avec les logos de Claude
+ * Code, Codex et Lovable qui tournent autour », puis « un logo WhatsApp qui tourne autour aussi ») : la marque sur une
+ * tuile épaisse au centre, les trois assistants et WhatsApp en orbite sur une ellipse. Chaque tuile se place par
+ * `cos()` et `sin()` d'un angle animé (`@property --t`, site.css) : devant, elle grossit et passe devant la marque ;
+ * derrière, elle rapetisse et passe dessous. Sans animation (prefers-reduced-motion, ou un navigateur sans
+ * `@property`), les tuiles restent à leur angle de départ.
+ */
+function orbite(langue: Langue): string {
+  const svg = (l: LogoAssistant, classe: string) => `<svg class="${classe}" viewBox="${l.viewBox}" aria-hidden="true">${l.corps}</svg>`;
+  const epaisseur = Array.from({ length: 12 }, (_, k) => `<i style="--z:${k + 1}"></i>`).join('');
+  const satellite = (cle: string, nom: string, logo: LogoAssistant, angle: number) =>
+    `      <div class="or-sat or-${cle}" style="--a:${angle}deg"><span class="or-tuile">${svg(logo, 'or-logo')}</span><span class="or-nom">${nom}</span></div>`;
+  // L'ellipse en deux moitiés : l'arrière passe sous la marque, l'avant par-dessus
+  const arc = (classe: string, d: string) => `<svg class="or-arc ${classe}" viewBox="0 0 100 86" preserveAspectRatio="none" aria-hidden="true"><path d="${d}"/></svg>`;
+  const fr = langue === 'fr';
+  return [
+    `    <figure class="orbite" role="img" aria-label="${fr ? 'Le logo de Messaging Me, avec ceux de Claude Code, de Codex, de Lovable et de WhatsApp qui tournent autour' : 'The Messaging Me logo, with the Claude Code, Codex, Lovable and WhatsApp logos orbiting around it'}">`,
+    '      <span class="or-halo"></span>',
+    `      ${arc('or-arriere', 'M8 43 A42 19 0 0 1 92 43')}`,
+    `      ${arc('or-avant', 'M8 43 A42 19 0 0 0 92 43')}`,
+    `      <div class="or-centre"><div class="or-bloc">${epaisseur}<span class="or-face">${svg(LOGOS_ASSISTANTS.messagingme, 'or-marque')}</span></div></div>`,
+    satellite('claude', 'Claude Code', LOGOS_ASSISTANTS.claude, 90),
+    satellite('lovable', 'Lovable', LOGOS_ASSISTANTS.lovable, 180),
+    satellite('codex', 'Codex', LOGOS_ASSISTANTS.codex, 270),
+    satellite('whatsapp', 'WhatsApp', LOGOS_ASSISTANTS.whatsapp, 0),
+    // Deux messages qui filent sur l'orbite, deux fois plus vite que les tuiles
+    '      <span class="or-point" style="--a:45deg"></span><span class="or-point" style="--a:225deg"></span>',
+    '    </figure>',
+  ].join('\n');
+}
+
 function mainCas(e: EntreeVitrine, t: TexteCas, langue: Langue): string {
   const p = langue === 'fr' ? e.fr : e.en;
   const film = e.film;
@@ -149,6 +181,7 @@ function mainCas(e: EntreeVitrine, t: TexteCas, langue: Langue): string {
     `        <a class="bouton bouton-texte" href="#film">${langue === 'fr' ? 'Voir le film' : 'Watch the film'} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`,
     '      </div>',
     '    </div>',
+    orbite(langue),
     '  </section>',
     '',
     '  <section class="f-bloc f-film" id="film">',
@@ -168,7 +201,7 @@ function mainCas(e: EntreeVitrine, t: TexteCas, langue: Langue): string {
     '',
     '  <section class="f-bloc cas-pas bande-claire">',
     '    <div class="cadre">',
-    `      <h2 class="f-titre">${langue === 'fr' ? 'Pas à pas, avec le vrai.' : 'Step by step, for real.'}</h2>`,
+    `      <h2 class="f-titre">${langue === 'fr' ? 'La mise en place, étape par étape.' : 'The setup, step by step.'}</h2>`,
     '      <ol class="guide-etapes">',
     ...t.etapes.map((x, i) => `        <li><span class="f-num">${i + 1}</span><div><h3>${x.titre}</h3><p>${x.texte}</p></div></li>`),
     '      </ol>',
