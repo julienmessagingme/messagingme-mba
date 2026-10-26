@@ -1,4 +1,5 @@
 ---
+description: Create a WhatsApp message template and get it approved by Meta: the text, the variables, the validity period, the language, then submission.
 slug: get-a-template-approved
 traduit_de: 1e12d6
 ---

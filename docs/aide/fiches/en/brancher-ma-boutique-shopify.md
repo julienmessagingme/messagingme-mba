@@ -1,4 +1,5 @@
 ---
+description: Connect a Shopify store to WhatsApp: order confirmation, shipping notice with tracking, abandoned checkout reminders. The simplest way: Claude Code.
 slug: connect-my-shopify-store
 traduit_de: d1bdee
 bouton_claude: Connect Shopify from Claude Code, for free

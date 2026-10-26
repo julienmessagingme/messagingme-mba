@@ -654,7 +654,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Moins d’abonnements perdus sur une carte refusée, grâce à un message WhatsApp.',
       chapeau: 'Quand Stripe signale un paiement échoué, votre application envoie à l’utilisateur un message WhatsApp avec le lien vers sa page de facturation. Il met à jour sa carte avant de perdre l’accès.',
       film: {
-        titre: 'Le welcome message, puis la relance  : 30 secondes.',
+        titre: 'La carte refusée, puis le paiement réussi  : 30 secondes.',
         texte: 'De la demande dans Claude Code au paiement réussi, sur une vraie conversation WhatsApp. Le même film montre d’abord le welcome message à l’inscription.',
         aria: 'Film : la relance d’un paiement échoué avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
@@ -694,7 +694,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Fewer subscriptions lost to a declined card, with a WhatsApp message.',
       chapeau: 'When Stripe reports a failed payment, your app sends the user a WhatsApp message with the link to their billing page. They update their card before losing access.',
       film: {
-        titre: 'The welcome, then the recovery: 30 seconds.',
+        titre: 'The declined card, then the successful payment: 30 seconds.',
         texte: 'From the request in Claude Code to the successful payment, on a real WhatsApp conversation. The same film first shows the welcome at sign-up.',
         aria: 'Film: failed payment recovery with Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },

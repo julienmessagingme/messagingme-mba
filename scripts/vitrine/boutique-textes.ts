@@ -108,7 +108,7 @@ const fr = (): TexteBoutique => {
   ];
   return {
     titre: 'Boutiques Shopify : relance de panier sur WhatsApp · Messaging Me',
-    description: 'Branchez votre boutique Shopify à WhatsApp en le demandant à Claude Code, avec l’offre Free à 0 € d’abonnement : confirmation de commande, avis d’expédition, relance des paniers abandonnés, et un agent IA qui répond.',
+    description: 'Votre boutique Shopify sur WhatsApp par Claude Code, offre Free à 0 € : confirmation de commande, avis d’expédition, relance des paniers abandonnés.',
     menu: 'Relancer les paniers sur WhatsApp',
     icone: 'i-cart',
     surtitre: 'Boutiques Shopify',
@@ -333,7 +333,7 @@ const en = (): TexteBoutique => {
   ];
   return {
     titre: 'Shopify stores: checkout reminders on WhatsApp · Messaging Me',
-    description: 'Connect your Shopify store to WhatsApp by asking Claude Code, with the Free plan at €0 a month: order confirmation, shipping notice, abandoned checkout reminders, and an AI agent that answers.',
+    description: 'Your Shopify store on WhatsApp through Claude Code, Free plan at €0: order confirmation, shipping notice, abandoned checkout reminders, an AI agent.',
     menu: 'Recover checkouts on WhatsApp',
     icone: 'i-cart',
     surtitre: 'Shopify stores',

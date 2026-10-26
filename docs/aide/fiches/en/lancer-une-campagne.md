@@ -1,4 +1,5 @@
 ---
+description: Launch a WhatsApp or RCS campaign in five steps: the name, the channel, the content, the audience, then the summary and sending.
 slug: launch-a-campaign
 traduit_de: 8a16fb
 ---

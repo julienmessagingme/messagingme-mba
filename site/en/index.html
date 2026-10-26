@@ -37,9 +37,26 @@
    "@type": "Organization",
    "@id": "https://www.messagingme.fr/#organisation",
    "name": "Messaging Me",
+   "alternateName": "MessagingMe",
+   "description": "Messaging Me is a French conversational platform for WhatsApp and RCS. Businesses use it to send their campaigns, answer their customers with their team, an AI agent or the Meta Business Agent, and get every qualified conversation in their CRM: intent, urgency, satisfaction, churn risk.",
    "url": "https://www.messagingme.fr/",
    "logo": "https://app.messagingme.fr/messagingme-logo.png",
    "email": "contact@messagingme.fr",
+   "contactPoint": {
+    "@type": "ContactPoint",
+    "contactType": "sales",
+    "email": "contact@messagingme.fr",
+    "url": "https://app.messagingme.fr/en/contact/",
+    "availableLanguage": ["fr", "en"]
+   },
+   "knowsAbout": [
+    "WhatsApp Business Platform",
+    "RCS Business Messaging",
+    "Meta Business Agent",
+    "Conversational marketing",
+    "Conversational AI agents",
+    "Click-to-WhatsApp ads"
+   ],
    "address": {
     "@type": "PostalAddress",
     "streetAddress": "6, rue d’Armaillé",
@@ -51,7 +68,8 @@
     "https://www.linkedin.com/company/messagingme/",
     "https://www.instagram.com/messaging_me/",
     "https://www.facebook.com/messagingmefr",
-    "https://www.youtube.com/@MessagingMe"
+    "https://www.youtube.com/@MessagingMe",
+    "https://www.whatsapp.com/channel/0029Va8axlL7NoZvgFgns21j"
    ]
   },
   {
@@ -72,6 +90,56 @@
    "applicationCategory": "BusinessApplication",
    "operatingSystem": "Web",
    "description": "WhatsApp and RCS, campaigns and customer service in a single console. You choose who answers, and every conversation is qualified for your CRM.",
+   "featureList": [
+    "Push campaigns and scenarios",
+    "WhatsApp Channels",
+    "Click-to-WhatsApp ads",
+    "Conversation analysis",
+    "WhatsApp and RCS fallback",
+    "Cost control"
+   ],
+   "screenshot": "https://app.messagingme.fr/img/partage/accueil.jpg",
+   "softwareHelp": {
+    "@type": "WebPage",
+    "url": "https://app.messagingme.fr/en/help/"
+   },
+   "offers": [
+    {
+     "@type": "Offer",
+     "name": "Free",
+     "price": "0",
+     "priceCurrency": "EUR",
+     "url": "https://app.messagingme.fr/en/pricing/"
+    },
+    {
+     "@type": "Offer",
+     "name": "Pro",
+     "price": "49",
+     "priceCurrency": "EUR",
+     "url": "https://app.messagingme.fr/en/pricing/",
+     "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "price": "49",
+      "priceCurrency": "EUR",
+      "billingDuration": "P1M",
+      "valueAddedTaxIncluded": false
+     }
+    },
+    {
+     "@type": "Offer",
+     "name": "Pro",
+     "price": "490",
+     "priceCurrency": "EUR",
+     "url": "https://app.messagingme.fr/en/pricing/",
+     "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "price": "490",
+      "priceCurrency": "EUR",
+      "billingDuration": "P1Y",
+      "valueAddedTaxIncluded": false
+     }
+    }
+   ],
    "publisher": {
     "@id": "https://www.messagingme.fr/#organisation"
    }
@@ -640,6 +708,7 @@ curl -X POST https://api.messagingme.app/v1/messages/whatsapp \
     <div>
       <p class="pied-marque"><img src="/messagingme-logo-blanc.png" alt="Messaging Me" width="185" height="22"></p>
       <p class="pied-accroche">Simply conversational.</p>
+      <p class="pied-definition">Messaging Me is a French conversational platform for WhatsApp and RCS. Businesses use it to send their campaigns, answer their customers with their team, an AI agent or the Meta Business Agent, and get every qualified conversation in their CRM: intent, urgency, satisfaction, churn risk.</p>
     </div>
     <nav aria-label="Messaging Me platform">
       <h3>Messaging&nbsp;Me platform</h3>

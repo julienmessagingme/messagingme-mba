@@ -30,6 +30,8 @@ export interface VersionPage {
   boutonConsole: string | null;
   /** Le libellé du bouton vers le plugin d'une fiche `claude_code: oui` (`bouton_claude`), à la place du libellé commun. */
   boutonClaude: string | null;
+  /** La description de la page pour les moteurs (`description` de l'en-tête), quand le chapeau dépasse 160 caractères. */
+  description: string | null;
 }
 
 /** Une page du centre d'aide : sa fiche, sa publication, et ses deux langues. */
@@ -70,10 +72,12 @@ export function pagesDuCentre(dossier: string = DOSSIER): PageAide[] {
         fr: {
           adresse: `${ACCUEIL_AIDE.fr}${fr.cle}/`, titre: fr.titre, corps: fr.corps,
           boutonConsole: champDeFiche(texte, 'bouton_console'), boutonClaude: champDeFiche(texte, 'bouton_claude'),
+          description: champDeFiche(texte, 'description'),
         },
         en: {
           adresse: `${ACCUEIL_AIDE.en}${slug}/`, titre: en.titre, corps: en.corps,
           boutonConsole: champDeFiche(texteEn, 'bouton_console'), boutonClaude: champDeFiche(texteEn, 'bouton_claude'),
+          description: champDeFiche(texteEn, 'description'),
         },
       }];
     })

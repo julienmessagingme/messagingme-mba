@@ -4,6 +4,25 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : la vitrine lisible par les moteurs et les assistants IA (lot 1 du plan SEO et GEO)
+
+Plan `docs/superpowers/plans/2026-10-26-seo-geo-vitrine.md`, tiré d'un bilan SEO / GEO que Julien a transmis le jour
+même, confronté au site réel (une partie de ce qu'il demandait existait déjà, une autre était fausse).
+- **Une phrase de définition, la même partout** : « Messaging Me est une plateforme conversationnelle française pour
+  WhatsApp et le RCS… », dans le pied de page de toutes les pages (FR et EN), `Organization.description` et le résumé
+  de tête de `llms.txt`.
+- **JSON-LD** : l'`Organization` gagne `alternateName`, `contactPoint`, `knowsAbout` et la chaîne WhatsApp ; la
+  `SoftwareApplication` ses offres (Free 0 €, Pro 49 € HT par mois, 490 € HT par an), sa liste de fonctionnalités,
+  une capture et l'aide, sur l'accueil et sur les tarifs.
+- **Descriptions** : sept fiches publiques et la page Shopify passent sous 160 caractères (champ `description:` de
+  l'en-tête des fiches, chaque langue ; le bot ne le lit pas).
+- **Aide** : les intitulés de la colonne de navigation ne sont plus des `h3` placés avant le contenu.
+- **Relance de paiement** : son film ne s'annonce plus par « Le welcome message, puis la relance ».
+- **Deux images de tête** de « WhatsApp et RCS » ont leur texte alternatif.
+- **`tests/vitrine-seo.test.ts`** garde le tout ; chacun de ses cas vérifié dans les deux sens.
+- Les « 30 secondes » des titres de film restent, partout : une promesse, pas une mesure (Julien). Le `lastmod` du plan
+  du site est reporté (la CI clone sans historique).
+
 ## 2026-10-26 : le plugin 0.3.12 publié, et la 0.3.13 (faire de la place en Free en le demandant à Claude)
 
 - **0.3.12 publié** (`plugin.yml`, depuis `3be9c325`, avant le gel de la bascule) : il emporte l'alignement du compte

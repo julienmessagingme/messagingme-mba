@@ -34,6 +34,50 @@
  "@context": "https://schema.org",
  "@graph": [
   {
+   "@type": "SoftwareApplication",
+   "@id": "https://app.messagingme.fr/en/#application",
+   "name": "Messaging Me",
+   "applicationCategory": "BusinessApplication",
+   "operatingSystem": "Web",
+   "offers": [
+    {
+     "@type": "Offer",
+     "name": "Free",
+     "price": "0",
+     "priceCurrency": "EUR",
+     "url": "https://app.messagingme.fr/en/pricing/"
+    },
+    {
+     "@type": "Offer",
+     "name": "Pro",
+     "price": "49",
+     "priceCurrency": "EUR",
+     "url": "https://app.messagingme.fr/en/pricing/",
+     "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "price": "49",
+      "priceCurrency": "EUR",
+      "billingDuration": "P1M",
+      "valueAddedTaxIncluded": false
+     }
+    },
+    {
+     "@type": "Offer",
+     "name": "Pro",
+     "price": "490",
+     "priceCurrency": "EUR",
+     "url": "https://app.messagingme.fr/en/pricing/",
+     "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "price": "490",
+      "priceCurrency": "EUR",
+      "billingDuration": "P1Y",
+      "valueAddedTaxIncluded": false
+     }
+    }
+   ]
+  },
+  {
    "@type": "BreadcrumbList",
    "itemListElement": [
     {
@@ -393,6 +437,7 @@
     <div>
       <p class="pied-marque"><img src="/messagingme-logo-blanc.png" alt="Messaging Me" width="185" height="22"></p>
       <p class="pied-accroche">Simply conversational.</p>
+      <p class="pied-definition">Messaging Me is a French conversational platform for WhatsApp and RCS. Businesses use it to send their campaigns, answer their customers with their team, an AI agent or the Meta Business Agent, and get every qualified conversation in their CRM: intent, urgency, satisfaction, churn risk.</p>
     </div>
     <nav aria-label="Messaging Me platform">
       <h3>Messaging&nbsp;Me platform</h3>

@@ -27,5 +27,7 @@
  {"fr":"Léa reçoit la campagne sur WhatsApp, Thomas la reçoit en RCS : le même message, parti de Messaging Me, chacun sur son canal","en":"Léa gets the campaign on WhatsApp, Thomas gets it on RCS: the same message, sent from Messaging Me, each on their own channel"},
  {"fr":"La création d’une campagne : WhatsApp et RCS, avec repli","en":"Creating a campaign: WhatsApp and RCS, with fallback"},
  {"fr":"Lequel part en premier : RCS en premier, le repli part en WhatsApp","en":"Which one goes first: RCS first, the fallback goes out on WhatsApp"},
- {"fr":"L’Inbox de Messaging Me : les conversations de Léa Martin et de Thomas Petit au même endroit","en":"The Messaging Me Inbox: Léa Martin’s and Thomas Petit’s conversations in one place"}
+ {"fr":"L’Inbox de Messaging Me : les conversations de Léa Martin et de Thomas Petit au même endroit","en":"The Messaging Me Inbox: Léa Martin’s and Thomas Petit’s conversations in one place"},
+ {"fr":"Une campagne reçue sur WhatsApp","en":"A campaign received on WhatsApp"},
+ {"fr":"La même campagne reçue en RCS","en":"The same campaign received over RCS"}
 ]

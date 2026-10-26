@@ -1,4 +1,5 @@
 ---
+description: Free, Pro or Enterprise: what each Messaging Me plan opens, its limits, and how to move to Pro or manage the subscription.
 slug: choose-my-plan
 traduit_de: ba2518
 ---

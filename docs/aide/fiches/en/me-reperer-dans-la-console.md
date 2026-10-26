@@ -1,4 +1,5 @@
 ---
+description: Console, Inbox and Performance Lab: the three tabs of the Messaging Me console, what each one holds, and where the account and settings are.
 slug: find-your-way-around-the-console
 traduit_de: d2824f
 ---

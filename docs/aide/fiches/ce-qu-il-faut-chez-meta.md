@@ -1,4 +1,5 @@
 ---
+description: Ce qu'il faut chez Meta pour brancher WhatsApp : un compte Meta Business, un portefeuille, un numéro libre, puis un moyen de paiement après la connexion.
 ecran: accueil
 source_section: Ce qu'il faut chez Meta (avant de connecter un numéro)
 source_empreinte: add9d7

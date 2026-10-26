@@ -1,4 +1,5 @@
 ---
+description: What you need at Meta to connect WhatsApp: a Meta Business account, a portfolio, a free number, then a payment method after connecting.
 slug: what-you-need-at-meta
 traduit_de: dfd909
 ---

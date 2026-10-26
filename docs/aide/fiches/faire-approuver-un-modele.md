@@ -1,4 +1,5 @@
 ---
+description: Créer un modèle de message WhatsApp et le faire approuver par Meta : le texte, les variables, la durée de validité, la langue, puis la soumission.
 ecran: templates
 source_section: Templates WhatsApp (menu Contenu)
 source_empreinte: fbcd42

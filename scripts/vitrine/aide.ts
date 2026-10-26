@@ -177,7 +177,7 @@ function menu(pages: PageAide[], courante: PageAide | null, langue: Langue): str
     `      <input class="aide-recherche" type="search" placeholder="${T[langue].recherche}" aria-label="${T[langue].recherche}">`,
   ];
   for (const r of RUBRIQUES) {
-    lignes.push(`      <div class="aide-rubrique"><h3>${NOMS_RUBRIQUES[r][langue]}</h3>`);
+    lignes.push(`      <div class="aide-rubrique"><p class="aide-nav-titre">${NOMS_RUBRIQUES[r][langue]}</p>`);
     for (const p of pages.filter((x) => x.publication.rubrique === r)) {
       const v = p[langue];
       const mots = motsDeRecherche(`${v.titre} ${structureFiche(v.corps, langue).chapeau}`);
@@ -258,7 +258,9 @@ function pageAide(pages: PageAide[], p: PageAide, langue: Langue): { chemin: str
   ].filter((l) => l !== '').join('\n');
 
   const langueLd = langue === 'fr' ? 'fr-FR' : 'en-US';
-  const description = brut(s.chapeau);
+  // Le chapeau sert de description, sauf quand la fiche en donne une plus courte : au-delà de 160 caractères, les
+  // moteurs la coupent (plan docs/superpowers/plans/2026-10-26-seo-geo-vitrine.md, A5).
+  const description = v.description ?? brut(s.chapeau);
   const ld = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -296,7 +298,7 @@ function menuAccueil(langue: Langue): string {
   return [
     `    <nav class="aide-nav" aria-label="${T[langue].centre}">`,
     `      <input class="aide-recherche" type="search" placeholder="${T[langue].recherche}" aria-label="${T[langue].recherche}">`,
-    `      <div class="aide-sections"><h3>${T[langue].sections}</h3>`,
+    `      <div class="aide-sections"><p class="aide-nav-titre">${T[langue].sections}</p>`,
     ...sections.map(([ancre, nom]) => `        <a href="#${ancre}">${nom}</a>`),
     '      </div>',
     '    </nav>',
@@ -447,11 +449,11 @@ function dire(t: string, langue: Langue): string {
 function menuDeveloppeurs(courante: PageClaude, langue: Langue): string {
   return [
     `    <nav class="aide-nav" aria-label="${TC[langue].developpeurs}">`,
-    `      <div class="aide-rubrique"><h3>${TC[langue].developpeurs}</h3>`,
+    `      <div class="aide-rubrique"><p class="aide-nav-titre">${TC[langue].developpeurs}</p>`,
     `        <a href="${DEVELOPPEURS[langue]}">${TC[langue].developpeurs}</a>`,
     `        <a href="${GUIDE_META[langue]}">${TC[langue].guideMeta}</a>`,
     '      </div>',
-    `      <div class="aide-rubrique"><h3>${TC[langue].surtitre}</h3>`,
+    `      <div class="aide-rubrique"><p class="aide-nav-titre">${TC[langue].surtitre}</p>`,
     ...PAGES_CLAUDE.map((p) => `        <a href="${p.adresse[langue]}"${p === courante ? ' class="actif" aria-current="page"' : ''}>${texte(p.titre[langue], langue)}</a>`),
     '      </div>',
     '    </nav>',
