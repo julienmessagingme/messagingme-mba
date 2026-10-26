@@ -78,8 +78,18 @@ serveur), le plafond `HUBSPOT_REPONSES_PAR_MINUTE` (20, sous l'empreinte de l'ad
   retirée), avec le certificat du pooler (`certs/supabase-pooler-ca.crt`), pas `DB_SSL_INSECURE`.
 - ⚠️ **La suite locale d'un clone Windows** : 25 fichiers rouges sur `origin/main` seul (la vitrine relue en CRLF, des
   délais sous charge), sans rapport avec le lot ; la CI fait foi.
-- **Reste l'essai réel** du plan : placer la carte d'aperçu sur le portail cobaye, allumer l'interrupteur sur l'espace
-  de test, répondre et rendre depuis la carte.
+- **Essai réel PASSÉ le même jour, le lot est clos** (portail cobaye, espace Messaging Me Tech SANDBOX, téléphone de
+  Julien, chaque étape relue en base) : la demande d'humain escalade et la tâche HubSpot arrive six secondes après ; le
+  fil s'affiche dans la carte ; la réponse depuis la carte part une fois, d'origine `humain`, signée de son auteur, clé
+  `hubspot:` scellée, et clôt l'escalade ; la réponse du client s'affiche sans recharger, le robot muet ; « Rendre au
+  robot » scelle sa clé `hubspot-rendre:` et l'agent de Meta répond au message SUIVANT ; STOP désabonne (`whatsapp_stop`)
+  et la carte retire la saisie.
+- ⚠️ **Le premier message après « Rendre » reste sans réponse** quand l'agent venait d'escalader lui-même : Meta refuse
+  le `release` (« An unknown error has occurred »), exactement comme depuis la console à 13 h 10 le même jour. Le fil
+  passe pourtant à l'agent, qui répond au message suivant. Même famille que les deux refus inexpliqués du 2026-09-30
+  (ci-dessous) ; au backlog du connecteur (dire au conseiller que l'agent reprend au message suivant).
+- ⚠️ **Le premier allumage de l'interrupteur n'a pas été enregistré** (le réglage lu en base resté éteint, sans trace :
+  l'API ne journalise pas les requêtes réussies) ; le second, après rechargement, l'a été. Cause non établie.
 ## 2026-10-26 : le compte Meta Business n'est plus « le seul prérequis », et le logo de l'application WhatsApp Business
 
 Accord de Julien (2026-10-26) : les endroits publics qui disaient le compte Meta Business « le seul prérequis » disent
