@@ -4,6 +4,25 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : la carte HubSpot lit le fil, répond et rend la main (lot 2 de la reprise humaine), déployé inerte
+
+`085726bd` (plan `~/mm-hubspot/docs/2026-10-23-lot2-lire-repondre-plan.md`, connecteur `4c44bbc`). Trois routes signées
+`/hubspot/conversation/{fil,repondre,rendre}` (`src/http/hubspot-conversation.ts`) : offre, réglage « Répondre depuis
+HubSpot », conversation dans l'espace, membre ACTIF reconnu par l'adresse que HubSpot signe, affectation, une clé par
+message (`api_idempotency`, préfixe `hubspot:`), et le chemin d'envoi de la console en origine `humain`.
+
+- **Deux relectures, aucun 🔴** : la mienne (`/revue`) et un relecteur indépendant. Corrigé dans le lot : un contact d'un
+  autre portail (espace réinstallé) désignait le fil d'un tiers, côté connecteur (ancre `contact_map`) ; une coupure
+  pendant l'envoi ne rend plus la clé (seul un `MetaApiError` la rend, 422 `meta_rejected`) ; un refus de mba sans code
+  devient un 502 générique côté connecteur ; la frise ne dit plus « automatique » pour un geste humain.
+- **Décision 5 amendée par Julien** : HubSpot ne répond jamais à un contact STOP (409 `contact_desabonne`) ; la
+  relecture a montré que sur la filière application une réponse humaine partait sans fenêtre ni STOP.
+- **Déploiement** annoncé aux cinq sessions actives, réponses attendues avant le premier geste (la règle née du
+  croisement du 2026-10-24) : `mba-api`, `mba-worker` puis `mba-worker-analyse` à `085726bd` (aucune migration, base à
+  0253), fumée et fiches OAuth conformes, les trois routes en 401 sans signature ; connecteur chez Scaleway, ses routes de
+  carte en 401 sans signature v3. Inerte : 403 tant que le réglage est éteint, et rien ne les appelle avant la carte du
+  lot 3, dont les prérequis sont dans le plan (plafond de débit, clé pour « rendre »).
+
 ## 2026-10-25 (nuit) : la Free à 100 contacts de toutes origines, dans les textes publics et le plugin 0.3.11
 
 La décision de Julien (`docs/superpowers/plans/2026-10-25-free-100-contacts.md`), dite partout où la vitrine et le
