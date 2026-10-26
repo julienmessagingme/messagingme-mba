@@ -137,12 +137,16 @@ export function extraitDe(cle: string, partie: string): ExempleCode {
  * `cos()` et `sin()` d'un angle animé (`@property --t`, site.css) : devant, elle grossit et passe devant la marque ;
  * derrière, elle rapetisse et passe dessous. Sans animation (prefers-reduced-motion, ou un navigateur sans
  * `@property`), les tuiles restent à leur angle de départ.
+ *
+ * Puis (Julien, 2026-10-26 : « des logos plus épais, avec des effets de couleur qui varient selon la rotation ») : chaque
+ * tuile est un bloc extrudé (une pile de calques), qui tourne sur lui-même pour montrer sa tranche du côté de la marque,
+ * éclairé par elle d'une teinte entre le vert et le bleu qui suit l'angle, avec un reflet qui glisse sur sa face.
  */
 function orbite(langue: Langue): string {
   const svg = (l: LogoAssistant, classe: string) => `<svg class="${classe}" viewBox="${l.viewBox}" aria-hidden="true">${l.corps}</svg>`;
-  const epaisseur = Array.from({ length: 12 }, (_, k) => `<i style="--z:${k + 1}"></i>`).join('');
+  const epaisseur = (n: number) => Array.from({ length: n }, (_, k) => `<i style="--z:${k + 1}"></i>`).join('');
   const satellite = (cle: string, nom: string, logo: LogoAssistant, angle: number) =>
-    `      <div class="or-sat or-${cle}" style="--a:${angle}deg"><span class="or-tuile">${svg(logo, 'or-logo')}</span><span class="or-nom">${nom}</span></div>`;
+    `      <div class="or-sat or-${cle}" style="--a:${angle}deg"><div class="or-bloc">${epaisseur(14)}<span class="or-face">${svg(logo, 'or-logo')}</span></div><span class="or-nom">${nom}</span></div>`;
   // L'ellipse en deux moitiés : l'arrière passe sous la marque, l'avant par-dessus
   const arc = (classe: string, d: string) => `<svg class="or-arc ${classe}" viewBox="0 0 100 86" preserveAspectRatio="none" aria-hidden="true"><path d="${d}"/></svg>`;
   const fr = langue === 'fr';
@@ -151,7 +155,7 @@ function orbite(langue: Langue): string {
     '      <span class="or-halo"></span>',
     `      ${arc('or-arriere', 'M8 43 A42 19 0 0 1 92 43')}`,
     `      ${arc('or-avant', 'M8 43 A42 19 0 0 0 92 43')}`,
-    `      <div class="or-centre"><div class="or-bloc">${epaisseur}<span class="or-face">${svg(LOGOS_ASSISTANTS.messagingme, 'or-marque')}</span></div></div>`,
+    `      <div class="or-centre"><div class="or-bloc">${epaisseur(20)}<span class="or-face">${svg(LOGOS_ASSISTANTS.messagingme, 'or-marque')}</span></div></div>`,
     satellite('claude', 'Claude Code', LOGOS_ASSISTANTS.claude, 90),
     satellite('lovable', 'Lovable', LOGOS_ASSISTANTS.lovable, 180),
     satellite('codex', 'Codex', LOGOS_ASSISTANTS.codex, 270),
