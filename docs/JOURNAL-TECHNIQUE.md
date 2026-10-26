@@ -4,6 +4,31 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : les jaunes du Pro géré depuis la console (webhook relu chez Stripe, tarif réel, une seule lecture)
+
+Demande de Julien (« gère les jaunes »), sur les six points laissés par les relectures des lots A et B du même jour.
+Aucune migration.
+
+- **Le webhook `customer.subscription.updated` du Pro écrit la fin RELUE chez Stripe** (`finPrevueChezStripe`), plus
+  celle de la charge : « Résilier » puis « Annuler la résiliation » en quelques secondes, puis le premier événement rejoué
+  en retard, remettait une fin que Stripe n'avait plus (avec l'e-mail de la suite du numéro). Une panne passagère de la
+  relecture fait échouer le webhook, et Stripe rejoue ; un refus durable retombe sur la charge. Test vérifié dans les deux
+  sens.
+- **La carte « Votre abonnement » dit le prix de l'abonné**, lu sur son abonnement chez Stripe (`GET /offre/tarif`,
+  `tarifDuPro` : le Pro séparé de ses sièges par leurs prix configurés, et une remise en cours), la grille à défaut.
+- **La vue de l'offre ne lit plus qu'une fois `abonnements_offre`** : l'essai se déduit du résumé de l'abonnement.
+- **`get_plan` décrit `abonnement`** (statut, priorité du retard sur une fin posée, dates).
+- **La page Offre réserve la place de ses onglets** pendant la lecture de l'offre.
+- **Les tests demandés** : le câblage de la vue et de la relecture (`tests/offres-cablage.test.ts`), l'événement en retard
+  et la panne passagère (`tests/webhook-pro.test.ts`), le tarif et la relecture (`tests/stripe-gestion-pro.test.ts`), le
+  prix de l'abonné à l'écran (`web/e2e/offre-abonnement.spec.ts`).
+
+Relu à froid : aucun rouge. Corrigés avant le push : l'auto-attaque construisait le webhook sans la relecture (typecheck
+rouge), le tarif ne devine plus le prix du Pro quand une ligne de siège n'est plus reconnue (un tarif changé), la carte
+n'affiche aucun montant avant la lecture du tarif (au lieu de celui de la grille, un instant), et le webhook lit la fin
+en dernier, au plus près de l'écriture. Quatre jaunes au backlog (`todo.md`), tous liés au jour d'un changement de tarif
+ou à des remises rares.
+
 ## 2026-10-26 : l'accueil de la vitrine pour les moteurs et les assistants IA (lot 2 du plan SEO et GEO)
 
 - **H1** : le surtitre « Plateforme WhatsApp et RCS » entre DANS le H1, au-dessus du slogan, qui ne change pas.

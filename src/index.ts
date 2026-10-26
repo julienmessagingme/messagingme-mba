@@ -46,7 +46,7 @@ import { PgOffresStore } from './offres/offre.pg';
 import { PgAbonnementsOffreStore } from './offres/abonnements-offre.pg';
 import { ouvrirPro, ouvrirPortailPro, type DepsPro } from './stripe/pro';
 import { changerSieges, siegesChezStripe, type DepsSieges } from './stripe/sieges';
-import { changerResiliationPro, facturesDeLEspace, type DepsGestionPro } from './stripe/gestion-pro';
+import { changerResiliationPro, facturesDeLEspace, finPrevueChezStripe, tarifDuPro, type DepsGestionPro } from './stripe/gestion-pro';
 import { creerVueOffre } from './offres/vue';
 import { upsertContactsFromApi } from './api/contacts-upsert';
 import { creerServiceContactsV1 } from './api/contacts-v1';
@@ -1059,6 +1059,8 @@ async function main(): Promise<void> {
       const a = await abonnementsOffre.modifier(abonnementId, { finPrevueLe, periodicite: null });
       if (a) offres.invalider(a.tenantId);
     },
+    // Les prix d'un siège, pour séparer le Pro de ses sièges dans son tarif réel.
+    prixSiege: [config.STRIPE_PRIX_SIEGE_MOIS, config.STRIPE_PRIX_SIEGE_AN].filter((p) => p !== ''),
   };
   // Le plafond de clés actives de l'offre (spec offres v2), lu par la route de la console et par l'outil `create_api_key`.
   const limiteClesDeLOffre = async (tenant: string): Promise<number | null> => (await offres.offreDe(tenant)).droits.limites.clesApi;
@@ -1067,14 +1069,9 @@ async function main(): Promise<void> {
     proEnVente: proDeLaConsole.stripe !== null && proDeLaConsole.prixProMois !== '' && proDeLaConsole.prixProAn !== '',
     // La suite du numéro fourni que le Pro annonce (lot 6, B2b).
     suiteDuNumero: (tenant) => abonnementsOffre.suiteDuNumero(tenant),
-    // L'essai du Pro (spec offres v2) : déjà consommé par un Pro, même fini ; la fin de celui qui court, s'il est en essai.
-    essai: async (tenant) => {
-      const a = await abonnementsOffre.deLEspace(tenant);
-      const enEssai = a !== null && a.finiLe === null && a.essaiFinLe !== null && a.essaiFinLe.getTime() > Date.now();
-      return { dejaEuUnPro: a !== null, finLe: enEssai ? a.essaiFinLe : null };
-    },
     siegesEnVente,
-    // L'abonnement Pro dit en clair (2026-10-26) : statut, souscription, renouvellement ou fin.
+    // L'abonnement Pro dit en clair (2026-10-26) : statut, souscription, renouvellement ou fin. L'essai s'en déduit (déjà
+    // consommé par un Pro, même fini ; la fin de celui qui court) : une seule lecture de la table.
     abonnement: (tenant) => abonnementsOffre.resume(tenant),
   });
 
@@ -1514,6 +1511,7 @@ async function main(): Promise<void> {
       // Résilier le Pro, annuler la résiliation, et les factures de l'espace (2026-10-26).
       resiliation: (tenant, resilier, payeur) => changerResiliationPro(gestionProDeLaConsole, tenant, resilier, payeur),
       factures: (tenant, payeur) => facturesDeLEspace(gestionProDeLaConsole, tenant, payeur),
+      tarif: (tenant, payeur) => tarifDuPro(gestionProDeLaConsole, tenant, payeur),
     },
     // La suppression définitive d'un espace (RC8).
     opsSuppression: suppressionEspace,
@@ -1819,6 +1817,8 @@ async function main(): Promise<void> {
           surFinDuPro: (f) => surFinDuPro(numeroInclus, f),
           // Les sièges (livraison 7) : relus chez Stripe à chaque modification ; `null` tant qu'ils ne sont pas en vente.
           siegesChezStripe: (abonnementId) => siegesChezStripe(siegesDeLaConsole, abonnementId),
+          // La fin prévue relue chez Stripe (2026-10-26) : un événement en retard ne remet pas une fin retirée depuis.
+          finPrevueChezStripe: (abonnementId) => finPrevueChezStripe(gestionProDeLaConsole, abonnementId),
         },
       },
     } : {}),

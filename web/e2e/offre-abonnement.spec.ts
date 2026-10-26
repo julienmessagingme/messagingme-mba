@@ -36,7 +36,7 @@ const FACTURES = {
   ],
 };
 
-async function monter(page: Page, o: { vue: unknown; resiliation?: { status: number; corps: unknown } }) {
+async function monter(page: Page, o: { vue: unknown; resiliation?: { status: number; corps: unknown }; tarif?: unknown }) {
   const resiliations: unknown[] = [];
   let vue = o.vue as ReturnType<typeof vuePro>;
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
@@ -56,6 +56,8 @@ async function monter(page: Page, o: { vue: unknown; resiliation?: { status: num
       return json({ finPrevueLe: fin });
     }
     if (chemin.endsWith('/offre/factures')) return json(FACTURES);
+    // Sans tarif simulé, la route répond comme une API plus ancienne (404) : la carte garde la grille.
+    if (chemin.endsWith('/offre/tarif')) return o.tarif ? json(o.tarif) : json({ error: 'Not Found' }, 404);
     if (chemin.endsWith('/offre')) return json(vue);
     if (chemin.endsWith('/agents/solde')) return json({ soldeMicroEur: 3_000_000 });
     if (chemin.endsWith('/agents/mouvements')) return json({ mouvements: [] });
@@ -79,6 +81,14 @@ test.describe('la carte « Votre abonnement »', () => {
     await expect(carte.getByTestId('offre-abonnement-fin')).toContainText('il se renouvelle chaque mois');
     // L'ancien bloc (« Gérer mon abonnement ») n'est plus là quand l'API rend l'abonnement.
     await expect(page.getByTestId('offre-abonnement')).toHaveCount(0);
+  });
+
+  test('🔴 la formule dit le prix de l’abonné lu chez Stripe, pas la grille, et une remise en cours', async ({ page }) => {
+    await monter(page, { vue: vuePro(ACTIF), tarif: { proHtCentimes: 3900, siegeHtCentimes: null, remise: true } });
+    await page.goto('/offre');
+    const formule = page.getByTestId('offre-abonnement-formule');
+    await expect(formule).toContainText('Mensuel, 39 € HT par mois');
+    await expect(formule).toContainText('une remise s’applique');
   });
 
   test('🔴 résilier se confirme avec la date de fin, puis la carte dit « résiliation programmée » ; annuler la retire', async ({ page }) => {

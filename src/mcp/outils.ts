@@ -1074,6 +1074,12 @@ export const OUTILS: OutilMcp[] = [
       + 'the workspace back within its limit, and in Free these deletions are not capped per day meanwhile. '
       + 'A Pro includes 3 users; sieges gives the extra users it pays for and prixSiege the price of one more, offered to the '
       + 'admin when an invitation goes beyond (in the console). '
+      + 'abonnement describes the Pro subscription, running or the last ended one (null if the workspace never had Pro): '
+      + 'statut is termine, en_retard (a payment failed: the card must be updated, even if an end is set), '
+      + 'resiliation_programmee (cancelled: Pro stays open until finPrevueLe, then the workspace goes back to Free), essai '
+      + '(the free trial runs until essaiFinLe) or actif; debutLe is the start, prochaineEcheanceLe the next renewal (null '
+      + 'once an end is set, overdue or ended). Cancelling, or keeping a cancelled subscription, happens in the console, '
+      + 'Settings > Plan. '
       + 'It explains an action refused with plan_limit_reached or plan_feature_unavailable; '
       + 'replies within the 24-hour window are never limited.',
     annotations: lecture('Read the plan'),

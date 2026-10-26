@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bouton } from '@/components/Bouton';
 import { useConfirmation } from '@/components/Confirmation';
 import { useT, useLocale } from '@/lib/i18n';
 import { erreurDeChargement } from '@/lib/http';
-import { portailPro, resilierPro } from '@/lib/api/offre';
+import { lireTarifPro, portailPro, resilierPro, type TarifPro } from '@/lib/api/offre';
 import { relireOffre } from '@/lib/use-offre';
 import type { StatutAbonnementPro, VueOffre } from '@/lib/offre';
 
@@ -26,6 +26,16 @@ export function AbonnementPro({ tenantId, vue }: { tenantId: string; vue: VueOff
   const confirmer = useConfirmation();
   const a = vue.abonnement;
   const [geste, setGeste] = useState<'resilier' | 'reprendre' | 'carte' | null>(null);
+  // Le tarif réel de l'abonné, lu chez Stripe (2026-10-26) : `undefined` tant qu'il n'est pas lu (aucun montant affiché,
+  // pour ne pas montrer un instant celui de la grille), `null` s'il est illisible (la grille sert).
+  const [tarif, setTarif] = useState<TarifPro | null | undefined>(undefined);
+  const vivantPro = a.statut !== 'termine';
+  useEffect(() => {
+    if (!vivantPro) return;
+    let actif = true;
+    lireTarifPro(tenantId).then((r) => { if (actif) setTarif(r); }).catch(() => { if (actif) setTarif(null); });
+    return () => { actif = false; };
+  }, [tenantId, vivantPro]);
   const [erreur, setErreur] = useState<string | null>(null);
 
   const date = (iso: string): string => new Date(iso).toLocaleDateString(locale === 'en' ? 'en-GB' : 'fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -42,12 +52,18 @@ export function AbonnementPro({ tenantId, vue }: { tenantId: string; vue: VueOff
   const vivant = a.statut !== 'termine';
 
   // La formule et son prix HT ; les utilisateurs payés en plus, s'il y en a, à leur prix de la même formule.
-  const prix = vue.prixPro ? (a.periodicite === 'an' ? vue.prixPro.anCentimes : vue.prixPro.moisCentimes) : null;
+  // Le prix de l'abonné d'abord (Stripe), celui de la grille à défaut : ils diffèrent le jour où le tarif change.
+  const prixGrille = vue.prixPro ? (a.periodicite === 'an' ? vue.prixPro.anCentimes : vue.prixPro.moisCentimes) : null;
+  const prix = tarif === undefined && vivantPro ? null : (tarif?.proHtCentimes ?? prixGrille);
   const formule = a.periodicite === 'an'
     ? (prix === null ? t('Annuel', 'Yearly') : t(`Annuel, ${euros(prix)} HT par an`, `Yearly, ${euros(prix)} excl. VAT a year`))
     : (prix === null ? t('Mensuel', 'Monthly') : t(`Mensuel, ${euros(prix)} HT par mois`, `Monthly, ${euros(prix)} excl. VAT a month`));
   const achetes = vue.sieges?.achetes ?? 0;
-  const prixSiege = vue.prixSiege ? (a.periodicite === 'an' ? vue.prixSiege.anCentimes : vue.prixSiege.moisCentimes) : null;
+  const prixSiegeGrille = vue.prixSiege ? (a.periodicite === 'an' ? vue.prixSiege.anCentimes : vue.prixSiege.moisCentimes) : null;
+  const prixSiege = tarif === undefined && vivantPro ? null : (tarif?.siegeHtCentimes ?? prixSiegeGrille);
+  const remise = tarif?.remise === true
+    ? t(' (une remise s’applique : vos factures disent le montant payé)', ' (a discount applies: your invoices show the amount paid)')
+    : '';
   const sieges = achetes > 0
     ? (prixSiege === null
       ? t(`, plus ${achetes} utilisateur${achetes > 1 ? 's' : ''} payé${achetes > 1 ? 's' : ''} en plus`, `, plus ${achetes} paid extra user${achetes > 1 ? 's' : ''}`)
@@ -106,7 +122,7 @@ export function AbonnementPro({ tenantId, vue }: { tenantId: string; vue: VueOff
   }
 
   const lignes: Array<{ cle: string; libelle: string; valeur: string }> = [
-    { cle: 'formule', libelle: t('Formule', 'Billing'), valeur: `${formule}${sieges}` },
+    { cle: 'formule', libelle: t('Formule', 'Billing'), valeur: `${formule}${sieges}${remise}` },
     { cle: 'debut', libelle: t('Souscrit le', 'Started on'), valeur: date(a.debutLe) },
   ];
   if (a.essaiFinLe) lignes.push({ cle: 'essai', libelle: t('Essai gratuit', 'Free trial'), valeur: t(`jusqu’au ${date(a.essaiFinLe)}`, `until ${date(a.essaiFinLe)}`) });

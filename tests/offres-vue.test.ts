@@ -9,7 +9,6 @@ import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, droitsDe, type Offre } from '.
  */
 function vue(
   offre: Offre, mois: { max: number; reste: number } | null, proEnVente = true, suite: { finPrevueLe: Date | null; rendreNumero: boolean } | null = null,
-  essai: { dejaEuUnPro: boolean; finLe: Date | null } = { dejaEuUnPro: false, finLe: null },
   abonnement: ResumePro | null = null,
 ) {
   return creerVueOffre({
@@ -18,7 +17,6 @@ function vue(
     modelesDuMois: { etatDuMois: async () => mois },
     proEnVente,
     suiteDuNumero: async () => suite,
-    essai: async () => essai,
     siegesEnVente: true,
     abonnement: async () => abonnement,
   });
@@ -61,7 +59,7 @@ describe('creerVueOffre', () => {
       offres: { offreDe: async () => ({ offre, droits: DROITS[offre], retourEnBaseLe: null }) },
       usage: async () => ({ contacts, automations: 0, membres: 1 }),
       modelesDuMois: { etatDuMois: async () => null },
-      proEnVente: true, suiteDuNumero: async () => null, essai: async () => ({ dejaEuUnPro: false, finLe: null }), siegesEnVente: true,
+      proEnVente: true, suiteDuNumero: async () => null, siegesEnVente: true,
       abonnement: async () => null,
     })('t1');
     expect((await avecContacts('base', 3000)).contactsEnTrop).toBe(2900);
@@ -114,16 +112,25 @@ describe('l’essai du Pro dans la vue', () => {
   });
 
   it('🔴 pas d’essai pour un espace qui a déjà eu un Pro, pour un Pro, une Entreprise, ou tant que le Pro n’est pas en vente', async () => {
-    expect((await vue('base', null, true, null, { dejaEuUnPro: true, finLe: null })('t1')).essai.possible).toBe(false);
+    // Un Pro, même fini, a consommé l'essai : il se lit sur l'abonnement, la seule lecture de la table (2026-10-26).
+    const fini: ResumePro = {
+      statut: 'resilie', periodicite: 'mois', creeLe: new Date('2026-01-01T00:00:00Z'), periodeFin: null, finPrevueLe: null,
+      essaiFinLe: null, finiLe: new Date('2026-02-01T00:00:00Z'), finRaison: 'resiliation',
+    };
+    expect((await vue('base', null, true, null, fini)('t1')).essai.possible).toBe(false);
     expect((await vue('pro', null)('t1')).essai.possible).toBe(false);
     expect((await vue('entreprise', null)('t1')).essai.possible).toBe(false);
     expect((await vue('base', null, false)('t1')).essai.possible).toBe(false);
   });
 
   it('un Pro en essai : la date de fin, pour « votre essai se termine le … »', async () => {
-    const fin = new Date('2026-11-02T09:00:00Z');
-    expect((await vue('pro', null, true, null, { dejaEuUnPro: true, finLe: fin })('t1')).essai)
-      .toEqual({ jours: 14, possible: false, finLe: '2026-11-02T09:00:00.000Z' });
+    const fin = new Date('2099-11-02T09:00:00Z');
+    const enEssai: ResumePro = {
+      statut: 'actif', periodicite: 'mois', creeLe: new Date('2026-10-20T00:00:00Z'), periodeFin: fin, finPrevueLe: null,
+      essaiFinLe: fin, finiLe: null, finRaison: null,
+    };
+    expect((await vue('pro', null, true, null, enEssai)('t1')).essai)
+      .toEqual({ jours: 14, possible: false, finLe: '2099-11-02T09:00:00.000Z' });
   });
 });
 
@@ -134,7 +141,6 @@ describe('les sièges du Pro dans la vue (spec offres v2, livraison 7)', () => {
     modelesDuMois: { etatDuMois: async () => null },
     proEnVente: true,
     suiteDuNumero: async () => null,
-    essai: async () => ({ dejaEuUnPro: true, finLe: null }),
     siegesEnVente,
     abonnement: async () => null,
   });
@@ -177,7 +183,7 @@ describe('l’abonnement Pro dit en clair (2026-10-26)', () => {
   });
 
   it('🔴 un Pro qui court : sa souscription et son prochain renouvellement, aucune fin', async () => {
-    const v = await vue('pro', null, true, null, { dejaEuUnPro: true, finLe: null }, pro())('t1');
+    const v = await vue('pro', null, true, null, pro())('t1');
     expect(v.abonnement).toEqual({
       statut: 'actif', periodicite: 'mois', debutLe: '2026-09-12T08:00:00.000Z', prochaineEcheanceLe: '2099-11-12T08:00:00.000Z',
       finPrevueLe: null, essaiFinLe: null, finiLe: null, finRaison: null,
@@ -185,27 +191,27 @@ describe('l’abonnement Pro dit en clair (2026-10-26)', () => {
   });
 
   it('🔴 une résiliation programmée : la fin, et plus de renouvellement annoncé', async () => {
-    const v = await vue('pro', null, true, null, { dejaEuUnPro: true, finLe: null }, pro({ finPrevueLe: new Date('2026-11-12T08:00:00Z') }))('t1');
+    const v = await vue('pro', null, true, null, pro({ finPrevueLe: new Date('2026-11-12T08:00:00Z') }))('t1');
     expect(v.abonnement).toMatchObject({ statut: 'resiliation_programmee', prochaineEcheanceLe: null, finPrevueLe: '2026-11-12T08:00:00.000Z' });
   });
 
   it('🔴 aucun « prochain renouvellement » en retard de paiement, ni déjà passé : la date serait fausse', async () => {
-    const retard = await vue('pro', null, true, null, { dejaEuUnPro: true, finLe: null }, pro({ statut: 'en_retard' }))('t1');
+    const retard = await vue('pro', null, true, null, pro({ statut: 'en_retard' }))('t1');
     expect(retard.abonnement).toMatchObject({ statut: 'en_retard', prochaineEcheanceLe: null });
-    const passe = await vue('pro', null, true, null, { dejaEuUnPro: true, finLe: null }, pro({ periodeFin: new Date('2026-01-01T00:00:00Z') }))('t1');
+    const passe = await vue('pro', null, true, null, pro({ periodeFin: new Date('2026-01-01T00:00:00Z') }))('t1');
     expect(passe.abonnement).toMatchObject({ statut: 'actif', prochaineEcheanceLe: null });
   });
 
   it('un essai qui court : sa fin ; un essai passé : aucune', async () => {
-    const enEssai = await vue('pro', null, true, null, { dejaEuUnPro: true, finLe: null }, pro({ essaiFinLe: new Date('2099-01-01T00:00:00Z') }))('t1');
+    const enEssai = await vue('pro', null, true, null, pro({ essaiFinLe: new Date('2099-01-01T00:00:00Z') }))('t1');
     expect(enEssai.abonnement).toMatchObject({ statut: 'essai', essaiFinLe: '2099-01-01T00:00:00.000Z' });
-    const paye = await vue('pro', null, true, null, { dejaEuUnPro: true, finLe: null }, pro({ essaiFinLe: new Date('2026-01-01T00:00:00Z') }))('t1');
+    const paye = await vue('pro', null, true, null, pro({ essaiFinLe: new Date('2026-01-01T00:00:00Z') }))('t1');
     expect(paye.abonnement).toMatchObject({ statut: 'actif', essaiFinLe: null });
   });
 
   it('🔴 une Free revenue d’un Pro : « terminé le … », sa raison, et ni renouvellement ni fin à venir', async () => {
     const fini = pro({ statut: 'resilie', finiLe: new Date('2026-10-20T00:00:00Z'), finRaison: 'resiliation', finPrevueLe: new Date('2026-10-20T00:00:00Z') });
-    const v = await vue('base', null, true, null, { dejaEuUnPro: true, finLe: null }, fini)('t1');
+    const v = await vue('base', null, true, null, fini)('t1');
     expect(v.abonnement).toMatchObject({
       statut: 'termine', prochaineEcheanceLe: null, finPrevueLe: null, finiLe: '2026-10-20T00:00:00.000Z', finRaison: 'resiliation',
     });

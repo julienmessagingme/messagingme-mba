@@ -5,7 +5,7 @@ import { espaceVerifie } from './scope';
 import { corpsDuRefus, type Issue } from '../lib/issue';
 import type { PeriodicitePro } from '../stripe/pro';
 import type { DemandeSieges } from '../stripe/sieges';
-import type { FactureEspace } from '../stripe/gestion-pro';
+import type { FactureEspace, TarifPro } from '../stripe/gestion-pro';
 
 /**
  * PAYER LE PRO DEPUIS LA CONSOLE (lot 6, livraison B1, tâche 10, spec § 6). Deux routes d'administrateur, sous le plafond
@@ -33,6 +33,8 @@ export interface OffrePaiementRouteDeps {
   resiliation(tenantId: string, resilier: boolean, payeur: string): Promise<Issue<{ finPrevueLe: string | null }>>;
   /** Les dernières factures de l'espace chez Stripe (`facturesDeLEspace`) : Pro, numéro et recharges. */
   factures(tenantId: string, payeur: string): Promise<Issue<{ factures: FactureEspace[]; plusSurStripe: boolean }>>;
+  /** Le tarif réel du Pro vivant, lu sur son abonnement chez Stripe (`tarifDuPro`) : le prix de l'abonné, pas la grille. */
+  tarif(tenantId: string, payeur: string): Promise<Issue<TarifPro>>;
 }
 
 /** Le corps ne porte qu'une périodicité, jamais un prix ni un montant : une clé inconnue est refusée. */
@@ -103,6 +105,17 @@ export function registerOffrePaiement(app: FastifyInstance, deps: OffrePaiementR
   app.get('/tenants/:tenantId/offre/factures', { preHandler: garde }, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const r = await deps.factures(tenant, req.auth?.userId ?? '');
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    return reply.code(200).send(r.valeur);
+  });
+
+  /**
+   * Le tarif réel du Pro (2026-10-26), lu chez Stripe à l'ouverture de l'onglet Offre : un administrateur, sous la garde seule
+   * (comme les factures). 409 `aucun_pro` sans Pro vivant.
+   */
+  app.get('/tenants/:tenantId/offre/tarif', { preHandler: garde }, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const r = await deps.tarif(tenant, req.auth?.userId ?? '');
     if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
     return reply.code(200).send(r.valeur);
   });

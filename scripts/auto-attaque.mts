@@ -306,6 +306,7 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
       finir: async () => null, invalider: () => undefined, alerter: async () => undefined,
       // Les sièges (livraison 7) : pas en vente, rien à relire chez Stripe.
       siegesChezStripe: async () => null,
+      finPrevueChezStripe: async () => undefined,
       // Le numéro inclus (B2b) : aucun Pro, rien à arrêter ni à recréer.
       vivant: async () => false, surPassageEnPro: async () => undefined, surFinDuPro: async () => undefined,
     },

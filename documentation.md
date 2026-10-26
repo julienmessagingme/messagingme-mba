@@ -3068,7 +3068,12 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   inconnus, factures illisibles ou d'un autre client écartés une à une, adresses `https` seules, l'objet lu sur la
   métadonnée `produit` de l'abonnement (`pro`, `numero`), sinon le libellé de la première ligne. La console : la carte
   `AbonnementPro` et `FacturesEspace` (`web/components/`), sur l'onglet Offre ; sans `abonnement` (API plus ancienne),
-  l'ancien bloc du portail reste.
+  l'ancien bloc du portail reste. L'essai de la vue se déduit du même résumé (une seule lecture de la table). La carte lit
+  le prix de l'abonné par `GET /tenants/:tenantId/offre/tarif` (`tarifDuPro` : les lignes de l'abonnement chez Stripe, le
+  Pro séparé de ses sièges par leurs prix configurés, et la présence d'une remise), la grille à défaut. 🔴 Le webhook
+  `customer.subscription.updated` du Pro écrit la fin RELUE chez Stripe (`finPrevueChezStripe`), pas celle de la charge :
+  un événement en retard après « Résilier » puis « Annuler la résiliation » remettait une fin que Stripe n'avait plus. Une
+  panne passagère de la relecture fait échouer le webhook (Stripe rejoue), un refus durable rend la charge.
   🔴 **L'essai de 14 jours** (spec offres v2, livraison 6, `ESSAI_PRO_JOURS`) : `ouvrirPro` le donne à un espace sans
   AUCUNE ligne `abonnements_offre` (`dejaEuUnPro`), par `subscription_data[trial_period_days]`, la carte toujours
   demandée et l'abonnement annulé s'il n'a aucun moyen de paiement à la fin ; la métadonnée `essai` est posée sur la

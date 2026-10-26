@@ -1,5 +1,18 @@
 # todo.md : backlog
 
+## 🟡 Le Pro géré depuis la console : ce que la relecture des jaunes laisse (2026-10-26)
+
+- **Le jour où le tarif change** : `siegesChezStripe` ne compte que les sièges aux prix configurés MAINTENANT ; un
+  événement `updated` d'un abonné resté à l'ancien prix noterait 0 siège payé. Et `tarifDuPro` rend alors un prix inconnu
+  (la grille s'affiche). Reconnaître les sièges autrement que par l'identifiant de prix actuel avant de changer un tarif.
+- **La périodicité vient encore de la charge de l'événement**, quand le montant de la carte vient de Stripe : deux
+  changements de formule rapprochés au portail et un événement en retard pourraient faire lire « par an » sur un prix
+  mensuel. L'écrire depuis la relecture, comme la fin.
+- **Deux prix d'un siège sur la page Offre** : la carte dit celui de la ligne chez Stripe, la section « Utilisateurs » et le
+  refus d'invitation celui de la grille. Identiques tant que le tarif ne change pas.
+- **La remise ne voit que celles de l'abonnement** : une remise posée sur une ligne ou un coupon du client n'est pas
+  signalée sur la carte (les factures restent justes). Un code promo saisi au paiement atterrit sur l'abonnement.
+
 ## 🟡 La relance Shopify sans question de consentement : ce que la relecture laisse (2026-10-26)
 
 `63fe87f9`, en production le même jour. Aucun rouge après la lecture en base (aucune relance « en pause » à rallumer).
@@ -54,24 +67,6 @@ d'en supprimer quelques-uns de plus. Ce qui reste :
   abonné en attente n'a pas pu être servi. L'abonné garde « Obtenir mon numéro », qui le sert seul.
 - « Abonnement vivant » reste recopié sous forme de garde de type dans `src/offres/numero-inclus.ts`.
 
-
-## 🟡 Le Pro géré depuis la console : ce que la relecture du lot A laisse (2026-10-26)
-
-- **Un `customer.subscription.updated` périmé peut défaire un geste de la console.** Le webhook écrit la fin prévue lue
-  dans la charge de l'événement, sans garde d'ordre : « Résilier » puis « Annuler la résiliation » en quelques secondes,
-  puis le premier événement rejoué en retard, et la base redit « fin le … » alors que Stripe n'en a plus (avec l'e-mail de
-  la suite du numéro, si un numéro fourni est attribué). Corrigé au prochain événement ou au prochain clic. Correctif :
-  relire la fin chez Stripe dans la lecture que le webhook fait déjà pour les sièges (`siegesChezStripe`).
-- **`GET /offre` lit deux fois `abonnements_offre`** (`essai` par `deLEspace`, `abonnement` par `resume`) : dériver l'un
-  de l'autre.
-- **`get_plan` ne décrit pas `abonnement`** : Claude le reçoit sans mode d'emploi (la priorité du retard sur la fin
-  posée). Le compléter demande `npm run doc:md` et la suite web entière.
-- **Tests à ajouter** : la console puis le webhook rejoué donnent le même état ; le câblage `abonnement: … resume` dans
-  `tests/offres-cablage.test.ts`.
-- **La formule affiche le prix de la grille, pas celui de l'abonné** (relecture du lot B) : juste tant que le tarif ne bouge
-  pas ; un abonné d'avant un changement de tarif lirait le nouveau prix. Le lire sur l'abonnement Stripe le jour où le tarif
-  change.
-- **Les onglets de l'Offre apparaissent une fois la vue lue** : un petit saut de mise en page au chargement.
 
 ## 🟡 Les types de réponse recopiés à la main côté console (audit simplicité, 2026-10-25)
 

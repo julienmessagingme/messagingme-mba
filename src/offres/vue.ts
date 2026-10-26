@@ -145,11 +145,12 @@ export interface DepsVueOffre {
   proEnVente: boolean;
   /** La suite du numéro fourni (`PgAbonnementsOffreStore.suiteDuNumero`, lot 6, B2b). */
   suiteDuNumero(tenantId: string): Promise<{ finPrevueLe: Date | null; rendreNumero: boolean } | null>;
-  /** L'espace a-t-il déjà eu un Pro, et la fin de l'essai du Pro vivant qui en est un (`PgAbonnementsOffreStore.deLEspace`). */
-  essai(tenantId: string): Promise<{ dejaEuUnPro: boolean; finLe: Date | null }>;
   /** Les sièges se paient-ils en ligne ? (Stripe câblé et `STRIPE_PRIX_SIEGE_MOIS` et `_AN` posés). */
   siegesEnVente: boolean;
-  /** Le Pro de l'espace, vivant ou dernier fini (`PgAbonnementsOffreStore.resume`) ; `null` s'il n'en a jamais eu. */
+  /**
+   * Le Pro de l'espace, vivant ou dernier fini (`PgAbonnementsOffreStore.resume`) ; `null` s'il n'en a jamais eu. L'essai
+   * s'en déduit aussi (déjà eu un Pro, fin de l'essai qui court) : une seule lecture de la table pour toute la vue.
+   */
   abonnement(tenantId: string): Promise<ResumePro | null>;
 }
 
@@ -162,10 +163,10 @@ export function grilleDesOffres(): VueOffre['grille'] {
 
 export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<VueOffre> {
   return async (tenantId) => {
-    const [{ offre, droits, pro }, usage, mois, suite, essai, abonnement] = await Promise.all([
-      d.offres.offreDe(tenantId), d.usage(tenantId), d.modelesDuMois.etatDuMois(tenantId), d.suiteDuNumero(tenantId), d.essai(tenantId),
-      d.abonnement(tenantId),
+    const [{ offre, droits, pro }, usage, mois, suite, abonnement] = await Promise.all([
+      d.offres.offreDe(tenantId), d.usage(tenantId), d.modelesDuMois.etatDuMois(tenantId), d.suiteDuNumero(tenantId), d.abonnement(tenantId),
     ]);
+    const vueAbonnement = abonnement === null ? null : abonnementProVue(abonnement, Date.now());
     return {
       offre: offrePublique(offre),
       fonctions: FONCTIONS.filter((f) => droits.fonctions.has(f)),
@@ -179,14 +180,15 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
       suiteDuNumero: suite === null ? null : { finPrevueLe: suite.finPrevueLe?.toISOString() ?? null, rendreNumero: suite.rendreNumero },
       essai: {
         jours: ESSAI_PRO_JOURS,
-        possible: offre === 'base' && d.proEnVente && !essai.dejaEuUnPro,
-        finLe: essai.finLe?.toISOString() ?? null,
+        // Un seul essai par espace : un Pro, même fini, l'a consommé.
+        possible: offre === 'base' && d.proEnVente && abonnement === null,
+        finLe: vueAbonnement?.essaiFinLe ?? null,
       },
       sieges: offre === 'pro' && pro
         ? { inclus: DROITS.pro.limites.utilisateurs ?? 0, achetes: pro.sieges, periodicite: pro.periodicite }
         : null,
       prixSiege: d.siegesEnVente ? { moisCentimes: PRIX_SIEGE_HT_CENTIMES.mois, anCentimes: PRIX_SIEGE_HT_CENTIMES.an } : null,
-      abonnement: abonnement === null ? null : abonnementProVue(abonnement, Date.now()),
+      abonnement: vueAbonnement,
       upgradeUrl: adresseOffre(),
     };
   };

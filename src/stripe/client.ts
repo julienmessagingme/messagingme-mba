@@ -510,35 +510,46 @@ export interface LigneAbonnement {
   id: string;
   prix: string;
   quantite: number;
+  /** Le prix unitaire HT de la ligne, en centimes (`price.unit_amount`), avant toute remise ; `null` s'il n'est pas fixe. */
+  montantCentimes: number | null;
 }
 
 const ligneSchema = z.object({
   id: z.string().startsWith('si_'),
   quantity: z.number().int().nonnegative().optional(),
-  price: z.object({ id: z.string().startsWith('price_') }),
+  current_period_end: z.number().int().optional(),
+  price: z.object({ id: z.string().startsWith('price_'), unit_amount: z.number().int().nullable().optional() }),
 });
 const versLignes = (data: Array<z.infer<typeof ligneSchema>>): LigneAbonnement[] =>
-  data.map((l) => ({ id: l.id, prix: l.price.id, quantite: l.quantity ?? 1 }));
+  data.map((l) => ({ id: l.id, prix: l.price.id, quantite: l.quantity ?? 1, montantCentimes: l.price.unit_amount ?? null }));
 
 const abonnementLuSchema = z.object({
   id: z.string().startsWith('sub_'),
   status: z.string(),
   items: z.object({ data: z.array(ligneSchema) }),
   latest_invoice: z.union([z.string(), z.object({ id: z.string() })]).nullable().optional(),
+  cancel_at: z.number().int().nullable().optional(),
+  cancel_at_period_end: z.boolean().optional(),
+  /** Les remises qui s'appliquent à l'abonnement (un code promo) : des identifiants, ou des objets une fois étendues. */
+  discounts: z.array(z.unknown()).nullable().optional(),
 });
 
 /**
- * Lit un abonnement chez Stripe (livraison 7) : son statut, ses lignes, sa dernière facture. Les sièges du Pro s'y
- * comptent, à chaque achat comme à chaque `customer.subscription.updated` : la charge d'un événement peut arriver dans le
- * désordre, l'abonnement relu est l'état de maintenant. La clé restreinte doit pouvoir LIRE les abonnements.
+ * Lit un abonnement chez Stripe (livraison 7) : son statut, ses lignes et leur prix, sa dernière facture, sa fin prévue
+ * (`finPrevueDe`) et la présence d'une remise. Les sièges du Pro s'y comptent, et la fin prévue s'y relit, à chaque
+ * `customer.subscription.updated` : la charge d'un événement peut arriver dans le désordre, l'abonnement relu est l'état de
+ * maintenant. La clé restreinte doit pouvoir LIRE les abonnements.
  */
 export async function lireAbonnementStripe(transport: TransportStripe, o: { cle: string; abonnementId: string }): Promise<{
-  statut: string; lignes: LigneAbonnement[]; derniereFacture: string | null;
+  statut: string; lignes: LigneAbonnement[]; derniereFacture: string | null; finPrevueLe: Date | null; remise: boolean;
 }> {
   const a = await appeler(transport, 'siege', `/subscriptions/${encodeURIComponent(o.abonnementId)}`, null, { cle: o.cle }, abonnementLuSchema);
   if (a.id !== o.abonnementId) throw new StripeError('siege', 200, null, null, 'reponse pour un autre abonnement');
   const f = a.latest_invoice;
-  return { statut: a.status, lignes: versLignes(a.items.data), derniereFacture: f ? (typeof f === 'string' ? f : f.id) : null };
+  return {
+    statut: a.status, lignes: versLignes(a.items.data), derniereFacture: f ? (typeof f === 'string' ? f : f.id) : null,
+    finPrevueLe: finPrevueDe(a), remise: (a.discounts?.length ?? 0) > 0,
+  };
 }
 
 const abonnementChangeSchema = abonnementLuSchema.extend({

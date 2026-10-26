@@ -4105,9 +4105,10 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   laisse en Pro pendant les relances de Stripe.
   ✅ **Le Pro dit en clair, résilié et facturé sans quitter la console** (2026-10-26, demande de Julien) : en tête de la
   page Offre, la carte « Votre abonnement » donne le **statut** (actif, essai gratuit, paiement en retard, résiliation
-  programmée, ou terminé pour un ancien Pro), la **formule** et son prix HT (avec les utilisateurs payés en plus), la
-  **date de souscription**, le **prochain renouvellement** ou la **date de fin**, et la fin de l'essai qui court. Le montant
-  exact du prochain prélèvement n'est pas annoncé (un code promo le rendrait faux) : les factures le disent.
+  programmée, ou terminé pour un ancien Pro), la **formule** et son prix HT, celui de l'abonné lu chez Stripe et non la
+  grille (avec les utilisateurs payés en plus ; une remise en cours le dit), la **date de souscription**, le **prochain
+  renouvellement** ou la **date de fin**, et la fin de l'essai qui court. Le montant exact du prochain prélèvement n'est
+  pas annoncé (un code promo le rendrait faux) : les factures le disent.
   « **Résilier mon abonnement** » se confirme, avec la date exacte de fin, « rien n'est remboursé » (« vous ne serez pas
   prélevé » pendant l'essai) et ce que devient le numéro fourni ; la fin est posée chez Stripe à la fin de la période
   payée, et jusque-là « **Annuler la résiliation** » la retire. Une fin posée par nous à une date précise ne se retire pas

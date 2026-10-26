@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { changerFinAbonnement, listerFacturesStripe, StripeError } from './client';
+import { changerFinAbonnement, lireAbonnementStripe, listerFacturesStripe, StripeError } from './client';
 import type { DepsPaiement } from './paiement';
 import { journaliser } from '../lib/journal';
 import { refus, type Issue } from '../lib/issue';
@@ -20,7 +20,69 @@ export type DepsGestionPro = Pick<DepsPaiement, 'stripe' | 'payeurAutorise'> & {
    * (`PgAbonnementsOffreStore.modifier`) : l'écran est juste tout de suite, le webhook réécrit ensuite la même chose.
    */
   noterFinPrevue(abonnementId: string, finPrevueLe: Date | null): Promise<void>;
+  /** Les identifiants Stripe des prix d'un siège (`STRIPE_PRIX_SIEGE_MOIS`, `_AN`) : le tarif sépare le Pro de ses sièges. */
+  prixSiege: readonly string[];
 };
+
+/** Une panne passagère de Stripe (réseau, 5xx, 429) : l'appelant la laisse remonter, pour qu'elle se rejoue. */
+const passagere = (err: StripeError): boolean => err.status === null || err.status === 429 || err.status >= 500;
+
+/**
+ * LA FIN PRÉVUE DU PRO, RELUE CHEZ STRIPE, pour `customer.subscription.updated` (relecture du lot A, 2026-10-26). La charge
+ * d'un événement peut arriver après un plus récent : « Résilier » puis « Annuler la résiliation » en quelques secondes, et
+ * le premier événement, rejoué en retard, remettait une fin que Stripe n'avait plus (avec l'e-mail de la suite du numéro).
+ * L'abonnement relu est l'état de maintenant. `undefined` : Stripe n'est pas configuré, ou il refuse durablement ; la charge
+ * de l'événement sert alors, comme avant. Une panne passagère lève : le webhook échoue, Stripe rejouera.
+ */
+export async function finPrevueChezStripe(d: Pick<DepsGestionPro, 'stripe'>, abonnementId: string): Promise<Date | null | undefined> {
+  const s = d.stripe;
+  if (s === null) return undefined;
+  try {
+    return (await lireAbonnementStripe(s.transport, { cle: s.cle, abonnementId })).finPrevueLe;
+  } catch (err) {
+    if (!(err instanceof StripeError) || passagere(err)) throw err;
+    journaliser('error', 'stripe_fin_prevue_illisible', { abonnementId, status: err.status, code: err.code, err: err.message });
+    return undefined;
+  }
+}
+
+/**
+ * LE TARIF RÉEL DU PRO DE L'ESPACE, lu sur son abonnement chez Stripe (relecture du lot B, 2026-10-26) : la carte disait le
+ * prix de la grille, qui n'est plus celui d'un abonné le jour où le tarif change. Le Pro et ses sièges, prix unitaires HT
+ * avant remise ; `remise` dit qu'un code promo s'applique (les factures disent alors le montant payé). Une lecture à
+ * l'ouverture de la page, jamais dans la vue de l'offre, lue à chaque page de la console.
+ */
+export interface TarifPro {
+  /** Le prix HT du Pro par période, en centimes ; `null` si une ligne n'a pas de prix fixe. */
+  proHtCentimes: number | null;
+  /** Le prix HT d'un utilisateur payé en plus, par période ; `null` sans siège payé. */
+  siegeHtCentimes: number | null;
+  remise: boolean;
+}
+
+export async function tarifDuPro(d: DepsGestionPro, tenantId: string, payeur: string): Promise<Issue<TarifPro>> {
+  const s = d.stripe;
+  if (s === null || !(await d.payeurAutorise(payeur))) return GESTION_INDISPONIBLE;
+  const pro = await d.proVivant(tenantId);
+  if (pro === null) return refus(409, 'Cet espace n’a pas de Pro en cours.', { code: 'aucun_pro' });
+  try {
+    const a = await lireAbonnementStripe(s.transport, { cle: s.cle, abonnementId: pro.abonnementId });
+    const estSiege = (prix: string): boolean => d.prixSiege.includes(prix);
+    const lignesPro = a.lignes.filter((l) => !estSiege(l.prix));
+    const siege = a.lignes.find((l) => estSiege(l.prix) && l.quantite > 0);
+    // UNE seule ligne hors sièges, sinon pas de prix : après un changement de tarif, un siège à l'ancien prix n'est plus
+    // reconnu et s'ajouterait au Pro (relecture du 2026-10-26). La console garde alors la grille.
+    const seule = lignesPro.length === 1 ? lignesPro[0]! : null;
+    const proHtCentimes = seule !== null && seule.montantCentimes !== null ? seule.montantCentimes * seule.quantite : null;
+    return { ok: true, valeur: { proHtCentimes, siegeHtCentimes: siege?.montantCentimes ?? null, remise: a.remise } };
+  } catch (err) {
+    if (!(err instanceof StripeError)) throw err;
+    journaliser('error', 'stripe_tarif_pro_impossible', {
+      tenantId, operation: err.operation, status: err.status, type: err.type, code: err.code, err: err.message,
+    });
+    return refus(422, 'Le tarif de votre abonnement n’a pas pu être lu chez Stripe.', { code: 'tarif_impossible' });
+  }
+}
 
 export const GESTION_INDISPONIBLE = refus(503, 'la gestion de l’abonnement n’est pas encore disponible', { code: 'gestion_indisponible' });
 

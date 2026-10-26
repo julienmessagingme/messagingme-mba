@@ -43,6 +43,7 @@ function monter(o: { ouvrir?: OffrePaiementRouteDeps['ouvrir']; portail?: OffreP
         return { ok: true, valeur: { finPrevueLe: resilier ? '2026-11-12T08:00:00.000Z' : null } };
       }),
       factures: async (tenantId, payeur) => { cap.factures.push({ tenantId, payeur }); return { ok: true, valeur: { factures: [], plusSurStripe: false } }; },
+      tarif: async () => ({ ok: true, valeur: { proHtCentimes: 3900, siegeHtCentimes: 1200, remise: true } }),
     },
   });
   return { server, cap };
@@ -213,6 +214,18 @@ describe('GET /tenants/:tenantId/offre/factures', () => {
     expect(r.json()).toEqual({ factures: [], plusSurStripe: false });
     expect((await lire(server, agent)).statusCode).toBe(403);
     expect(cap.factures).toEqual([{ tenantId: 't1', payeur: 'u1' }]);
+    await server.close();
+  });
+});
+
+describe('GET /tenants/:tenantId/offre/tarif', () => {
+  it('🔴 l’administrateur lit le tarif réel de SON Pro ; un agent est refusé', async () => {
+    const { server } = monter();
+    const lire = (jeton: string) => server.inject({ method: 'GET', url: '/tenants/t1/offre/tarif', headers: { authorization: `Bearer ${jeton}` } });
+    const r = await lire(admin);
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ proHtCentimes: 3900, siegeHtCentimes: 1200, remise: true });
+    expect((await lire(agent)).statusCode).toBe(403);
     await server.close();
   });
 });

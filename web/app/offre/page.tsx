@@ -70,12 +70,15 @@ function Offre({ session }: { session: Session }) {
           <span className="text-xs font-medium text-ink-500">{t('Paramètres', 'Settings')}</span>
           <TitrePage>{t('Offre', 'Plan')}</TitrePage>
         </div>
-        {avecCredit && (
+        {avecCredit ? (
           <MbaTabs
             tabs={[{ key: 'offre', label: t('Offre', 'Plan') }, { key: 'credit', label: t('Crédit IA', 'AI credit') }]}
             active={onglet}
             onSelect={choisir}
           />
+        ) : vue === undefined && (
+          // La place de la barre, le temps de lire l'offre : sans elle, la page sautait quand les onglets apparaissaient.
+          <div className="h-[2.375rem] border-b border-ink-200" aria-hidden="true" data-testid="offre-onglets-attente" />
         )}
       </div>
       {vue === undefined

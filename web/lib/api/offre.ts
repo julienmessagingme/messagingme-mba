@@ -101,3 +101,28 @@ export async function lireFactures(tenantId: string): Promise<{ factures: Factur
   });
   return { factures, plusSurStripe: r.plusSurStripe === true };
 }
+
+/** Le tarif réel du Pro, lu sur son abonnement chez Stripe (`src/stripe/gestion-pro.ts`, `tarifDuPro`). */
+export interface TarifPro {
+  proHtCentimes: number | null;
+  siegeHtCentimes: number | null;
+  remise: boolean;
+}
+
+const entierOuNul = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null);
+
+/**
+ * Le tarif réel du Pro de l'espace (2026-10-26). `null` pour toute réponse qui n'en est pas un (API plus ancienne, pas de
+ * Pro en cours, Stripe pas configuré) : la carte garde alors le prix de la grille. Une autre erreur remonte.
+ */
+export async function lireTarifPro(tenantId: string): Promise<TarifPro | null> {
+  let r: Record<string, unknown>;
+  try {
+    r = await request<Record<string, unknown>>(`/tenants/${tenantId}/offre/tarif`);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 409 || err.status === 503)) return null;
+    throw err;
+  }
+  if (typeof r !== 'object' || r === null || typeof r.remise !== 'boolean') return null;
+  return { proHtCentimes: entierOuNul(r.proHtCentimes), siegeHtCentimes: entierOuNul(r.siegeHtCentimes), remise: r.remise };
+}

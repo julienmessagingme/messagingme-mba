@@ -25,7 +25,7 @@ function ligne(abonnementId: string, over: Partial<AbonnementOffre> = {}): Abonn
   };
 }
 
-function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: unknown; rendre?: boolean; sieges?: number | null | Error } = {}) {
+function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: unknown; rendre?: boolean; sieges?: number | null | Error; relue?: Date | null | Error } = {}) {
   const cap = {
     enregistres: [] as Array<{ tenantId: string; abonnementId: string; periodicite: PeriodiciteOffre; livemode: boolean; periodeFin: Date | null; essaiFinLe?: Date | null }>,
     statuts: [] as Array<{ abonnementId: string; statut: string; periodeFin: Date | null; finEchouee: Date | null }>,
@@ -74,6 +74,11 @@ function monter(o: { connus?: string[]; issue?: IssueEnregistrementPro; panne?: 
         cap.relus.push(abonnementId);
         if (o.sieges instanceof Error) throw o.sieges;
         return o.sieges ?? null;
+      },
+      // Sans `relue`, rien n'est relu chez Stripe (`undefined`) : la charge de l'événement sert, comme avant.
+      finPrevueChezStripe: async () => {
+        if (o.relue instanceof Error) throw o.relue;
+        return o.relue;
       },
     },
     now: () => NOW,
@@ -179,6 +184,23 @@ describe('le webhook Stripe et le Pro', () => {
       { abonnementId: 'sub_pro', finPrevueLe: null, periodicite: 'mois' },
     ]);
     expect(cap.fins).toEqual([]);
+  });
+
+  it('🔴 un événement en retard ne remet pas une fin retirée depuis : la fin RELUE chez Stripe est écrite, pas celle de la charge', async () => {
+    // « Résilier » puis « Annuler la résiliation » dans la console, puis le premier événement rejoué en retard (2026-10-26).
+    const { srv, cap } = monter({ connus: ['sub_pro'], relue: null });
+    expect((await envoyer(srv, evenement(abonnementPro({ cancel_at_period_end: true }), 'customer.subscription.updated'))).statusCode).toBe(200);
+    expect(cap.modifs).toEqual([{ abonnementId: 'sub_pro', finPrevueLe: null, periodicite: 'an' }]);
+    // Et dans l'autre sens : la charge ne dit aucune fin, Stripe en a une, c'est la sienne qui compte.
+    const autre = monter({ connus: ['sub_pro'], relue: new Date(FIN * 1000) });
+    await envoyer(autre.srv, evenement(abonnementPro(), 'customer.subscription.updated'));
+    expect(autre.cap.modifs[0]).toMatchObject({ finPrevueLe: new Date(FIN * 1000) });
+  });
+
+  it('🔴 une relecture de la fin en panne passagère : le webhook échoue (Stripe rejouera), rien n’est écrit', async () => {
+    const { srv, cap } = monter({ connus: ['sub_pro'], relue: new Error('stripe : siege impossible (reseau)') });
+    expect((await envoyer(srv, evenement(abonnementPro({ cancel_at_period_end: true }), 'customer.subscription.updated'))).statusCode).toBeGreaterThanOrEqual(500);
+    expect(cap.modifs).toEqual([]);
   });
 
   it('🔴 la fin : résiliation ou impayé selon la raison de Stripe, datée de sa fin, le cache vidé, Julien prévenu', async () => {

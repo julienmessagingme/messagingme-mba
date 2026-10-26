@@ -98,4 +98,10 @@ describe('le câblage de l’offre', () => {
     const appel = api.slice(api.indexOf('buildServer({'));
     expect(appel.slice(0, appel.indexOf('\n  });'))).toMatch(/^\s+offres,$/m);
   });
+
+  it('🔴 la vue lit l’abonnement Pro sur le résumé du magasin, et le webhook relit la fin chez Stripe (2026-10-26)', () => {
+    const api = lire('index.ts');
+    expect(api).toMatch(/abonnement: \(tenant\) => abonnementsOffre\.resume\(tenant\),/);
+    expect(api).toMatch(/finPrevueChezStripe: \(abonnementId\) => finPrevueChezStripe\(gestionProDeLaConsole, abonnementId\),/);
+  });
 });

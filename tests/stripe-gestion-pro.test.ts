@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomBytes } from 'node:crypto';
 import { finPrevueDe, type ReponseStripe, type TransportStripe } from '../src/stripe/client';
-import { changerResiliationPro, facturesDeLEspace, FACTURES_MONTREES, type DepsGestionPro } from '../src/stripe/gestion-pro';
+import { changerResiliationPro, facturesDeLEspace, finPrevueChezStripe, tarifDuPro, FACTURES_MONTREES, type DepsGestionPro } from '../src/stripe/gestion-pro';
 import type { StripeConfigure } from '../src/stripe/paiement';
 
 /**
@@ -46,6 +46,7 @@ function monter(o: { reponses?: Array<ReponseStripe | Error>; stripe?: null; pay
     clients: { clientDe: async (tenant) => (o.client === null ? null : `cus_${tenant}`) },
     proVivant: async () => (o.pro === null ? null : { abonnementId: 'sub_1' }),
     noterFinPrevue: async (abonnementId, finPrevueLe) => { notes.push({ abonnementId, finPrevueLe }); },
+    prixSiege: ['price_siege_mois', 'price_siege_an'],
   };
   return { d, transport, notes };
 }
@@ -181,5 +182,63 @@ describe('facturesDeLEspace', () => {
     expect(await facturesDeLEspace(d, 't1', 'u1')).toMatchObject({ ok: false, statut: 422, details: { code: 'factures_impossible' } });
     expect(await facturesDeLEspace(monter({ stripe: null }).d, 't1', 'u1')).toMatchObject({ ok: false, statut: 503 });
     expect(await facturesDeLEspace(monter({ payeur: false }).d, 't1', 'u1')).toMatchObject({ ok: false, statut: 503 });
+  });
+});
+
+/** L'abonnement tel que Stripe le rend à une lecture : ses lignes et leur prix, sa fin posée ou non, ses remises. */
+const lu = (o: { cancel_at?: number | null; cancel_at_period_end?: boolean; discounts?: unknown[]; lignes?: unknown[] } = {}) => ({
+  status: 200,
+  json: {
+    id: 'sub_1', status: 'active', latest_invoice: 'in_9', cancel_at: o.cancel_at ?? null, cancel_at_period_end: o.cancel_at_period_end ?? false,
+    discounts: o.discounts ?? [],
+    items: { data: o.lignes ?? [
+      { id: 'si_pro', quantity: 1, current_period_end: FIN_PERIODE, price: { id: 'price_pro_mois', unit_amount: 3900 } },
+      { id: 'si_siege', quantity: 2, current_period_end: FIN_PERIODE, price: { id: 'price_siege_mois', unit_amount: 1200 } },
+    ] },
+  },
+});
+
+describe('finPrevueChezStripe : la fin relue pour le webhook (2026-10-26)', () => {
+  it('🔴 rend la fin que Stripe a MAINTENANT : aucune, ou la fin de période posée', async () => {
+    expect(await finPrevueChezStripe(monter({ reponses: [lu()] }).d, 'sub_1')).toBeNull();
+    expect(await finPrevueChezStripe(monter({ reponses: [lu({ cancel_at_period_end: true })] }).d, 'sub_1')).toEqual(new Date(FIN_PERIODE * 1000));
+  });
+
+  it('🔴 une panne passagère lève (le webhook échoue, Stripe rejouera) ; un refus durable rend undefined (la charge sert)', async () => {
+    await expect(finPrevueChezStripe(monter({ reponses: [{ status: 503, json: null }] }).d, 'sub_1')).rejects.toThrow();
+    await expect(finPrevueChezStripe(monter({ reponses: [new Error('réseau')] }).d, 'sub_1')).rejects.toThrow();
+    expect(await finPrevueChezStripe(monter({ reponses: [{ status: 404, json: { error: { type: 'invalid_request_error' } } }] }).d, 'sub_1')).toBeUndefined();
+    expect(await finPrevueChezStripe(monter({ stripe: null }).d, 'sub_1')).toBeUndefined();
+  });
+});
+
+describe('tarifDuPro : le prix de l’abonné, pas la grille (2026-10-26)', () => {
+  it('🔴 le Pro et le prix d’un siège, lus sur les lignes de l’abonnement, et la remise', async () => {
+    const { d } = monter({ reponses: [lu({ discounts: ['di_1'] })] });
+    expect(await tarifDuPro(d, 't1', 'u1')).toEqual({ ok: true, valeur: { proHtCentimes: 3900, siegeHtCentimes: 1200, remise: true } });
+  });
+
+  it('sans siège ni remise ; une ligne du Pro sans prix fixe : prix inconnu (la console garde la grille)', async () => {
+    const seul = monter({ reponses: [lu({ lignes: [{ id: 'si_pro', quantity: 1, price: { id: 'price_pro_an', unit_amount: 39000 } }] })] });
+    expect(await tarifDuPro(seul.d, 't1', 'u1')).toEqual({ ok: true, valeur: { proHtCentimes: 39000, siegeHtCentimes: null, remise: false } });
+    const variable = monter({ reponses: [lu({ lignes: [{ id: 'si_pro', quantity: 1, price: { id: 'price_pro_mois', unit_amount: null } }] })] });
+    expect(await tarifDuPro(variable.d, 't1', 'u1')).toMatchObject({ ok: true, valeur: { proHtCentimes: null } });
+  });
+
+  it('🔴 un siège à un prix qui n’est plus configuré (le tarif a changé) ne gonfle pas le Pro : prix inconnu, la grille sert', async () => {
+    const ancien = monter({ reponses: [lu({ lignes: [
+      { id: 'si_pro', quantity: 1, price: { id: 'price_pro_mois', unit_amount: 3900 } },
+      { id: 'si_siege', quantity: 2, price: { id: 'price_siege_ancien', unit_amount: 1200 } },
+    ] })] });
+    expect(await tarifDuPro(ancien.d, 't1', 'u1')).toMatchObject({ ok: true, valeur: { proHtCentimes: null } });
+  });
+
+  it('sans Pro vivant : 409 ; Stripe absent ou payeur refusé : 503 ; un refus de Stripe : 422, sans son message', async () => {
+    expect(await tarifDuPro(monter({ pro: null }).d, 't1', 'u1')).toMatchObject({ ok: false, statut: 409, details: { code: 'aucun_pro' } });
+    expect(await tarifDuPro(monter({ stripe: null }).d, 't1', 'u1')).toMatchObject({ ok: false, statut: 503 });
+    expect(await tarifDuPro(monter({ payeur: false }).d, 't1', 'u1')).toMatchObject({ ok: false, statut: 503 });
+    const refuse = await tarifDuPro(monter({ reponses: [{ status: 403, json: { error: { message: 'The key rk_test_x cannot read subscriptions' } } }] }).d, 't1', 'u1');
+    expect(refuse).toMatchObject({ ok: false, statut: 422, details: { code: 'tarif_impossible' } });
+    expect(JSON.stringify(refuse)).not.toContain('rk_test');
   });
 });

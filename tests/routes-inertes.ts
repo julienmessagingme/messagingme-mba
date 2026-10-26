@@ -679,6 +679,7 @@ export const stripeProInerte: StripeWebhookRouteDeps['pro'] = {
   surPassageEnPro: neDevraitPasEtreAppelee('stripe.pro.surPassageEnPro'),
   surFinDuPro: neDevraitPasEtreAppelee('stripe.pro.surFinDuPro'),
   siegesChezStripe: neDevraitPasEtreAppelee('stripe.pro.siegesChezStripe'),
+  finPrevueChezStripe: neDevraitPasEtreAppelee('stripe.pro.finPrevueChezStripe'),
 };
 
 /**

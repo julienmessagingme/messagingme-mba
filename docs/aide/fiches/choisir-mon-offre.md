@@ -2,7 +2,7 @@
 description: Free, Pro ou Entreprise : ce que chaque offre de Messaging Me ouvre, ses limites, et comment passer en Pro ou gérer l'abonnement.
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: 7b94b6
+source_empreinte: f5789c
 publique: oui
 rubrique: demarrer
 rang: 1

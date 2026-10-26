@@ -40,6 +40,12 @@ export interface DepsTraitementAbonnements {
      * vente (rien à relire), ceux déjà notés restent. Une panne de Stripe lève : le webhook échoue, Stripe rejouera.
      */
     siegesChezStripe(abonnementId: string): Promise<number | null>;
+    /**
+     * 🔴 La fin prévue du Pro, RELUE CHEZ STRIPE (`finPrevueChezStripe`, 2026-10-26) : un événement en retard ne remet pas
+     * une fin que la console vient de retirer. `undefined` : rien de relu, la charge de l'événement sert. Une panne de
+     * Stripe lève : le webhook échoue, Stripe rejouera.
+     */
+    finPrevueChezStripe(abonnementId: string): Promise<Date | null | undefined>;
   };
   /**
    * L'e-mail aux admins d'un renouvellement refusé (lot 7, livraison B), une fois par facture : Stripe réessaie la même
@@ -314,10 +320,12 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
         }
         return ACQUITTE;
       }
-      // Le même calcul que la résiliation de la console (`changerFinAbonnement`) : l'état final ne dépend pas du chemin.
-      const finPrevue = finPrevueDe(lu.data);
       const intervalle = lignes.map((l) => l.price?.recurring?.interval).find((v): v is string => typeof v === 'string');
       const sieges = await deps.pro.siegesChezStripe(lu.data.id);
+      // La fin RELUE chez Stripe, l'état de maintenant : un événement en retard ne remet pas une fin retirée depuis. Lue en
+      // DERNIER, au plus près de l'écriture. Sans relecture, la charge, par le même calcul que la résiliation de la console.
+      const relue = await deps.pro.finPrevueChezStripe(lu.data.id);
+      const finPrevue = relue === undefined ? finPrevueDe(lu.data) : relue;
       const a = await deps.pro.modifier(lu.data.id, {
         finPrevueLe: finPrevue,
         periodicite: intervalle ? (PERIODICITE_DE_STRIPE[intervalle] ?? null) : null,
