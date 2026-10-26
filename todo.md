@@ -1,18 +1,13 @@
 # todo.md : backlog
 
-## 🟡 Trois fiches d'aide encore à publier sur la vitrine, et un aide:charger (plan SEO, C6, décision D5 du 2026-10-26)
+## 🟡 aide:charger en production, pour les sept fiches publiées le 2026-10-26 (plan SEO, C6)
 
-Quatre des sept fiches choisies par Julien sont publiques depuis le 2026-10-26 (HubSpot, bulle, chaîne, RCS), sans
-capture. Restent :
-- **`creer-une-publicite`, `construire-un-agent-ia`, `le-repondeur-de-meta`** : environ 6 600 mots à traduire
-  (`docs/aide/fiches/en/`, avec `slug` et `traduit_de`), un chapeau à ramener sous 320 caractères si besoin, puis
-  `npm run vitrine:aide` et les listes en dur de `tests/aide-fiches-format.test.ts` et `tests/vitrine-aide.test.ts`.
-  🔴 **`construire-un-agent-ia` écrit « notre commission comprise, celle de votre offre »** à propos du crédit IA :
-  la décision du 2026-10-19 tient la commission hors des pages publiques. Demander à Julien avant de publier
-  (retirer la phrase de la fiche, ce qui change ce que lit le bot, ou ne pas publier cette fiche).
-- **`aide:charger` en production**, après la bascule : le premier paragraphe de `envoyer-un-message-rcs` et de
-  `poser-une-bulle-whatsapp-sur-mon-site` a été coupé en deux (chapeau public limité à 320 caractères), mot pour mot ;
-  le bot garde l'ancienne coupe tant que l'aide n'est pas rechargée.
+Les sept fiches choisies par Julien sont publiques sur la vitrine. Trois corps ont changé et le bot d'aide lit encore
+l'ancienne version tant que l'aide n'est pas rechargée : `construire-un-agent-ia` ne dit plus « notre commission
+comprise, celle de votre offre » (décision de Julien), et le premier paragraphe de `envoyer-un-message-rcs` et de
+`poser-une-bulle-whatsapp-sur-mon-site` est coupé en deux, mot pour mot (chapeau public limité à 320 caractères).
+Lancer `aide:charger` sur la production en service (VPS avant la bascule, Scaleway après : `DEPLOY.md`), avec une image
+ou des `docs/aide` de la révision qui porte ces fiches, après avoir comparé `docs/aide` à origin.
 
 ## 🟡 Deux réponses de l'Inbox jamais arrivées à l'API (essai réel du lot 2b HubSpot, 2026-10-26)
 

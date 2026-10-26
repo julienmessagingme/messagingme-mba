@@ -446,8 +446,8 @@ plus forte qui manque), sur le gabarit des cas, film compris.
   `publier-sur-ma-chaine-whatsapp`, `envoyer-un-message-rcs`, `hubspot-sur-l-accueil`,
   `poser-une-bulle-whatsapp-sur-mon-site`), APRÈS la bascule Scaleway, parce que leur publication finit par un
   `aide:charger` en production. Julien a ensuite demandé de publier avant la bascule : quatre sont publiques le
-  2026-10-26 (HubSpot, bulle, chaîne, RCS, sans capture) ; les trois longues et l'`aide:charger` restent
-  (`todo.md`, avec la phrase sur la commission de `construire-un-agent-ia` à trancher).
+  2026-10-26 (HubSpot, bulle, chaîne, RCS, sans capture), puis les trois longues le même soir, la fiche agent IA
+  sans la phrase « notre commission comprise » (décision de Julien). Reste l'`aide:charger` (`todo.md`).
 
 ## Ordre et rayon de souffle
 

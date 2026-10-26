@@ -4,6 +4,14 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : les trois fiches d'aide longues sur la vitrine (plan SEO, C6)
+
+- **Publiques, en français et en anglais**, dans Parler aux clients : « Construire un agent IA » (10), « Le répondeur
+  de Meta » (11) et « Lancer une publicité qui ouvre une conversation WhatsApp » (12), sans capture, avec une
+  description courte. Les sept fiches choisies par Julien sont désormais publiques.
+- **La fiche agent IA ne dit plus « notre commission comprise, celle de votre offre »** à propos du crédit IA
+  (décision de Julien) : le bot le dira à son tour au prochain `aide:charger`, encore à lancer (`todo.md`).
+
 ## 2026-10-26 : quatre fiches d'aide de plus sur la vitrine (plan SEO, C6)
 
 - **Publiques, en français et en anglais** : « HubSpot sur l'Accueil » (Démarrer, 6), « Poser une bulle WhatsApp sur
