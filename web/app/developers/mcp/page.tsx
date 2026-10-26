@@ -64,8 +64,8 @@ function McpInner({ session }: { session: Session | null }) {
   // que c'est l'API qui sert `/mcp`, pas la console. Elle suivait le domaine de la console : sur la console
   // hébergée chez Vercel, `/mcp` rend 404 (mesuré le 2026-09-25, quand `api.` et `mba.` rendent 401), donc
   // la commande copiée depuis `engageme.` était morte. Repli sur le domaine de la page quand `BASE` est
-  // relative : l'ancienne console du VPS, dont le proxy sert `/mcp`, et le serveur local des tests.
-  const origine = BASE.startsWith('http') ? BASE : typeof window !== 'undefined' ? window.location.origin : 'https://mba.messagingme.app';
+  // relative (le serveur local des tests, dont le relais sert `/mcp`), et sur l'API quand rien ne la donne.
+  const origine = BASE.startsWith('http') ? BASE : typeof window !== 'undefined' ? window.location.origin : 'https://api.messagingme.app';
   const commande = `claude mcp add --transport http mba ${origine}/mcp --header "Authorization: Bearer VOTRE_CLE"`;
 
   return (

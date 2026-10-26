@@ -112,7 +112,7 @@ jobs:
         run: |
           test "$(docker run --rm mba-api:ci id -u)" = "1000"
           echo "OK : le conteneur de l API tourne en uid 1000 (node)"
-      # La console du VPS (`mba-web`, qui sert encore `mba.messagingme.app`) : la console de Vercel n est pas une image.
+      # La console du VPS (`mba-web`, arretee depuis le 2026-10-26, gardee pour le retour arriere) : celle de Vercel n est pas une image.
       - name: Image de la console (construction)
         run: docker build -f web/Dockerfile -t mba-web:ci .
       - name: Image de la console, failles hautes et critiques (trivy, trace)

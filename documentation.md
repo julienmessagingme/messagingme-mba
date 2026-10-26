@@ -2917,7 +2917,7 @@ boucle) ne joue donc pas ses passes les plus tardives, rétentions comprises : e
   prête), plus une marge, doit y tenir. `tests/deploy-scaleway.test.ts` en fait le compte et refuse un réglage qui le
   dépasse : **ajouter des copies d'API ou un worker, c'est repasser ce test.** Le banc du serverless l'a mesuré (au
   plus 11 connexions par copie, 42 au total, 4 copies pendant une relève). Le budget du pooler de Supabase
-  (`tests/budget-pooler.test.ts`) n'a plus d'objet depuis la bascule.
+  (`tests/budget-pooler.test.ts`) ne tient plus que le compose du VPS, gardé pour le retour arrière : il part avec lui.
 - **`PGBOSS_MAX`** (workers seuls) : les connexions de pg-boss de chaque worker, plus sa connexion d'écoute, dans le
   même budget. Le connecteur HubSpot a sa propre base depuis le 2026-10-15 et n'y prend plus rien.
 - **`DB_CONN_TIMEOUT_MS`** : le défaut `pg` est une attente ILLIMITÉE, donc un pool saturé rend une requête

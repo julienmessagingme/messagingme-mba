@@ -135,7 +135,7 @@ const nextConfig = {
       // chemin qui les relie. Le modifier casse les visuels de messages DÉJÀ ENVOYÉS.
       { source: '/m/:fichier', destination: `${backend}/m/:fichier` },
       // Serveur MCP. Chemin COURT et sans `/api` parce que c'est l'adresse qu'un intégrateur tape dans sa
-      // commande `claude mcp add --transport http mba https://mba.messagingme.app/mcp` : elle est destinée
+      // commande `claude mcp add --transport http mba https://api.messagingme.app/mcp` : elle est destinée
       // à être lue et recopiée par un humain, pas à être construite par notre front.
       //
       // ⚠️ Servi par le backend, qui n'a aucun port hôte publié : ce rewrite est le SEUL chemin qui les

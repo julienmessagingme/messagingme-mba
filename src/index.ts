@@ -2952,14 +2952,13 @@ async function main(): Promise<void> {
         });
       },
     },
-    // Les rapports CSP ne comptent que venant d'une page de la console : celles de `CORS_ORIGINS` et d'`APP_URL`, plus la
-    // console du VPS, que plus aucune variable ne nomme depuis qu'`APP_URL` est passée sur `console.` (2026-10-06).
+    // Les rapports CSP ne comptent que venant d'une page de la console : celles de `CORS_ORIGINS` et d'`APP_URL` (la
+    // console du VPS, `mba.messagingme.app`, n'existe plus depuis le 2026-10-26).
     // `URL.canParse` : une `APP_URL` mal formée ne doit pas empêcher l'API de démarrer pour un collecteur.
     cspRapports: {
       origines: [...new Set([
         ...config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter((o) => o !== ''),
         ...(URL.canParse(config.APP_URL) ? [new URL(config.APP_URL).origin] : []),
-        'https://mba.messagingme.app',
       ])],
       noter: (r) => cspRapports.noter(r),
     },

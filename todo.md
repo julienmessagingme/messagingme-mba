@@ -606,15 +606,23 @@ d'un modèle par `waba-v2.360dialog.io/messages` ET par MM Lite (`/marketing_mes
 
 - **La fin de l'observation** (quelques jours, décision de Julien) : alors seulement, Supabase mis en PAUSE (pas
   supprimé), puis effacé plus tard ; la tâche planifiée `sauvegarde-base.sh` du VPS retirée (elle sauvegarde la copie
-  figée de Supabase) ; les conteneurs Messaging Me du VPS supprimés, avec l'hôte NPM 21 de `mba.` (lot 7).
-- **Le pont des codes reste sur le VPS** (`otp-asterisk`, `ops/otp-asterisk/`) : il poste à `api.` et marche, mais la
-  partie Messaging Me du VPS ne se retire pas sans lui trouver un hôte. Il lui faut une adresse publique pour le SIP de
-  DIDWW, que la machine des workers n'a pas : à cadrer (une machine dédiée, ou une redirection de port par la passerelle).
-- **La base jetable `mm-banc`** (DB-DEV-M) ne sert plus : la supprimer, avec l'accord de Julien.
-- **Le code d'avant la bascule** (un lot, CI comprise) : `tests/budget-pooler.test.ts` (le budget du pooler de Supabase)
-  et les mentions du pooler dans `src/config.ts` ; l'origine `mba.messagingme.app` des rapports CSP (`src/index.ts`) ;
-  les relais `/r/`, `/m/`, `/mcp` et `/api/backend/*` de la console, inertes chez Vercel (lot 7, tâche 5) ; l'erreur de
-  propriétaire du schéma `public` admise par la copie (`DEPLOY.md`, reprise après sinistre).
+  figée de Supabase) ; les conteneurs Messaging Me du VPS supprimés, avec l'hôte NPM 21 de `mba.` (lot 7), et avec eux
+  `tests/budget-pooler.test.ts`, qui ne tient plus que le compose du VPS (le retour arrière). ⚠️ AVANT d'effacer
+  `/home/ubuntu/mba`, donner leurs propres fichiers de clés à deux outils qui y lisent encore son `.env.prod` :
+  `guetteur-otp.sh` du pont des codes (`AI_GATEWAY_API_KEY`) et la veille d'éligibilité de l'agent de Meta
+  (`META_ACCESS_TOKEN`).
+- **Le pont des codes RESTE sur le VPS d'OVH** (décidé le 2026-10-26) : `otp-asterisk` a son dossier, son compose et
+  ses identifiants DIDWW, il poste à `api.` et marche donc chez Scaleway sans rien changer ; le VPS reste (il porte
+  d'autres clients), dans l'Union européenne. Seulement si le VPS entier s'arrête : une petite machine Scaleway avec
+  une adresse publique et un pare-feu ouvert à DIDWW seul (jamais la machine des workers, qui reste sans adresse
+  publique), le trunk SIP repointé chez DIDWW (Julien), puis un vrai appel de vérification de Meta.
+- ✅ **La base jetable `mm-banc`** et son secret supprimés le 2026-10-26 (accord de Julien).
+- ✅ **Le code d'avant la bascule**, nettoyé le 2026-10-26 : l'origine `mba.messagingme.app` des rapports CSP
+  (`src/index.ts`), la valeur par défaut d'`APP_URL` et les commentaires du pooler (`src/config.ts`), le repli de la page
+  MCP. Les relais `/r/`, `/m/`, `/mcp` et `/api/backend/*` de la console RESTENT : inertes chez Vercel (sans
+  `BACKEND_URL`, ils visent `localhost`), ils servent la topologie du développement et des e2e, et les retirer en
+  production n'y changerait rien de mesurable (lot 7, tâche 5, close sans geste). L'erreur de propriétaire du schéma
+  `public` est admise par la copie (`DEPLOY.md`, reprise après sinistre).
 - **Lire la production d'un poste** : le `DATABASE_URL` du `.env` local vise encore Supabase. Le pointer vers
   l'ANCIENNE base est voulu tant qu'elle existe (rien ne casse la production par erreur) ; une sonde en lecture seule
   de la vraie base passe par la machine (`DEPLOY.md`). `npm run migrations` d'un poste ne dit donc plus l'état de la

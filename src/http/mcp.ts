@@ -14,7 +14,7 @@ import { PREFIXE_ACCES } from '../oauth/jetons';
  *
  * `base` : l'adresse publique de l'API (`PUBLIC_API_URL`), `null` quand elle n'est pas posée. Elle décide du
  * `WWW-Authenticate` du 401, qui fait ouvrir la connexion OAuth à Claude. 🔴 Posé seulement quand l'hôte appelé
- * est celui de `base` : sur `mba.messagingme.app`, la ressource annoncée (`api.`) ne correspondrait pas à
+ * est celui de `base` : sur un autre nom (l'ancien `mba.messagingme.app`), la ressource annoncée (`api.`) ne correspondrait pas à
  * l'adresse appelée (RFC 9728, 3.3), et un client à clé révoquée partirait vers une connexion qui ne peut pas
  * aboutir. Jamais sur `/v1`, ni sur un 403 ou un 429 : seul ce 401 ouvre une connexion.
  */

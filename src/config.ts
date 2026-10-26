@@ -105,14 +105,15 @@ export const schema = z.object({
   SMSMODE_CALLBACK_STATUS_URL: z.string().default(''),
   /** URL publique qui reçoit les réponses entrantes (MO) smsmode. */
   SMSMODE_CALLBACK_MO_URL: z.string().default(''),
-  /** URL du pooler Supabase mode session (port 5432). Sert au pg-boss du WORKER (l'API empile par son pool
-   *  applicatif, cf. `PgBossQueue`) et, par défaut, au pool applicatif si APP_DATABASE_URL est vide. Les scripts
-   *  CLI (db/migrate.ts, db/seed.ts) lisent cette variable en direct, jamais APP_DATABASE_URL : DDL et seed
+  /** La base, en connexion de SESSION : en production chez Scaleway depuis le 2026-10-26, une connexion DIRECTE à
+   *  `mm-prod-db` (pas de pooler). Sert au pg-boss du WORKER (l'API empile par son pool applicatif, cf.
+   *  `PgBossQueue`) et au pool applicatif quand APP_DATABASE_URL est vide, ce qui est le cas en production. Les
+   *  scripts CLI (db/migrate.ts, db/seed.ts) lisent cette variable en direct, jamais APP_DATABASE_URL : DDL et seed
    *  passent toujours en mode session. */
   DATABASE_URL: z.string().default(''),
   /**
-   * URL du pooler Supabase mode transaction (port 6543) pour le pool applicatif (tous les stores, API +
-   * worker), qu'elle sort du budget des sessions partagé avec mm-hubspot. Vide -> repli sur DATABASE_URL.
+   * URL d'un pooler en mode transaction pour le pool applicatif (tous les stores, API + worker) : celle du pooler de
+   * Supabase (port 6543) jusqu'à la bascule, VIDE en production depuis (connexions directes). Vide -> repli sur DATABASE_URL.
    * Le pg-boss du WORKER reste obligatoirement sur DATABASE_URL : son écoute, sa supervision et sa migration ne
    * survivent pas au transaction pooling (le pooler réassigne le backend entre transactions). Celui de l'API,
    * qui ne fait qu'empiler, passe par ce pool : ses instructions sont autonomes (un `insert`, ou un bloc
@@ -122,12 +123,12 @@ export const schema = z.object({
   APP_DATABASE_URL: z.string().default(''),
   PGBOSS_SCHEMA: z.string().default('pgboss'),
   /**
-   * Taille du pool applicatif (mode transaction, `APP_DATABASE_URL`), instancié PAR PROCESS. 🔴 CHAQUE SERVICE
-   * LA FIXE dans `docker-compose.yml`, et ce défaut n'est qu'un repli : la SOMME des pools de tous les
-   * processus doit tenir dans le pool du pooler de Supabase, sans quoi l'attente passerait de notre pool, borné
-   * par `DB_CONN_TIMEOUT_MS` et visible dans `/ops`, à celle de Supavisor, qui est muette (au-delà, la latence
-   * double sans erreur). Ce budget, mesuré, et sa règle par copie : `tests/budget-pooler.test.ts`, qui refuse un
-   * compose qui le dépasse. Ajouter une copie d'API se paie donc ici, AVANT de la lancer.
+   * Taille du pool applicatif, instancié PAR PROCESS. 🔴 CHAQUE SERVICE LA FIXE (en production chez Scaleway :
+   * `ops/scaleway/conteneur-api.json` pour l'API, `ops/scaleway/docker-compose.workers.yml` pour les workers), et ce
+   * défaut n'est qu'un repli : la SOMME des pools de tous les processus, deux versions de l'API comptées pendant un
+   * déploiement, doit tenir dans `max_connections` de la base, budget tenu par `tests/deploy-scaleway.test.ts`.
+   * Ajouter une copie d'API se paie donc ici, AVANT de la lancer. (Le compose du VPS, gardé pour le retour arrière,
+   * reste tenu sous le pooler de Supabase par `tests/budget-pooler.test.ts`.)
    * Côté API, ce pool porte AUSSI les enfilements (pg-boss l'emprunte), sauf ceux de la réception de Meta, qui ont
    * leur pool (`DB_POOL_RECEPTION_MAX`, lot 14). Une attente ici, `mesureAttentePool` la voit.
    */
@@ -365,7 +366,7 @@ export const schema = z.object({
    * URL publique du front. Base des liens envoyés par e-mail (invitation `/invite/<jeton>`, réinitialisation
    * `/reset/<jeton>`), qui sont des pages de la console, pas des routes d'API.
    */
-  APP_URL: z.string().default('https://mba.messagingme.app'),
+  APP_URL: z.string().default('https://console.messagingme.app'),
   /**
    * URL publique de l'API quand elle est servie sous son propre nom. Base des adresses que le produit
    * distribue et que l'API sert : liens tracés `/r/<code>`, visuels RCS `/m/<fichier>`, webhook entrant
@@ -377,7 +378,7 @@ export const schema = z.object({
   PUBLIC_API_URL: z.string().default(''),
   /**
    * Origines autorisées à appeler cette API depuis un navigateur, séparées par des virgules.
-   * Ex. `https://engageme.messagingme.app,https://mba.messagingme.app`.
+   * Ex. `https://console.messagingme.app,https://engageme.messagingme.app`.
    * Vide = aucun en-tête CORS, le défaut voulu : ils n'apparaissent que pour une origine inscrite ici.
    * 🔴 Jamais `*` (refusé ici, au chargement) : l'étoile laisserait n'importe quel site faire faire des
    * requêtes au navigateur d'un client connecté. Pourquoi jamais `credentials` : `src/server.ts`.
