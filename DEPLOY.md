@@ -586,11 +586,22 @@ celles du script, et le workflow la RELIT une fois prête : un écart avec le fi
 CE COMMIT ; un commit antérieur au 2026-10-15 n'a pas ce fichier, et la construction échoue franchement sur sa copie,
 avant de toucher à quoi que ce soit.
 
+⚠️ **Épingler le commit, et regarder ce qui attend déjà** (2026-10-26). Sans `-f commit=<sha complet>`, le workflow
+prend la tête de `main` au moment où il part : le lot d'une autre session poussé entre-temps part avec lui, sous un
+accord qui n'était pas le sien. Et un déploiement en attente d'approbation TIENT le groupe de concurrence
+`deploiement-scaleway` (`cancel-in-progress: false`) : le suivant reste `pending` derrière lui, sans rien signaler,
+tant que Julien ne l'a pas approuvé ou rejeté. Avant d'en lancer un, `gh run list --workflow deploy-scaleway.yml` : un
+run `waiting` se règle d'abord, et Julien reçoit les deux liens.
+
 **Après un déploiement, les gestes qui restent à la main** (les mêmes qu'au temps du VPS) :
 - le contrôle de fumée public, `node scripts/fumee.mjs`, depuis le poste ;
 - `npm run oauth:fiches`, depuis le poste ;
-- si un fichier de `docs/aide/fiches/` a bougé, `aide:charger` sur la machine, avec l'image déployée :
-  `ssh -J bastion@<ip de la passerelle>:61000 root@<ip privée> "docker run --rm --env-file /opt/messagingme/.env.prod rg.nl-ams.scw.cloud/messagingme/mba:<sha> npm run aide:charger"`.
+- si un fichier de `docs/aide/fiches/` a bougé, `aide:charger` sur la machine, avec l'image déployée, étiquetée au
+  SHA COMPLET du commit :
+  `ssh -J bastion@<ip de la passerelle>:61000 root@<ip privée> "docker run --rm --env-file /opt/messagingme/.env.prod rg.nl-ams.scw.cloud/messagingme/mba:<sha complet> npm run aide:charger"`.
+  Sa relecture en lecture seule passe par un script envoyé sur la machine et monté dans le conteneur
+  (`-v /root/<script>:/app/<script>:ro`, puis `npx tsx <script>`) : l'utilisateur du conteneur n'est pas root, et un
+  fichier écrit sous `umask 077` lui rend `EACCES` (`chmod 644`, il ne porte aucun secret) ; il s'efface après.
 
 ### Le connecteur HubSpot chez Scaleway (lot 5, 2026-10-15)
 
