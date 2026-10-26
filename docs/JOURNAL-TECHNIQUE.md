@@ -4,6 +4,19 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : l'accueil de la vitrine pour les moteurs et les assistants IA (lot 2 du plan SEO et GEO)
+
+- **H1** : le surtitre « Plateforme WhatsApp et RCS » entre DANS le H1, au-dessus du slogan, qui ne change pas.
+- **Titres de section littéraux** : « WhatsApp et RCS : deux canaux, une seule conversation. », « Les fonctionnalités
+  WhatsApp et RCS que vous pilotez depuis Messaging Me. », « API et serveur MCP : branchez Messaging Me sur votre
+  système. ».
+- **Logos clients reliés à leur secteur** : Odalys au tourisme, Groupama, Gan et Mieux Assuré à l'assurance, EDH et
+  NEOMA à l'enseignement supérieur (`.clients-lien`).
+- **« Démarrer en trois étapes »** entre les fonctionnalités et l'API, sur le gabarit des étapes des développeurs.
+- **FAQ de six questions** en bas de page, balisée `FAQPage` ; la réponse sur le prix porte ses chiffres en `data-offre`.
+- `tests/vitrine-seo.test.ts` ajoute deux gardes à l'accueil (FR et EN) : chaque réponse affichée égale sa réponse
+  balisée, et chaque chiffre marqué égal au code. Vérifiées dans les deux sens.
+
 ## 2026-10-26 : la vitrine lisible par les moteurs et les assistants IA (lot 1 du plan SEO et GEO)
 
 Plan `docs/superpowers/plans/2026-10-26-seo-geo-vitrine.md`, tiré d'un bilan SEO / GEO que Julien a transmis le jour

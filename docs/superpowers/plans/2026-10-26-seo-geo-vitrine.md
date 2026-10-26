@@ -192,6 +192,14 @@ Liens : `/aide/ce-qu-il-faut-chez-meta/`, `/aide/connecter-mon-numero-whatsapp/`
 | Combien coûte Messaging Me ? | La Free est gratuite (1 000 messages envoyés par mois, l'API et le serveur MCP compris) ; le Pro coûte 49 € HT par mois pour une équipe dans la console ; l'Entreprise est sur devis. Meta facture ses messages directement à votre entreprise, selon sa grille (lien), et Messaging Me ne prend aucune commission dessus. |
 | Où sont hébergées les données ? | Dans l'Union européenne, chez Scaleway. ⚠️ À publier une fois la bascule Scaleway faite. |
 
+Fait au lot 2 (2026-10-26), avec trois écarts :
+- le titre des fonctionnalités est « Les fonctionnalités WhatsApp et RCS que vous pilotez depuis Messaging Me. » : la
+  proposition « … dans une seule console » répétait le sous-titre « Six briques dans une seule console » ;
+- l'étape 1 dit « avec votre compte Google ou une adresse e-mail » : l'inscription de la console offre les deux ;
+- la question sur l'hébergement attend la bascule Scaleway, la FAQ en a donc six.
+Les chiffres de la réponse sur le prix portent `data-offre` comme la page des tarifs, et `tests/vitrine-seo.test.ts`
+les compare au code, ainsi que chaque réponse affichée à sa réponse balisée.
+
 ## Lot 3 : les six fonctionnalités, page par page
 
 Pour chaque page : un titre de page qui porte le mot-clé, des H2 littéraux, une FAQ de 4 questions (la première

@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { PRIX_PRO_HT_CENTIMES } from '../src/offres/offres';
-import { lire, pagesHtml, texte } from './vitrine-lecture';
+import { DROITS, PRIX_PRO_HT_CENTIMES } from '../src/offres/offres';
+import { lire, pagesHtml, parAttribut, texte } from './vitrine-lecture';
 
 /**
  * CE QUE LISENT LES MOTEURS ET LES ASSISTANTS IA, gardé sur toute la vitrine (plan
@@ -60,6 +60,35 @@ describe('les données structurées de la vitrine', () => {
       expect(balisees, p).toEqual(affichees);
     }
   });
+
+  // Sur l'accueil, la réponse balisée est le texte affiché, mot pour mot. Pas ailleurs : la FAQ des développeurs
+  // affiche une adresse sans `https://` que son balisage écrit en entier, et c'est voulu.
+  for (const page of ['index.html', 'en/index.html']) {
+    it(`${page} : les réponses de la FAQ balisée sont aussi celles qui s’affichent`, () => {
+      const html = lire(page);
+      const faq = noeuds(html).find((n) => n['@type'] === 'FAQPage');
+      expect(faq, `${page} sans FAQPage`).toBeDefined();
+      const balisees = (faq!.mainEntity as Noeud[]).map((q) => plat(String((q.acceptedAnswer as Noeud).text)));
+      const affichees = [...html.matchAll(/<div class="dev-faq">([\s\S]*?)<\/div>/g)]
+        .flatMap((m) => [...m[1]!.matchAll(/<details[^>]*><summary[^>]*>[\s\S]*?<\/summary>([\s\S]*?)<\/details>/g)].map((s) => plat(s[1]!)));
+      expect(balisees).toEqual(affichees);
+    });
+  }
+});
+
+describe('les chiffres de l’accueil', () => {
+  // Les mêmes clés que la page des tarifs (tests/vitrine-pages.test.ts), limitées à celles que l'accueil cite.
+  const ATTENDU: Record<string, number> = {
+    'base.envois-modeles-mois': DROITS.base.limites.envoisModelesMois ?? Number.NaN,
+    'pro.prix-mois': PRIX_PRO_HT_CENTIMES.mois / 100,
+  };
+  for (const page of ['index.html', 'en/index.html']) {
+    it(`🔴 ${page} : chaque chiffre marqué data-offre vaut ce que dit le code`, () => {
+      const marques = parAttribut(lire(page), 'data-offre');
+      expect(marques.map((m) => m.valeur).sort()).toEqual(Object.keys(ATTENDU).sort());
+      for (const { valeur, contenu } of marques) expect(Number(texte(contenu).replace(/\D/g, '')), valeur).toBe(ATTENDU[valeur]);
+    });
+  }
 });
 
 describe('la phrase de définition, la même partout', () => {

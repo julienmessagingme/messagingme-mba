@@ -46,7 +46,10 @@
     "contactType": "sales",
     "email": "contact@messagingme.fr",
     "url": "https://app.messagingme.fr/contact/",
-    "availableLanguage": ["fr", "en"]
+    "availableLanguage": [
+     "fr",
+     "en"
+    ]
    },
    "knowsAbout": [
     "WhatsApp Business Platform",
@@ -142,6 +145,60 @@
    "publisher": {
     "@id": "https://www.messagingme.fr/#organisation"
    }
+  },
+  {
+   "@type": "FAQPage",
+   "inLanguage": "fr-FR",
+   "mainEntity": [
+    {
+     "@type": "Question",
+     "name": "Qu’est-ce que Messaging Me ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Messaging Me est une plateforme conversationnelle française pour WhatsApp et le RCS. Les entreprises y envoient leurs campagnes, y répondent à leurs clients avec leur équipe, un agent IA ou le Meta Business Agent, et retrouvent dans leur CRM chaque conversation qualifiée : intention, urgence, satisfaction, risque de départ."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Quelle différence entre WhatsApp et le RCS ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "WhatsApp est une application de messagerie. Le RCS est la messagerie enrichie de l’application de messages du téléphone, sans rien à installer : logo de marque vérifié, images, carrousels et boutons. Messaging Me envoie sur l’un, sur l’autre, ou sur les deux avec un fallback."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Qu’est-ce que le fallback entre WhatsApp et le RCS ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "À la création d’une campagne, l’option « WhatsApp et RCS, avec repli » envoie d’abord sur le canal choisi. Si l’envoi échoue, le message repart aussitôt sur l’autre canal : personne ne reçoit deux fois le même message."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Qui répond à mes clients ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Vous choisissez : votre équipe dans une Inbox partagée, un agent IA qui suit vos règles et connaît vos contenus, ou le Meta Business Agent sur WhatsApp. Chacun peut passer la main à l’autre."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Comment relier WhatsApp à HubSpot ou à mon CRM ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "HubSpot et Salesforce ont leur connecteur. Avec HubSpot, une campagne cible une liste HubSpot, un scénario part quand un deal atteint une étape, et l’analyse de chaque conversation remonte dans HubSpot. Brevo, Pipedrive et les autres CRM se relient par les webhooks ou l’API de Messaging Me."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Combien coûte Messaging Me ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "La Free est gratuite : 1 000 messages envoyés par mois, l’API et le serveur MCP compris, pilotée depuis votre application ou votre assistant IA. Le Pro, pour une équipe dans la console, coûte 49 € HT par mois. L’Entreprise est sur devis. Meta facture ses messages directement à votre entreprise, selon sa grille, sans commission de Messaging Me."
+     }
+    }
+   ]
   },
   {
    "@type": "VideoObject",
@@ -339,7 +396,7 @@
 
 <main>
   <section class="cadre une">
-    <h1>Transformez chaque conversation<br> en levier de performance.</h1>
+    <h1><span class="f-surtitre">Plateforme WhatsApp et RCS</span> Transformez chaque conversation<br> en levier de performance.</h1>
     <div class="une-gauche">
       <p class="chapeau">WhatsApp et RCS, campagnes et service client au même endroit. Vous choisissez qui répond, et chaque conversation est qualifiée et se transforme en action pour votre CRM.</p>
       <div class="appels">
@@ -478,12 +535,12 @@
     <div class="cadre">
       <h2 id="confiance-titre">Ils nous font confiance</h2>
       <ul class="clients">
-        <li><img src="/img/clients/odalys.svg" width="152" height="63" alt="Odalys" loading="lazy" style="--h:34px"></li>
-        <li><img src="/img/clients/groupama.webp" width="360" height="96" alt="Groupama" loading="lazy" style="--h:32px"></li>
-        <li><img src="/img/clients/gan.webp" width="121" height="120" alt="Gan" loading="lazy" style="--h:46px"></li>
-        <li><img src="/img/clients/mieux-assure.webp" width="120" height="120" alt="Mieux Assuré" loading="lazy" style="--h:46px"></li>
-        <li><img src="/img/clients/edh.webp" width="196" height="83" alt="Groupe EDH" loading="lazy" style="--h:32px"></li>
-        <li><img src="/img/clients/neoma.webp" width="193" height="60" alt="NEOMA Business School" loading="lazy" style="--h:30px"></li>
+        <li><a class="clients-lien" href="/solutions/voyage-et-tourisme/"><img src="/img/clients/odalys.svg" width="152" height="63" alt="Odalys" loading="lazy" style="--h:34px"></a></li>
+        <li><a class="clients-lien" href="/solutions/assurance/"><img src="/img/clients/groupama.webp" width="360" height="96" alt="Groupama" loading="lazy" style="--h:32px"></a></li>
+        <li><a class="clients-lien" href="/solutions/assurance/"><img src="/img/clients/gan.webp" width="121" height="120" alt="Gan" loading="lazy" style="--h:46px"></a></li>
+        <li><a class="clients-lien" href="/solutions/assurance/"><img src="/img/clients/mieux-assure.webp" width="120" height="120" alt="Mieux Assuré" loading="lazy" style="--h:46px"></a></li>
+        <li><a class="clients-lien" href="/solutions/enseignement-superieur/"><img src="/img/clients/edh.webp" width="196" height="83" alt="Groupe EDH" loading="lazy" style="--h:32px"></a></li>
+        <li><a class="clients-lien" href="/solutions/enseignement-superieur/"><img src="/img/clients/neoma.webp" width="193" height="60" alt="NEOMA Business School" loading="lazy" style="--h:30px"></a></li>
         <li><img src="/img/clients/dpd.webp" width="82" height="120" alt="DPD" loading="lazy" style="--h:46px"></li>
         <li><img src="/img/clients/picoty.webp" width="150" height="65" alt="Picoty" loading="lazy" style="--h:30px"></li>
       </ul>
@@ -506,7 +563,7 @@
 
   <section class="relais revele">
     <div class="cadre">
-      <h2>Deux canaux, une seule conversation.</h2>
+      <h2>WhatsApp et RCS&nbsp;: deux canaux, une seule conversation.</h2>
       <p>WhatsApp et RCS n’ouvrent pas les mêmes portes. Messaging Me les réunit, puis confie chaque conversation à qui vous choisissez.</p>
       <div class="canaux">
         <fieldset class="bascule">
@@ -587,7 +644,7 @@
   <section class="fx" id="fonctionnalites" aria-labelledby="fx-titre">
     <div class="cadre">
       <p class="f-surtitre">Fonctionnalités</p>
-      <h2 class="f-titre" id="fx-titre">Tout ce que vous pilotez depuis Messaging Me.</h2>
+      <h2 class="f-titre" id="fx-titre">Les fonctionnalités WhatsApp et RCS que vous pilotez depuis Messaging Me.</h2>
       <p class="f-texte">Six briques dans une seule console, et chacune ouvre une conversation que vous savez suivre.</p>
       <ul class="fx-grille">
         <li>
@@ -669,6 +726,32 @@
     </div>
   </section>
 
+  <section class="f-bloc dev-etapes bande-claire" id="demarrer">
+    <div class="cadre">
+      <h2 class="f-titre">Démarrer en trois étapes.</h2>
+      <ol class="dev-pas">
+        <li>
+          <span class="f-num">1</span>
+          <h3>Créez votre espace</h3>
+          <p>Gratuitement, avec votre compte Google ou une adresse e-mail.</p>
+          <a class="bouton bouton-texte" href="https://console.messagingme.app/signup">Créer mon espace <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
+        </li>
+        <li>
+          <span class="f-num">2</span>
+          <h3>Connectez votre numéro WhatsApp</h3>
+          <p>Depuis la fenêtre de Meta, où votre compte Meta Business se crée s’il n’existe pas encore. Pas de numéro&nbsp;? Nous vous en fournissons un.</p>
+          <a class="bouton bouton-texte" href="/aide/ce-qu-il-faut-chez-meta/">Ce qu’il faut chez Meta <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
+        </li>
+        <li>
+          <span class="f-num">3</span>
+          <h3>Choisissez qui répond, puis lancez</h3>
+          <p>Votre équipe dans l’Inbox, un agent IA ou le Meta Business Agent. Puis votre première campagne, sur WhatsApp, en RCS ou les deux.</p>
+          <a class="bouton bouton-texte" href="/aide/lancer-une-campagne/">Lancer une campagne <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
+        </li>
+      </ol>
+    </div>
+  </section>
+
   <section class="enonce-bloc">
     <div class="cadre">
       <p class="enonce">Simplement <strong>conversationnel.</strong></p>
@@ -678,7 +761,7 @@
   <section class="dev" id="developpeurs">
     <div class="cadre">
       <div>
-        <h2>Branchez Messaging Me sur votre système.</h2>
+        <h2>API et serveur MCP&nbsp;: branchez Messaging Me sur votre système.</h2>
         <p>Contacts, messages WhatsApp et RCS, scénarios&nbsp;: pilotez tout depuis vos outils avec l’API, ou depuis un assistant IA avec le serveur MCP.</p>
         <div class="appels">
           <a class="bouton bouton-plein" href="https://console.messagingme.app/developers/api">Documentation de l’API</a>
@@ -698,6 +781,19 @@ curl -X POST https://api.messagingme.app/v1/messages/whatsapp \
 <span class="c"># Brancher Claude Code : le plugin Messaging Me</span>
 /plugin marketplace add julienmessagingme/messagingme-plugin
 /plugin install messagingme@messagingme</code></pre>
+    </div>
+  </section>
+  <section class="f-bloc cas-faq" id="faq">
+    <div class="cadre">
+      <h2 class="f-titre">Questions fréquentes.</h2>
+      <div class="dev-faq">
+        <details><summary>Qu’est-ce que Messaging Me ?</summary><p>Messaging Me est une plateforme conversationnelle française pour WhatsApp et le RCS. Les entreprises y envoient leurs campagnes, y répondent à leurs clients avec leur équipe, un agent IA ou le Meta Business Agent, et retrouvent dans leur CRM chaque conversation qualifiée : intention, urgence, satisfaction, risque de départ.</p></details>
+        <details><summary>Quelle différence entre WhatsApp et le RCS ?</summary><p>WhatsApp est une application de messagerie. Le RCS est la messagerie enrichie de l’application de messages du téléphone, sans rien à installer : logo de marque vérifié, images, carrousels et boutons. Messaging Me envoie sur l’un, sur l’autre, ou sur les deux avec un fallback.</p></details>
+        <details><summary>Qu’est-ce que le fallback entre WhatsApp et le RCS ?</summary><p>À la création d’une campagne, l’option « WhatsApp et RCS, avec repli » envoie d’abord sur le canal choisi. Si l’envoi échoue, le message repart aussitôt sur l’autre canal : personne ne reçoit deux fois le même message.</p></details>
+        <details><summary>Qui répond à mes clients ?</summary><p>Vous choisissez : votre équipe dans une Inbox partagée, un agent IA qui suit vos règles et connaît vos contenus, ou le Meta Business Agent sur WhatsApp. Chacun peut passer la main à l’autre.</p></details>
+        <details><summary>Comment relier WhatsApp à HubSpot ou à mon CRM ?</summary><p>HubSpot et Salesforce ont leur connecteur. Avec HubSpot, une campagne cible une liste HubSpot, un scénario part quand un deal atteint une étape, et l’analyse de chaque conversation remonte dans HubSpot. Brevo, Pipedrive et les autres CRM se relient par les webhooks ou l’API de Messaging Me.</p></details>
+        <details><summary>Combien coûte Messaging Me ?</summary><p>La Free est gratuite : <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois, l’API et le serveur MCP compris, pilotée depuis votre application ou votre assistant IA. Le Pro, pour une équipe dans la console, coûte <span data-offre="pro.prix-mois">49</span> € HT par mois. L’Entreprise est sur devis. Meta facture ses messages directement à votre entreprise, selon sa grille, sans commission de Messaging Me.</p></details>
+      </div>
     </div>
   </section>
 </main>
