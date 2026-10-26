@@ -1,7 +1,6 @@
 [
  {"fr":"Film : Pilotage des coûts avec Messaging Me","en":"Film: Cost control with Messaging Me"},
  {"fr":"Le coût par engagement, le coût par lead, la profondeur de chaque conversation, et le coût de l’IA compté à part.","en":"The cost per engagement, the cost per lead, the depth of each conversation, and the cost of AI counted separately."},
- {"fr":"Pilotage des coûts · Messaging Me","en":"Cost control · Messaging Me"},
  {"fr":"Chaque euro, rapporté à une conversation.","en":"Every euro, tied to a conversation."},
  {"fr":"Pour vos campagnes, le coût par engagement&nbsp;: ce que coûte un client qui clique ou répond. Pour vos publicités, le coût par lead (CPL), puis par conversation qualifiée. Et le coût de l’IA, à part.","en":"For your campaigns, the cost per engagement: what a customer who clicks or replies costs. For your ads, the cost per lead (CPL), then per qualified conversation. And the cost of AI, separately."},
  {"fr":"Le coût par lead","en":"The cost per lead"},
@@ -15,7 +14,6 @@
  {"fr":"Coût par clic","en":"Cost per click"},
  {"fr":"Coût par lead (CPL)","en":"Cost per lead (CPL)"},
  {"fr":"Exemple, chiffres indicatifs.","en":"Example, indicative figures."},
- {"fr":"Tout le pilotage en 30 secondes.","en":"All of cost control in 30 seconds."},
  {"fr":"Campagnes&nbsp;: le coût par engagement.","en":"Campaigns: the cost per engagement."},
  {"fr":"Un engagement, c’est un clic ou une réponse. Pour chaque campagne, Messaging Me rapporte ce qu’elle a coûté aux clients qui ont vraiment réagi, et le détaille étage par étage sur une chaîne WhatsApp et RCS. Vous comparez une campagne à l’autre sur ce qui compte, pas sur le nombre de messages envoyés.","en":"An engagement is a click or a reply. For each campaign, Messaging Me relates what it cost to the customers who actually reacted, and breaks it down stage by stage on a WhatsApp and RCS sequence. You compare one campaign with another on what matters, not on the number of messages sent."},
  {"fr":"Le coût affiché est une estimation calculée sur les tarifs des canaux, pas une facture.","en":"The cost shown is an estimate based on the channels’ rates, not an invoice."},
@@ -30,7 +28,6 @@
  {"fr":"Publicités&nbsp;: le coût par lead (CPL).","en":"Ads: the cost per lead (CPL)."},
  {"fr":"Un lead, c’est un prospect qui vous a écrit depuis la publicité. De la dépense à la conversation qualifiée, chaque étape a son coût&nbsp;: de quoi couper une publicité, ou lui remettre du budget.","en":"A lead is a prospect who wrote to you from the ad. From spend to qualified conversation, each step has its cost: enough to cut an ad, or give it more budget."},
  {"fr":"1,40 € le lead (CPL)","en":"€1.40 per lead (CPL)"},
- {"fr":"Et le reste, au même endroit.","en":"And the rest, in one place."},
  {"fr":"Le coût de l’IA, à part","en":"The cost of AI, separately"},
  {"fr":"Les réponses de vos agents IA et la traduction des conversations sont débitées sur votre crédit, et comptées à part dans la synthèse.","en":"Your AI agents’ replies and the translation of conversations are charged to your credit, and counted separately in the summary."},
  {"fr":"Par jour et par template","en":"By day and by template"},
@@ -40,5 +37,18 @@
  {"fr":"Le coût par engagement de chaque campagne WhatsApp et RCS, le coût par lead (CPL) de chaque publicité Click-to-WhatsApp, et le coût de l’IA.","en":"The cost per engagement of every WhatsApp and RCS campaign, the cost per lead (CPL) of every Click-to-WhatsApp ad, and the cost of AI."},
  {"fr":"Chaque euro rapporté à une conversation : coût par engagement, coût par lead (CPL), coût de l’IA.","en":"Every euro tied to a conversation: cost per engagement, cost per lead (CPL), cost of AI."},
  {"fr":"La synthèse des coûts dans Messaging Me : coût moyen par engagement 0,42 €, coût des messages envoyés 412 €, coût de l’IA 38 €, et le coût par lead d’une publicité, 1,40 €","en":"The cost summary in Messaging Me: average cost per engagement €0.42, cost of messages sent €412, AI cost €38, and an ad’s cost per lead, €1.40"},
- {"fr":"Film : le pilotage des coûts avec Messaging Me","en":"Film: cost control with Messaging Me"}
+ {"fr":"Film : le pilotage des coûts avec Messaging Me","en":"Film: cost control with Messaging Me"},
+ {"fr":"Coût par lead et coût des campagnes WhatsApp · Messaging Me","en":"Cost per lead and cost of WhatsApp campaigns · Messaging Me"},
+ {"fr":"Le film&nbsp;: le coût de chaque campagne et de chaque pub, en 30 secondes.","en":"The film: the cost of every campaign and every ad, in 30 seconds."},
+ {"fr":"Le coût de l’IA, par jour et par template.","en":"The cost of AI, per day and per template."},
+ {"fr":"Qu’est-ce que le coût par engagement ?","en":"What is the cost per engagement?"},
+ {"fr":"Ce que coûte un client qui a vraiment réagi : un engagement, c’est un clic ou une réponse. Messaging Me rapporte le coût de chaque campagne à ses engagés, étage par étage sur une chaîne WhatsApp et RCS.","en":"What a customer who really reacted costs: an engagement is a click or a reply. Messaging Me divides the cost of each campaign by its engaged customers, stage by stage on a WhatsApp and RCS chain."},
+ {"fr":"Comment se calcule le coût par lead (CPL) ?","en":"How is the cost per lead (CPL) calculated?"},
+ {"fr":"Un lead, c’est un prospect qui vous a écrit depuis la publicité : le CPL est la dépense divisée par le nombre de leads. Messaging Me le suit jusqu’à la conversation qualifiée.","en":"A lead is a prospect who wrote to you from the ad: the CPL is the spend divided by the number of leads. Messaging Me follows it down to the qualified conversation."},
+ {"fr":"Le coût affiché est-il la facture de Meta ?","en":"Is the cost shown Meta’s invoice?"},
+ {"fr":"Non : c’est une estimation calculée sur les tarifs des canaux. Meta facture ses messages directement à votre entreprise, selon sa grille.","en":"No: it is an estimate calculated on the channels’ rates. Meta bills its messages directly to your business, according to its rate card."},
+ {"fr":"Le coût de l’IA est-il compté à part ?","en":"Is the cost of AI counted separately?"},
+ {"fr":"Oui : les réponses de vos agents IA et la traduction des conversations sont débitées sur votre crédit, et comptées à part dans la synthèse.","en":"Yes: your AI agents’ replies and the translation of conversations are debited from your credit, and counted separately in the summary."},
+ {"fr":"Les publicités Click-to-WhatsApp","en":"Click-to-WhatsApp ads"},
+ {"fr":"Choisir son offre","en":"Choose your plan"}
 ]

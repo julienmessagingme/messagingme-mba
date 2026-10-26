@@ -6,7 +6,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WhatsApp et RCS, avec fallback · Messaging Me</title>
+<title>Campagnes WhatsApp et RCS avec fallback · Messaging Me</title>
 <meta name="description" content="Ne choisissez plus entre WhatsApp et RCS : chaque client reçoit le message sur son canal, avec un fallback dans le sens voulu et une seule Inbox.">
 <link rel="canonical" href="https://app.messagingme.fr/fonctionnalites/whatsapp-et-rcs/">
 <link rel="alternate" hreflang="fr" href="https://app.messagingme.fr/fonctionnalites/whatsapp-et-rcs/">
@@ -16,7 +16,7 @@
 <meta property="og:type" content="website">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:site_name" content="Messaging Me">
-<meta property="og:title" content="WhatsApp et RCS, avec fallback · Messaging Me">
+<meta property="og:title" content="Campagnes WhatsApp et RCS avec fallback · Messaging Me">
 <meta property="og:description" content="WhatsApp ou RCS ? Ne choisissez plus : le fallback part dans le sens que vous voulez, et toutes les réponses arrivent dans la même Inbox.">
 <meta property="og:image" content="https://app.messagingme.fr/img/partage/whatsapp-et-rcs.jpg">
 <meta property="og:image:width" content="1200">
@@ -61,6 +61,44 @@
    "publisher": {
     "@id": "https://www.messagingme.fr/#organisation"
    }
+  },
+  {
+   "@type": "FAQPage",
+   "inLanguage": "fr-FR",
+   "mainEntity": [
+    {
+     "@type": "Question",
+     "name": "Qu’est-ce que le RCS ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "La messagerie enrichie de l’application de messages du téléphone, sans rien à installer : logo de marque vérifié, images, carrousels et boutons d’un appui."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Qu’est-ce que le fallback entre WhatsApp et le RCS ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "À la création d’une campagne, l’option « WhatsApp et RCS, avec repli » envoie d’abord sur le canal choisi. Si l’envoi échoue, le message repart aussitôt sur l’autre canal : personne ne reçoit deux fois le même message."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Un client peut-il recevoir deux fois le même message ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Non : le fallback ne part que si le premier envoi échoue. Chaque client reçoit un message, un seul."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Où arrivent les réponses ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Dans la même Inbox : que le client réponde sur WhatsApp ou en RCS, votre équipe lui répond au même endroit."
+     }
+    }
+   ]
   }
  ]
 }
@@ -263,7 +301,7 @@
 
   <section class="f-bloc">
     <div class="cadre">
-      <h2 class="f-titre">Choisir un canal, c’est perdre une partie de vos clients.</h2>
+      <h2 class="f-titre">Pourquoi envoyer sur WhatsApp et le RCS.</h2>
       <ul class="f-faits">
         <li><svg class="ic" aria-hidden="true"><use href="#i-whatsapp"/></svg><div><strong>Sur WhatsApp</strong><span>Ceux qui ne l’ont pas vous échappent.</span></div></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg><div><strong>En RCS</strong><span>Ceux dont le téléphone ne le reçoit pas vous échappent aussi.</span></div></li>
@@ -273,7 +311,7 @@
 
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">Tout le parcours en 30 secondes.</h2>
+      <h2 class="f-titre">Le film&nbsp;: WhatsApp et RCS avec fallback, en 30 secondes.</h2>
       <p class="f-texte">Du choix du canal à la réponse du client, dans la même Inbox.</p>
       <video class="f-video" src="/films/whatsapp-et-rcs.mp4?v=2" poster="/films/whatsapp-et-rcs.webp" data-vertical="/films/whatsapp-et-rcs-9x16.mp4" data-affiche-verticale="/films/whatsapp-et-rcs-9x16.webp" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : WhatsApp et RCS avec Messaging Me"></video>
     </div>
@@ -281,7 +319,7 @@
 
   <section class="f-etapes">
     <div class="cadre">
-      <h2 class="f-titre">Dans le sens que vous voulez.</h2>
+      <h2 class="f-titre">Régler le fallback WhatsApp vers RCS, ou RCS vers WhatsApp.</h2>
       <div class="f-pas">
         <ol class="f-liste">
           <li class="f-etape actif">
@@ -316,6 +354,17 @@
     </div>
   </section>
 
+  <section class="f-bloc cas-faq" id="faq">
+    <div class="cadre">
+      <h2 class="f-titre">Questions fréquentes.</h2>
+      <div class="dev-faq">
+        <details><summary>Qu’est-ce que le RCS ?</summary><p>La messagerie enrichie de l’application de messages du téléphone, sans rien à installer : logo de marque vérifié, images, carrousels et boutons d’un appui.</p></details>
+        <details><summary>Qu’est-ce que le fallback entre WhatsApp et le RCS ?</summary><p>À la création d’une campagne, l’option « WhatsApp et RCS, avec repli » envoie d’abord sur le canal choisi. Si l’envoi échoue, le message repart aussitôt sur l’autre canal : personne ne reçoit deux fois le même message.</p></details>
+        <details><summary>Un client peut-il recevoir deux fois le même message ?</summary><p>Non : le fallback ne part que si le premier envoi échoue. Chaque client reçoit un message, un seul.</p></details>
+        <details><summary>Où arrivent les réponses ?</summary><p>Dans la même Inbox : que le client réponde sur WhatsApp ou en RCS, votre équipe lui répond au même endroit.</p></details>
+      </div>
+    </div>
+  </section>
   <section class="f-appel">
     <div class="cadre">
       <h2 class="f-titre">Touchez tous vos clients, sur le canal qu’ils ont.</h2>
@@ -324,6 +373,7 @@
         <a class="bouton bouton-plein" href="/contact/?demo=whatsapp-et-rcs#formulaire">Demander une démo</a>
         <a class="bouton bouton-texte" href="https://console.messagingme.app/login">Se connecter <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
+      <p class="cas-voisins"><a href="/fonctionnalites/campagnes-et-scenarios/">Les campagnes</a> · <a href="/aide/lancer-une-campagne/">Lancer une campagne, pas à pas</a> · <a href="/tarifs/">Les tarifs</a></p>
     </div>
   </section>
 </main>

@@ -6,7 +6,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WhatsApp and RCS, with fallback · Messaging Me</title>
+<title>WhatsApp and RCS campaigns with fallback · Messaging Me</title>
 <meta name="description" content="Stop choosing between WhatsApp and RCS: every customer gets the message on their channel, with a fallback in the direction you choose and a single Inbox.">
 <link rel="canonical" href="https://app.messagingme.fr/en/features/whatsapp-and-rcs/">
 <link rel="alternate" hreflang="fr" href="https://app.messagingme.fr/fonctionnalites/whatsapp-et-rcs/">
@@ -17,7 +17,7 @@
 <meta property="og:locale" content="en_US">
 <meta property="og:locale:alternate" content="fr_FR">
 <meta property="og:site_name" content="Messaging Me">
-<meta property="og:title" content="WhatsApp and RCS, with fallback · Messaging Me">
+<meta property="og:title" content="WhatsApp and RCS campaigns with fallback · Messaging Me">
 <meta property="og:description" content="WhatsApp or RCS? Stop choosing: the fallback goes in the direction you choose, and every reply lands in the same Inbox.">
 <meta property="og:image" content="https://app.messagingme.fr/img/partage/whatsapp-et-rcs.jpg">
 <meta property="og:image:width" content="1200">
@@ -62,6 +62,44 @@
    "publisher": {
     "@id": "https://www.messagingme.fr/#organisation"
    }
+  },
+  {
+   "@type": "FAQPage",
+   "inLanguage": "en-US",
+   "mainEntity": [
+    {
+     "@type": "Question",
+     "name": "What is RCS?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "The rich messaging of the phone’s own messages app, with nothing to install: verified brand logo, images, carousels and one-tap buttons."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "What is the fallback between WhatsApp and RCS?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "When you create a campaign, the “WhatsApp and RCS, with fallback” option sends on the chosen channel first. If the send fails, the message goes out right away on the other channel: nobody receives the same message twice."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Can a customer receive the same message twice?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "No: the fallback only goes out if the first send fails. Each customer receives one message, only one."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Where do the replies arrive?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "In the same Inbox: whether the customer replies on WhatsApp or over RCS, your team answers in the same place."
+     }
+    }
+   ]
   }
  ]
 }
@@ -264,7 +302,7 @@
 
   <section class="f-bloc">
     <div class="cadre">
-      <h2 class="f-titre">Choosing one channel means losing part of your customers.</h2>
+      <h2 class="f-titre">Why send on WhatsApp and RCS.</h2>
       <ul class="f-faits">
         <li><svg class="ic" aria-hidden="true"><use href="#i-whatsapp"/></svg><div><strong>On WhatsApp</strong><span>Those who do not have it slip away.</span></div></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg><div><strong>On RCS</strong><span>Those whose phone cannot receive it slip away too.</span></div></li>
@@ -274,7 +312,7 @@
 
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">The whole journey in 30 seconds.</h2>
+      <h2 class="f-titre">The film: WhatsApp and RCS with fallback, in 30 seconds.</h2>
       <p class="f-texte">From choosing the channel to the customer’s reply, in the same Inbox.</p>
       <video class="f-video" src="/films/whatsapp-et-rcs-en.mp4" poster="/films/whatsapp-et-rcs-en.webp" data-vertical="/films/whatsapp-et-rcs-en-9x16.mp4" data-affiche-verticale="/films/whatsapp-et-rcs-en-9x16.webp" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film: WhatsApp and RCS with Messaging Me"></video>
     </div>
@@ -282,7 +320,7 @@
 
   <section class="f-etapes">
     <div class="cadre">
-      <h2 class="f-titre">In the direction you choose.</h2>
+      <h2 class="f-titre">Set the fallback from WhatsApp to RCS, or from RCS to WhatsApp.</h2>
       <div class="f-pas">
         <ol class="f-liste">
           <li class="f-etape actif">
@@ -317,6 +355,17 @@
     </div>
   </section>
 
+  <section class="f-bloc cas-faq" id="faq">
+    <div class="cadre">
+      <h2 class="f-titre">Frequently asked questions.</h2>
+      <div class="dev-faq">
+        <details><summary>What is RCS?</summary><p>The rich messaging of the phone’s own messages app, with nothing to install: verified brand logo, images, carousels and one-tap buttons.</p></details>
+        <details><summary>What is the fallback between WhatsApp and RCS?</summary><p>When you create a campaign, the “WhatsApp and RCS, with fallback” option sends on the chosen channel first. If the send fails, the message goes out right away on the other channel: nobody receives the same message twice.</p></details>
+        <details><summary>Can a customer receive the same message twice?</summary><p>No: the fallback only goes out if the first send fails. Each customer receives one message, only one.</p></details>
+        <details><summary>Where do the replies arrive?</summary><p>In the same Inbox: whether the customer replies on WhatsApp or over RCS, your team answers in the same place.</p></details>
+      </div>
+    </div>
+  </section>
   <section class="f-appel">
     <div class="cadre">
       <h2 class="f-titre">Reach all your customers, on the channel they have.</h2>
@@ -325,6 +374,7 @@
         <a class="bouton bouton-plein" href="/en/contact/?demo=whatsapp-et-rcs#formulaire">Request a demo</a>
         <a class="bouton bouton-texte" href="https://console.messagingme.app/login?lang=en">Sign in <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
+      <p class="cas-voisins"><a href="/en/features/campaigns-and-scenarios/">Campaigns</a> · <a href="/en/help/launch-a-campaign/">Launch a campaign, step by step</a> · <a href="/en/pricing/">Pricing</a></p>
     </div>
   </section>
 </main>

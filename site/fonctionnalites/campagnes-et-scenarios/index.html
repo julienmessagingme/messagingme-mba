@@ -6,7 +6,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Campagnes push et scénarios conversationnels · Messaging Me</title>
+<title>Campagnes WhatsApp et RCS et scénarios · Messaging Me</title>
 <meta name="description" content="Envoyez vos campagnes WhatsApp et RCS, puis laissez un scénario répondre à chaque client : un code, une question, un rendez-vous, ou votre équipe.">
 <link rel="canonical" href="https://app.messagingme.fr/fonctionnalites/campagnes-et-scenarios/">
 <link rel="alternate" hreflang="fr" href="https://app.messagingme.fr/fonctionnalites/campagnes-et-scenarios/">
@@ -16,7 +16,7 @@
 <meta property="og:type" content="website">
 <meta property="og:locale" content="fr_FR">
 <meta property="og:site_name" content="Messaging Me">
-<meta property="og:title" content="Campagnes push et scénarios conversationnels · Messaging Me">
+<meta property="og:title" content="Campagnes WhatsApp et RCS et scénarios · Messaging Me">
 <meta property="og:description" content="Vos campagnes ouvrent des conversations, vos scénarios y répondent : WhatsApp, RCS, et votre équipe quand il le faut.">
 <meta property="og:image" content="https://app.messagingme.fr/img/partage/campagnes-et-scenarios.jpg">
 <meta property="og:image:width" content="1200">
@@ -61,6 +61,44 @@
    "publisher": {
     "@id": "https://www.messagingme.fr/#organisation"
    }
+  },
+  {
+   "@type": "FAQPage",
+   "inLanguage": "fr-FR",
+   "mainEntity": [
+    {
+     "@type": "Question",
+     "name": "Qu’est-ce qu’un scénario conversationnel ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Une suite de blocs qui répond à un client sans personne derrière l’écran : message, question, formulaire, condition, attente, action, ou passage à votre équipe ou à un agent IA. Il part sur un mot-clé, un nouveau contact, une étiquette posée, un rappel avant une date, un webhook de vos outils ou l’API."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Faut-il un modèle approuvé par Meta pour lancer une campagne WhatsApp ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Oui. Une campagne écrit à des clients qui ne vous ont pas forcément écrit récemment : son premier message est un modèle que WhatsApp valide avant l’envoi. Dès que le client répond, la conversation est libre pendant 24 heures."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Peut-on cibler une liste HubSpot ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Oui : l’audience d’une campagne peut être une liste filtrée par étiquettes, un import, ou une liste HubSpot."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Que se passe-t-il quand un client répond STOP ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Il ne reçoit plus rien, ni campagne ni scénario, et son refus est enregistré sur sa fiche."
+     }
+    }
+   ]
   }
  ]
 }
@@ -264,7 +302,7 @@
 
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">Tout le scénario en 30 secondes.</h2>
+      <h2 class="f-titre">Le film&nbsp;: une campagne WhatsApp et son scénario, en 30 secondes.</h2>
       <p class="f-texte">La campagne part, vos clients répondent, et un scénario leur répond&nbsp;: un agent IA, votre équipe, ou vos propres outils interrogés en direct.</p>
       <video class="f-video" src="/films/campagnes-et-scenarios.mp4" poster="/films/campagnes-et-scenarios.webp" data-vertical="/films/campagnes-et-scenarios-9x16.mp4" data-affiche-verticale="/films/campagnes-et-scenarios-9x16.webp" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : campagnes et scénarios avec Messaging Me"></video>
     </div>
@@ -272,7 +310,7 @@
 
   <section class="f-etapes">
     <div class="cadre">
-      <h2 class="f-titre">De la campagne à la conversation.</h2>
+      <h2 class="f-titre">Créer une campagne WhatsApp ou RCS, puis répondre dans l’Inbox.</h2>
       <div class="f-pas">
         <ol class="f-liste">
           <li class="f-etape actif">
@@ -296,7 +334,7 @@
 
   <section class="f-bloc" id="exemples">
     <div class="cadre">
-      <h2 class="f-titre">Des scénarios qui répondent pour vous.</h2>
+      <h2 class="f-titre">Quatre exemples de scénarios&nbsp;: panier abandonné, retour en stock, arrivée anticipée, déclaration de sinistre.</h2>
       <p class="f-texte">Un déclencheur, quelques blocs, et le client a sa réponse dans la seconde. Quatre exemples, parmi tout ce qu’un scénario sait faire.</p>
       <ul class="sc-exemples">
         <li class="ui ui-fenetre">
@@ -353,7 +391,7 @@
 
   <section class="f-bloc">
     <div class="cadre">
-      <h2 class="f-titre">Sans une ligne de code.</h2>
+      <h2 class="f-titre">Un constructeur de scénarios sans code.</h2>
       <ul class="f-faits">
         <li><svg class="ic" aria-hidden="true"><use href="#i-list-checks"/></svg><div><strong>Des blocs à assembler</strong><span>Message, question, formulaire, condition, attente, action, passage à votre équipe ou à un agent IA.</span></div></li>
         <li><svg class="ic" aria-hidden="true"><use href="#i-lightning"/></svg><div><strong>Le bon déclencheur</strong><span>Un mot-clé, un nouveau contact, une étiquette posée, un rappel avant une date, un webhook de vos outils, ou l’API.</span></div></li>
@@ -363,6 +401,17 @@
     </div>
   </section>
 
+  <section class="f-bloc cas-faq" id="faq">
+    <div class="cadre">
+      <h2 class="f-titre">Questions fréquentes.</h2>
+      <div class="dev-faq">
+        <details><summary>Qu’est-ce qu’un scénario conversationnel ?</summary><p>Une suite de blocs qui répond à un client sans personne derrière l’écran : message, question, formulaire, condition, attente, action, ou passage à votre équipe ou à un agent IA. Il part sur un mot-clé, un nouveau contact, une étiquette posée, un rappel avant une date, un webhook de vos outils ou l’API.</p></details>
+        <details><summary>Faut-il un modèle approuvé par Meta pour lancer une campagne WhatsApp ?</summary><p>Oui. Une campagne écrit à des clients qui ne vous ont pas forcément écrit récemment : son premier message est un modèle que WhatsApp valide avant l’envoi. Dès que le client répond, la conversation est libre pendant 24 heures.</p></details>
+        <details><summary>Peut-on cibler une liste HubSpot ?</summary><p>Oui : l’audience d’une campagne peut être une liste filtrée par étiquettes, un import, ou une liste HubSpot.</p></details>
+        <details><summary>Que se passe-t-il quand un client répond STOP ?</summary><p>Il ne reçoit plus rien, ni campagne ni scénario, et son refus est enregistré sur sa fiche.</p></details>
+      </div>
+    </div>
+  </section>
   <section class="f-appel">
     <div class="cadre">
       <h2 class="f-titre">Lancez une campagne qui ouvre des conversations.</h2>
@@ -371,6 +420,7 @@
         <a class="bouton bouton-plein" href="/contact/?demo=campagnes-et-scenarios#formulaire">Demander une démo</a>
         <a class="bouton bouton-texte" href="https://console.messagingme.app/login">Se connecter <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
+      <p class="cas-voisins"><a href="/aide/lancer-une-campagne/">Lancer une campagne, pas à pas</a> · <a href="/aide/faire-approuver-un-modele/">Faire approuver un modèle</a> · <a href="/aide/la-fenetre-de-24-heures/">La fenêtre de 24 heures</a></p>
     </div>
   </section>
 </main>

@@ -1,12 +1,9 @@
 [
  {"fr":"Film : Analyse de conversations avec Messaging Me","en":"Film: Conversation analysis with Messaging Me"},
  {"fr":"De la conversation à la tâche dans votre CRM, sans rien ressaisir.","en":"From the conversation to the task in your CRM, with nothing to retype."},
- {"fr":"Analyse de conversations · Messaging Me","en":"Conversation analysis · Messaging Me"},
  {"fr":"Vos conversations deviennent des actions.","en":"Your conversations become actions."},
  {"fr":"Chaque conversation WhatsApp et RCS est analysée et transformée en action : vos équipes savent qui appeler, et quand.","en":"Every WhatsApp and RCS conversation is analyzed and turned into an action: your teams know who to call, and when."},
- {"fr":"Vos commerciaux détestent remplir le CRM.","en":"Your sales reps hate filling in the CRM."},
  {"fr":"Ce qu’ils veulent, c’est savoir qui appeler, et quand. Et vos e-mails, SMS et newsletters partent sans que rien ne revienne : les signaux de vos clients vous échappent.","en":"What they want is to know who to call, and when. And your emails, text messages and newsletters go out with nothing coming back: your customers’ signals slip away."},
- {"fr":"Analysée, puis transformée en action.","en":"Analyzed, then turned into action."},
  {"fr":"Chaque conversation est analysée","en":"Every conversation is analyzed"},
  {"fr":"Intention, satisfaction, urgence, risque de départ, action suggérée : la fiche du client se remplit à chaque échange, sur WhatsApp comme en RCS.","en":"Intent, satisfaction, urgency, churn risk, suggested action: the customer record fills in with every exchange, on WhatsApp as on RCS."},
  {"fr":"Puis transformée en action","en":"Then turned into action"},
@@ -26,5 +23,18 @@
  {"fr":"La fiche de Léa Martin complétée à 100 %, mise à jour par Messaging Me","en":"Léa Martin’s record 100% complete, updated by Messaging Me"},
  {"fr":"Les tâches du jour : appeler Léa Martin, retenir Marc Dubois, rappeler Sophie Leroy","en":"Today’s tasks: call Léa Martin, keep Marc Dubois, call Sophie Leroy back"},
  {"fr":"Les conversations WhatsApp et RCS passent par Messaging Me et arrivent dans votre CRM","en":"WhatsApp and RCS conversations go through Messaging Me and land in your CRM"},
- {"fr":"Synchronisé vers vos outils","en":"Synced to your tools"}
+ {"fr":"Synchronisé vers vos outils","en":"Synced to your tools"},
+ {"fr":"Analyse IA des conversations WhatsApp et RCS · Messaging Me","en":"AI analysis of WhatsApp and RCS conversations · Messaging Me"},
+ {"fr":"Le problème&nbsp;: un CRM que personne ne remplit.","en":"The problem: a CRM nobody fills in."},
+ {"fr":"Le film&nbsp;: l’analyse des conversations, en 30 secondes.","en":"The film: conversation analysis, in 30 seconds."},
+ {"fr":"Intention, urgence, satisfaction, risque de départ&nbsp;: ce que mesure l’analyse.","en":"Intent, urgency, satisfaction, churn risk: what the analysis measures."},
+ {"fr":"Qu’est-ce que l’analyse de conversation ?","en":"What is conversation analysis?"},
+ {"fr":"La lecture automatique de chaque conversation WhatsApp et RCS : Messaging Me en tire l’intention, la satisfaction, l’urgence, le risque de départ et l’action suggérée, et remplit la fiche du client à chaque échange.","en":"The automatic reading of every WhatsApp and RCS conversation: Messaging Me draws the intent, satisfaction, urgency, churn risk and suggested action from it, and fills in the customer record at every exchange."},
+ {"fr":"Que devient une conversation analysée ?","en":"What happens to an analysed conversation?"},
+ {"fr":"Une action : chaque conversation qui compte devient une tâche, confiée à la bonne personne, dans le CRM que vous utilisez déjà.","en":"An action: every conversation that matters becomes a task, given to the right person, in the CRM you already use."},
+ {"fr":"Dans quels CRM arrive l’analyse ?","en":"Which CRMs does the analysis reach?"},
+ {"fr":"HubSpot et Salesforce par leur connecteur ; Brevo, Pipedrive et les autres CRM par les webhooks ou l’API de Messaging Me.","en":"HubSpot and Salesforce through their connector; Brevo, Pipedrive and other CRMs through the Messaging Me webhooks or API."},
+ {"fr":"Faut-il ressaisir quelque chose ?","en":"Does anything need to be re-entered?"},
+ {"fr":"Non : la fiche du client se remplit à chaque échange, sans que vos équipes aient rien à ressaisir.","en":"No: the customer record fills in at every exchange, without your teams re-entering anything."},
+ {"fr":"L’assurance","en":"Insurance"}
 ]

@@ -4,6 +4,18 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : les six pages fonctionnalités pour les moteurs et les assistants IA (lot 3 du plan SEO et GEO)
+
+- **Titres de page** qui portent le mot-clé (« Chaînes WhatsApp pour les entreprises », « Analyse IA des conversations
+  WhatsApp et RCS », « Coût par lead et coût des campagnes WhatsApp »…), `<title>` et `og:title`.
+- **Sous-titres littéraux** ; les titres de film gardent leurs « 30 secondes ».
+- **Une FAQ de quatre questions par page**, balisée `FAQPage`, avant l'appel final ; chaque réponse reprend le texte
+  déjà publié sur la page. Trois liens par page vers l'aide, les intégrations, les secteurs ou les tarifs.
+- Tout est appliqué par un même script (FAQ affichée, balisage et dictionnaire anglais tirés des mêmes données) ;
+  l'entrée commune « Tout le parcours en 30 secondes. » sort de `commun.json`, plus aucune page ne la dit.
+- `tests/vitrine-seo.test.ts` compare chaque réponse affichée à sa réponse balisée sur toutes les pages à FAQ, sauf
+  les deux pages développeurs ; vérifié dans les deux sens.
+
 ## 2026-10-26 : les jaunes du Pro géré depuis la console (webhook relu chez Stripe, tarif réel, une seule lecture)
 
 Demande de Julien (« gère les jaunes »), sur les six points laissés par les relectures des lots A et B du même jour.
@@ -28,6 +40,7 @@ rouge), le tarif ne devine plus le prix du Pro quand une ligne de siège n'est p
 n'affiche aucun montant avant la lecture du tarif (au lieu de celui de la grille, un instant), et le webhook lit la fin
 en dernier, au plus près de l'écriture. Quatre jaunes au backlog (`todo.md`), tous liés au jour d'un changement de tarif
 ou à des remises rares.
+
 
 ## 2026-10-26 : l'accueil de la vitrine pour les moteurs et les assistants IA (lot 2 du plan SEO et GEO)
 

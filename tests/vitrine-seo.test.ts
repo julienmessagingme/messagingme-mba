@@ -61,19 +61,23 @@ describe('les données structurées de la vitrine', () => {
     }
   });
 
-  // Sur l'accueil, la réponse balisée est le texte affiché, mot pour mot. Pas ailleurs : la FAQ des développeurs
-  // affiche une adresse sans `https://` que son balisage écrit en entier, et c'est voulu.
-  for (const page of ['index.html', 'en/index.html']) {
-    it(`${page} : les réponses de la FAQ balisée sont aussi celles qui s’affichent`, () => {
-      const html = lire(page);
-      const faq = noeuds(html).find((n) => n['@type'] === 'FAQPage');
-      expect(faq, `${page} sans FAQPage`).toBeDefined();
-      const balisees = (faq!.mainEntity as Noeud[]).map((q) => plat(String((q.acceptedAnswer as Noeud).text)));
+  // La réponse balisée est le texte affiché, mot pour mot, sur toute page à FAQ. Sauf les deux pages développeurs :
+  // leur FAQ affiche une adresse sans `https://` que son balisage écrit en entier, et c'est voulu.
+  const ADRESSE_ENTIERE = new Set(['developpeurs/index.html', 'en/developers/index.html']);
+  it('les réponses d’une FAQ balisée sont aussi celles qui s’affichent', () => {
+    const verifiees = PAGES.filter((p) => !ADRESSE_ENTIERE.has(p) && noeuds(lire(p)).some((n) => n['@type'] === 'FAQPage'));
+    // L'accueil et les six fonctionnalités, dans les deux langues, au moins.
+    expect(verifiees).toEqual(expect.arrayContaining(['index.html', 'en/index.html', 'fonctionnalites/whatsapp-et-rcs/index.html',
+      'en/features/whatsapp-and-rcs/index.html']));
+    for (const p of verifiees) {
+      const html = lire(p);
+      const faq = noeuds(html).find((n) => n['@type'] === 'FAQPage')!;
+      const balisees = (faq.mainEntity as Noeud[]).map((q) => plat(String((q.acceptedAnswer as Noeud).text)));
       const affichees = [...html.matchAll(/<div class="dev-faq">([\s\S]*?)<\/div>/g)]
         .flatMap((m) => [...m[1]!.matchAll(/<details[^>]*><summary[^>]*>[\s\S]*?<\/summary>([\s\S]*?)<\/details>/g)].map((s) => plat(s[1]!)));
-      expect(balisees).toEqual(affichees);
-    });
-  }
+      expect(balisees, p).toEqual(affichees);
+    }
+  });
 });
 
 describe('les chiffres de l’accueil', () => {

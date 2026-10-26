@@ -259,6 +259,20 @@ mots à environ 600 à 900.
 - **FAQ** : Qu'est-ce que le coût par engagement ? · Comment se calcule le coût par lead (CPL) ? · Le coût affiché est-il la facture de Meta ? (non, une estimation, dit sur la page) · Qui facture les messages WhatsApp ? (Meta, selon sa grille, par pays et par catégorie de message ; lien vers la grille, aucun chiffre recopié, D3)
 - **Liens** : `/tarifs/`, `/fonctionnalites/publicites-click-to-whatsapp/`, glossaire `#cout-par-engagement`, `#cpl`.
 
+Fait au lot 3 (2026-10-26), avec ces écarts :
+- les liens vers le glossaire attendent le glossaire (lot 5) : chaque page en a trois vers des pages qui existent
+  (aide, intégrations, secteurs, tarifs), en `p.cas-voisins` dans l'appel final, comme les pages de cas ;
+- le bloc « Qu'est-ce que le RCS ? » de `whatsapp-et-rcs` est devenu la première question de sa FAQ ;
+- le H2 des logos CRM de `conversations-en-actions` n'est pas posé : le bandeau n'a pas de titre aujourd'hui, en
+  ajouter un est un changement de mise en page, pas de texte ;
+- sur `pilotage-des-couts`, « Qui facture les messages WhatsApp ? » est couvert par « Le coût affiché est-il la facture
+  de Meta ? », et la quatrième question devient « Le coût de l'IA est-il compté à part ? » ;
+- sur quatre pages (chaînes, analyse, WhatsApp et RCS, publicités), le titre du film prend le nom de la
+  fonctionnalité (« Le film : les chaînes WhatsApp, en 30 secondes. ») : le titre proposé répétait le sous-titre.
+Toutes les réponses viennent du texte déjà publié sur leur page (ou, pour les CRM, de la décision D4).
+`tests/vitrine-seo.test.ts` compare désormais chaque réponse affichée à sa réponse balisée sur TOUTES les pages à FAQ,
+sauf les deux pages développeurs (adresse affichée sans `https://`, voulu).
+
 ## Lot 4 : cas d'usage, secteurs, tarifs, aide
 
 **C1. Les quatre titres communs des 7 cas d'usage** (`cas-textes.ts`, `schema.titre` et titres de `cas.ts`). Le
