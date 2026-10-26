@@ -32,7 +32,7 @@ montre le numéro et son code.
 **Implémenteur, une relecture indépendante du diff, puis déploiement**, parce que la connexion du numéro est la porte
 d'entrée de tout client : une branche mal tenue laisserait un nouveau client sans aucun chemin, ou rendrait à la réserve
 un numéro fourni qui porte déjà son compte WhatsApp Business. Les pages se vérifient à l'écran, pas seulement par des
-tests. **Essais réels qui closent** : (a) un numéro fourni installé le jour même dans l'application WhatsApp Business,
+tests. **Essai réel qui clôt, en deux gestes** : (a) un numéro fourni installé le jour même dans l'application WhatsApp Business,
 son code lu chez nous, puis relié en gardant l'application (il répond aussi au doute de Julien sur le délai, essai 164) ;
 (b) un numéro API dont la fenêtre de Meta crée le compte Meta Business en chemin.
 
