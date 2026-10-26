@@ -1872,14 +1872,13 @@ et seuils : `docs/prive/2026-10-26-cloudflare-pro.md`). Reste :
 1. **La semaine d'observation, jusqu'au 2026-11-02 (Julien)** : Security Events filtré sur les deux noms, relu chaque
    jour (rétention courte sur Pro), avec une capture ; un faux positif se traite par une exception sur la SEULE règle
    fautive. Vérifier au passage que les deux règles de débit y laissent bien leur trace.
-2. **Passer en facturation annuelle** une fois la semaine passée sans incident (20 $ au lieu de 25 $ par mois).
-3. **La sécurité du compte Cloudflare**, jamais relevée : MFA, comptes nominatifs, moindre privilège. Les **Audit
+2. **La sécurité du compte Cloudflare**, jamais relevée : MFA, comptes nominatifs, moindre privilège. Les **Audit
    Logs** retracent les changements de configuration, les Security Events ne sont pas un journal durable.
-4. **La liste des webhooks signés vit chez Cloudflare, tenue à la main** : une route signée ajoutée au code doit y
+3. **La liste des webhooks signés vit chez Cloudflare, tenue à la main** : une route signée ajoutée au code doit y
    entrer (`documentation.md` § 7). Si elle dérive, un test qui compare l'inventaire du serveur construit à une copie
    versionnée de la liste la tiendrait.
-5. Ne pas acheter Business/Enterprise, Bot Management ou un second WAF sans exigence ou incident précis.
-6. **Hors Cloudflare, à trancher par Julien : le bastion SSH de la passerelle** (`mm-passerelle`, port 61000) est ouvert
+4. Ne pas acheter Business/Enterprise, Bot Management ou un second WAF sans exigence ou incident précis.
+5. **Hors Cloudflare, à trancher par Julien : le bastion SSH de la passerelle** (`mm-passerelle`, port 61000) est ouvert
    à toutes les adresses (`bastion_allowed_ips` à `0.0.0.0/0`, relu le 2026-10-26), clés du projet seules. C'est la
    seule porte vers le réseau privé. La restreindre à une liste d'adresses casserait le déploiement depuis GitHub,
    dont les adresses changent.
