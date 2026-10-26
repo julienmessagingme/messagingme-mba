@@ -4,6 +4,30 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : le troisième prérequis de Meta dit qu'on peut garder son application WhatsApp Business
+
+- **La phrase**, choisie par Julien parmi deux : « Un numéro libre, qui ne sert pas dans l'application WhatsApp, ou
+  celui de votre application WhatsApp Business, qui y reste avec « Garder mon application WhatsApp Business ». Pas de
+  numéro libre ? Nous vous en fournissons un. » Elle remplace « une fois relié, il la quitte », que le guide « Garder
+  mon application » contredisait. Source unique, `PREREQUIS_META` : la console, les consignes de Claude, la FAQ du
+  plugin, le guide Meta et la page développeurs de la vitrine, la fiche « Ce qu'il faut chez Meta » (FR et EN) ; la page
+  Claude du numéro dit la même chose à son étape 1 (`f54d3732`).
+- **Juste avant, « Connecter mon numéro WhatsApp »** : plus d'étiquette « Avec l'offre Pro », la Free y connectant son
+  numéro (`6e1c9b78`, avant le gel), et ses quatre chiffres sur 30 jours annoncés avec le Pro (`f9bc131c`).
+- **Déployé chez Scaleway** par le workflow, épinglé sur `f54d3732` par `-f commit=` pour ne pas emporter un lot poussé
+  entre-temps (aucune migration ; côté API, seule la phrase que lit Claude). Fumée verte, fiches OAuth conformes.
+  `aide:charger` sur la machine avec l'image déployée : 170 lignes, 0 retirée ; relu en lecture seule, la nouvelle phrase
+  présente, l'ancienne dans aucune fiche. Plugin 0.3.14 publié (rien d'autre dans `plugin/` depuis la 0.3.13), sa FAQ
+  relue sur le dépôt public.
+- **Relecture indépendante** : aucun rouge. Un test lie la phrase au nom du bouton (`COEXISTENCE_BOUTON`), vérifié dans
+  les deux sens. Les jaunes sur `ParcoursNumero.tsx` et `outils-numero.ts` (la phrase sur la page ouverte par Claude en
+  `apporte` et en `fourni`, qui n'a pas le bouton qu'elle cite) vont au lot de l'arbre du numéro sans QR code ; la
+  capture de l'étape 2 et l'affiche du film `claude-numero`, périmées, à `todo.md`.
+- **Appris** : un déploiement en attente d'approbation tient le groupe de concurrence `deploiement-scaleway` ; le
+  suivant reste `pending` derrière lui jusqu'à ce qu'il soit approuvé ou rejeté (celui de `cecb243d`, lancé à 19 h 16,
+  passé à 21 h 10). Et un script monté dans le conteneur doit être lisible par son utilisateur, qui n'est pas root : écrit
+  sous `umask 077`, il rend `EACCES`.
+
 ## 2026-10-26 : la page Solutions de la vitrine, et `/industries/` redirigée (plan SEO, lot 5, N2)
 
 - **`/solutions/` et `/en/solutions/`**, générées par `npm run vitrine:cas` (`pagesSolutions`) depuis le registre : une
