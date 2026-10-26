@@ -4,6 +4,34 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 (soir) : la console de l'audit de structure (lot D), après la bascule
+
+Plan `docs/superpowers/plans/2026-10-26-audits-simplicite-structure.md`, lot D, poussé après la bascule Scaleway. Aucune
+migration, aucun changement de comportement voulu :
+
+- `web/lib/fil-synchro.ts` : la synchronisation du fil de l'Inbox sans React (`tourDuFil` : l'ajout dédoublonné ou le
+  remplacement, le curseur du delta, le « lu », la reprise du fil entier). Les quatre `ref` de `Thread` deviennent un
+  seul état ; la page garde la requête en vol (la garde qui empêche de payer une traduction en boucle), l'annulation et
+  le minuteur.
+- `web/lib/use-chargement.ts` : la mécanique de chargement que neuf écrans de liste recopiaient (erreur remise à zéro,
+  phrase de `erreurDeChargement`, attente du premier chargement). La page garde ses données, que ses gestes modifient.
+- `web/components/CadreSansCompte.tsx` : le cadre de six pages sans session. `forgot`, `reset` et `invite` gagnent le
+  `py-8` des autres.
+- Quatre constantes recopiées entre le serveur et la console vivent dans `web/lib/partage/` : la longueur minimale d'un
+  mot de passe, les bornes d'un widget, l'échelle des notes, la clé du consentement par défaut. Les cas de parité qui
+  relisaient le fichier serveur sont retirés ; le serveur lit les mêmes valeurs, son déploiement n'est pas urgent.
+
+- **Relecture indépendante, aucun 🔴.** L'ancien `load` du fil, réécrit en simulation, a été confronté à `tourDuFil`
+  sur 20 000 séquences aléatoires (relevés, changements de langue, effacements pendant la requête, messages sans
+  curseur ou en double) : aucune divergence sur la requête, l'état, les messages, l'identité de la référence ni le
+  « lu », et le test différentiel rougit sur deux mutations. Jaunes corrigés dans le lot : trois textes périmés, l'état
+  initial du fil gelé (une écriture en place aurait fait fuir le curseur d'une conversation à l'autre). Restes au
+  backlog (`todo.md`).
+- **Vérifié** dans une extraction de `main` : typecheck et lint des deux côtés, suite de la console (1 103 tests),
+  suite racine (les rouges sont les fichiers lents sous charge et `sdk-contrat`, rouges aussi sur l'arbre de
+  référence), e2e entiers sur un serveur construit (1 651 sur 1 652 ; `console-free`, en dépassement de délai sous
+  charge, passe deux fois sur deux relancé seul).
+
 ## 2026-10-26 : le troisième prérequis de Meta dit qu'on peut garder son application WhatsApp Business
 
 - **La phrase**, choisie par Julien parmi deux : « Un numéro libre, qui ne sert pas dans l'application WhatsApp, ou

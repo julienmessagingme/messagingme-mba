@@ -3,6 +3,13 @@
  * champs de base (« système ») et les champs socle.
  */
 
+/**
+ * La clé du champ booléen de consentement par défaut (WhatsApp opt-in), créé à la volée quand un écran OptIn de
+ * formulaire n'a pas de cible explicite. Clé stable, jamais dérivée d'un libellé mutable ; un OptIn qui pointe dessus
+ * est un mapping PAR DÉFAUT (cible vide dans l'éditeur), pas un choix explicite.
+ */
+export const WHATSAPP_OPTIN_FIELD_KEY = 'whatsapp_optin';
+
 /** Les types d'un champ perso : la console les propose, le serveur les accepte (la base les contraint aussi, ce que
  *  `tests/integration/user-fields-types.integration.test.ts` vérifie). */
 export const USER_FIELD_KINDS = ['text', 'number', 'date', 'datetime', 'boolean', 'url'] as const;

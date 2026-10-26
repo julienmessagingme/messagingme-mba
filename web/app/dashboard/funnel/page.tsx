@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { CampaignFunnelCard } from '@/components/analytics/cartes';
@@ -8,7 +8,7 @@ import type { Session } from '@/lib/session';
 import { listCampaigns, type CampaignSummary } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
-import { erreurDeChargement } from '@/lib/http';
+import { useChargement } from '@/lib/use-chargement';
 
 /**
  * Analytics > Quantitatif > **Funnel** : ce que devient une campagne, de l'envoi à la réponse.
@@ -43,22 +43,12 @@ function FunnelInner({ session }: { session: Session }) {
    */
   const demandee = useSearchParams().get('campagne');
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const cp = await listCampaigns(session.tenantId);
-      setCampaigns(Array.isArray(cp?.campaigns) ? cp.campaigns : []);
-    } catch (err) {
-      setError(erreurDeChargement(err, t));
-    } finally {
-      setLoading(false);
-    }
-  }, [session.tenantId, t]);
-
-  useEffect(() => { void load(); }, [load]);
+  const charger = useCallback(async () => {
+    const cp = await listCampaigns(session.tenantId);
+    setCampaigns(Array.isArray(cp?.campaigns) ? cp.campaigns : []);
+  }, [session.tenantId]);
+  const { chargement: loading, erreur: error } = useChargement(charger);
 
   return (
     <div className="space-y-4">

@@ -2,7 +2,7 @@
 
 import { useT } from '@/lib/i18n';
 import { Icone } from '@/components/Icone';
-import type { PositionWidget } from '@/lib/widgets';
+import type { PositionWidget } from '@/lib/partage/widgets';
 
 /**
  * L'APERÇU DE LA BULLE, sur une page de site esquissée : ce que le visiteur verra dans le coin de l'écran.

@@ -15,6 +15,7 @@ import { inputCls } from '@/lib/ui';
 import { varCountOf } from '@/lib/fields';
 import { repeterAvecGigue } from '@/lib/poll';
 import { doitDescendre, estEnBas } from '@/lib/defilement-fil';
+import { apresChangementDeLangue, apresEffacement, demandeDuTour, ETAT_INITIAL_FIL, tourDuFil, type EtatSynchroFil } from '@/lib/fil-synchro';
 import { ApiError, estAnnulation, erreurDeChargement } from '@/lib/http';
 import { langueSortanteParDefaut, nomDeLangue } from '@/lib/langue-nom';
 import {
@@ -1355,17 +1356,15 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
   /** Le fil n'a pas encore été peuplé : le premier chargement descend, sans consulter la géométrie. */
   const premierChargementRef = useRef(true);
 
-  // Dernier message DÉJÀ vu dans ce fil : sert à ne marquer « lu » qu'au vrai changement, et pas à chacun
-  // des rafraîchissements de 4 s. Remis à zéro par le remontage du composant à chaque conversation.
-  const dernierVuRef = useRef<string | null>(null);
-
   /**
-   * Dernier message DÉJÀ affiché, pour ne demander que la SUITE au rafraîchissement suivant.
+   * Ce que la synchronisation du fil retient d'un tour à l'autre (`web/lib/fil-synchro.ts`) : le curseur du delta, le
+   * remplacement dû, la traduction indisponible au tour précédent, le dernier message vu. Remis à zéro par le remontage
+   * du composant à chaque conversation.
    *
-   * En `ref` et non en état dérivé : `load` ne doit pas être recréé à chaque nouveau message, sinon l'effet
-   * qui installe le minuteur se relancerait toutes les quatre secondes.
+   * En `ref` et non en état : `load` ne doit pas être recréé à chaque nouveau message, sinon l'effet qui installe le
+   * minuteur se relancerait toutes les quatre secondes.
    */
-  const bornRef = useRef<{ at: string; id: string } | null>(null);
+  const synchroRef = useRef<EtatSynchroFil>(ETAT_INITIAL_FIL);
   /** Requête de fil en cours, annulée quand on change de conversation ou qu'on quitte l'écran. */
   const enVolRef = useRef<AbortController | null>(null);
   /**
@@ -1388,23 +1387,6 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
    * Basculer deux fois de suite paie donc deux lots, et c'est le prix assumé d'un geste voulu.
    */
   const enCoursRef = useRef(false);
-  /**
-   * 🔴 LE PROCHAIN CHARGEMENT REMPLACE LE FIL AU LIEU DE S'Y AJOUTER. Posé quand la langue de lecture
-   * change, et seulement là.
-   *
-   * Sans lui, remettre `bornRef` à zéro ne suffirait PAS : le serveur renverrait bien le fil entier,
-   * mais l'écran n'ajoute que les identifiants qu'il ne connaît pas encore (c'est sa garde anti-doublon).
-   * Les bulles déjà affichées garderaient donc leur langue d'avant pour toujours, et l'opérateur verrait
-   * un fil à moitié traduit sans pouvoir rien y faire.
-   *
-   * ⚠️ EXPLICITE, et jamais déduit de « `bornRef` est nul ». Un fil dont le serveur ne rend pas de
-   * curseur repart du fil entier à CHAQUE tour : remplacer à chaque fois donnerait un nouveau tableau
-   * toutes les 4 secondes, donc une nouvelle référence, donc l'effet de défilement relancé en boucle.
-   * C'est cette référence stable qui rend le fil calme.
-   */
-  const remplacerAuProchainRef = useRef(false);
-  /** Le tour précédent disait-il la traduction impossible ? Sert à voir le moment où elle le redevient. */
-  const traductionIndisponibleRef = useRef(false);
 
   const load = useCallback(async (o?: { passerSiEnVol?: boolean }) => {
     if (o?.passerSiEnVol === true && enCoursRef.current) return;
@@ -1414,68 +1396,30 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
     enCoursRef.current = true;
     try {
       // Cette requête ne demande-t-elle que le delta ? Lu AVANT elle : la suite du tour réécrit le curseur.
-      const etaitUnDelta = bornRef.current !== null;
+      const etaitUnDelta = synchroRef.current.borne !== null;
       // DELTA (lot 5 du programme II) : on ne redemande que ce qui est arrivé APRÈS ce qu'on a déjà. Le fil
       // se rafraîchit toutes les 4 s ; il retéléchargeait jusqu'à 500 messages à chaque tour, par onglet.
       const res = await getConversationMessages(session.tenantId, conversation.id, {
-        ...(bornRef.current ? { apres: bornRef.current } : {}),
+        ...demandeDuTour(synchroRef.current),
         // La langue de LECTURE, celle de la console. Absente = la réponse est mot pour mot celle
         // d'avant ce lot, et aucun appel de modèle n'est payé.
         ...(cibleLecture ? { traduire: cibleLecture } : {}),
         signal: ctrl.signal,
       });
-      // ⚠️ CONSOMMÉ ICI, après la réponse et pas avant : une requête qui échoue ou qui est annulée doit
-      // laisser le remplacement DÛ, sinon le fil resterait à moitié traduit jusqu'au prochain clic.
-      const remplacer = remplacerAuProchainRef.current;
-      remplacerAuProchainRef.current = false;
-      // 🔴 REMPLACEMENT INTÉGRAL : les bulles déjà à l'écran viennent de changer de langue, et leurs
-      // identifiants n'ont pas bougé. L'ajout dédoublonné ci-dessous les laisserait telles quelles.
-      if (remplacer) setMessages(res.messages);
-      // ⚠️ On AJOUTE, SAUF au changement de langue de lecture traité juste au-dessus. Conséquence assumée
-      // de l'ajout : un message effacé côté serveur reste à l'écran jusqu'au prochain changement de
-      // conversation. Le produit n'efface pas de message, et le fil se remonte à chaque sélection
-      // (`key={selected.id}`), donc l'écart ne survit pas à un clic.
-      if (res.messages.length > 0) {
-        const arrivee = res.messages[res.messages.length - 1]!;
-        // 🔴 LE CURSEUR VIENT DU SERVEUR ET REPART TEL QUEL. Il valait `createdAt`, qui a traversé un `Date`
-        // JavaScript et n'a donc que la milliseconde là où Postgres stocke la microseconde : le dernier
-        // message repassait le filtre à chaque tour et se ré-ajoutait au fil toutes les 4 secondes, ce qui
-        // faisait défiler l'écran tout seul. Curseur absent (serveur plus ancien) : on n'en pose PAS, donc le
-        // tour suivant redemande le fil entier. C'est le repli sûr de cette route, trop de messages plutôt
-        // que trop peu, et le dédoublonnage ci-dessous le rend invisible.
-        bornRef.current = arrivee.curseur ? { at: arrivee.curseur, id: arrivee.id } : null;
-        // En AJOUT : au premier chargement `prev` est vide, donc l'ajout rend le fil entier. Le composant
-        // est remonté à chaque conversation (`key={selected.id}`), donc `prev` ne mélange jamais deux fils.
-        //
-        // ⚠️ SAUTÉ QUAND LE FIL VIENT D'ÊTRE REMPLACÉ, et c'est obligatoire : les bulles reviennent avec
-        // les mêmes identifiants et un AUTRE texte, donc le dédoublonnage ci-dessous les rejetterait et
-        // ré-écraserait le remplacement par l'ancienne langue.
-        //
-        // ⚠️ Et en AJOUT DÉDOUBLONNÉ : un message n'apparaît qu'une fois dans un fil, quoi qu'il arrive en
-        // face. Cette garde-ci ne dépend d'aucune hypothèse sur le curseur, donc elle tient aussi le jour où
-        // le serveur renvoie deux fois la même bulle pour une autre raison. Et quand tout est déjà connu,
-        // `prev` est rendu TEL QUEL : la référence ne change pas, donc l'effet de défilement ne se
-        // redéclenche pas. C'est ce qui rend le fil calme.
-        if (!remplacer) {
-          setMessages((prev) => {
-            const connus = new Set(prev.map((m) => m.id));
-            const nouveaux = res.messages.filter((m) => !connus.has(m.id));
-            return nouveaux.length === 0 ? prev : [...prev, ...nouveaux];
-          });
-        }
-        // Le fil est ouvert à l'écran : il est lu. On le dit au serveur à l'ouverture, puis à chaque nouveau
-        // message, jamais à chaque tick. Best-effort : la pastille n'est pas une raison de casser le fil.
-        if (arrivee.id !== dernierVuRef.current) {
-          dernierVuRef.current = arrivee.id;
-          markConversationRead(session.tenantId, conversation.id)
-            .then(() => window.dispatchEvent(new Event(UNREAD_CHANGED_EVENT)))
-            .catch(() => { /* pastille d'appoint */ });
-        }
+      // Les messages ajoutés (dédoublonnés) ou remplacés, le curseur, le remplacement dû et le « lu » :
+      // `tourDuFil`. Rien de nouveau -> `messages` garde sa référence, donc l'effet de défilement ne se
+      // redéclenche pas. Conséquence assumée de l'ajout : un message effacé côté serveur reste à l'écran
+      // jusqu'au prochain changement de conversation (le fil se remonte à chaque sélection, `key={selected.id}`).
+      const tour = tourDuFil(synchroRef.current, res, { cibleLecture, etaitUnDelta });
+      synchroRef.current = tour.etat;
+      if (tour.messages) setMessages(tour.messages);
+      // Le fil est ouvert à l'écran : il est lu. On le dit au serveur à l'ouverture, puis à chaque nouveau
+      // message, jamais à chaque tick. Best-effort : la pastille n'est pas une raison de casser le fil.
+      if (tour.marquerLu) {
+        markConversationRead(session.tenantId, conversation.id)
+          .then(() => window.dispatchEvent(new Event(UNREAD_CHANGED_EVENT)))
+          .catch(() => { /* pastille d'appoint */ });
       }
-      // Rien de nouveau -> `messages` garde sa référence, donc l'effet de scroll ne se redéclenche pas : c'est
-      // la garde anti-saut de scroll d'avant, obtenue ici gratuitement par le delta. (Un REMPLACEMENT en
-      // change forcément la référence, mais il n'arrive qu'au changement de langue de lecture, donc sur un
-      // geste délibéré de l'opérateur et pas à chaque tour.)
       setWindowOpen(res.windowOpen);
       setControlOwner(res.controlOwner);
       // La langue APPRISE du contact. Elle arrive a CHAQUE tour, y compris sur un delta vide : c'est
@@ -1486,21 +1430,9 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
        * lorsqu'on a demandé `traduire` : absent, il vaut faux, ce qui éteint le bandeau dès que
        * l'opérateur coupe le réglage. Ce n'est pas une panne et c'est un 200 : le fil s'affiche, en VO.
        */
-      const indisponible = res.traductionIndisponible === true;
-      setTraductionIndisponible(indisponible);
-      /**
-       * 🔴 LA TRADUCTION VIENT DE DEVENIR POSSIBLE : LE PROCHAIN TOUR REPREND LE FIL ENTIER, ET IL REMPLACE
-       * (relecture du 2026-09-29). Cas type : la première traduction d'un espace, pendant que sa clé de modèle
-       * s'ouvre (`cle_en_preparation`) ; ou un crédit rechargé. Le fil déjà affiché est en VO, et le tour suivant ne
-       * ramène que le delta, déjà traduit : sans ceci, l'historique restait en VO jusqu'à ce qu'on rouvre la
-       * conversation. Les deux mêmes gestes qu'au changement de langue de lecture (voir plus bas), pour la même raison.
-       * ⚠️ Seulement après un DELTA : un fil entier vient d'arriver traduit, le redemander paierait deux fois.
-       */
-      if (cibleLecture && traductionIndisponibleRef.current && !indisponible && etaitUnDelta) {
-        bornRef.current = null;
-        remplacerAuProchainRef.current = true;
-      }
-      traductionIndisponibleRef.current = indisponible;
+      // La traduction redevenue possible (clé de l'espace ouverte, crédit rechargé) fait reprendre et remplacer le
+      // fil entier au tour suivant : `tourDuFil`, relecture du 2026-09-29.
+      setTraductionIndisponible(tour.etat.traductionIndisponible);
       // ⚠️ `null` quand le serveur ne dit rien (version plus ancienne, ou traduction qui a marché) : le
       // bandeau retombe alors sur sa formulation prudente plutôt que d'inventer une cause.
       setTraductionCause(res.traductionCause !== undefined && CAUSES_TRADUCTION.includes(res.traductionCause) ? res.traductionCause : null);
@@ -1525,11 +1457,9 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
   /**
    * 🔴 LA LANGUE DE LECTURE A CHANGÉ : LE PROCHAIN CHARGEMENT REPREND LE FIL ENTIER, ET IL REMPLACE.
    *
-   * Les deux gestes sont nécessaires, et pour deux raisons différentes. `bornRef` porte le curseur du
-   * delta : sans sa remise à zéro, on ne demanderait que les messages arrivés DEPUIS le dernier tour, et
-   * l'historique déjà à l'écran resterait dans sa langue d'origine pour toujours. Et le remplacement
-   * parce que l'ajout de `load` est DÉDOUBLONNÉ PAR IDENTIFIANT : les bulles reviennent avec les mêmes
-   * identifiants et un autre texte, donc elles seraient ignorées.
+   * Les deux gestes (`apresChangementDeLangue`, `web/lib/fil-synchro.ts`) sont nécessaires, et pour deux raisons
+   * différentes : sans la remise à zéro du curseur, l'historique déjà à l'écran resterait dans sa langue d'origine ;
+   * sans le remplacement, l'ajout dédoublonné par identifiant ignorerait les bulles retraduites.
    *
    * ⚠️ DANS UN EFFET SUR LA CIBLE, et pas dans le gestionnaire du bouton, parce que la cible change
    * AUSSI quand la console change de langue alors que le réglage, lui, n'a pas bougé. Deux causes, un
@@ -1540,8 +1470,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
    * entier est exactement ce que faisait l'ajout.
    */
   useEffect(() => {
-    bornRef.current = null;
-    remplacerAuProchainRef.current = true;
+    synchroRef.current = apresChangementDeLangue(synchroRef.current);
   }, [cibleLecture]);
 
   useEffect(() => {
@@ -1685,7 +1614,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
       // Le fil est vidé côté serveur : on remet l'écran à zéro plutôt que d'attendre le prochain tour, et on
       // relâche le curseur, sinon le delta repartirait d'un message qui n'existe plus.
       setMessages([]);
-      bornRef.current = null;
+      synchroRef.current = apresEffacement(synchroRef.current);
       setWindowOpen(false);
       onSent();
     } catch (err) {

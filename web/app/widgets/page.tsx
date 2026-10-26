@@ -17,9 +17,10 @@ import { erreurDeChargement, estAnnulation } from '@/lib/http';
 import { useT } from '@/lib/i18n';
 import { cardCls, kickerCls } from '@/lib/ui';
 import {
-  LIMITE_WIDGETS, creerWidget, ecartsDeSaisie, listerWidgets, modifierWidget, saisieDuWidget, supprimerWidget,
+  creerWidget, ecartsDeSaisie, listerWidgets, modifierWidget, saisieDuWidget, supprimerWidget,
   type SaisieWidget, type Widget,
 } from '@/lib/widgets';
+import { LIMITE_WIDGETS_PAR_ESPACE } from '@/lib/partage/widgets';
 
 /**
  * Widget WhatsApp : la bulle que le client pose sur son site. Le visiteur clique, WhatsApp s'ouvre avec un message
@@ -38,7 +39,7 @@ function WidgetsInner({ session }: { session: Session }) {
   const t = useT();
   const confirmer = useConfirmation();
   const [widgets, setWidgets] = useState<Widget[]>([]);
-  const [limite, setLimite] = useState(LIMITE_WIDGETS);
+  const [limite, setLimite] = useState(LIMITE_WIDGETS_PAR_ESPACE);
   const [scenarios, setScenarios] = useState<WorkflowSummary[]>([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -52,7 +53,7 @@ function WidgetsInner({ session }: { session: Session }) {
       // Lecture défensive au bord du réseau : une 200 sans le champ attendu poserait `undefined` dans un état typé
       // tableau, et le premier `.map` démonterait l'écran.
       setWidgets(Array.isArray(w?.widgets) ? w.widgets : []);
-      setLimite(typeof w?.limite === 'number' ? w.limite : LIMITE_WIDGETS);
+      setLimite(typeof w?.limite === 'number' ? w.limite : LIMITE_WIDGETS_PAR_ESPACE);
       setScenarios(Array.isArray(s?.workflows) ? s.workflows : []);
     } catch (err) {
       if (estAnnulation(err)) return;

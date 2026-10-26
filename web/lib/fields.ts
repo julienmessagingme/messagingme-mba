@@ -42,10 +42,6 @@ export function isSystemFieldKey(key: string): boolean {
   return SYSTEM_FIELD_KEYS.includes(key);
 }
 
-/** Clé du champ booléen de consentement par défaut. Définie dans `./flow-mapping` (module PUR, testé depuis la
- *  suite racine) et ré-exportée ici pour rester au même endroit que les autres helpers de champs. */
-export { WHATSAPP_OPTIN_FIELD_KEY } from './flow-mapping';
-
 /**
  * Clés des champs SOCLE (`SOCLE_FIELDS`, partagés avec le serveur, qui les MATÉRIALISE à la première écriture). Ils
  * n'existent donc pas dans `user_fields` tant que personne ne les a remplis, ce qui les rendait invisibles ET non

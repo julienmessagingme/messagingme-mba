@@ -139,9 +139,8 @@ describe('engine — satisfaction et urgence (lot F)', () => {
   });
 
   it('🔴 le CHECK de la migration 0121 porte les MÊMES bornes que le schéma', async () => {
-    // TROISIÈME copie de l'échelle, et la seule que rien ne tenait. Le front est déjà arrimé à ce schéma
-    // (`web/lib/nuage.test.ts` lit le fichier serveur) ; la contrainte EN BASE ne l'était que par un
-    // commentaire. Élargir l'échelle sans la migration qui va avec ne casserait pas la note, ça ferait
+    // La copie de l'échelle que rien ne tenait. Le serveur et le front la lisent au même endroit
+    // (`web/lib/partage/analyse.ts`) ; la contrainte EN BASE ne l'était que par un commentaire. Élargir l'échelle sans la migration qui va avec ne casserait pas la note, ça ferait
     // échouer l'INSERT de l'analyse ENTIÈRE : la transaction est annulée, `analysis_status` n'avance pas,
     // le balayage re-réclame la conversation et repaie le modèle à chaque passage. Une boucle payante et
     // silencieuse, pour une constante changée dans un seul des trois fichiers.

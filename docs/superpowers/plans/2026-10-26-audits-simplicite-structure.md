@@ -51,13 +51,16 @@ Tests : le module a les siens (`numero-reserve.test.ts`) ; ceux des routes reste
 
 1. La synchronisation du fil de l'Inbox en module pur (`web/lib/fil-synchro.ts`), testé par vitest ; React garde le
    minuteur, l'abandon et la garde « en vol ».
-2. `useChargement` à la place des neuf chargements recopiés ; `CadrePublic` pour les six pages publiques ; les quatre
-   constantes encore recopiées passent dans `web/lib/partage/`.
+2. `useChargement` à la place des neuf chargements recopiés (la page garde ses données, que ses gestes modifient aussi) ;
+   `CadreSansCompte` pour les six pages publiques de l'audit (`CadrePublic` est déjà le cadre des documentations ; quatre
+   autres pages de forme différente restent au backlog) ; les quatre constantes encore recopiées passent dans
+   `web/lib/partage/`, ce qui touche aussi le serveur, à valeurs identiques.
 
 ## Ordre de déploiement
 
 Lots poussés un par un, CI lue job par job. A, B et C touchent l'API et le worker : `up` après la CI verte, aucune
-migration attendue. D ne touche que la console (Vercel au push). L'essai réel qui clôt chaque lot : A, les quatre
+migration attendue. D part avec la console (Vercel au push) ; son volet serveur ne change aucune valeur et suit le
+prochain déploiement de l'API, sans urgence. L'essai réel qui clôt chaque lot : A, les quatre
 adresses historiques ouvertes dans la console de production et l'agent de Meta allumé puis éteint sur la sandbox ; B,
 l'achat d'un numéro sur un espace de test puis sa libération ; C, un modèle et un RCS envoyés depuis l'Inbox, une recharge
 Stripe en mode test ; D, une conversation traduite dans l'Inbox.

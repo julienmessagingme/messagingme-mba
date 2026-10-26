@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import {
@@ -14,7 +14,7 @@ import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
-import { erreurDeChargement } from '@/lib/http';
+import { useChargement } from '@/lib/use-chargement';
 import { Icone } from '@/components/Icone';
 
 /**
@@ -32,8 +32,6 @@ function EmailAccountsInner({ session }: { session: Session }) {
   const t = useT();
   const confirmer = useConfirmation();
   const [accounts, setAccounts] = useState<EmailAccount[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<EmailAccountInput>(EMPTY);
   // id du compte en édition, 'new' pour une création, null = formulaire fermé.
   const [editing, setEditing] = useState<string | 'new' | null>(null);
@@ -42,18 +40,10 @@ function EmailAccountsInner({ session }: { session: Session }) {
   const [testTo, setTestTo] = useState('');
   const [testMsg, setTestMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setAccounts((await listEmailAccounts(session.tenantId)).accounts);
-    } catch (err) {
-      setError(erreurDeChargement(err, t));
-    } finally {
-      setLoading(false);
-    }
-  }, [session.tenantId, t]);
-
-  useEffect(() => { void load(); }, [load]);
+  const charger = useCallback(async () => {
+    setAccounts((await listEmailAccounts(session.tenantId)).accounts);
+  }, [session.tenantId]);
+  const { chargement: loading, erreur: error, setErreur: setError, recharger: load } = useChargement(charger);
 
   function startCreate() {
     setEditing('new');

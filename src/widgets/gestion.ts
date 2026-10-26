@@ -7,6 +7,9 @@ import { refus, type Issue } from '../lib/issue';
 import { PgChannelsMeLinkStore } from '../channels-me/link-store.pg';
 import { PgWorkflowStore, etatDuScenario, type EtatScenario } from '../workflow/store.pg';
 import { PgWidgetStore, type DevenirWidget, type PositionWidget, type WidgetInput, type WidgetRow } from './store.pg';
+import {
+  COULEUR_PAR_DEFAUT, LIMITE_WIDGETS_PAR_ESPACE, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PHRASE_WIDGET, POSITIONS_WIDGET,
+} from '../../web/lib/partage/widgets';
 import { enConflitAvec, phrasesEnConflit } from './phrases';
 import { adresseDuScript, baliseDuScript, lienDuWidget, type NumeroDuWidget } from './adresses';
 import { refusFonction } from '../offres/refus';
@@ -37,20 +40,13 @@ import type { SourceOffres } from '../offres/offre.pg';
  *    Base, un widget ne démarre plus de scénario du client. Un widget d'avant reste modifiable et éteignable.
  */
 
-/** Cinq widgets au plus par espace : un site vitrine, un blog, une page tarifs, et de la marge. */
-export const LIMITE_WIDGETS_PAR_ESPACE = 5;
-/** Le nom ne sert qu'au client, dans la liste : jamais montré au visiteur. */
-export const MAX_NOM_WIDGET = 80;
-/** La même borne que la phrase d'un lien de chaîne (`src/http/channels-me.ts`) : les deux vivent dans un `wa.me`. */
-export const MAX_PHRASE_WIDGET = 300;
-/** Le texte posé à côté de la bulle, dans une pastille de 240 pixels au plus (`src/widgets/script.ts`). */
-export const MAX_LIBELLE_WIDGET = 60;
+/** Les bornes que la console guide et que le serveur tranche, lues des deux côtés au même endroit. */
+export {
+  COULEUR_PAR_DEFAUT, LIMITE_WIDGETS_PAR_ESPACE, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PHRASE_WIDGET, POSITIONS_WIDGET,
+} from '../../web/lib/partage/widgets';
 export const MAX_AVATAR_URL = 2000;
 /** La même borne que le plafond horaire d'un lien de chaîne. */
 export const MAX_PAR_HEURE_WIDGET = 100_000;
-/** Le vert de WhatsApp, défaut de la colonne `couleur` (0200). */
-export const COULEUR_PAR_DEFAUT = '#25d366';
-export const POSITIONS_WIDGET = ['bas_droite', 'bas_gauche', 'haut_droite', 'haut_gauche'] as const satisfies readonly PositionWidget[];
 /**
  * Le CHECK `widgets_couleur_chk`, recopié : six chiffres hexadécimaux, la forme que rend `<input type="color">`.
  * Exporté en TEXTE : le schéma d'entrée des outils MCP l'annonce tel quel (`pattern`), sans le recopier.

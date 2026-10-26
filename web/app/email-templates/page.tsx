@@ -15,7 +15,7 @@ import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { BoutonConfirme } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
-import { erreurDeChargement } from '@/lib/http';
+import { useChargement } from '@/lib/use-chargement';
 import { Icone } from '@/components/Icone';
 
 /**
@@ -43,26 +43,16 @@ function EmailTemplatesInner({ session }: { session: Session }) {
   const t = useT();
   const [items, setItems] = useState<EmailTemplate[]>([]);
   const [fields, setFields] = useState<UserFieldDef[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<EmailTemplateInput>(EMPTY);
   const [editing, setEditing] = useState<string | 'new' | null>(null);
   const [busy, setBusy] = useState(false);
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setItems((await listEmailTemplates(session.tenantId)).templates);
-    } catch (err) {
-      setError(erreurDeChargement(err, t));
-    } finally {
-      setLoading(false);
-    }
-  }, [session.tenantId, t]);
-
-  useEffect(() => { void load(); }, [load]);
+  const charger = useCallback(async () => {
+    setItems((await listEmailTemplates(session.tenantId)).templates);
+  }, [session.tenantId]);
+  const { chargement: loading, erreur: error, setErreur: setError, recharger: load } = useChargement(charger);
   useEffect(() => { listUserFields(session.tenantId).then((r) => setFields(r.fields)).catch(() => {}); }, [session.tenantId]);
 
 

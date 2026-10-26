@@ -1,20 +1,12 @@
 import { z } from 'zod';
-import { ACTIONS, INTENTS, SENTIMENTS, type HandledBy } from '../../web/lib/partage/analyse';
+import { ACTIONS, INTENTS, NOTE_MAX, NOTE_MIN, SENTIMENTS, type HandledBy } from '../../web/lib/partage/analyse';
 
 /**
  * Les codes d'une analyse (sentiments, intentions, actions, « traitée par ») sont partagés avec la console
  * (`web/lib/partage/analyse.ts`). 🔴 Ajouter une intention demande une migration qui relâche le CHECK, appliquée avant
  * le déploiement : sans elle, l'INSERT échoue en 23514 et le job rejoue, appel au modèle compris, jusqu'à la DLQ.
  */
-export { ACTIONS, HANDLED_BY, INTENTS, SENTIMENTS, type HandledBy, type Intent } from '../../web/lib/partage/analyse';
-
-/**
- * Bornes de l'échelle des deux notes (satisfaction, urgence). Elle existe aussi dans le CHECK de la migration 0121
- * et dans le front, tenus par `tests/analysis-engine.test.ts` et `web/lib/nuage.test.ts` : la changer ici seule
- * ferait échouer l'INSERT de l'analyse en boucle. Élargir l'échelle demande une migration de plus.
- */
-export const NOTE_MIN = 0;
-export const NOTE_MAX = 10;
+export { ACTIONS, HANDLED_BY, INTENTS, NOTE_MAX, NOTE_MIN, SENTIMENTS, type HandledBy, type Intent } from '../../web/lib/partage/analyse';
 
 /**
  * Longueur maximale du sujet. Le CHECK de `contacts.analyse_sujet` (migration 0196) la porte aussi, tenu par

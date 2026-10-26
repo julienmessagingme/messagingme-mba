@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { RangeBar } from '@/components/RangeBar';
@@ -10,7 +10,7 @@ import type { Session } from '@/lib/session';
 import { getTemplateStats, listCampaigns, type CampaignSummary, type StatsRange, type TemplateStats } from '@/lib/api';
 import { useT } from '@/lib/i18n';
 import { presetRange } from '@/lib/range';
-import { erreurDeChargement } from '@/lib/http';
+import { useChargement } from '@/lib/use-chargement';
 
 /**
  * Analytics > Quantitatif > **Coûts** : ce qui a été estimé, ce que Meta a facturé, et le détail par template.
@@ -68,26 +68,16 @@ function CoutsInner({ session }: { session: Session }) {
     () => periodeDemandee(params.get('du'), params.get('au')) ?? presetRange(30));
   const [templateStats, setTemplateStats] = useState<TemplateStats | null>(null);
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const [ts, cp] = await Promise.all([
-        getTemplateStats(session.tenantId, range),
-        listCampaigns(session.tenantId),
-      ]);
-      setTemplateStats(ts ?? null);
-      setCampaigns(Array.isArray(cp?.campaigns) ? cp.campaigns : []);
-    } catch (err) {
-      setError(erreurDeChargement(err, t));
-    } finally {
-      setLoading(false);
-    }
-  }, [session.tenantId, range, t]);
-
-  useEffect(() => { void load(); }, [load]);
+  const charger = useCallback(async () => {
+    const [ts, cp] = await Promise.all([
+      getTemplateStats(session.tenantId, range),
+      listCampaigns(session.tenantId),
+    ]);
+    setTemplateStats(ts ?? null);
+    setCampaigns(Array.isArray(cp?.campaigns) ? cp.campaigns : []);
+  }, [session.tenantId, range]);
+  const { chargement: loading, erreur: error } = useChargement(charger);
 
   return (
     <div className="space-y-4">

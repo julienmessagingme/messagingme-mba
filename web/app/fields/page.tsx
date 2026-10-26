@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
 import { listUserFields, createUserField, updateUserField, deleteUserField, type UserFieldDef, type UserFieldKind } from '@/lib/api';
@@ -11,7 +11,7 @@ import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
-import { erreurDeChargement } from '@/lib/http';
+import { useChargement } from '@/lib/use-chargement';
 
 export default function FieldsPage() {
   return <AppShell active="fields">{(session) => <FieldsInner session={session} />}</AppShell>;
@@ -28,28 +28,16 @@ function FieldsInner({ session }: { session: Session }) {
   }));
   const [fields, setFields] = useState<UserFieldDef[]>([]);
   const [tenantCode, setTenantCode] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [newLabel, setNewLabel] = useState('');
   const [newType, setNewType] = useState<UserFieldKind>('text');
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const res = await listUserFields(session.tenantId);
-      setFields(res.fields);
-      setTenantCode(res.tenantCode ?? '');
-    } catch (err) {
-      setError(erreurDeChargement(err, t));
-    } finally {
-      setLoading(false);
-    }
+  const charger = useCallback(async () => {
+    const res = await listUserFields(session.tenantId);
+    setFields(res.fields);
+    setTenantCode(res.tenantCode ?? '');
   }, [session.tenantId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { chargement: loading, erreur: error, setErreur: setError, recharger: load } = useChargement(charger);
 
   // Édition locale optimiste : on modifie la ligne dans le state, on persiste au blur/changement.
   function patchLocal(key: string, patch: Partial<UserFieldDef>) {

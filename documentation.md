@@ -3321,9 +3321,8 @@ sans être attendu sur le chemin de réponse.
 🔴 **LE MINIMUM DU MOT DE PASSE EST DE 12 CARACTÈRES, SANS RÈGLE DE COMPOSITION** (2026-09-10), et il ne
 mord que sur les quatre chemins qui en CHOISISSENT un. `/auth/login` compare un hash et ne regarde jamais
 la longueur : un compte existant continue de se connecter, et ne rencontre la règle qu'au prochain
-changement. La valeur est arrimée entre le serveur et les quatre écrans par
-`web/lib/mot-de-passe.test.ts`, parce qu'elle était écrite huit fois et que quatre copies ont dérivé le
-jour même du changement.
+changement. Le serveur et les quatre écrans la lisent au même endroit (`web/lib/partage/mot-de-passe.ts`) :
+elle était écrite huit fois, et quatre copies ont dérivé le jour même du changement.
 
 🔴 **L'OAUTH DEVANT `/mcp`** (migration 0204, spec `docs/superpowers/specs/2026-10-03-oauth-mcp-design.md`). Claude
 Code et claude.ai se connectent à `/mcp` sans clé : la personne clique « Authenticate », prouve qui elle est,
@@ -3943,7 +3942,7 @@ d'une absence) n'en fait ouvrir aucune autre : elle se journalise, une fois par 
 indisponible (`cle`). Le fil vérifie l'espace UNE fois par rafraîchissement (`Traducteur.ouvrir`). L'ouverture en
 vol est confiée à `travauxEnVol` (déclaré AVANT le traducteur dans `src/index.ts`) : l'arrêt d'une copie l'attend,
 sans quoi une clé créée chez Vercel ne s'enregistrait pas chez nous. Quand la cause disparaît, la console reprend
-le fil ENTIER au tour suivant (`traductionIndisponibleRef`, `web/app/inbox/page.tsx`) : le delta seul laissait
+le fil ENTIER au tour suivant (`tourDuFil`, `web/lib/fil-synchro.ts`) : le delta seul laissait
 l'historique en VO.
 ⚠️ **Le plafond de la clé Vercel reste le cumul crédité au COÛT BRUT** : notre solde, décompté au prix client,
 s'épuise avant lui. Il n'est qu'un filet pour un bug de comptage. Il suit les TROIS portes d'entrée du crédit
@@ -5088,7 +5087,9 @@ de la carte (`etapes-meta`), le contrat des filtres du mini-CRM (`contact-filter
 paramètres d'adresse, cible d'une action en masse, que la console écrit et le serveur relit ;
 `tests/contact-filters-roundtrip.test.ts` le transporte en `Required<ContactFilters>`, donc un critère ajouté oblige
 à compléter la preuve), la grammaire des chemins JSON (`chemin-json`), les clés de champs de l'import CSV
-(`cle-champ`) et la réponse d'un envoi accepté (`journal-sortant`). 🔴 Pour ces valeurs (types, bornes,
+(`cle-champ`), la réponse d'un envoi accepté (`journal-sortant`), et depuis le 2026-10-26 la longueur minimale d'un
+mot de passe (`mot-de-passe`), les bornes d'un widget (`widgets`), l'échelle des notes d'une analyse (dans `analyse`) et
+la clé du champ de consentement par défaut (dans `champs`). 🔴 Pour ces valeurs (types, bornes,
 droits, libellés), le fichier est la SOURCE : ce manuel dit où elles vivent, il ne les recopie pas. Une copie qui reste
 ailleurs (une liste de libellés d'écran, une règle liée à la base ou à `zod`, une logique qui entraînerait le serveur
 avec elle) garde son test de parité.
@@ -5263,6 +5264,9 @@ avec elle) garde son test de parité.
 | `web/lib/rcs-carrousel.ts` | le carrousel RCS côté écran (brouillon, message envoyable, manques carte par carte) et la relecture STRICTE d'un carrousel copié dans un brouillon de campagne : mal formé, il est jeté. Tenu contre `rcsOutboundSchema` par `tests/web-rcs-carrousel.test.ts` |
 | `web/components/Field.tsx` | le libellé de champ des formulaires de contenu (templates, messages RCS). Hors de `TemplateForm` pour ne pas embarquer ce module lourd |
 | `web/components/ChampSortie.tsx` | le champ de texte enregistré à la sortie (`onBlur`), seul ou multiligne : les réglages d'un agent IA et ceux d'un outil |
+| `web/components/CadreSansCompte.tsx` | le cadre des pages ouvertes sans session (langue, marque, titre et sous-titre) : `etroite` pour un formulaire d'accès, `formulaire` pour un guide pas à pas. Pas celui des documentations publiques (`CadrePublic`) |
+| `web/lib/use-chargement.ts` -> `useChargement` | le chargement d'un écran de liste : l'erreur remise à zéro, la phrase de `erreurDeChargement`, l'attente du premier chargement, le chargement au montage. `charger` pose ses données et doit être stable |
+| `web/lib/fil-synchro.ts` -> `tourDuFil` | 🔴 la synchronisation du fil de l'Inbox, sans React : l'ajout dédoublonné ou le remplacement, le curseur du delta, le « lu », la reprise du fil entier quand la langue de lecture change ou que la traduction redevient possible. La page garde la requête en vol (la garde qui empêche de payer une traduction en boucle), l'annulation et le minuteur |
 | `web/components/RcsPhoneFrame.tsx` | le cadre de téléphone des aperçus RCS, pendant de `PhoneFrame` (nom de marque de l'agent, une requête par espace) |
 | `web/lib/flow-mapping.ts` | la cible d'un champ de formulaire, avec la sentinelle `@profile_name` |
 | `web/lib/inbox-rangement.ts` | les gestes de rangement de l'Inbox : leurs libellés, et les destinations qu'une SÉLECTION peut prendre selon le dossier |

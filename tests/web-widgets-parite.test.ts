@@ -1,19 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import Fastify from 'fastify';
 import { registerWidgets, type WidgetsRouteDeps } from '../src/http/widgets';
-import {
-  COULEUR_PAR_DEFAUT as COULEUR_SERVEUR, LIMITE_WIDGETS_PAR_ESPACE, MAX_LIBELLE_WIDGET as LIBELLE_SERVEUR,
-  MAX_NOM_WIDGET as NOM_SERVEUR, MAX_PHRASE_WIDGET as PHRASE_SERVEUR, POSITIONS_WIDGET as POSITIONS_SERVEUR,
-} from '../src/widgets/gestion';
 import * as ecran from '../web/lib/widgets';
 
 /**
  * L'ÉCRAN DES WIDGETS ET LE SERVEUR, DES DEUX CÔTÉS (lot 4 du widget).
  *
- * `web/` n'importe jamais `src/` : les bornes et les chemins sont RECOPIÉS dans `web/lib/widgets.ts`. Une recopie non
- * tenue dérive, et chacune de ses deux dérives a un symptôme qu'aucun compilateur ne voit : une borne qui diverge
- * fait promettre à l'écran ce que le serveur refuse ; un chemin qui diverge rend un 404 découvert à l'écran (leçon de
- * Channels Me, `/connexion` contre `/connection`).
+ * Les bornes sont partagées (`web/lib/partage/widgets.ts`, lot D de l'audit de structure du 2026-10-26) ; les CHEMINS
+ * restent écrits dans `web/lib/widgets.ts`. Un chemin qui diverge rend un 404 découvert à l'écran, qu'aucun compilateur
+ * ne voit (leçon de Channels Me, `/connexion` contre `/connection`).
  */
 
 // Le socle HTTP de la console est remplacé (`vi.mock` passe avant les imports) : ce test ne touche aucun réseau, il
@@ -25,17 +20,6 @@ vi.mock('../web/lib/http', () => ({
     return Promise.resolve({});
   },
 }));
-
-describe('les bornes de l’écran sont celles du serveur', () => {
-  it('la limite, les longueurs, la couleur par défaut et les quatre coins', () => {
-    expect(ecran.LIMITE_WIDGETS).toBe(LIMITE_WIDGETS_PAR_ESPACE);
-    expect(ecran.MAX_NOM_WIDGET).toBe(NOM_SERVEUR);
-    expect(ecran.MAX_PHRASE_WIDGET).toBe(PHRASE_SERVEUR);
-    expect(ecran.MAX_LIBELLE_WIDGET).toBe(LIBELLE_SERVEUR);
-    expect(ecran.COULEUR_PAR_DEFAUT).toBe(COULEUR_SERVEUR);
-    expect([...ecran.POSITIONS_WIDGET]).toEqual([...POSITIONS_SERVEUR]);
-  });
-});
 
 describe('🔴 chaque appel de l’écran vise une route que le serveur monte', () => {
   it('méthode et chemin, un par un', async () => {

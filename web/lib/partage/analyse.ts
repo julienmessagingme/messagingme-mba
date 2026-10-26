@@ -23,3 +23,12 @@ export const ACTIONS = ['creer_devis', 'rappeler', 'relancer', 'escalader', 'auc
 
 export const HANDLED_BY = ['humain', 'automatise', 'mba'] as const;
 export type HandledBy = (typeof HANDLED_BY)[number];
+
+/**
+ * Bornes de l'échelle des deux notes (satisfaction, urgence) : le prompt et la validation de l'analyse, les filtres de la
+ * fiche, l'axe du nuage de la console. 🔴 Le CHECK des migrations 0121 et 0196 les porte aussi, tenu par
+ * `tests/analysis-engine.test.ts` et `tests/fiche-analyse-migration.test.ts` : les changer ici seules ferait échouer
+ * l'INSERT de l'analyse en boucle. Élargir l'échelle demande une migration de plus.
+ */
+export const NOTE_MIN = 0;
+export const NOTE_MAX = 10;

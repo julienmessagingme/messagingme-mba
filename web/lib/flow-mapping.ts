@@ -5,10 +5,7 @@
  * d'imports reste hors de l'arbre web (le tsconfig racine n'a pas la lib DOM).
  */
 import { normalizeText } from './normalize';
-
-/** Clé du champ booléen de consentement par défaut. Miroir de `src/crm/fields.ts` (WHATSAPP_OPTIN_FIELD_KEY) :
- *  un OptIn qui pointe dessus est un mapping PAR DÉFAUT (saveTo vide dans l'éditeur), pas un choix explicite. */
-export const WHATSAPP_OPTIN_FIELD_KEY = 'whatsapp_optin';
+import { WHATSAPP_OPTIN_FIELD_KEY } from './partage/champs';
 
 /**
  * Cible PAR DÉFAUT d'un champ de formulaire : le serveur l'applique tout seul quand `saveTo` est absent.

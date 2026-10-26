@@ -1,10 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { Logo } from '@/components/Logo';
-import { LocaleToggle } from '@/components/LocaleToggle';
+import { CadreSansCompte } from '@/components/CadreSansCompte';
 import { useT } from '@/lib/i18n';
-import { TitrePage } from '@/components/TitrePage';
 import type { EtapeGuide } from '@/lib/partage/salesforce';
 
 /**
@@ -88,51 +86,37 @@ export default function TutoSalesforcePage() {
   ];
 
   return (
-    <main className="relative flex min-h-screen justify-center px-4 py-10">
-      <div className="absolute right-4 top-4">
-        <LocaleToggle />
-      </div>
-      <div className="w-full max-w-formulaire">
-        <div className="mb-8 text-center">
-          <Logo className="mx-auto mb-4 h-9 w-auto" />
-          <TitrePage>
-            {t('Configurer Salesforce avec Messaging Me', 'Set up Salesforce with Messaging Me')}
-          </TitrePage>
-          <p className="mt-1 text-sm text-ink-500">
-            {t('Ce que l’administrateur de votre org fait une fois, avant de cliquer « Connecter » dans Messaging Me.', 'What your org’s administrator does once, before clicking "Connect" in Messaging Me.')}
-          </p>
-        </div>
+    <CadreSansCompte titre={t('Configurer Salesforce avec Messaging Me', 'Set up Salesforce with Messaging Me')} sousTitre={t('Ce que l’administrateur de votre org fait une fois, avant de cliquer « Connecter » dans Messaging Me.', 'What your org’s administrator does once, before clicking "Connect" in Messaging Me.')} largeur="formulaire">
 
-        <ol className="space-y-4">
-          {steps.map((s, i) => (
-            <li key={s.id} id={s.id} className="scroll-mt-6 rounded-carte border border-ink-200 bg-white p-5">
-              <div className="flex items-start gap-3">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white">{i + 1}</span>
-                <div className="min-w-0">
-                  <h2 className="text-base font-semibold text-ink-900">{s.title}</h2>
-                  <p className="mt-1 text-sm text-ink-500">{s.body}</p>
-                  {s.sub && (
-                    <ul className="mt-2 space-y-1.5">
-                      {s.sub.map((line, j) => (
-                        <li key={j} className="flex gap-2 text-sm text-ink-500">
-                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-300" />
-                          <span>{line}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+      <ol className="space-y-4">
+        {steps.map((s, i) => (
+          <li key={s.id} id={s.id} className="scroll-mt-6 rounded-carte border border-ink-200 bg-white p-5">
+            <div className="flex items-start gap-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white">{i + 1}</span>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-ink-900">{s.title}</h2>
+                <p className="mt-1 text-sm text-ink-500">{s.body}</p>
+                {s.sub && (
+                  <ul className="mt-2 space-y-1.5">
+                    {s.sub.map((line, j) => (
+                      <li key={j} className="flex gap-2 text-sm text-ink-500">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-ink-300" />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-            </li>
-          ))}
-        </ol>
+            </div>
+          </li>
+        ))}
+      </ol>
 
-        <div className="mt-6 text-center">
-          <Link href="/integrations#integration-salesforce" className="text-sm font-medium text-brand-600 hover:underline">
-            {t('Retour aux intégrations', 'Back to integrations')}
-          </Link>
-        </div>
+      <div className="mt-6 text-center">
+        <Link href="/integrations#integration-salesforce" className="text-sm font-medium text-brand-600 hover:underline">
+          {t('Retour aux intégrations', 'Back to integrations')}
+        </Link>
       </div>
-    </main>
+    </CadreSansCompte>
   );
 }

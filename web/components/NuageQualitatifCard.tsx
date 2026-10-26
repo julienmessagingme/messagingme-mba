@@ -5,7 +5,8 @@ import { getNuageQualitatif, type NuageQualitatif as Nuage, type StatsRange } fr
 import { fmtNum, fmtNote } from '@/lib/format';
 import { useT, useLocale } from '@/lib/i18n';
 import type { Locale } from '@/lib/locale';
-import { NOTE_MIN, NOTE_MAX, MILIEU_ECHELLE, positionPct, rayonPoint, estAlerte } from '@/lib/nuage';
+import { MILIEU_ECHELLE, positionPct, rayonPoint, estAlerte } from '@/lib/nuage';
+import { NOTE_MAX, NOTE_MIN } from '@/lib/partage/analyse';
 import { brand, danger, ink } from '@/lib/couleurs';
 import { Squelette } from '@/components/Squelette';
 import { Nd, useErreurRegroupee } from '@/components/Nd';

@@ -6,17 +6,9 @@
  * écrivant sans que rien ne le signale, parce qu'un nuage faux ressemble à un nuage.
  */
 
-/**
- * Bornes de l'échelle des deux notes.
- *
- * 🔴 CES DEUX CONSTANTES DOIVENT RESTER ÉGALES À CELLES DU SERVEUR (`NOTE_MIN` / `NOTE_MAX` de
- * `src/analysis/schema.ts`, et le CHECK de la migration 0121). Le front ne peut pas importer le serveur, la
- * copie est donc inévitable ; ce qui ne l'est pas, c'est de la laisser dériver. `web/lib/nuage.test.ts` lit
- * le fichier du serveur et compare : si l'échelle passe un jour à 0-100, l'axe ne restera pas gradué à 10
- * en silence, avec tous les points écrasés contre son bord droit.
- */
-export const NOTE_MIN = 0;
-export const NOTE_MAX = 10;
+// L'échelle des notes est celle du serveur, lue au même endroit (`web/lib/partage/analyse.ts`) : si elle passe un jour
+// à 0-100, l'axe suit, au lieu de rester gradué à 10 avec tous les points écrasés contre son bord droit.
+import { NOTE_MAX, NOTE_MIN } from './partage/analyse';
 
 /** Position d'une note sur son axe, en pourcentage de la largeur utile (0 % = borne basse). */
 export function positionPct(note: number): number {

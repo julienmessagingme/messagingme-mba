@@ -1,6 +1,7 @@
 'use client';
 
 import { request } from './http';
+import type { PositionWidget } from './partage/widgets';
 
 /**
  * Les widgets WhatsApp d'un espace : la bulle que le client pose sur son site (lot 4 de
@@ -18,19 +19,7 @@ import { request } from './http';
 
 const base = (tenantId: string): string => `/tenants/${tenantId}/widgets`;
 
-// --- Bornes recopiées du serveur --------------------------------------------------------------------
-
-/**
- * Recopiées À LA MAIN depuis `src/widgets/gestion.ts` (`web/` n'importe jamais `src/`), et figées par
- * `tests/web-widgets-parite.test.ts`. L'écran guide la saisie, le serveur tranche.
- */
-export const LIMITE_WIDGETS = 5;
-export const MAX_NOM_WIDGET = 80;
-export const MAX_PHRASE_WIDGET = 300;
-export const MAX_LIBELLE_WIDGET = 60;
-export const COULEUR_PAR_DEFAUT = '#25d366';
-export const POSITIONS_WIDGET = ['bas_droite', 'bas_gauche', 'haut_droite', 'haut_gauche'] as const;
-export type PositionWidget = (typeof POSITIONS_WIDGET)[number];
+// Les bornes du widget (le serveur tranche, l'écran guide la saisie) : `web/lib/partage/widgets.ts`.
 
 /**
  * `agent` existe en base, plus à l'écran (lot 5 : le choix grisé « à venir » a disparu, un agent IA répond désormais

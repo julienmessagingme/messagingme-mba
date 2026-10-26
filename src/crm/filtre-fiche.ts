@@ -1,5 +1,6 @@
 import type { AnalyseDeFiche } from '../analysis/fiche';
 import { OPERATEURS_FICHE_SEULS, type OperateurFicheSeul } from '../../web/lib/partage/contact-filters';
+import { NOTE_MAX, NOTE_MIN } from '../../web/lib/partage/analyse';
 export { OPERATEURS_FICHE_SEULS } from '../../web/lib/partage/contact-filters';
 export type { OperateurFicheSeul } from '../../web/lib/partage/contact-filters';
 import { champFiche, type ChampFiche, type CleFicheFixe } from './champs-fiche';
@@ -47,9 +48,7 @@ export function estCleFiltrable(cle: unknown): cle is CleFiltrable {
   return typeof cle === 'string' && Object.hasOwn(COLONNE_DU_FILTRE, cle);
 }
 
-/** Bornes des valeurs saisies : une note va de 0 à 10 (le CHECK de 0196), une ancienneté d'un jour à dix ans. */
-const NOTE_MIN = 0;
-const NOTE_MAX = 10;
+/** Bornes des valeurs saisies : une note suit l'échelle de l'analyse (`NOTE_MIN`, `NOTE_MAX`), une ancienneté va d'un jour à dix ans. */
 const JOURS_MIN = 1;
 const JOURS_MAX = 3650;
 

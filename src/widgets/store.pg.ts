@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { newTrackingCode } from '../ids/code';
+import type { PositionWidget } from '../../web/lib/partage/widgets';
 
 /**
  * Les widgets WhatsApp d'un espace (migration 0200) : la bulle que le client pose sur son site.
@@ -18,8 +19,8 @@ import { newTrackingCode } from '../ids/code';
 /** Qui prend la conversation qu'un widget amène. `null` = le réglage de l'espace, pas « personne ». */
 export type DevenirWidget = 'agent' | 'mba' | 'scenario';
 
-/** Les quatre coins où la bulle peut se poser. Pas de coordonnée libre. */
-export type PositionWidget = 'bas_droite' | 'bas_gauche' | 'haut_droite' | 'haut_gauche';
+/** Les quatre coins où la bulle peut se poser, lus avec les autres bornes du widget. Pas de coordonnée libre. */
+export type { PositionWidget };
 
 /**
  * Ce qu'une route peut écrire. Ni `code` ni `tenantId` : le premier est tiré au sort à la création puis

@@ -16,6 +16,7 @@ import { Nd } from '@/components/Nd';
 import { erreurDeChargement } from '@/lib/http';
 import { listerAutorisations, personneDe, revoquerAutorisation, type AutorisationOauth } from '@/lib/oauth';
 import { useOffre } from '@/lib/use-offre';
+import { useChargement } from '@/lib/use-chargement';
 
 export default function ApiKeysPage() {
   return <AppShell active="api-keys">{(session) => <KeysInner session={session} />}</AppShell>;
@@ -27,8 +28,6 @@ function KeysInner({ session }: { session: Session }) {
   const { locale } = useLocale();
   const [keys, setKeys] = useState<ApiKeyRow[]>([]);
   const vue = useOffre(session.tenantId);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState('');
   // Pas `API_SCOPES` : les droits MCP ne sont pas cochés d'avance (cf. `API_SCOPES_PAR_DEFAUT`).
   const [scopes, setScopes] = useState<Set<string>>(() => new Set<string>(API_SCOPES_PAR_DEFAUT));
@@ -37,18 +36,10 @@ function KeysInner({ session }: { session: Session }) {
   // faut surtout pas recharger la liste avant de l'avoir montrée : la liste ne la renvoie jamais.
   const [created, setCreated] = useState<ApiKeyCreated | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setKeys((await listApiKeys(session.tenantId)).keys);
-    } catch (err) {
-      setError(erreurDeChargement(err, t));
-    } finally {
-      setLoading(false);
-    }
-  }, [session.tenantId, t]);
-
-  useEffect(() => { void load(); }, [load]);
+  const charger = useCallback(async () => {
+    setKeys((await listApiKeys(session.tenantId)).keys);
+  }, [session.tenantId]);
+  const { chargement: loading, erreur: error, setErreur: setError, recharger: load } = useChargement(charger);
 
   // Typé sur `ApiScope` : un droit ajouté à la liste sans libellé ne compile pas.
   const SCOPE_LABEL: Record<ApiScope, string> = {

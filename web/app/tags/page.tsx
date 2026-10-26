@@ -12,6 +12,7 @@ import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
 import { Squelette } from '@/components/Squelette';
 import { erreurDeChargement } from '@/lib/http';
+import { useChargement } from '@/lib/use-chargement';
 
 export default function TagsPage() {
   return <AppShell active="tags">{(session) => <TagsInner session={session} />}</AppShell>;
@@ -21,27 +22,15 @@ function TagsInner({ session }: { session: Session }) {
   const t = useT();
   const confirmer = useConfirmation();
   const [tags, setTags] = useState<TagCount[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [newTag, setNewTag] = useState('');
   const [contactsOf, setContactsOf] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setTags((await listTags(session.tenantId)).tags);
-    } catch (err) {
-      setError(erreurDeChargement(err, t));
-    } finally {
-      setLoading(false);
-    }
+  const charger = useCallback(async () => {
+    setTags((await listTags(session.tenantId)).tags);
   }, [session.tenantId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { chargement: loading, erreur: error, setErreur: setError, recharger: load } = useChargement(charger);
 
   async function saveRename(from: string) {
     const to = draft.trim();

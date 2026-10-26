@@ -7,16 +7,16 @@ import { Bouton } from '@/components/Bouton';
 import { Field } from '@/components/Field';
 import { WidgetApercu } from '@/components/WidgetApercu';
 import type { WorkflowSummary } from '@/lib/api';
+import type { SaisieWidget, Widget } from '@/lib/widgets';
 import {
-  COULEUR_PAR_DEFAUT, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PHRASE_WIDGET, POSITIONS_WIDGET,
-  type PositionWidget, type SaisieWidget, type Widget,
-} from '@/lib/widgets';
+  COULEUR_PAR_DEFAUT, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PHRASE_WIDGET, POSITIONS_WIDGET, type PositionWidget,
+} from '@/lib/partage/widgets';
 
 /**
  * Le formulaire d'un widget, à la création comme à la modification, avec l'APERÇU EN DIRECT de la bulle à côté.
  *
  * Les champs restent des chaînes tant qu'on tape (un nombre vide n'est pas zéro) ; la saisie typée n'est construite
- * qu'à l'envoi. Les bornes sont celles du serveur (`lib/widgets.ts`), qui tranche de toute façon : l'écran guide, il
+ * qu'à l'envoi. Les bornes sont celles du serveur (`lib/partage/widgets.ts`), qui tranche de toute façon : l'écran guide, il
  * ne décide rien.
  */
 

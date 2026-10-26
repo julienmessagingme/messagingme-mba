@@ -16,6 +16,7 @@ import { journaliser } from '../lib/journal';
 import { marquerConnexion, type ComptesAuthDep } from './comptes';
 import { entrerParGoogle } from './entree-google';
 import { empreinteTentative, verifierTentative } from './tentatives';
+import { MIN_MOT_DE_PASSE } from '../../web/lib/partage/mot-de-passe';
 
 export interface AuthRouteDeps extends MfaDeps {
   /**
@@ -134,13 +135,9 @@ async function entreeOps(deps: AuthRouteDeps, etape: EtapeConnexion, actif: bool
 // qu'aucun écart de temps ne révèle l'existence d'un compte.
 const DUMMY_HASH = hashPasswordSync(randomBytes(24).toString('hex')); // une seule fois au chargement -> sync OK
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-/**
- * Longueur minimale d'un mot de passe choisi. Elle ne mord que sur les chemins qui en choisissent un
- * (inscription, invitation acceptée, réinitialisation, changement) : `/auth/login` compare un hash, un compte
- * existant plus court continue de se connecter. Aucune règle de composition : elles poussent à `Password1!`,
- * la longueur seule laisse passer les phrases de passe.
- */
-const MIN_PASSWORD = 12;
+// La longueur minimale d'un mot de passe choisi (`MIN_MOT_DE_PASSE`, partagée avec la console) ne mord que sur les
+// chemins qui en choisissent un (inscription, invitation acceptée, réinitialisation, changement) : `/auth/login`
+// compare un hash, un compte existant plus court continue de se connecter.
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /** Adapte la décision de débit indépendante du transport à la réponse Fastify de ces routes. */
@@ -326,7 +323,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const workspaceName = nomLu.data;
     if (!EMAIL_RE.test(email)) return reply.code(400).send({ error: 'email invalide' });
     if (await freine(signupLimiter, empreinteTentative(req, email), reply)) return reply;
-    if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
+    if (password.length < MIN_MOT_DE_PASSE) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_MOT_DE_PASSE})` });
     // 🔴 Une adresse déjà connue ne s'inscrit qu'avec son mot de passe : l'inscription réutilise son identité, et
     // sans cette vérification n'importe qui se rattacherait à l'identité d'un autre, puis changerait le mot de
     // passe de tous ses espaces. Une identité sans mot de passe (invitation en attente, Google) ne s'étend pas
@@ -395,7 +392,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (token === '') return reply.code(400).send({ error: 'token requis' });
     // Clé sur le jeton (pas d'adresse ici) : borne le brute-force d'un lien sans bloquer les autres.
     if (await freine(resetLimiter, empreinteTentative(req, token), reply)) return reply;
-    if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
+    if (password.length < MIN_MOT_DE_PASSE) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_MOT_DE_PASSE})` });
     const userId = await deps.tokens.consume('reset', token);
     if (!userId) return reply.code(400).send({ error: 'lien invalide ou expiré' });
     await deps.comptes.setPassword(userId, await hashPassword(password));
@@ -412,7 +409,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     if (token === '') return reply.code(400).send({ error: 'token requis' });
     // Clé sur le jeton d'invitation : borne le brute-force d'un lien sans bloquer les autres.
     if (await freine(acceptLimiter, empreinteTentative(req, token), reply)) return reply;
-    if (password.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
+    if (password.length < MIN_MOT_DE_PASSE) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_MOT_DE_PASSE})` });
     const userId = await deps.tokens.consume('invite', token);
     if (!userId) return reply.code(400).send({ error: 'invitation invalide ou expirée' });
     const su = await deps.comptes.getSessionUser(userId);
@@ -442,7 +439,7 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const b = (req.body ?? {}) as { currentPassword?: unknown; newPassword?: unknown };
     const current = str(b.currentPassword);
     const next = str(b.newPassword);
-    if (next.length < MIN_PASSWORD) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_PASSWORD})` });
+    if (next.length < MIN_MOT_DE_PASSE) return reply.code(400).send({ error: `mot de passe trop court (min ${MIN_MOT_DE_PASSE})` });
     const hash = await deps.comptes.getPasswordHash(userId);
     const ok = await verifyPassword(current, hash ?? DUMMY_HASH);
     if (!hash || !ok) return reply.code(401).send({ error: 'mot de passe actuel incorrect' });

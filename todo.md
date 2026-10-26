@@ -1,5 +1,15 @@
 # todo.md : backlog
 
+## 🟡 Les restes du lot D de l'audit de structure (console, 2026-10-26)
+
+- Quatre pages sans session gardent leur propre cadre, d'une forme un peu différente (`login`, `autoriser`, `brancher`,
+  `paiement-recu`) : les passer par `CadreSansCompte` (`web/components/`) en lui ajoutant leurs variantes.
+- `web/app/fields/page.tsx`, `save` (défaut d'avant le lot) : `setError(msg); await load();`, et `load` remet l'erreur à
+  `null` avant son premier `await`, donc « Enregistrement impossible » ne s'affiche jamais, sauf si le rechargement
+  échoue aussi.
+- `useChargement` (`web/lib/use-chargement.ts`) n'a pas de test : ses deux invariants (`chargement` ne repasse jamais
+  à vrai, l'erreur est remise à zéro à chaque chargement) ne sont tenus que par les e2e des neuf écrans.
+
 ## 🟡 Plus tard : les pages par concurrent sur la vitrine (plan SEO, lot 5, N3)
 
 `docs/superpowers/plans/2026-10-26-seo-geo-vitrine.md`, N3 : une page par concurrent sous `/comparatif/` (Twilio, Bird,

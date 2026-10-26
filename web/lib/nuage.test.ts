@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { readFile } from 'node:fs/promises';
-import { NOTE_MIN, NOTE_MAX, MILIEU_ECHELLE, positionPct, rayonPoint, estAlerte, RAYON_MIN, RAYON_MAX } from './nuage';
+import { MILIEU_ECHELLE, positionPct, rayonPoint, estAlerte, RAYON_MIN, RAYON_MAX } from './nuage';
+import { NOTE_MAX, NOTE_MIN } from './partage/analyse';
 
 describe('nuage — position sur les axes', () => {
   it('les bornes tombent aux extrémités, le milieu au milieu', () => {
@@ -47,30 +47,5 @@ describe('nuage — le coin qui alarme', () => {
     expect(estAlerte(MILIEU_ECHELLE, MILIEU_ECHELLE)).toBe(false);
     expect(estAlerte(MILIEU_ECHELLE, MILIEU_ECHELLE + 1)).toBe(false);
     expect(estAlerte(MILIEU_ECHELLE - 1, MILIEU_ECHELLE)).toBe(false);
-  });
-});
-
-/**
- * 🔴 L'ÉCHELLE DU FRONT DOIT RESTER CELLE DU SERVEUR.
- *
- * Deux constantes dans deux fichiers que rien ne relie : le front ne peut pas importer `src/`, et chacune
- * est parfaitement plausible seule. C'est leur ÉCART qui porte l'invariant, donc il ne peut se tenir que
- * dans un test. Si l'échelle passait un jour à 0-100 côté serveur, l'axe resterait gradué à 10 et tous les
- * points s'écraseraient contre son bord droit, sans erreur, sans avertissement, avec un graphe qui a l'air
- * de fonctionner.
- *
- * Le test DÉRIVE la valeur du fichier serveur plutôt que de la recopier : une copie ne ferait que déplacer
- * la dérive d'un fichier à l'autre. Même idiome que `web/lib/nav.test.ts` avec le type `Tab`.
- */
-describe('nuage — alignement avec le serveur', () => {
-  it('🔴 NOTE_MIN et NOTE_MAX valent ceux de src/analysis/schema.ts', async () => {
-    const src = await readFile(new URL('../../src/analysis/schema.ts', import.meta.url), 'utf8');
-    const lu = (nom: string): number => {
-      const m = src.match(new RegExp(`export const ${nom} = (-?[0-9]+);`));
-      expect(m, `${nom} n'a pas été lu dans le schéma serveur : ce test ne garde plus rien`).not.toBeNull();
-      return Number(m![1]);
-    };
-    expect(NOTE_MIN).toBe(lu('NOTE_MIN'));
-    expect(NOTE_MAX).toBe(lu('NOTE_MAX'));
   });
 });

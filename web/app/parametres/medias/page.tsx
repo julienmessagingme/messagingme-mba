@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
@@ -9,8 +9,9 @@ import { useT } from '@/lib/i18n';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
-import { ApiError, erreurDeChargement } from '@/lib/http';
+import { ApiError } from '@/lib/http';
 import { poids, phraseUtilisations, utilisationsDuRefus } from '@/lib/medias';
+import { useChargement } from '@/lib/use-chargement';
 
 /**
  * LA MÉDIATHÈQUE (spec `docs/superpowers/specs/2026-10-14-medias-message-rapide-design.md`, lot B) : ce que pèsent les
@@ -27,26 +28,14 @@ function MediasInner({ session }: { session: Session }) {
   const [fichiers, setFichiers] = useState<FichierMediatheque[]>([]);
   const [occupation, setOccupation] = useState(0);
   const [quota, setQuota] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const m = await listerMediatheque(session.tenantId);
-      setFichiers(m.fichiers);
-      setOccupation(m.occupation);
-      setQuota(m.quota);
-    } catch (err) {
-      setError(erreurDeChargement(err, t));
-    } finally {
-      setLoading(false);
-    }
+  const charger = useCallback(async () => {
+    const m = await listerMediatheque(session.tenantId);
+    setFichiers(m.fichiers);
+    setOccupation(m.occupation);
+    setQuota(m.quota);
   }, [session.tenantId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { chargement: loading, erreur: error, setErreur: setError, recharger: load } = useChargement(charger);
 
   /**
    * Une vidéo ou un PDF n'ont pas d'adresse publique : la console les télécharge sous session, puis les ENREGISTRE.

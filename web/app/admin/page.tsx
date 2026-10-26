@@ -7,12 +7,13 @@ import { listUsers, inviteMember, setUserRole, setUserDisabled, deleteUser, reno
 import { useT, useLocale } from '@/lib/i18n';
 import { formatDate, hourMin } from '@/lib/day';
 import { inputCls } from '@/lib/ui';
-import { estAnnulation, erreurDeChargement, ApiError } from '@/lib/http';
+import { estAnnulation, ApiError } from '@/lib/http';
 import { routeInconnue } from '@/lib/canaux-services';
 import { Bouton } from '@/components/Bouton';
 import { lireSiegeRequis, type SiegeRequis } from '@/lib/offre';
 import { changerSieges } from '@/lib/api/offre';
 import { oublierOffre } from '@/lib/use-offre';
+import { useChargement } from '@/lib/use-chargement';
 import { TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
@@ -27,27 +28,15 @@ function AdminInner({ session }: { session: Session }) {
   const confirmer = useConfirmation();
   const { locale } = useLocale();
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   /** Le membre dont l'admin s'apprête à réinitialiser le facteur : la fenêtre du mot de passe est ouverte pour lui. */
   const [aReinitialiser, setAReinitialiser] = useState<AdminUser | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      const { users } = await listUsers(session.tenantId);
-      setUsers(users);
-    } catch (err) {
-      setError(erreurDeChargement(err, t));
-    } finally {
-      setLoading(false);
-    }
+  const charger = useCallback(async () => {
+    const { users } = await listUsers(session.tenantId);
+    setUsers(users);
   }, [session.tenantId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { chargement: loading, erreur: error, setErreur: setError, recharger: load } = useChargement(charger);
 
   /**
    * Renomme un membre, à la sortie du champ.

@@ -8,12 +8,10 @@
  * pas la duplication en soi, c'est qu'elle est INVISIBLE : rien ne relie ces quatre écrans à la constante
  * du serveur, et le compilateur ne voit pas un nombre écrit dans un attribut.
  *
- * ⚠️ ARRIMÉ AU SERVEUR PAR UN TEST, pas par cette phrase. Le front ne peut pas importer `src/`, la copie
- * est donc inévitable ; ce qui ne l'est pas, c'est de la laisser dériver. `web/lib/mot-de-passe.test.ts`
- * lit `src/auth/routes.ts` et compare, exactement comme `web/lib/nuage.test.ts` le fait pour l'échelle des
- * notes. Le jour où le minimum bougera encore, les écrans suivront ou le test tombera.
+ * La valeur vit dans `web/lib/partage/mot-de-passe.ts`, que le serveur lit aussi : le jour où le minimum bougera encore,
+ * les écrans suivront sans copie à tenir.
  */
-export const MIN_MOT_DE_PASSE = 12;
+import { MIN_MOT_DE_PASSE } from './partage/mot-de-passe';
 
 /**
  * Le texte d'aide du champ, dans les deux langues.

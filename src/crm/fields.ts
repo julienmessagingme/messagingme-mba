@@ -13,9 +13,8 @@ export function isUserFieldType(t: string): t is UserFieldType {
   return (USER_FIELD_TYPES as readonly string[]).includes(t);
 }
 
-/** Clé + libellé du champ booléen de consentement par défaut (WhatsApp opt-in), créé à la volée quand un
- *  écran OptIn de flow n'a pas de cible explicite. Clé stable, jamais dérivée d'un libellé mutable. */
-export const WHATSAPP_OPTIN_FIELD_KEY = 'whatsapp_optin';
+/** Clé + libellé du champ booléen de consentement par défaut (WhatsApp opt-in) ; la clé est partagée avec la console. */
+export { WHATSAPP_OPTIN_FIELD_KEY } from '../../web/lib/partage/champs';
 export const WHATSAPP_OPTIN_FIELD_LABEL = 'Consentement WhatsApp';
 
 /**
