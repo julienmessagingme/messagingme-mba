@@ -19,10 +19,39 @@ ou des `docs/aide` de la révision qui porte ces fiches, après avoir comparé `
 
 ## 🟡 Deux réponses de l'Inbox jamais arrivées à l'API (essai réel du lot 2b HubSpot, 2026-10-26)
 
-Sur SANDBOX, conversation du +44 1555 479304, deux réponses tapées dans l'Inbox par Julien (vers 15 h 55 et 16 h 25,
-heure de Paris) n'ont laissé AUCUNE trace : ni message en base, ni erreur dans les journaux de l'API ; la suivante,
-chaque fois, est passée. Soit le clic n'est pas parti, soit la console perd un envoi sans le dire. À reproduire (réseau
-de la console ouvert pendant l'envoi) avant de conclure ; une perte muette serait un 🔴.
+Sur SANDBOX, conversation du +44 1555 479304, deux réponses tapées par Julien vers 15 h 55 et 16 h 25 (heure de Paris)
+n'ont laissé aucune trace ; la suivante, chaque fois, est passée (16 h 00 min 08 s et 16 h 34 min 53 s).
+
+**Ce que la mesure de latence établit** (`http_latences`, vidée chaque minute par motif de route et code, lue le jour
+même en lecture seule ; ⚠️ « aucune erreur dans les journaux » ne prouvait rien : l'API tourne en `logger: false` et ne
+journalise que les 5xx, un refus 4xx n'y laisse aucune trace, mais il se MESURE) :
+- **aucune requête de réponse n'a atteint l'API** entre la réponse de 15 h 44 et celle de 16 h 00, ni entre celle-ci
+  et celle de 16 h 34 : ni `POST …/reply` sous aucun code, ni `/hubspot/conversation/repondre`. Ces trois réponses, les
+  seules de l'après-midi en base, ont chacune la sienne, en 200. Écartés : un refus de l'API (affectation, fenêtre,
+  débit, offre), une perte entre Cloudflare et l'API, un redémarrage (`/live` mesuré sans trou), une session tombée (elle
+  arrête tous les relevés de l'onglet, `repeterAvecGigue`, mais l'envoi suivant serait arrivé en 401 ; le seul 401 entre
+  14 h 30 et 17 h, `/offre/tarif` à 16 h 05, ne vient pas de cette console, dont la pastille continue en 200).
+- **vers 15 h 55 et vers 16 h 25, aucune surface de Messaging Me n'était à l'écran** (fenêtres de 15 h 50 à 15 h 55 et
+  de 16 h 10 à 16 h 25) : zéro relevé du fil de l'Inbox (un toutes les 4 s quand il est affiché, 64 sur la fenêtre de
+  16 h 00), zéro de la liste et des compteurs, et la pastille des non-lus relevée une fois par minute au lieu de deux,
+  le rythme de Chrome pour un onglet caché. La carte HubSpot, elle, ne relit plus son fil depuis 14 h 31.
+
+Conclusion : le geste n'est parti d'aucun onglet vivant de la console. Le chemin d'envoi relu (`send()` de
+`web/app/inbox/page.tsx`, `request`, la route `/reply`, `repondreDansLaFenetre`) ne perd rien en silence : chaque refus
+rend une phrase affichée, une panne réseau aussi, et le texte reste dans la zone tant que l'envoi n'est pas accepté.
+Reste à savoir OÙ la saisie a eu lieu (autre fenêtre, autre appareil, onglet resté en arrière-plan) : pas un 🔴 tant
+que ce n'est pas reproduit dans un onglet au premier plan.
+
+- **Si ça se reproduit** : un seul onglet de console, l'Inbox ouverte au premier plan, F12 puis Réseau, « Conserver le
+  journal » coché, filtre `reply`. Noter l'heure à la seconde de chaque clic, et ce que montre l'écran (texte effacé,
+  bouton figé sur « ... », bandeau rouge, bulle). Une ligne en `(pending)` : connexion bloquée ; en `(failed)` ou
+  erreur CORS : réseau ; une réponse 4xx : refus, sa phrase doit être à l'écran ; aucune ligne : le geste n'a rien
+  déclenché dans cet onglet. La même minute se relit côté serveur dans `http_latences` (`route like '%/reply'`, la
+  fenêtre de 5 min qui suit le clic) et dans `conversation_messages`.
+- **Ce qui pourrait, en revanche, figer l'envoi sans un mot** (vu en relisant, ce n'est pas ce qui s'est passé) :
+  aucune requête de la console n'a de délai maximal (`attempt`, `web/lib/http.ts`), et `send()` attend le rechargement
+  du fil avant de libérer le bouton. Une lecture du fil qui ne revient jamais laisse le bouton sur « ... » et la touche
+  Entrée sans effet, et `passerSiEnVol` arrête alors aussi le relevé du fil. Un plafond sur cette lecture suffirait.
 
 ## 🟡 Le Pro géré depuis la console : ce que la relecture des jaunes laisse (2026-10-26)
 
