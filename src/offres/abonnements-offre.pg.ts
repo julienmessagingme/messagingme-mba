@@ -33,6 +33,11 @@ export interface AbonnementOffre {
   sieges: number;
 }
 
+/** Ce que la vue de l'offre dit du Pro (2026-10-26) : l'abonnement, plus sa souscription (`cree_le`). */
+export type ResumePro = Pick<AbonnementOffre, 'statut' | 'periodicite' | 'periodeFin' | 'finPrevueLe' | 'essaiFinLe' | 'finiLe' | 'finRaison'> & {
+  creeLe: Date;
+};
+
 /**
  * Ce que l'enregistrement a produit. `doublon` : l'espace a déjà un AUTRE Pro vivant (deux paiements ouverts en même
  * temps, l'index `abonnements_offre_un_vivant_par_espace`) ; rien n'est écrit, Julien l'annule chez Stripe. `fini` : un
@@ -261,5 +266,23 @@ export class PgAbonnementsOffreStore {
       [tenantId],
     );
     return res.rows[0] ? versAbonnement(res.rows[0]) : null;
+  }
+
+  /**
+   * Le Pro de l'espace pour la vue de l'offre (2026-10-26) : le même que `deLEspace`, avec sa date de souscription. Une
+   * méthode à part, pour ne rien ajouter à ce que rendent les autres (leurs tests d'intégration comparent des objets).
+   */
+  async resume(tenantId: string): Promise<ResumePro | null> {
+    const res = await this.pool.query<Ligne & { cree_le: Date }>(
+      `select ${COLONNES}, cree_le from abonnements_offre where tenant_id = $1 order by (fini_le is null) desc, cree_le desc limit 1`,
+      [tenantId],
+    );
+    const l = res.rows[0];
+    if (!l) return null;
+    const a = versAbonnement(l);
+    return {
+      statut: a.statut, periodicite: a.periodicite, periodeFin: a.periodeFin, finPrevueLe: a.finPrevueLe,
+      essaiFinLe: a.essaiFinLe, finiLe: a.finiLe, finRaison: a.finRaison, creeLe: l.cree_le,
+    };
   }
 }

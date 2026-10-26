@@ -3,6 +3,7 @@ import {
   type Offre,
 } from './offres';
 import type { SourceOffres } from './offre.pg';
+import type { ResumePro } from './abonnements-offre.pg';
 import { adresseOffre } from './refus';
 
 /**
@@ -68,7 +69,63 @@ export interface VueOffre {
   sieges: { inclus: number; achetes: number; periodicite: 'mois' | 'an' } | null;
   /** Le prix HT d'un siège, en centimes (`PRIX_SIEGE_HT_CENTIMES`) ; `null` tant que les sièges ne sont pas en vente. */
   prixSiege: { moisCentimes: number; anCentimes: number } | null;
+  /**
+   * L'abonnement Pro de l'espace, dit en clair (2026-10-26, demande de Julien : « quand commence-t-il, quand s'arrête-t-il,
+   * son statut ») : le vivant, sinon le dernier fini ; `null` si l'espace n'a jamais eu de Pro. Le statut se calcule ici
+   * (`statutDuPro`), la console et Claude le lisent sans refaire la règle.
+   */
+  abonnement: AbonnementProVue | null;
   upgradeUrl: string;
+}
+
+/**
+ * Le statut du Pro, de la plus forte à la plus faible : fini ; paiement en retard (c'est lui qu'il faut régler, même si
+ * une fin est posée) ; résiliation programmée (même pendant l'essai : il ne sera suivi d'aucun paiement) ; essai ; actif.
+ */
+export type StatutAbonnementPro = 'termine' | 'en_retard' | 'resiliation_programmee' | 'essai' | 'actif';
+
+export interface AbonnementProVue {
+  statut: StatutAbonnementPro;
+  periodicite: 'mois' | 'an';
+  /** La souscription (la création de la ligne, au premier événement de Stripe). */
+  debutLe: string;
+  /**
+   * Le prochain renouvellement (la fin de la période payée, ou de l'essai) : `null` quand une fin est posée, fini, en retard
+   * de paiement, ou déjà passé (le renouvellement n'a pas encore été noté).
+   */
+  prochaineEcheanceLe: string | null;
+  /** La fin programmée (une résiliation) : le Pro court jusque-là, puis l'espace repasse en Free. */
+  finPrevueLe: string | null;
+  /** La fin de l'essai qui COURT, `null` hors essai. */
+  essaiFinLe: string | null;
+  /** La fin effective d'un Pro fini, et sa raison. */
+  finiLe: string | null;
+  finRaison: 'resiliation' | 'impaye' | null;
+}
+
+/** Le statut d'un Pro à `maintenant` (`StatutAbonnementPro`). */
+export function statutDuPro(a: ResumePro, maintenant: number): StatutAbonnementPro {
+  if (a.finiLe !== null || a.statut === 'resilie') return 'termine';
+  if (a.statut === 'en_retard') return 'en_retard';
+  if (a.finPrevueLe !== null) return 'resiliation_programmee';
+  return a.essaiFinLe !== null && a.essaiFinLe.getTime() > maintenant ? 'essai' : 'actif';
+}
+
+function abonnementProVue(a: ResumePro, maintenant: number): AbonnementProVue {
+  const statut = statutDuPro(a, maintenant);
+  const vivant = statut !== 'termine';
+  const iso = (d: Date | null): string | null => d?.toISOString() ?? null;
+  return {
+    statut,
+    periodicite: a.periodicite,
+    debutLe: a.creeLe.toISOString(),
+    prochaineEcheanceLe: vivant && statut !== 'en_retard' && a.finPrevueLe === null && a.periodeFin !== null && a.periodeFin.getTime() > maintenant
+      ? a.periodeFin.toISOString() : null,
+    finPrevueLe: vivant ? iso(a.finPrevueLe) : null,
+    essaiFinLe: vivant && a.essaiFinLe !== null && a.essaiFinLe.getTime() > maintenant ? a.essaiFinLe.toISOString() : null,
+    finiLe: iso(a.finiLe),
+    finRaison: a.finRaison,
+  };
 }
 
 export interface DepsVueOffre {
@@ -85,6 +142,8 @@ export interface DepsVueOffre {
   essai(tenantId: string): Promise<{ dejaEuUnPro: boolean; finLe: Date | null }>;
   /** Les sièges se paient-ils en ligne ? (Stripe câblé et `STRIPE_PRIX_SIEGE_MOIS` et `_AN` posés). */
   siegesEnVente: boolean;
+  /** Le Pro de l'espace, vivant ou dernier fini (`PgAbonnementsOffreStore.resume`) ; `null` s'il n'en a jamais eu. */
+  abonnement(tenantId: string): Promise<ResumePro | null>;
 }
 
 /** Une copie neuve à chaque appel : la modifier ne touche pas `DROITS`. Les clés passent par `offrePublique`, elle seule. */
@@ -96,8 +155,9 @@ export function grilleDesOffres(): VueOffre['grille'] {
 
 export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<VueOffre> {
   return async (tenantId) => {
-    const [{ offre, droits, pro }, usage, mois, suite, essai] = await Promise.all([
+    const [{ offre, droits, pro }, usage, mois, suite, essai, abonnement] = await Promise.all([
       d.offres.offreDe(tenantId), d.usage(tenantId), d.modelesDuMois.etatDuMois(tenantId), d.suiteDuNumero(tenantId), d.essai(tenantId),
+      d.abonnement(tenantId),
     ]);
     return {
       offre: offrePublique(offre),
@@ -117,6 +177,7 @@ export function creerVueOffre(d: DepsVueOffre): (tenantId: string) => Promise<Vu
         ? { inclus: DROITS.pro.limites.utilisateurs ?? 0, achetes: pro.sieges, periodicite: pro.periodicite }
         : null,
       prixSiege: d.siegesEnVente ? { moisCentimes: PRIX_SIEGE_HT_CENTIMES.mois, anCentimes: PRIX_SIEGE_HT_CENTIMES.an } : null,
+      abonnement: abonnement === null ? null : abonnementProVue(abonnement, Date.now()),
       upgradeUrl: adresseOffre(),
     };
   };

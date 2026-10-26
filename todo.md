@@ -1,5 +1,19 @@
 # todo.md : backlog
 
+## 🟡 Le Pro géré depuis la console : ce que la relecture du lot A laisse (2026-10-26)
+
+- **Un `customer.subscription.updated` périmé peut défaire un geste de la console.** Le webhook écrit la fin prévue lue
+  dans la charge de l'événement, sans garde d'ordre : « Résilier » puis « Annuler la résiliation » en quelques secondes,
+  puis le premier événement rejoué en retard, et la base redit « fin le … » alors que Stripe n'en a plus (avec l'e-mail de
+  la suite du numéro, si un numéro fourni est attribué). Corrigé au prochain événement ou au prochain clic. Correctif :
+  relire la fin chez Stripe dans la lecture que le webhook fait déjà pour les sièges (`siegesChezStripe`).
+- **`GET /offre` lit deux fois `abonnements_offre`** (`essai` par `deLEspace`, `abonnement` par `resume`) : dériver l'un
+  de l'autre.
+- **`get_plan` ne décrit pas `abonnement`** : Claude le reçoit sans mode d'emploi (la priorité du retard sur la fin
+  posée). Le compléter demande `npm run doc:md` et la suite web entière.
+- **Tests à ajouter** : la console puis le webhook rejoué donnent le même état ; le câblage `abonnement: … resume` dans
+  `tests/offres-cablage.test.ts`.
+
 ## 🟡 Les types de réponse recopiés à la main côté console (audit simplicité, 2026-10-25)
 
 - Environ 80 types de `web/lib/api/*.ts` et `web/lib/api-*.ts` redéclarent une réponse du serveur sous le même nom

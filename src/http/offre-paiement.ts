@@ -5,6 +5,7 @@ import { espaceVerifie } from './scope';
 import { corpsDuRefus, type Issue } from '../lib/issue';
 import type { PeriodicitePro } from '../stripe/pro';
 import type { DemandeSieges } from '../stripe/sieges';
+import type { FactureEspace } from '../stripe/gestion-pro';
 
 /**
  * PAYER LE PRO DEPUIS LA CONSOLE (lot 6, livraison B1, tâche 10, spec § 6). Deux routes d'administrateur, sous le plafond
@@ -28,6 +29,10 @@ export interface OffrePaiementRouteDeps {
    * ensuite, et un ajout seulement si son prorata est payé.
    */
   sieges(tenantId: string, demande: DemandeSieges, payeur: string): Promise<Issue<{ sieges: number }>>;
+  /** Résilier le Pro à la fin de sa période, ou annuler cette résiliation (`changerResiliationPro`, `src/stripe/gestion-pro.ts`). */
+  resiliation(tenantId: string, resilier: boolean, payeur: string): Promise<Issue<{ finPrevueLe: string | null }>>;
+  /** Les dernières factures de l'espace chez Stripe (`facturesDeLEspace`) : Pro, numéro et recharges. */
+  factures(tenantId: string, payeur: string): Promise<Issue<{ factures: FactureEspace[]; plusSurStripe: boolean }>>;
 }
 
 /** Le corps ne porte qu'une périodicité, jamais un prix ni un montant : une clé inconnue est refusée. */
@@ -41,6 +46,8 @@ const corpsSiegesSchema = z.object({ depuis: z.number().int().min(0).max(1000), 
   .refine((c) => Math.abs(c.cible - c.depuis) === 1);
 /** Rendre le numéro : un booléen, rien d'autre. */
 const corpsRendreSchema = z.object({ rendre: z.boolean() }).strict();
+/** Résilier ou annuler la résiliation : un booléen, rien d'autre (ni date, ni abonnement : c'est celui de l'espace). */
+const corpsResiliationSchema = z.object({ resilier: z.boolean() }).strict();
 
 export function registerOffrePaiement(app: FastifyInstance, deps: OffrePaiementRouteDeps, garde: Guard, limiteCouteuse: PreHandler): void {
   const couteux = gardeEtendue(garde, limiteCouteuse);
@@ -70,6 +77,32 @@ export function registerOffrePaiement(app: FastifyInstance, deps: OffrePaiementR
     const lu = corpsSiegesSchema.safeParse(req.body ?? {});
     if (!lu.success) return reply.code(400).send({ error: 'depuis et cible requis : un siège de plus ou de moins à la fois' });
     const r = await deps.sieges(tenant, lu.data, req.auth?.userId ?? '');
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    return reply.code(200).send(r.valeur);
+  });
+
+  /**
+   * Résilier le Pro, ou annuler la résiliation (2026-10-26) : un administrateur, sous le plafond coûteux (chaque clic écrit
+   * chez Stripe). Rend la fin prévue que Stripe dit après le changement (`null` : plus aucune fin).
+   */
+  app.post('/tenants/:tenantId/offre/resiliation', couteux, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const lu = corpsResiliationSchema.safeParse(req.body ?? {});
+    if (!lu.success) return reply.code(400).send({ error: 'resilier requis : true ou false' });
+    const r = await deps.resiliation(tenant, lu.data.resilier, req.auth?.userId ?? '');
+    if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
+    return reply.code(200).send(r.valeur);
+  });
+
+  /**
+   * Les factures de l'espace (2026-10-26), lues chez Stripe à chaque ouverture de l'onglet : un administrateur, sous la
+   * garde seule (et le plafond par utilisateur qu'elle porte). 🟡 PAS le plafond coûteux : il est partagé avec le lancement
+   * de campagne et l'import, et une lecture de l'onglet n'a pas à les épuiser (relecture du 2026-10-26). Ouverte à la Free,
+   * qui paie des recharges et un numéro.
+   */
+  app.get('/tenants/:tenantId/offre/factures', { preHandler: garde }, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const r = await deps.factures(tenant, req.auth?.userId ?? '');
     if (!r.ok) return reply.code(r.statut).send(corpsDuRefus(r));
     return reply.code(200).send(r.valeur);
   });

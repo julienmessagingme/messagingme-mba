@@ -3,6 +3,7 @@ import { journaliser } from '../lib/journal';
 import type { FinDuPro } from '../offres/numero-inclus';
 import type { PgAbonnementsOffreStore, PeriodiciteOffre, RaisonFinOffre } from '../offres/abonnements-offre.pg';
 import type { PgAbonnementsNumeroStore } from './abonnements.pg';
+import { finPrevueDe } from './client';
 import { lienTableauStripe } from './liens';
 
 /**
@@ -313,13 +314,12 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
         }
         return ACQUITTE;
       }
-      const fins = lignes.map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
-      const finDePeriode = fins.length > 0 ? Math.max(...fins) : null;
-      const finPrevue = lu.data.cancel_at ?? (lu.data.cancel_at_period_end === true ? finDePeriode : null);
+      // Le même calcul que la résiliation de la console (`changerFinAbonnement`) : l'état final ne dépend pas du chemin.
+      const finPrevue = finPrevueDe(lu.data);
       const intervalle = lignes.map((l) => l.price?.recurring?.interval).find((v): v is string => typeof v === 'string');
       const sieges = await deps.pro.siegesChezStripe(lu.data.id);
       const a = await deps.pro.modifier(lu.data.id, {
-        finPrevueLe: finPrevue === null ? null : new Date(finPrevue * 1000),
+        finPrevueLe: finPrevue,
         periodicite: intervalle ? (PERIODICITE_DE_STRIPE[intervalle] ?? null) : null,
         ...(sieges !== null ? { sieges } : {}),
         // La fin de l'essai, tant qu'il court ; sinon on garde celle déjà notée (l'histoire de l'abonnement).
@@ -404,10 +404,7 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
       const lu = abonnementNumeroModifieSchema.safeParse(e.objet);
       if (!lu.success) return illisible(e, 'numero');
       if (!metaNumeroSchema.safeParse(lu.data.metadata ?? {}).success) return ACQUITTE;
-      const fins = (lu.data.items?.data ?? []).map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
-      const finDePeriode = fins.length > 0 ? Math.max(...fins) : null;
-      const fin = lu.data.cancel_at ?? (lu.data.cancel_at_period_end === true ? finDePeriode : null);
-      await deps.numero.noterFinPrevue(lu.data.id, fin === null ? null : new Date(fin * 1000));
+      await deps.numero.noterFinPrevue(lu.data.id, finPrevueDe(lu.data));
       return ACQUITTE;
     }
 

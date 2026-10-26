@@ -21,11 +21,12 @@ beforeAll(async () => {
 });
 const personne: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
-function monter(o: { ouvrir?: OffrePaiementRouteDeps['ouvrir']; portail?: OffrePaiementRouteDeps['portail']; proVivant?: boolean; sieges?: OffrePaiementRouteDeps['sieges'] } = {}) {
+function monter(o: { ouvrir?: OffrePaiementRouteDeps['ouvrir']; portail?: OffrePaiementRouteDeps['portail']; proVivant?: boolean; sieges?: OffrePaiementRouteDeps['sieges']; resiliation?: OffrePaiementRouteDeps['resiliation'] } = {}) {
   const cap = {
     ouvertures: [] as Array<{ tenantId: string; periodicite: PeriodicitePro; payeur: string }>, portails: [] as string[],
     rendus: [] as Array<{ tenantId: string; rendre: boolean }>,
     sieges: [] as Array<{ tenantId: string; depuis: number; cible: number; payeur: string }>,
+    resiliations: [] as Array<{ tenantId: string; resilier: boolean; payeur: string }>, factures: [] as Array<{ tenantId: string; payeur: string }>,
   };
   const server = buildServer({
     queue: new FakeQueue(), auth: { users: personne, secret: SECRET },
@@ -37,6 +38,11 @@ function monter(o: { ouvrir?: OffrePaiementRouteDeps['ouvrir']; portail?: OffreP
       portail: o.portail ?? (async (tenantId) => { cap.portails.push(tenantId); return { ok: true, valeur: { url: 'https://billing.stripe.com/p/session/x' } }; }),
       rendreLeNumero: async (tenantId, rendre) => { cap.rendus.push({ tenantId, rendre }); return o.proVivant ?? true; },
       sieges: o.sieges ?? (async (tenantId, demande, payeur) => { cap.sieges.push({ tenantId, ...demande, payeur }); return { ok: true, valeur: { sieges: demande.cible } }; }),
+      resiliation: o.resiliation ?? (async (tenantId, resilier, payeur) => {
+        cap.resiliations.push({ tenantId, resilier, payeur });
+        return { ok: true, valeur: { finPrevueLe: resilier ? '2026-11-12T08:00:00.000Z' : null } };
+      }),
+      factures: async (tenantId, payeur) => { cap.factures.push({ tenantId, payeur }); return { ok: true, valeur: { factures: [], plusSurStripe: false } }; },
     },
   });
   return { server, cap };
@@ -161,6 +167,52 @@ describe('POST /tenants/:tenantId/offre/sieges (spec offres v2, livraison 7)', (
     const r = await poster(server, '/tenants/t1/offre/sieges', admin, { depuis: 0, cible: 1 });
     expect(r.statusCode).toBe(402);
     expect(r.json()).toEqual({ error: 'Le paiement de l’utilisateur en plus n’a pas abouti.', code: 'paiement_siege_incomplet', url: 'https://invoice.stripe.com/i/x' });
+    await server.close();
+  });
+});
+
+/** Résilier le Pro ou annuler la résiliation, depuis la console (2026-10-26) : un administrateur, un booléen. */
+describe('POST /tenants/:tenantId/offre/resiliation', () => {
+  it('🔴 l’administrateur résilie puis annule ; la fin prévue revient, le payeur est l’utilisateur de la session', async () => {
+    const { server, cap } = monter();
+    const r = await poster(server, '/tenants/t1/offre/resiliation', admin, { resilier: true });
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ finPrevueLe: '2026-11-12T08:00:00.000Z' });
+    expect((await poster(server, '/tenants/t1/offre/resiliation', admin, { resilier: false })).json()).toEqual({ finPrevueLe: null });
+    expect(cap.resiliations).toEqual([{ tenantId: 't1', resilier: true, payeur: 'u1' }, { tenantId: 't1', resilier: false, payeur: 'u1' }]);
+    await server.close();
+  });
+
+  it('🔴 un agent : 403 ; un corps qui n’est pas un booléen, ou qui porte un abonnement ou une date : 400 ; rien ne part', async () => {
+    const { server, cap } = monter();
+    expect((await poster(server, '/tenants/t1/offre/resiliation', agent, { resilier: true })).statusCode).toBe(403);
+    for (const payload of [{}, { resilier: 'oui' }, { resilier: true, abonnement: 'sub_x' }, { resilier: true, finLe: '2026-12-01' }]) {
+      expect((await poster(server, '/tenants/t1/offre/resiliation', admin, payload)).statusCode).toBe(400);
+    }
+    expect(cap.resiliations).toEqual([]);
+    await server.close();
+  });
+
+  it('le refus garde son statut et son code (sans Pro en cours : 409 aucun_pro)', async () => {
+    const { server } = monter({ resiliation: async () => refus(409, 'Cet espace n’a pas de Pro en cours à résilier.', { code: 'aucun_pro' }) });
+    const r = await poster(server, '/tenants/t1/offre/resiliation', admin, { resilier: true });
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toMatchObject({ code: 'aucun_pro' });
+    await server.close();
+  });
+});
+
+describe('GET /tenants/:tenantId/offre/factures', () => {
+  const lire = (server: ReturnType<typeof buildServer>, jeton: string) =>
+    server.inject({ method: 'GET', url: '/tenants/t1/offre/factures', headers: { authorization: `Bearer ${jeton}` } });
+
+  it('🔴 l’administrateur lit les factures de SON espace ; un agent est refusé', async () => {
+    const { server, cap } = monter();
+    const r = await lire(server, admin);
+    expect(r.statusCode).toBe(200);
+    expect(r.json()).toEqual({ factures: [], plusSurStripe: false });
+    expect((await lire(server, agent)).statusCode).toBe(403);
+    expect(cap.factures).toEqual([{ tenantId: 't1', payeur: 'u1' }]);
     await server.close();
   });
 });

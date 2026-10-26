@@ -344,6 +344,119 @@ export async function programmerFinAbonnement(transport: TransportStripe, o: { c
   if (r.id !== o.abonnementId) throw new StripeError('resiliation', 200, null, null, 'reponse pour un autre abonnement');
 }
 
+/**
+ * LA FIN PROGRAMMÉE D'UN ABONNEMENT, telle que Stripe la dit : `cancel_at` quand il la date, sinon la fin de la période en
+ * cours si `cancel_at_period_end`, sinon aucune. La période vit sur les lignes (`current_period_end`) dans la version d'API
+ * épinglée, la plus tardive fait foi. 🔴 Un seul calcul pour le webhook (Pro et numéro) et la résiliation de la console :
+ * l'état que l'une écrit est celui que l'autre réécrira.
+ */
+export function finPrevueDe(a: {
+  cancel_at?: number | null; cancel_at_period_end?: boolean; items?: { data: Array<{ current_period_end?: number }> };
+}): Date | null {
+  const fins = (a.items?.data ?? []).map((l) => l.current_period_end).filter((v): v is number => typeof v === 'number');
+  const finDePeriode = fins.length > 0 ? Math.max(...fins) : null;
+  const fin = a.cancel_at ?? (a.cancel_at_period_end === true ? finDePeriode : null);
+  return fin === null ? null : new Date(fin * 1000);
+}
+
+const finChangeeSchema = z.object({
+  id: z.string().startsWith('sub_'),
+  cancel_at: z.number().int().nullable().optional(),
+  cancel_at_period_end: z.boolean().optional(),
+  items: z.object({ data: z.array(z.object({ current_period_end: z.number().int().optional() })) }).optional(),
+});
+
+/**
+ * RÉSILIER LE PRO DEPUIS LA CONSOLE, OU ANNULER CETTE RÉSILIATION (2026-10-26) : la fin posée à la fin de la période payée
+ * (`cancel_at_period_end`), ou retirée. Rend la fin prévue que Stripe dit APRÈS le changement (`finPrevueDe`), et refuse
+ * une réponse qui ne porte pas ce qui a été demandé. 🔴 Une fin DATÉE (`cancel_at` posé au tableau de bord, avant la fin de
+ * période) n'est PAS retirée ici : le retirer recalcule la période et peut ajouter des prorata à la facture d'un client payant
+ * (relecture du 2026-10-26). La réponse le dit (`finDatee`), l'appelant renvoie vers nous. La clé restreinte doit pouvoir
+ * ÉCRIRE les abonnements.
+ * 🔴 Une clé d'idempotence PAR DEMANDE, jamais par abonnement (`fin-<abonnement>` est celle du numéro) : « résilier,
+ * annuler, résilier » dans les 24 heures rejouerait sinon la première réponse, et la seconde résiliation ne s'appliquerait pas.
+ */
+export async function changerFinAbonnement(transport: TransportStripe, o: {
+  cle: string; abonnementId: string; resilier: boolean; idempotence: string;
+}): Promise<{ finPrevueLe: Date | null; finDatee: boolean }> {
+  const r = await appeler(transport, 'resiliation', `/subscriptions/${encodeURIComponent(o.abonnementId)}`, {
+    cancel_at_period_end: o.resilier ? 'true' : 'false',
+  }, { cle: o.cle, idempotence: o.idempotence }, finChangeeSchema);
+  if (r.id !== o.abonnementId) throw new StripeError('resiliation', 200, null, null, 'reponse pour un autre abonnement');
+  const finPrevueLe = finPrevueDe(r);
+  // Retirer n'a pas suffi : une fin datée reste, posée ailleurs que par `cancel_at_period_end`.
+  if (!o.resilier && finPrevueLe !== null) return { finPrevueLe, finDatee: true };
+  if ((finPrevueLe !== null) !== o.resilier) throw new StripeError('resiliation', 200, null, null, 'reponse sans le changement demande');
+  return { finPrevueLe, finDatee: false };
+}
+
+/** Ce qu'on lit d'une facture listée. Lue une à une : une facture illisible est écartée, elle ne cache pas les autres. */
+const factureListeeSchema = z.object({
+  id: z.string().startsWith('in_'),
+  customer: z.union([z.string(), z.object({ id: z.string() })]).nullable().optional(),
+  number: z.string().nullable().optional(),
+  created: z.number().int(),
+  status: z.string().nullable().optional(),
+  total: z.number().int(),
+  currency: z.string(),
+  hosted_invoice_url: z.string().nullable().optional(),
+  invoice_pdf: z.string().nullable().optional(),
+  parent: z.object({
+    subscription_details: z.object({ metadata: z.record(z.string(), z.string()).nullable().optional() }).nullable().optional(),
+  }).nullable().optional(),
+  lines: z.object({ data: z.array(z.object({ description: z.string().nullable().optional() })) }).optional(),
+});
+const listeFacturesSchema = z.object({ data: z.array(z.unknown()), has_more: z.boolean() });
+
+/** Une facture de l'espace, telle que la liste de la console la montre. Les adresses sont `https` ou `null`. */
+export interface FactureStripe {
+  id: string;
+  numero: string | null;
+  creeLe: Date;
+  /** `draft`, `open`, `paid`, `uncollectible`, `void`, ou une valeur future. */
+  statut: string | null;
+  totalCentimes: number;
+  devise: string;
+  urlPage: string | null;
+  urlPdf: string | null;
+  /** `produit` des métadonnées de l'abonnement qu'elle facture (`pro`, `numero`), `null` hors abonnement. */
+  produit: string | null;
+  /** Le libellé de sa première ligne, tel que la facture le porte. */
+  libelle: string | null;
+}
+
+const https = (u: string | null | undefined): string | null => (typeof u === 'string' && u.startsWith('https://') ? u : null);
+
+/**
+ * Les dernières factures d'un client Stripe, les plus récentes d'abord (2026-10-26, « Vos factures » de la console). La clé
+ * restreinte doit avoir les factures en LECTURE (comme `lireFactureStripe`). 🔴 L'identifiant du client vient de notre base,
+ * jamais du navigateur, et une facture d'un autre client (ce que Stripe ne rend pas) est écartée quand même.
+ */
+export async function listerFacturesStripe(transport: TransportStripe, o: { cle: string; customerId: string; limite: number }): Promise<{
+  factures: FactureStripe[]; ecartees: number; plus: boolean;
+}> {
+  const q = new URLSearchParams({ customer: o.customerId, limit: String(o.limite) }).toString();
+  const r = await appeler(transport, 'facture', `/invoices?${q}`, null, { cle: o.cle }, listeFacturesSchema);
+  const factures: FactureStripe[] = [];
+  let ecartees = 0;
+  for (const brute of r.data) {
+    const lu = factureListeeSchema.safeParse(brute);
+    const client = lu.success && lu.data.customer ? (typeof lu.data.customer === 'string' ? lu.data.customer : lu.data.customer.id) : null;
+    if (!lu.success || client !== o.customerId) {
+      ecartees += 1;
+      continue;
+    }
+    const f = lu.data;
+    factures.push({
+      id: f.id, numero: f.number ?? null, creeLe: new Date(f.created * 1000), statut: f.status ?? null,
+      totalCentimes: f.total, devise: f.currency, urlPage: https(f.hosted_invoice_url), urlPdf: https(f.invoice_pdf),
+      produit: f.parent?.subscription_details?.metadata?.produit ?? null,
+      libelle: f.lines?.data[0]?.description ?? null,
+    });
+  }
+  return { factures, ecartees, plus: r.has_more };
+}
+
 const arreteSchema = z.object({ id: z.string().startsWith('sub_'), status: z.literal('canceled') });
 
 /**

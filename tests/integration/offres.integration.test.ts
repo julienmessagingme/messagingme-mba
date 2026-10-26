@@ -415,6 +415,24 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
       expect((await offres.offreDe(t)).offre).toBe('base');
       expect(await pros.vivant(t)).toBe(false);
     });
+
+    it('🔴 le résumé de la vue de l’offre (2026-10-26) : le vivant d’abord, sa souscription, sa fin posée ; sinon le dernier fini', async () => {
+      const t = await espace('itest-pro-resume');
+      const pros = new PgAbonnementsOffreStore(pool);
+      expect(await pros.resume(t)).toBeNull();
+      await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestprof1', periodicite: 'mois', livemode: true, periodeFin: null });
+      await pros.finir('sub_itestprof1', 'resiliation', D('2026-10-01T00:00:00Z'));
+      expect(await pros.resume(t)).toMatchObject({ statut: 'resilie', finiLe: D('2026-10-01T00:00:00Z'), finRaison: 'resiliation' });
+      await pros.enregistrer({ tenantId: t, abonnementId: 'sub_itestprof2', periodicite: 'an', livemode: true, periodeFin: D('2027-10-26T00:00:00Z') });
+      await pros.modifier('sub_itestprof2', { finPrevueLe: D('2027-10-26T00:00:00Z'), periodicite: null });
+      const r = await pros.resume(t);
+      expect(r).toMatchObject({
+        statut: 'actif', periodicite: 'an', periodeFin: D('2027-10-26T00:00:00Z'), finPrevueLe: D('2027-10-26T00:00:00Z'), finiLe: null, finRaison: null,
+      });
+      // La souscription est celle de la ligne vivante, posée par la base à l'enregistrement.
+      expect(r?.creeLe).toBeInstanceOf(Date);
+      expect(Math.abs((r?.creeLe.getTime() ?? 0) - Date.now())).toBeLessThan(10 * 60_000);
+    });
   });
 
   it('un espace inconnu : rien à lire, rien d’écrit', async () => {

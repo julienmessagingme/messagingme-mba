@@ -27,7 +27,7 @@ const VUE_BASE: VueOffre = {
   usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 }, contactsToutesOrigines: true,
   grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
   suiteDuNumero: null, essai: { jours: 14, possible: true, finLe: null }, sieges: null, prixSiege: { moisCentimes: 1500, anCentimes: 15000 },
-  upgradeUrl: 'https://console.test/offre',
+  abonnement: null, upgradeUrl: 'https://console.test/offre',
 };
 
 function monter() {
