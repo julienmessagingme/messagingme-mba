@@ -307,14 +307,14 @@
   </section>
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">Le welcome message, puis la relance  : 30 secondes.</h2>
+      <h2 class="f-titre">Le film&nbsp;: le welcome message WhatsApp d’un SaaS, en 30 secondes.</h2>
       <p class="f-texte">De la demande dans Claude Code au premier planning créé, sur une vraie conversation WhatsApp. Le même film montre ensuite la relance d’un paiement échoué.</p>
       <video class="f-video" src="/films/cas-saas.mp4?v=1" poster="/films/cas-saas.webp?v=1" data-vertical="/films/cas-saas-9x16.mp4?v=1" data-affiche-verticale="/films/cas-saas-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : l’accueil des utilisateurs d’un SaaS avec Messaging Me"></video>
     </div>
   </section>
   <section class="f-bloc cas-schema">
     <div class="cadre">
-      <h2 class="f-titre">Comment ça circule.</h2>
+      <h2 class="f-titre">Comment part le welcome message à l’inscription.</h2>
       <figure class="dessin"><svg class="dessin-h" viewBox="0 0 1160 240" role="img" aria-labelledby="schema-titre"><title id="schema-titre">Le welcome message, de l’inscription au premier usage</title><defs><marker id="pt-h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud d-app" x="10" y="70" width="260" height="100" rx="14"/><text class="d-t" x="140" y="114" text-anchor="middle">Votre app</text><text class="d-s" x="140" y="138" text-anchor="middle">l’inscription, case cochée</text><path class="d-fl" d="M270 120H442" marker-end="url(#pt-h)"/><text class="d-etiq" x="360" y="86" text-anchor="middle">consent opted_in</text><text class="d-api" x="360" y="106" text-anchor="middle">POST /v1/sends</text><rect class="d-noeud" x="450" y="70" width="260" height="100" rx="14"/><text class="d-t" x="580" y="114" text-anchor="middle">Sur son WhatsApp</text><text class="d-s" x="580" y="138" text-anchor="middle">le welcome message, un bouton</text><path class="d-fl" d="M710 120H882" marker-end="url(#pt-h)"/><text class="d-etiq" x="800" y="106" text-anchor="middle">il touche le bouton</text><rect class="d-noeud" x="890" y="70" width="260" height="100" rx="14"/><text class="d-t" x="1020" y="114" text-anchor="middle">Son premier usage</text><text class="d-s" x="1020" y="138" text-anchor="middle">dans votre app</text></svg><svg class="dessin-v" viewBox="0 0 360 416" aria-hidden="true"><defs><marker id="pt-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud d-app" x="40" y="8" width="280" height="80" rx="14"/><text class="d-t" x="180" y="42" text-anchor="middle">Votre app</text><text class="d-s" x="180" y="66" text-anchor="middle">l’inscription, case cochée</text><path class="d-fl" d="M180 88V160" marker-end="url(#pt-v)"/><text class="d-etiq" x="192" y="118" text-anchor="start">consent opted_in</text><text class="d-api" x="192" y="138" text-anchor="start">POST /v1/sends</text><rect class="d-noeud" x="40" y="168" width="280" height="80" rx="14"/><text class="d-t" x="180" y="202" text-anchor="middle">Sur son WhatsApp</text><text class="d-s" x="180" y="226" text-anchor="middle">le welcome message, un bouton</text><path class="d-fl" d="M180 248V320" marker-end="url(#pt-v)"/><text class="d-etiq" x="192" y="278" text-anchor="start">il touche le bouton</text><rect class="d-noeud" x="40" y="328" width="280" height="80" rx="14"/><text class="d-t" x="180" y="362" text-anchor="middle">Son premier usage</text><text class="d-s" x="180" y="386" text-anchor="middle">dans votre app</text></svg><figcaption class="masque">Votre app envoie le welcome message par POST /v1/sends, avec consent opted_in, à l’utilisateur qui a coché la case ; il touche le bouton, et votre app s’ouvre sur son premier usage.</figcaption></figure>
     </div>
   </section>
@@ -361,7 +361,7 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
   </section>
   <section class="f-bloc cas-paie">
     <div class="cadre">
-      <h2 class="f-titre">Ce que vous payez.</h2>
+      <h2 class="f-titre">Combien coûte un welcome message WhatsApp.</h2>
       <ul class="tarif-liste cas-liste">
         <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
         <li><strong>Meta facture directement</strong> chaque modèle marketing à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.</li>
@@ -370,7 +370,7 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
   </section>
   <section class="f-bloc cas-faq" id="faq">
     <div class="cadre">
-      <h2 class="f-titre">Questions fréquentes.</h2>
+      <h2 class="f-titre">Questions fréquentes sur le welcome message.</h2>
       <div class="dev-faq">
         <details><summary>Pourquoi en marketing, et pas en utilitaire&nbsp;?</summary><p>Meta classe en marketing tout modèle qui invite à utiliser le produit, et en utilitaire une alerte sur le compte, comme un paiement échoué. Un modèle déclaré utilitaire avec un texte marketing est reclassé par Meta.</p></details>
         <details><summary>Et l’utilisateur qui n’a pas coché la case&nbsp;?</summary><p>Il ne reçoit rien&nbsp;: votre code ne l’envoie pas, et l’API l’écarterait de toute façon, un modèle marketing ne partant qu’à qui a consenti.</p></details>

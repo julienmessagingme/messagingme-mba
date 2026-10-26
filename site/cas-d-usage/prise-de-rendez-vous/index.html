@@ -307,14 +307,14 @@
   </section>
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">La demande, les créneaux, la réservation  : 30 secondes.</h2>
+      <h2 class="f-titre">Le film&nbsp;: la prise de rendez-vous sur WhatsApp, en 30 secondes.</h2>
       <p class="f-texte">De la demande dans Claude Code au rendez-vous réservé, sur une vraie conversation WhatsApp.</p>
       <video class="f-video" src="/films/cas-rendez-vous.mp4?v=1" poster="/films/cas-rendez-vous.webp?v=1" data-vertical="/films/cas-rendez-vous-9x16.mp4?v=1" data-affiche-verticale="/films/cas-rendez-vous-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : la prise de rendez-vous avec Messaging Me"></video>
     </div>
   </section>
   <section class="f-bloc cas-schema">
     <div class="cadre">
-      <h2 class="f-titre">Comment ça circule.</h2>
+      <h2 class="f-titre">Comment fonctionne la prise de rendez-vous sur WhatsApp.</h2>
       <figure class="dessin"><svg class="dessin-h" viewBox="0 0 1160 320" role="img" aria-labelledby="schema-titre"><title id="schema-titre">La demande de rendez-vous, de WhatsApp à votre agenda, et la réponse</title><defs><marker id="pt-h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud" x="10" y="40" width="300" height="100" rx="14"/><text class="d-t" x="160" y="84" text-anchor="middle">Le client sur WhatsApp</text><text class="d-s" x="160" y="108" text-anchor="middle">« un devis à Lyon ? »</text><path class="d-fl" d="M310 90H422" marker-end="url(#pt-h)"/><text class="d-etiq" x="366" y="78" text-anchor="middle">il écrit</text><rect class="d-noeud" x="430" y="40" width="300" height="100" rx="14"/><text class="d-t" x="580" y="84" text-anchor="middle">L’agent IA</text><text class="d-s" x="580" y="108" text-anchor="middle">le motif et la ville</text><path class="d-fl" d="M730 90H842" marker-end="url(#pt-h)"/><text class="d-api" x="786" y="78" text-anchor="middle">agent.action</text><rect class="d-noeud d-app" x="850" y="40" width="300" height="100" rx="14"/><text class="d-t" x="1000" y="84" text-anchor="middle">Votre app</text><text class="d-s" x="1000" y="108" text-anchor="middle">votre agenda</text><path class="d-fl" d="M1000 140V256Q1000 276 980 276H180Q160 276 160 256V148" marker-end="url(#pt-h)"/><text class="d-etiq" x="580" y="226" text-anchor="middle">Trois créneaux, puis la confirmation</text><text class="d-api" x="580" y="246" text-anchor="middle">POST /v1/messages/whatsapp</text></svg><svg class="dessin-v" viewBox="0 0 360 524" aria-hidden="true"><defs><marker id="pt-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud" x="60" y="8" width="280" height="80" rx="14"/><text class="d-t" x="200" y="42" text-anchor="middle">Le client sur WhatsApp</text><text class="d-s" x="200" y="66" text-anchor="middle">« un devis à Lyon ? »</text><path class="d-fl" d="M200 88V160" marker-end="url(#pt-v)"/><text class="d-etiq" x="210" y="130">il écrit</text><rect class="d-noeud" x="60" y="168" width="280" height="80" rx="14"/><text class="d-t" x="200" y="202" text-anchor="middle">L’agent IA</text><text class="d-s" x="200" y="226" text-anchor="middle">le motif et la ville</text><path class="d-fl" d="M200 248V320" marker-end="url(#pt-v)"/><text class="d-api" x="210" y="290">agent.action</text><rect class="d-noeud d-app" x="60" y="328" width="280" height="80" rx="14"/><text class="d-t" x="200" y="362" text-anchor="middle">Votre app</text><text class="d-s" x="200" y="386" text-anchor="middle">votre agenda</text><path class="d-fl" d="M200 408V448Q200 462 186 462H38Q24 462 24 448V62Q24 48 38 48H52" marker-end="url(#pt-v)"/><text class="d-etiq" x="200" y="492" text-anchor="middle">Trois créneaux, puis la confirmation</text><text class="d-api" x="200" y="512" text-anchor="middle">POST /v1/messages/whatsapp</text></svg><figcaption class="masque">Le client écrit sur WhatsApp. L’agent IA note le motif et la ville, et déclenche agent.action vers votre app, qui lit votre agenda et répond par POST /v1/messages/whatsapp avec trois créneaux, puis avec la confirmation.</figcaption></figure>
     </div>
   </section>
@@ -363,7 +363,7 @@ export async function POST(req: Request) {
   </section>
   <section class="f-bloc cas-paie">
     <div class="cadre">
-      <h2 class="f-titre">Ce que vous payez.</h2>
+      <h2 class="f-titre">Combien coûte la prise de rendez-vous sur WhatsApp.</h2>
       <ul class="tarif-liste cas-liste">
         <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
         <li><strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.</li>
@@ -373,7 +373,7 @@ export async function POST(req: Request) {
   </section>
   <section class="f-bloc cas-faq" id="faq">
     <div class="cadre">
-      <h2 class="f-titre">Questions fréquentes.</h2>
+      <h2 class="f-titre">Questions fréquentes sur la prise de rendez-vous.</h2>
       <div class="dev-faq">
         <details><summary>Faut-il un modèle approuvé par Meta&nbsp;?</summary><p>Non&nbsp;: le client écrit le premier, et votre application lui répond dans la fenêtre de 24&nbsp;heures que son message ouvre.</p></details>
         <details><summary>Le même créneau peut-il être réservé deux fois&nbsp;?</summary><p>C’est votre agenda qui tranche&nbsp;: il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, sinon il propose d’autres créneaux et un lien pour réserver. Le même événement reçu deux fois ne réserve qu’une fois.</p></details>

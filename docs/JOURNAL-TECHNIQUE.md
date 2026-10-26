@@ -4,6 +4,16 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : cas d'usage, secteurs, tarifs et contact pour les moteurs et les assistants IA (lot 4 du plan SEO et GEO)
+
+- **Cas d'usage** (7 pages, FR et EN) : le film, le schéma, le prix et la FAQ se titrent par leur sujet (« Combien
+  coûte un rappel de rendez-vous WhatsApp. ») ; champ `titres` de `TexteCas`, que `cas.ts` lit.
+- **Secteurs** (4 pages, FR et EN) : une FAQ de trois questions, tirée des cas publiés (Keolis, NEOMA, EDH, Gan,
+  Groupama, Mieux Assuré, Odalys), balisée `FAQPage` ; champ `faq` de `TexteSecteur`.
+- **Tarifs** : « Ce que Meta facture pour chaque message WhatsApp. » et la question « Qui facture les messages
+  WhatsApp ? ». **Contact** : le balisage se déclare `ContactPage`.
+- La publication de nouvelles fiches d'aide attend le choix de Julien.
+
 ## 2026-10-26 : le guide « Garder mon application WhatsApp Business », avec les écrans réels de la fenêtre de Meta
 
 Demandé par Julien le 2026-10-25, publié le 2026-10-26 avant le gel de la bascule (son accord, la fin du parcours
@@ -27,6 +37,7 @@ après « Connecter mon numéro » (« Me repérer dans la console » passe au r
   l'étape 6 promettait la reprise des contacts et de six mois de conversations, que Messaging Me ne fait pas. Jaunes
   repris : la fin du parcours, l'agent IA, le bloc « Ce qui change » sorti du détail de la dernière étape, les boutons
   de la page anglaise, la connexion par le profil Facebook, le troisième droit demandé par Meta.
+
 
 ## 2026-10-26 : les six pages fonctionnalités pour les moteurs et les assistants IA (lot 3 du plan SEO et GEO)
 

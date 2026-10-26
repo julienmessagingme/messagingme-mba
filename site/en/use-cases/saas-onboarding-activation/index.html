@@ -307,14 +307,14 @@
   </section>
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">The welcome, then the recovery: 30 seconds.</h2>
+      <h2 class="f-titre">The film: a SaaS welcome message on WhatsApp, in 30 seconds.</h2>
       <p class="f-texte">From the request in Claude Code to the first schedule created, on a real WhatsApp conversation. The same film then shows a failed payment recovery.</p>
       <video class="f-video" src="/films/cas-saas-en.mp4?v=1" poster="/films/cas-saas-en.webp?v=1" data-vertical="/films/cas-saas-en-9x16.mp4?v=1" data-affiche-verticale="/films/cas-saas-en-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film: SaaS user onboarding with Messaging Me"></video>
     </div>
   </section>
   <section class="f-bloc cas-schema">
     <div class="cadre">
-      <h2 class="f-titre">How it flows.</h2>
+      <h2 class="f-titre">How the welcome message goes out at sign-up.</h2>
       <figure class="dessin"><svg class="dessin-h" viewBox="0 0 1160 240" role="img" aria-labelledby="schema-titre"><title id="schema-titre">The welcome, from sign-up to first use</title><defs><marker id="pt-h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud d-app" x="10" y="70" width="260" height="100" rx="14"/><text class="d-t" x="140" y="114" text-anchor="middle">Your app</text><text class="d-s" x="140" y="138" text-anchor="middle">sign-up, box ticked</text><path class="d-fl" d="M270 120H442" marker-end="url(#pt-h)"/><text class="d-etiq" x="360" y="86" text-anchor="middle">consent opted_in</text><text class="d-api" x="360" y="106" text-anchor="middle">POST /v1/sends</text><rect class="d-noeud" x="450" y="70" width="260" height="100" rx="14"/><text class="d-t" x="580" y="114" text-anchor="middle">On their WhatsApp</text><text class="d-s" x="580" y="138" text-anchor="middle">the welcome, one button</text><path class="d-fl" d="M710 120H882" marker-end="url(#pt-h)"/><text class="d-etiq" x="800" y="106" text-anchor="middle">they tap the button</text><rect class="d-noeud" x="890" y="70" width="260" height="100" rx="14"/><text class="d-t" x="1020" y="114" text-anchor="middle">Their first use</text><text class="d-s" x="1020" y="138" text-anchor="middle">in your app</text></svg><svg class="dessin-v" viewBox="0 0 360 416" aria-hidden="true"><defs><marker id="pt-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud d-app" x="40" y="8" width="280" height="80" rx="14"/><text class="d-t" x="180" y="42" text-anchor="middle">Your app</text><text class="d-s" x="180" y="66" text-anchor="middle">sign-up, box ticked</text><path class="d-fl" d="M180 88V160" marker-end="url(#pt-v)"/><text class="d-etiq" x="192" y="118" text-anchor="start">consent opted_in</text><text class="d-api" x="192" y="138" text-anchor="start">POST /v1/sends</text><rect class="d-noeud" x="40" y="168" width="280" height="80" rx="14"/><text class="d-t" x="180" y="202" text-anchor="middle">On their WhatsApp</text><text class="d-s" x="180" y="226" text-anchor="middle">the welcome, one button</text><path class="d-fl" d="M180 248V320" marker-end="url(#pt-v)"/><text class="d-etiq" x="192" y="278" text-anchor="start">they tap the button</text><rect class="d-noeud" x="40" y="328" width="280" height="80" rx="14"/><text class="d-t" x="180" y="362" text-anchor="middle">Their first use</text><text class="d-s" x="180" y="386" text-anchor="middle">in your app</text></svg><figcaption class="masque">Your app sends the welcome with POST /v1/sends, with consent opted_in, to the user who ticked the box; they tap the button, and your app opens on their first use.</figcaption></figure>
     </div>
   </section>
@@ -361,7 +361,7 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
   </section>
   <section class="f-bloc cas-paie">
     <div class="cadre">
-      <h2 class="f-titre">What you pay.</h2>
+      <h2 class="f-titre">What a WhatsApp welcome message costs.</h2>
       <ul class="tarif-liste cas-liste">
         <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included; beyond that, Pro.</li>
         <li><strong>Meta bills your business directly</strong> for each marketing template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.</li>
@@ -370,7 +370,7 @@ export async function sendWelcome(user: { id: string; phone: string; firstName: 
   </section>
   <section class="f-bloc cas-faq" id="faq">
     <div class="cadre">
-      <h2 class="f-titre">Frequently asked questions.</h2>
+      <h2 class="f-titre">Frequently asked questions about the welcome message.</h2>
       <div class="dev-faq">
         <details><summary>Why marketing, not utility?</summary><p>Meta classifies as marketing any template that invites people to use the product, and as utility an alert on the account, like a failed payment. A template declared utility with a marketing text is reclassified by Meta.</p></details>
         <details><summary>What about the user who did not tick the box?</summary><p>They receive nothing: your code does not send it, and the API would set them aside anyway, since a marketing template only goes to those who consented.</p></details>

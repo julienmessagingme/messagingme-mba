@@ -19,6 +19,8 @@ export interface TexteCas {
   readonly chapeau: string;
   readonly film: { readonly titre: string; readonly texte: string; readonly aria: string; readonly duree: string; readonly publie: string };
   readonly schema: { readonly titre: string; readonly legende: string; readonly horizontal: string; readonly vertical: string };
+  /** Les titres des sections « ce que vous payez » et « questions fréquentes », qui disent le sujet du cas (plan SEO, C1). */
+  readonly titres: { readonly paie: string; readonly faq: string };
   readonly etapes: ReadonlyArray<{ readonly titre: string; readonly texte: string }>;
   readonly invite: { readonly titre: string; readonly texte: string; readonly phrase: string };
   readonly extrait: { readonly titre: string; readonly partie: string };
@@ -246,11 +248,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Vos clients prennent rendez-vous sur WhatsApp, et votre agenda se remplit.',
       chapeau: 'Un client écrit qu’il veut un rendez-vous. L’agent IA lui demande le motif et la ville, votre application lui propose trois créneaux libres de votre agenda, puis réserve celui qu’il choisit et le lui confirme.',
       film: {
-        titre: 'La demande, les créneaux, la réservation  : 30 secondes.',
+        titre: 'Le film&nbsp;: la prise de rendez-vous sur WhatsApp, en 30 secondes.',
         texte: 'De la demande dans Claude Code au rendez-vous réservé, sur une vraie conversation WhatsApp.',
         aria: 'Film : la prise de rendez-vous avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T12:00:00+02:00',
       },
-      schema: { titre: 'Comment ça circule.', legende: 'Le client écrit sur WhatsApp. L’agent IA note le motif et la ville, et déclenche agent.action vers votre app, qui lit votre agenda et répond par POST /v1/messages/whatsapp avec trois créneaux, puis avec la confirmation.', ...schemaRendezVous('fr') },
+      schema: { titre: 'Comment fonctionne la prise de rendez-vous sur WhatsApp.', legende: 'Le client écrit sur WhatsApp. L’agent IA note le motif et la ville, et déclenche agent.action vers votre app, qui lit votre agenda et répond par POST /v1/messages/whatsapp avec trois créneaux, puis avec la confirmation.', ...schemaRendezVous('fr') },
+      titres: { paie: 'Combien coûte la prise de rendez-vous sur WhatsApp.', faq: 'Questions fréquentes sur la prise de rendez-vous.' },
       etapes: [
         { titre: 'Les deux actions de l’agent', texte: 'Claude Code les pose par <code>set_agent_action</code>&nbsp;: «&nbsp;Appointment request&nbsp;», qui note le motif et la ville et se déclenche une fois la ville connue, et «&nbsp;Slot choice&nbsp;», qui note le créneau choisi. L’agent les déclenche de lui-même, au fil de la conversation.' },
         { titre: 'La demande arrive, signée', texte: 'Votre route, déclarée par <code>create_webhook_endpoint</code>, reçoit <code>agent.action</code> (décoché par défaut, on le coche exprès) et vérifie sa signature&nbsp;: une requête sans signature est refusée.' },
@@ -286,11 +289,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Your customers book appointments on WhatsApp, and your calendar fills up.',
       chapeau: 'A customer writes that they want an appointment. The AI agent asks for the reason and the city, your app offers three free slots from your calendar, then books the one they pick and confirms it.',
       film: {
-        titre: 'The request, the slots, the booking: 30 seconds.',
+        titre: 'The film: appointment booking on WhatsApp, in 30 seconds.',
         texte: 'From the request in Claude Code to the booked appointment, on a real WhatsApp conversation.',
         aria: 'Film: appointment booking with Messaging Me', duree: 'PT38S', publie: '2026-10-20T12:00:00+02:00',
       },
-      schema: { titre: 'How it flows.', legende: 'The customer writes on WhatsApp. The AI agent notes the reason and the city, and triggers agent.action to your app, which reads your calendar and answers with POST /v1/messages/whatsapp with three slots, then with the confirmation.', ...schemaRendezVous('en') },
+      schema: { titre: 'How appointment booking on WhatsApp works.', legende: 'The customer writes on WhatsApp. The AI agent notes the reason and the city, and triggers agent.action to your app, which reads your calendar and answers with POST /v1/messages/whatsapp with three slots, then with the confirmation.', ...schemaRendezVous('en') },
+      titres: { paie: 'What appointment booking on WhatsApp costs.', faq: 'Frequently asked questions about appointment booking.' },
       etapes: [
         { titre: 'The agent’s two actions', texte: 'Claude Code sets them with <code>set_agent_action</code>: “Appointment request”, which notes the reason and the city and fires once the city is known, and “Slot choice”, which notes the slot picked. The agent triggers them on its own, as the conversation goes.' },
         { titre: 'The request arrives, signed', texte: 'Your route, declared with <code>create_webhook_endpoint</code>, receives <code>agent.action</code> (unchecked by default, you tick it on purpose) and checks its signature: a request without a signature is refused.' },
@@ -328,11 +332,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Moins de rendez-vous manqués, grâce à un rappel WhatsApp la veille.',
       chapeau: 'La veille, chaque client reçoit son rappel sur WhatsApp, avec deux boutons. Il confirme d’un geste&nbsp;; s’il décale, l’agent IA lui propose des créneaux libres et votre agenda déplace le rendez-vous.',
       film: {
-        titre: 'Le rappel, la réponse, l’agenda  : 30 secondes.',
+        titre: 'Le film&nbsp;: un rappel de rendez-vous WhatsApp, en 30 secondes.',
         texte: 'De la demande dans Claude Code au rendez-vous déplacé, sur une vraie conversation WhatsApp.',
         aria: 'Film : les rappels de rendez-vous avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T09:00:00+02:00',
       },
-      schema: { titre: 'Comment ça circule.', legende: 'Votre app envoie le rappel la veille par POST /v1/sends. Le bouton « Je confirme » revient par message.received et confirme le rendez-vous ; le bouton « Je décale » passe par l’agent IA, qui déclenche agent.action, et votre app déplace le rendez-vous.', ...schemaRappels('fr') },
+      schema: { titre: 'Comment fonctionne un rappel de rendez-vous WhatsApp.', legende: 'Votre app envoie le rappel la veille par POST /v1/sends. Le bouton « Je confirme » revient par message.received et confirme le rendez-vous ; le bouton « Je décale » passe par l’agent IA, qui déclenche agent.action, et votre app déplace le rendez-vous.', ...schemaRappels('fr') },
+      titres: { paie: 'Combien coûte un rappel de rendez-vous WhatsApp.', faq: 'Questions fréquentes sur les rappels de rendez-vous.' },
       etapes: [
         { titre: 'Le modèle de rappel', texte: 'Claude Code le crée par <code>create_template</code>&nbsp;: catégorie utilitaire, le prénom et l’heure, deux boutons de réponse rapide, «&nbsp;Je confirme&nbsp;» et «&nbsp;Je décale&nbsp;». Meta l’approuve, souvent en quelques minutes.' },
         { titre: 'La tâche de la veille', texte: 'Chaque soir, votre application envoie les rappels du lendemain par <code>POST /v1/sends</code>, avec une clé d’idempotence tirée du rendez-vous&nbsp;: relancée, elle n’envoie pas deux fois.' },
@@ -368,11 +373,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Fewer missed appointments, with a WhatsApp reminder the evening before.',
       chapeau: 'The evening before, each customer gets their reminder on WhatsApp, with two buttons. They confirm in one tap; if they reschedule, the AI agent offers free slots and your calendar moves the appointment.',
       film: {
-        titre: 'The reminder, the answer, the calendar: 30 seconds.',
+        titre: 'The film: a WhatsApp appointment reminder, in 30 seconds.',
         texte: 'From the request in Claude Code to the moved appointment, on a real WhatsApp conversation.',
         aria: 'Film: appointment reminders with Messaging Me', duree: 'PT38S', publie: '2026-10-20T09:00:00+02:00',
       },
-      schema: { titre: 'How it flows.', legende: 'Your app sends the reminder the evening before with POST /v1/sends. The Confirm button comes back through message.received and confirms the appointment; the Reschedule button goes through the AI agent, which triggers agent.action, and your app moves the appointment.', ...schemaRappels('en') },
+      schema: { titre: 'How a WhatsApp appointment reminder works.', legende: 'Your app sends the reminder the evening before with POST /v1/sends. The Confirm button comes back through message.received and confirms the appointment; the Reschedule button goes through the AI agent, which triggers agent.action, and your app moves the appointment.', ...schemaRappels('en') },
+      titres: { paie: 'What a WhatsApp appointment reminder costs.', faq: 'Frequently asked questions about appointment reminders.' },
       etapes: [
         { titre: 'The reminder template', texte: 'Claude Code creates it with <code>create_template</code>: utility category, the first name and the time, two quick reply buttons, “Confirm” and “Reschedule”. Meta approves it, often within minutes.' },
         { titre: 'The day-before job', texte: 'Every evening, your app sends the next day’s reminders with <code>POST /v1/sends</code>, with an idempotency key taken from the appointment: run again, it does not send twice.' },
@@ -410,11 +416,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Un agent IA qui répond au support sur WhatsApp, et votre équipe quand il faut.',
       chapeau: 'Une phrase dans Claude Code, dans le dossier de votre projet&nbsp;: il crée l’agent, lui fait lire votre documentation, règle le relais à l’équipe et vos horaires, le teste et l’allume. Vos clients écrivent sur WhatsApp, l’agent répond jour et nuit, et votre équipe reprend la conversation dans l’Inbox.',
       film: {
-        titre: 'La question, la réponse, le relais : 38 secondes.',
+        titre: 'Le film&nbsp;: un agent IA de support qui passe la main, en 30 secondes.',
         texte: 'De la demande dans Claude Code à la réponse de Sophie, sur une vraie conversation WhatsApp et la vraie Inbox de la console.',
         aria: 'Film : un agent IA de support sur WhatsApp, et le relais à l’équipe, avec Messaging Me', duree: 'PT38S', publie: '2026-10-21T21:00:00+02:00',
       },
-      schema: { titre: 'Comment ça circule.', legende: 'Le client écrit sur WhatsApp, votre agent IA lui répond avec votre documentation, et quand il veut un humain, ou que l’agent ne sait pas, la conversation passe à votre équipe dans l’Inbox.', ...schemaSupport('fr') },
+      schema: { titre: 'Comment l’agent IA répond, puis passe la main à l’équipe.', legende: 'Le client écrit sur WhatsApp, votre agent IA lui répond avec votre documentation, et quand il veut un humain, ou que l’agent ne sait pas, la conversation passe à votre équipe dans l’Inbox.', ...schemaSupport('fr') },
+      titres: { paie: 'Combien coûte un agent IA de support sur WhatsApp.', faq: 'Questions fréquentes sur le support IA.' },
       etapes: [
         { titre: 'L’agent qui connaît votre doc', texte: 'Claude Code crée l’agent par <code>create_agent</code>, puis lui donne chaque fichier de votre dossier docs/ par <code>import_document_text</code>&nbsp;: garanties, livraisons, entretien deviennent sa connaissance.' },
         { titre: 'Quand passer la main', texte: '<code>update_agent</code> écrit son objectif et quand il passe la main, <code>set_agent_tools</code> lui donne la recherche dans sa connaissance et le relais, <code>set_transfer_mode</code> et <code>set_business_hours</code> vos horaires&nbsp;: hors de ces heures, l’agent dit au client quand l’équipe reprend.' },
@@ -450,11 +457,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'An AI agent that answers support on WhatsApp, and your team when needed.',
       chapeau: 'One sentence in Claude Code, in your project’s folder: it creates the agent, has it read your documentation, sets the team handover and your hours, tests it and turns it on. Your customers write on WhatsApp, the agent answers day and night, and your team takes the conversation over in the Inbox.',
       film: {
-        titre: 'The question, the answer, the handover: 38 seconds.',
+        titre: 'The film: an AI support agent that hands over, in 30 seconds.',
         texte: 'From the request in Claude Code to Sophie’s reply, on a real WhatsApp conversation and the console’s real Inbox.',
         aria: 'Film: an AI support agent on WhatsApp, and the handover to the team, with Messaging Me', duree: 'PT38S', publie: '2026-10-21T21:00:00+02:00',
       },
-      schema: { titre: 'How it flows.', legende: 'The customer writes on WhatsApp, your AI agent answers from your documentation, and when they want a human, or the agent doesn’t know, the conversation goes to your team in the Inbox.', ...schemaSupport('en') },
+      schema: { titre: 'How the AI agent answers, then hands over to the team.', legende: 'The customer writes on WhatsApp, your AI agent answers from your documentation, and when they want a human, or the agent doesn’t know, the conversation goes to your team in the Inbox.', ...schemaSupport('en') },
+      titres: { paie: 'What an AI support agent on WhatsApp costs.', faq: 'Frequently asked questions about AI support.' },
       etapes: [
         { titre: 'The agent that knows your docs', texte: 'Claude Code creates the agent with <code>create_agent</code>, then gives it each file of your docs/ folder with <code>import_document_text</code>: warranty, delivery, maintenance become its knowledge.' },
         { titre: 'When to hand over', texte: '<code>update_agent</code> writes its objective and when it hands over, <code>set_agent_tools</code> gives it knowledge search and the handover, <code>set_transfer_mode</code> and <code>set_business_hours</code> your hours: outside them, the agent tells the customer when the team is back.' },
@@ -492,11 +500,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Une bulle WhatsApp sur votre site, et un agent qui répond avec votre contenu.',
       chapeau: 'Lovable, Webflow, WordPress ou codé à la main, peu importe&nbsp;: une phrase dans Claude Code, dans le dossier de votre site, et il crée l’agent, lui fait lire vos pages, l’allume et colle la bulle. Vos visiteurs écrivent sur WhatsApp, l’agent leur répond, jour et nuit.',
       film: {
-        titre: 'Le site, le widget, la réponse  : 30 secondes.',
+        titre: 'Le film&nbsp;: une bulle WhatsApp sur un site Lovable, en 30 secondes.',
         texte: 'De la demande dans Claude Code à la réponse de l’agent, sur une vraie conversation WhatsApp.',
         aria: 'Film : une bulle WhatsApp et son agent sur un site, avec Messaging Me', duree: 'PT38S', publie: '2026-10-21T09:00:00+02:00',
       },
-      schema: { titre: 'Comment ça circule.', legende: 'Le visiteur touche la bulle de votre site, WhatsApp s’ouvre avec le message déjà écrit, il l’envoie, et votre agent IA lui répond avec ce que dit votre site.', ...schemaBulle('fr') },
+      schema: { titre: 'Comment fonctionnent la bulle et l’agent IA.', legende: 'Le visiteur touche la bulle de votre site, WhatsApp s’ouvre avec le message déjà écrit, il l’envoie, et votre agent IA lui répond avec ce que dit votre site.', ...schemaBulle('fr') },
+      titres: { paie: 'Combien coûte une bulle WhatsApp avec agent IA.', faq: 'Questions fréquentes sur la bulle WhatsApp.' },
       etapes: [
         { titre: 'L’agent qui connaît votre site', texte: 'Claude Code crée l’agent par <code>create_agent</code>, puis lui fait lire les pages de votre site par <code>preview_site</code> et <code>import_site</code>&nbsp;: les cours, le planning, les tarifs deviennent sa connaissance.' },
         { titre: 'Il répond pour vous', texte: '<code>activate_agent</code> l’allume et <code>set_default_responder</code> lui confie les conversations&nbsp;: il répond à partir de votre site, et renvoie vers vos pages.' },
@@ -532,11 +541,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'A WhatsApp bubble on your website, and an agent that answers from your content.',
       chapeau: 'Lovable, Webflow, WordPress or hand-coded, it does not matter: one sentence in Claude Code, in your site’s folder, and it creates the agent, has it read your pages, turns it on and pastes the bubble. Your visitors write on WhatsApp, the agent answers them, day and night.',
       film: {
-        titre: 'The site, the widget, the answer: 30 seconds.',
+        titre: 'The film: a WhatsApp bubble on a Lovable site, in 30 seconds.',
         texte: 'From the request in Claude Code to the agent’s answer, on a real WhatsApp conversation.',
         aria: 'Film: a WhatsApp bubble and its agent on a website, with Messaging Me', duree: 'PT38S', publie: '2026-10-21T09:00:00+02:00',
       },
-      schema: { titre: 'How it flows.', legende: 'The visitor taps your site’s bubble, WhatsApp opens with the message pre-written, they send it, and your AI agent answers with what your site says.', ...schemaBulle('en') },
+      schema: { titre: 'How the bubble and the AI agent work.', legende: 'The visitor taps your site’s bubble, WhatsApp opens with the message pre-written, they send it, and your AI agent answers with what your site says.', ...schemaBulle('en') },
+      titres: { paie: 'What a WhatsApp bubble with an AI agent costs.', faq: 'Frequently asked questions about the WhatsApp bubble.' },
       etapes: [
         { titre: 'The agent that knows your site', texte: 'Claude Code creates the agent with <code>create_agent</code>, then has it read your site’s pages with <code>preview_site</code> and <code>import_site</code>: the classes, the schedule, the pricing become its knowledge.' },
         { titre: 'It answers for you', texte: '<code>activate_agent</code> turns it on and <code>set_default_responder</code> hands it the conversations: it answers from your site, and points to your pages.' },
@@ -574,11 +584,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Vos nouveaux utilisateurs reçoivent leur welcome message sur WhatsApp, et passent à l’action.',
       chapeau: 'À l’inscription, l’utilisateur qui a coché la case reçoit son welcome message sur WhatsApp, avec un bouton qui l’emmène à la première action dans votre produit. Là où il lit vraiment ses messages.',
       film: {
-        titre: 'Le welcome message, puis la relance  : 30 secondes.',
+        titre: 'Le film&nbsp;: le welcome message WhatsApp d’un SaaS, en 30 secondes.',
         texte: 'De la demande dans Claude Code au premier planning créé, sur une vraie conversation WhatsApp. Le même film montre ensuite la relance d’un paiement échoué.',
         aria: 'Film : l’accueil des utilisateurs d’un SaaS avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
-      schema: { titre: 'Comment ça circule.', legende: 'Votre app envoie le welcome message par POST /v1/sends, avec consent opted_in, à l’utilisateur qui a coché la case ; il touche le bouton, et votre app s’ouvre sur son premier usage.', ...schemaAccueil('fr') },
+      schema: { titre: 'Comment part le welcome message à l’inscription.', legende: 'Votre app envoie le welcome message par POST /v1/sends, avec consent opted_in, à l’utilisateur qui a coché la case ; il touche le bouton, et votre app s’ouvre sur son premier usage.', ...schemaAccueil('fr') },
+      titres: { paie: 'Combien coûte un welcome message WhatsApp.', faq: 'Questions fréquentes sur le welcome message.' },
       etapes: [
         { titre: 'Le modèle du welcome message', texte: 'Claude Code le crée par <code>create_template</code>, en catégorie marketing&nbsp;: pour Meta, un welcome message qui invite à utiliser le produit est du marketing. Le prénom, et un bouton vers la page qui lance l’utilisateur&nbsp;; <code>get_template_status</code> confirme l’approbation.' },
         { titre: 'La case du formulaire', texte: 'Le formulaire d’inscription porte une case «&nbsp;Recevoir mes conseils de démarrage sur WhatsApp&nbsp;», non cochée par défaut. Sans elle, rien ne part&nbsp;: un modèle marketing ne va qu’à qui a consenti.' },
@@ -613,11 +624,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Your new users get their welcome on WhatsApp, and take action.',
       chapeau: 'At sign-up, the user who ticked the box gets their welcome on WhatsApp, with a button that takes them to the first action in your product. Where they actually read their messages.',
       film: {
-        titre: 'The welcome, then the recovery: 30 seconds.',
+        titre: 'The film: a SaaS welcome message on WhatsApp, in 30 seconds.',
         texte: 'From the request in Claude Code to the first schedule created, on a real WhatsApp conversation. The same film then shows a failed payment recovery.',
         aria: 'Film: SaaS user onboarding with Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
-      schema: { titre: 'How it flows.', legende: 'Your app sends the welcome with POST /v1/sends, with consent opted_in, to the user who ticked the box; they tap the button, and your app opens on their first use.', ...schemaAccueil('en') },
+      schema: { titre: 'How the welcome message goes out at sign-up.', legende: 'Your app sends the welcome with POST /v1/sends, with consent opted_in, to the user who ticked the box; they tap the button, and your app opens on their first use.', ...schemaAccueil('en') },
+      titres: { paie: 'What a WhatsApp welcome message costs.', faq: 'Frequently asked questions about the welcome message.' },
       etapes: [
         { titre: 'The welcome template', texte: 'Claude Code creates it with <code>create_template</code>, in the marketing category: for Meta, a welcome that invites people to use the product is marketing. The first name, and a button to the page that gets the user started; <code>get_template_status</code> confirms the approval.' },
         { titre: 'The form’s box', texte: 'The sign-up form carries a “Get my getting-started tips on WhatsApp” box, unticked by default. Without it, nothing goes out: a marketing template only goes to those who consented.' },
@@ -654,11 +666,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Moins d’abonnements perdus sur une carte refusée, grâce à un message WhatsApp.',
       chapeau: 'Quand Stripe signale un paiement échoué, votre application envoie à l’utilisateur un message WhatsApp avec le lien vers sa page de facturation. Il met à jour sa carte avant de perdre l’accès.',
       film: {
-        titre: 'La carte refusée, puis le paiement réussi  : 30 secondes.',
+        titre: 'Le film&nbsp;: la relance d’un paiement échoué, en 30 secondes.',
         texte: 'De la demande dans Claude Code au paiement réussi, sur une vraie conversation WhatsApp. Le même film montre d’abord le welcome message à l’inscription.',
         aria: 'Film : la relance d’un paiement échoué avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
-      schema: { titre: 'Comment ça circule.', legende: 'Stripe envoie invoice.payment_failed au webhook de votre app, qui retrouve l’utilisateur et envoie le modèle par POST /v1/sends, avec une clé d’idempotence par facture.', ...schemaRelance('fr') },
+      schema: { titre: 'Comment fonctionne la relance d’un paiement échoué.', legende: 'Stripe envoie invoice.payment_failed au webhook de votre app, qui retrouve l’utilisateur et envoie le modèle par POST /v1/sends, avec une clé d’idempotence par facture.', ...schemaRelance('fr') },
+      titres: { paie: 'Combien coûte une relance de paiement sur WhatsApp.', faq: 'Questions fréquentes sur la relance de paiement.' },
       etapes: [
         { titre: 'Le modèle de paiement échoué', texte: 'Claude Code le crée par <code>create_template</code>, en catégorie utilitaire&nbsp;: une alerte sur le compte. Le prénom, et un bouton «&nbsp;Mettre à jour ma carte&nbsp;» vers votre page de facturation&nbsp;; <code>get_template_status</code> confirme l’approbation.' },
         { titre: 'Le webhook Stripe que vous avez déjà', texte: 'Sur l’événement invoice.payment_failed, et une fois la signature de Stripe vérifiée, votre application retrouve l’utilisateur derrière le client Stripe.' },
@@ -694,11 +707,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Fewer subscriptions lost to a declined card, with a WhatsApp message.',
       chapeau: 'When Stripe reports a failed payment, your app sends the user a WhatsApp message with the link to their billing page. They update their card before losing access.',
       film: {
-        titre: 'The declined card, then the successful payment: 30 seconds.',
+        titre: 'The film: failed payment recovery, in 30 seconds.',
         texte: 'From the request in Claude Code to the successful payment, on a real WhatsApp conversation. The same film first shows the welcome at sign-up.',
         aria: 'Film: failed payment recovery with Messaging Me', duree: 'PT38S', publie: '2026-10-20T13:00:00+02:00',
       },
-      schema: { titre: 'How it flows.', legende: 'Stripe sends invoice.payment_failed to your app’s webhook, which finds the user and sends the template with POST /v1/sends, with one idempotency key per invoice.', ...schemaRelance('en') },
+      schema: { titre: 'How failed payment recovery works.', legende: 'Stripe sends invoice.payment_failed to your app’s webhook, which finds the user and sends the template with POST /v1/sends, with one idempotency key per invoice.', ...schemaRelance('en') },
+      titres: { paie: 'What a payment reminder on WhatsApp costs.', faq: 'Frequently asked questions about payment recovery.' },
       etapes: [
         { titre: 'The failed payment template', texte: 'Claude Code creates it with <code>create_template</code>, in the utility category: an alert on the account. The first name, and an “Update my card” button to your billing page; <code>get_template_status</code> confirms the approval.' },
         { titre: 'The Stripe webhook you already have', texte: 'On the invoice.payment_failed event, once Stripe’s signature is checked, your app finds the user behind the Stripe customer.' },
@@ -736,11 +750,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Vos clients suivent leur commande sur WhatsApp, et vous savez qu’ils l’ont lu.',
       chapeau: 'Dès qu’une commande passe en expédiée, le client reçoit son message de suivi sur WhatsApp. Votre admin le voit livré, puis lu. S’il répond, l’agent IA prend la conversation.',
       film: {
-        titre: 'L’expédition, le suivi, la lecture  : 30 secondes.',
+        titre: 'Le film&nbsp;: une notification de commande WhatsApp, en 30 secondes.',
         texte: 'De la demande dans Claude Code à la commande marquée lue, sur une vraie conversation WhatsApp.',
         aria: 'Film : les notifications de commande avec Messaging Me', duree: 'PT38S', publie: '2026-10-20T11:00:00+02:00',
       },
-      schema: { titre: 'Comment ça circule.', legende: 'Votre boutique envoie le message d’expédition par POST /v1/sends. Les accusés message.delivered puis message.read reviennent sur votre route, qui marque la commande lue ; si le client répond, l’agent IA prend la conversation.', ...schemaNotifications('fr') },
+      schema: { titre: 'Comment part la notification de commande.', legende: 'Votre boutique envoie le message d’expédition par POST /v1/sends. Les accusés message.delivered puis message.read reviennent sur votre route, qui marque la commande lue ; si le client répond, l’agent IA prend la conversation.', ...schemaNotifications('fr') },
+      titres: { paie: 'Combien coûte une notification de commande WhatsApp.', faq: 'Questions fréquentes sur les notifications de commande.' },
       etapes: [
         { titre: 'Le modèle d’expédition', texte: 'Claude Code le crée par <code>create_template</code>&nbsp;: catégorie utilitaire, le prénom et le numéro de commande, un bouton «&nbsp;Suivre mon colis&nbsp;» vers votre page de suivi. Meta l’approuve, souvent en quelques minutes, et <code>get_template_status</code> le confirme.' },
         { titre: 'L’envoi à l’expédition', texte: 'Quand une commande passe en expédiée, votre application envoie le modèle par <code>POST /v1/sends</code>, avec une clé d’idempotence tirée de la commande&nbsp;: rejoué dans les 24&nbsp;heures, il n’envoie pas deux fois. L’identifiant d’envoi rendu se range sur la commande.' },
@@ -776,11 +791,12 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       h1: 'Your customers follow their order on WhatsApp, and you know they read it.',
       chapeau: 'As soon as an order moves to shipped, the customer gets their tracking message on WhatsApp. Your admin sees it delivered, then read. If they reply, the AI agent takes the conversation.',
       film: {
-        titre: 'The shipment, the tracking, the read receipt: 30 seconds.',
+        titre: 'The film: a WhatsApp order notification, in 30 seconds.',
         texte: 'From the request in Claude Code to the order marked read, on a real WhatsApp conversation.',
         aria: 'Film: order notifications with Messaging Me', duree: 'PT38S', publie: '2026-10-20T11:00:00+02:00',
       },
-      schema: { titre: 'How it flows.', legende: 'Your shop sends the shipping message with POST /v1/sends. The message.delivered then message.read receipts come back to your route, which marks the order read; if the customer replies, the AI agent takes the conversation.', ...schemaNotifications('en') },
+      schema: { titre: 'How the order notification goes out.', legende: 'Your shop sends the shipping message with POST /v1/sends. The message.delivered then message.read receipts come back to your route, which marks the order read; if the customer replies, the AI agent takes the conversation.', ...schemaNotifications('en') },
+      titres: { paie: 'What a WhatsApp order notification costs.', faq: 'Frequently asked questions about order notifications.' },
       etapes: [
         { titre: 'The shipping template', texte: 'Claude Code creates it with <code>create_template</code>: utility category, the first name and the order number, a “Track my parcel” button to your tracking page. Meta approves it, often within minutes, and <code>get_template_status</code> confirms it.' },
         { titre: 'The send on shipping', texte: 'When an order moves to shipped, your app sends the template with <code>POST /v1/sends</code>, with an idempotency key taken from the order: replayed within 24 hours, it does not send twice. The send identifier it returns is stored on the order.' },

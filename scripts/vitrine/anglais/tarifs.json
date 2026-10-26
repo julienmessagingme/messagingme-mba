@@ -46,7 +46,6 @@
  {"fr":"Connecteurs CRM","en":"CRM connectors"},
  {"fr":"Connexion SSO, sur demande","en":"SSO sign-in, on request"},
  {"fr":"Le crédit IA.","en":"AI credit."},
- {"fr":"Ce que Meta facture.","en":"What Meta bills."},
  {"fr":"Questions fréquentes.","en":"Frequently asked questions."},
  {"fr":"Faut-il un abonnement pour commencer ?","en":"Do I need a subscription to start?"},
  {"fr":"Non. La Free est gratuite et sans limite de durée : vous installez le plugin dans Claude Code, votre espace se crée quand vous l’autorisez, puis vous reliez votre numéro et vous branchez votre application.","en":"No. Free costs nothing and has no time limit: you install the plugin in Claude Code, your workspace is created when you authorize it, then you connect your number and plug in your application."},
@@ -71,5 +70,8 @@
  {"fr":"Shopify depuis la console","en":"Shopify from the console"},
  {"fr":"Vos statistiques brutes, livrées dans votre terminal ou dans Claude, Codex, Lovable","en":"Your raw statistics, delivered in your terminal or in Claude, Codex, Lovable"},
  {"fr":"Les tableaux de bord et KPI de la console","en":"The console dashboards and KPIs"},
- {"fr":"Avance des frais et ligne de crédit","en":"Fee advance and a credit line"}
+ {"fr":"Avance des frais et ligne de crédit","en":"Fee advance and a credit line"},
+ {"fr":"Ce que Meta facture pour chaque message WhatsApp.","en":"What Meta bills for each WhatsApp message."},
+ {"fr":"Qui facture les messages WhatsApp ?","en":"Who bills WhatsApp messages?"},
+ {"fr":"Meta, directement à votre entreprise, sur le moyen de paiement de votre Business Manager, selon sa grille par pays et par catégorie de message.","en":"Meta, directly to your business, on the payment method of your Business Manager, according to its rate card by country and by message category."}
 ]

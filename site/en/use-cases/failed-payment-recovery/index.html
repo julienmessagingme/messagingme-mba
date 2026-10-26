@@ -315,14 +315,14 @@
   </section>
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">The declined card, then the successful payment: 30 seconds.</h2>
+      <h2 class="f-titre">The film: failed payment recovery, in 30 seconds.</h2>
       <p class="f-texte">From the request in Claude Code to the successful payment, on a real WhatsApp conversation. The same film first shows the welcome at sign-up.</p>
       <video class="f-video" src="/films/cas-saas-en.mp4?v=1" poster="/films/cas-saas-en.webp?v=1" data-vertical="/films/cas-saas-en-9x16.mp4?v=1" data-affiche-verticale="/films/cas-saas-en-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film: failed payment recovery with Messaging Me"></video>
     </div>
   </section>
   <section class="f-bloc cas-schema">
     <div class="cadre">
-      <h2 class="f-titre">How it flows.</h2>
+      <h2 class="f-titre">How failed payment recovery works.</h2>
       <figure class="dessin"><svg class="dessin-h" viewBox="0 0 1160 240" role="img" aria-labelledby="schema-titre"><title id="schema-titre">The failed payment, from Stripe to the WhatsApp message</title><defs><marker id="pt-h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud" x="10" y="70" width="260" height="100" rx="14"/><text class="d-t" x="140" y="114" text-anchor="middle">Stripe</text><text class="d-s" x="140" y="138" text-anchor="middle">invoice.payment_failed</text><path class="d-fl" d="M270 120H442" marker-end="url(#pt-h)"/><text class="d-etiq" x="360" y="106" text-anchor="middle">the payment fails</text><rect class="d-noeud d-app" x="450" y="70" width="260" height="100" rx="14"/><text class="d-t" x="580" y="114" text-anchor="middle">Your app</text><text class="d-s" x="580" y="138" text-anchor="middle">its Stripe webhook</text><path class="d-fl" d="M710 120H882" marker-end="url(#pt-h)"/><text class="d-etiq" x="800" y="86" text-anchor="middle">one key per invoice</text><text class="d-api" x="800" y="106" text-anchor="middle">POST /v1/sends</text><rect class="d-noeud" x="890" y="70" width="260" height="100" rx="14"/><text class="d-t" x="1020" y="114" text-anchor="middle">On their WhatsApp</text><text class="d-s" x="1020" y="138" text-anchor="middle">the billing link</text></svg><svg class="dessin-v" viewBox="0 0 360 416" aria-hidden="true"><defs><marker id="pt-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud" x="40" y="8" width="280" height="80" rx="14"/><text class="d-t" x="180" y="42" text-anchor="middle">Stripe</text><text class="d-s" x="180" y="66" text-anchor="middle">invoice.payment_failed</text><path class="d-fl" d="M180 88V160" marker-end="url(#pt-v)"/><text class="d-etiq" x="192" y="118" text-anchor="start">the payment fails</text><rect class="d-noeud d-app" x="40" y="168" width="280" height="80" rx="14"/><text class="d-t" x="180" y="202" text-anchor="middle">Your app</text><text class="d-s" x="180" y="226" text-anchor="middle">its Stripe webhook</text><path class="d-fl" d="M180 248V320" marker-end="url(#pt-v)"/><text class="d-etiq" x="192" y="278" text-anchor="start">one key per invoice</text><text class="d-api" x="192" y="298" text-anchor="start">POST /v1/sends</text><rect class="d-noeud" x="40" y="328" width="280" height="80" rx="14"/><text class="d-t" x="180" y="362" text-anchor="middle">On their WhatsApp</text><text class="d-s" x="180" y="386" text-anchor="middle">the billing link</text></svg><figcaption class="masque">Stripe sends invoice.payment_failed to your app’s webhook, which finds the user and sends the template with POST /v1/sends, with one idempotency key per invoice.</figcaption></figure>
     </div>
   </section>
@@ -376,7 +376,7 @@ export async function POST(req: Request) {
   </section>
   <section class="f-bloc cas-paie">
     <div class="cadre">
-      <h2 class="f-titre">What you pay.</h2>
+      <h2 class="f-titre">What a payment reminder on WhatsApp costs.</h2>
       <ul class="tarif-liste cas-liste">
         <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included; beyond that, Pro.</li>
         <li><strong>Meta bills your business directly</strong> for each utility template, according to <a href="https://developers.facebook.com/docs/whatsapp/pricing">its rate card</a> and the user’s country.</li>
@@ -385,7 +385,7 @@ export async function POST(req: Request) {
   </section>
   <section class="f-bloc cas-faq" id="faq">
     <div class="cadre">
-      <h2 class="f-titre">Frequently asked questions.</h2>
+      <h2 class="f-titre">Frequently asked questions about payment recovery.</h2>
       <div class="dev-faq">
         <details><summary>Is a Messaging Me webhook address needed?</summary><p>No: everything starts from the Stripe webhook your app already has, and nothing comes back to it.</p></details>
         <details><summary>What if Meta reclassifies the template as marketing?</summary><p>It would then only go to contacts who consented. Keep a factual text: the payment, the card, the access.</p></details>

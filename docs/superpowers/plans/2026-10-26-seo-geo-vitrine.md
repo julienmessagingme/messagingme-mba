@@ -328,6 +328,17 @@ Par fiche : en-tête `publique: oui`, `rubrique`, `rang`, version anglaise, capt
 `npm run vitrine:aide`, sitemap, puis `aide:charger` après le push. Une fiche qui cite une section de
 `features.md` garde son empreinte (`tests/aide-proposer.test.ts` avant le push). Julien choisit lesquelles.
 
+Fait au lot 4 (2026-10-26), avec ces écarts :
+- C1 : le titre « La mise en place, étape par étape. » était déjà littéral, il reste ; les titres de film prennent la
+  forme « Le film : <sujet>, en 30 secondes. » (le support IA passe de 38 à 30, la règle des 30 secondes) ; le prix et
+  la FAQ se titrent par un champ `titres` de `TexteCas`, que `cas.ts` exige ;
+- C2 : trois questions par secteur (champ `faq` de `TexteSecteur`), réponses tirées des cas publiés sur la page,
+  chiffres compris, balisées `FAQPage` ;
+- C3 : la question « Messaging Me prend-il une commission… » n'est pas posée : `tests/vitrine-pages.test.ts` refuse le
+  mot « commission » sur les tarifs (décision du 2026-10-19 sur le crédit IA), et la page dit déjà que Messaging Me ne
+  touche pas aux frais de Meta ;
+- C6 attend le choix des fiches par Julien (D5), et `aide:charger` en production après la bascule.
+
 ## Lot 5 : pages nouvelles
 
 **N1. Glossaire** `/glossaire/` et `/en/glossary/`, JSON-LD `DefinedTermSet` (un `DefinedTerm` par entrée, avec

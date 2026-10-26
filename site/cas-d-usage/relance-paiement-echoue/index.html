@@ -315,14 +315,14 @@
   </section>
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">La carte refusée, puis le paiement réussi  : 30 secondes.</h2>
+      <h2 class="f-titre">Le film&nbsp;: la relance d’un paiement échoué, en 30 secondes.</h2>
       <p class="f-texte">De la demande dans Claude Code au paiement réussi, sur une vraie conversation WhatsApp. Le même film montre d’abord le welcome message à l’inscription.</p>
       <video class="f-video" src="/films/cas-saas.mp4?v=1" poster="/films/cas-saas.webp?v=1" data-vertical="/films/cas-saas-9x16.mp4?v=1" data-affiche-verticale="/films/cas-saas-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : la relance d’un paiement échoué avec Messaging Me"></video>
     </div>
   </section>
   <section class="f-bloc cas-schema">
     <div class="cadre">
-      <h2 class="f-titre">Comment ça circule.</h2>
+      <h2 class="f-titre">Comment fonctionne la relance d’un paiement échoué.</h2>
       <figure class="dessin"><svg class="dessin-h" viewBox="0 0 1160 240" role="img" aria-labelledby="schema-titre"><title id="schema-titre">Le paiement échoué, de Stripe au message WhatsApp</title><defs><marker id="pt-h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud" x="10" y="70" width="260" height="100" rx="14"/><text class="d-t" x="140" y="114" text-anchor="middle">Stripe</text><text class="d-s" x="140" y="138" text-anchor="middle">invoice.payment_failed</text><path class="d-fl" d="M270 120H442" marker-end="url(#pt-h)"/><text class="d-etiq" x="360" y="106" text-anchor="middle">le paiement échoue</text><rect class="d-noeud d-app" x="450" y="70" width="260" height="100" rx="14"/><text class="d-t" x="580" y="114" text-anchor="middle">Votre app</text><text class="d-s" x="580" y="138" text-anchor="middle">son webhook Stripe</text><path class="d-fl" d="M710 120H882" marker-end="url(#pt-h)"/><text class="d-etiq" x="800" y="86" text-anchor="middle">une clé par facture</text><text class="d-api" x="800" y="106" text-anchor="middle">POST /v1/sends</text><rect class="d-noeud" x="890" y="70" width="260" height="100" rx="14"/><text class="d-t" x="1020" y="114" text-anchor="middle">Sur son WhatsApp</text><text class="d-s" x="1020" y="138" text-anchor="middle">le lien de facturation</text></svg><svg class="dessin-v" viewBox="0 0 360 416" aria-hidden="true"><defs><marker id="pt-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud" x="40" y="8" width="280" height="80" rx="14"/><text class="d-t" x="180" y="42" text-anchor="middle">Stripe</text><text class="d-s" x="180" y="66" text-anchor="middle">invoice.payment_failed</text><path class="d-fl" d="M180 88V160" marker-end="url(#pt-v)"/><text class="d-etiq" x="192" y="118" text-anchor="start">le paiement échoue</text><rect class="d-noeud d-app" x="40" y="168" width="280" height="80" rx="14"/><text class="d-t" x="180" y="202" text-anchor="middle">Votre app</text><text class="d-s" x="180" y="226" text-anchor="middle">son webhook Stripe</text><path class="d-fl" d="M180 248V320" marker-end="url(#pt-v)"/><text class="d-etiq" x="192" y="278" text-anchor="start">une clé par facture</text><text class="d-api" x="192" y="298" text-anchor="start">POST /v1/sends</text><rect class="d-noeud" x="40" y="328" width="280" height="80" rx="14"/><text class="d-t" x="180" y="362" text-anchor="middle">Sur son WhatsApp</text><text class="d-s" x="180" y="386" text-anchor="middle">le lien de facturation</text></svg><figcaption class="masque">Stripe envoie invoice.payment_failed au webhook de votre app, qui retrouve l’utilisateur et envoie le modèle par POST /v1/sends, avec une clé d’idempotence par facture.</figcaption></figure>
     </div>
   </section>
@@ -376,7 +376,7 @@ export async function POST(req: Request) {
   </section>
   <section class="f-bloc cas-paie">
     <div class="cadre">
-      <h2 class="f-titre">Ce que vous payez.</h2>
+      <h2 class="f-titre">Combien coûte une relance de paiement sur WhatsApp.</h2>
       <ul class="tarif-liste cas-liste">
         <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
         <li><strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.</li>
@@ -385,7 +385,7 @@ export async function POST(req: Request) {
   </section>
   <section class="f-bloc cas-faq" id="faq">
     <div class="cadre">
-      <h2 class="f-titre">Questions fréquentes.</h2>
+      <h2 class="f-titre">Questions fréquentes sur la relance de paiement.</h2>
       <div class="dev-faq">
         <details><summary>Faut-il une adresse de webhook Messaging Me&nbsp;?</summary><p>Non&nbsp;: tout part du webhook Stripe que votre application a déjà, et rien ne revient vers elle.</p></details>
         <details><summary>Et si Meta reclasse le modèle en marketing&nbsp;?</summary><p>Il ne partirait plus qu’aux contacts qui ont consenti. Gardez un texte factuel&nbsp;: le paiement, la carte, l’accès.</p></details>

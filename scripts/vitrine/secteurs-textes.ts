@@ -65,6 +65,8 @@ export interface TexteSecteur {
   /** Un prix reçu par Messaging Me, montré dans la une et rappelé avec l'accompagnement (page Assurance) ; `alt` vide quand
    * `texte` dit déjà ce que montre l'image (sinon un lecteur d'écran l'entend deux fois). */
   readonly distinction?: { readonly src: string; readonly alt: string; readonly largeur: number; readonly hauteur: number; readonly texte: string };
+  /** Les questions fréquentes du secteur, tirées des cas publiés sur la page, balisées FAQPage (plan SEO, C2). */
+  readonly faq?: ReadonlyArray<{ readonly question: string; readonly reponse: string }>;
   readonly captures: ReadonlyArray<{ readonly src: string; readonly alt: string }>;
   readonly enjeux: {
     readonly surtitre: string; readonly titre: readonly [string, string];
@@ -101,6 +103,11 @@ export interface TexteSecteur {
 export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteur>>> = {
   'transport-mobilites': {
     fr: {
+      faq: [
+        { question: 'Comment informer les voyageurs avec une chaîne WhatsApp ?', reponse: 'En publiant l’information du réseau sur une chaîne WhatsApp, que les voyageurs suivent sans nouvelle application à télécharger. Avec Keolis, les réseaux pilotes ont réuni plus de 3&nbsp;500 abonnés en organique, en 3&nbsp;mois.' },
+        { question: 'Peut-on répondre aux voyageurs avec une IA ?', reponse: 'Oui : un bot hybride répond aux questions, et l’équipe reprend la main quand il faut. Chez Keolis, il intègre plus de 100 questions fréquentes et plus de 20 lignes.' },
+        { question: 'Combien de temps faut-il pour lancer un réseau ?', reponse: 'Avec Keolis, moins de 48&nbsp;heures ont suffi pour certifier deux réseaux.' },
+      ],
       titre: 'WhatsApp pour le transport et la mobilité · Messaging Me',
       description: 'Chaînes WhatsApp, assistance avec IA, horaires et itinéraires : informez vos voyageurs et accompagnez chaque trajet. Le cas Keolis.',
       menu: 'L’information voyageurs sur WhatsApp',
@@ -163,6 +170,11 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       },
     },
     en: {
+      faq: [
+        { question: 'How do I inform travellers with a WhatsApp Channel?', reponse: 'By posting the network’s information on a WhatsApp Channel, which travellers follow with no new app to download. With Keolis, the pilot networks gathered more than 3,500 followers organically, in 3 months.' },
+        { question: 'Can an AI answer travellers?', reponse: 'Yes: a hybrid bot answers questions, and the team takes over when needed. At Keolis, it includes more than 100 FAQs and more than 20 lines.' },
+        { question: 'How long does it take to launch a network?', reponse: 'With Keolis, under 48 hours were enough to verify two networks.' },
+      ],
       titre: 'WhatsApp for transport and mobility · Messaging Me',
       description: 'WhatsApp Channels, AI assistance, timetables and routes: inform your passengers and support every journey. The Keolis case.',
       menu: 'Passenger information on WhatsApp',
@@ -227,6 +239,11 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
   },
   'enseignement-superieur': {
     fr: {
+      faq: [
+        { question: 'Comment une école recrute-t-elle sur WhatsApp ?', reponse: 'Par des campagnes WhatsApp aux moments décisifs, des réponses avec IA et le suivi de chaque candidat. NEOMA mène des campagnes entre l’admissibilité et les oraux, et 100&nbsp;% de ses messages entrants sont répartis instantanément.' },
+        { question: 'Peut-on recruter des candidats internationaux sur WhatsApp ?', reponse: 'Oui : le Groupe EDH promeut ses écoles et formations dans 11&nbsp;pays avec des campagnes Click-to-WhatsApp et des messages marketing, et plus de 30&nbsp;000 conversations ont été engagées avec les candidats.' },
+        { question: 'Plusieurs écoles peuvent-elles partager la même plateforme ?', reponse: 'Oui : le Groupe EDH gère 11 comptes dans une seule plateforme.' },
+      ],
       titre: 'WhatsApp pour l’enseignement supérieur · Messaging Me',
       description: 'Campagnes WhatsApp, réponses avec IA et suivi des candidats : accélérez vos recrutements, de l’intérêt à la candidature. Les cas NEOMA, EDH et EDHEC.',
       menu: 'Le recrutement des candidats sur WhatsApp',
@@ -325,6 +342,11 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       },
     },
     en: {
+      faq: [
+        { question: 'How does a school recruit on WhatsApp?', reponse: 'With WhatsApp campaigns at decisive moments, AI answers and follow-up of every candidate. NEOMA runs campaigns between eligibility and the oral exams, and 100% of its incoming messages are dispatched instantly.' },
+        { question: 'Can I recruit international candidates on WhatsApp?', reponse: 'Yes: Groupe EDH promotes its schools and programmes in 11 countries with Click-to-WhatsApp campaigns and marketing messages, and more than 30,000 conversations have been started with candidates.' },
+        { question: 'Can several schools share the same platform?', reponse: 'Yes: Groupe EDH manages 11 accounts in a single platform.' },
+      ],
       titre: 'WhatsApp for higher education · Messaging Me',
       description: 'WhatsApp campaigns, AI answers and candidate follow-up: speed up your recruitment, from first interest to application. The NEOMA, EDH and EDHEC cases.',
       menu: 'Recruiting candidates on WhatsApp',
@@ -425,6 +447,11 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
   },
   assurance: {
     fr: {
+      faq: [
+        { question: 'Comment une compagnie d’assurance utilise-t-elle WhatsApp ?', reponse: 'Pour joindre ses clients par des campagnes WhatsApp, répondre avec une IA aux questions courantes et passer le relais à un conseiller du réseau. Chez Gan Prévoyance, les campagnes en PER et prévoyance individuelle ont obtenu 30&nbsp;% d’engagement et plus de 85&nbsp;% de lecture.' },
+        { question: 'Peut-on faire un devis sur WhatsApp ?', reponse: 'Oui : avec Groupama, une campagne Click-to-WhatsApp en assurance chien-chat donne le devis et les réponses dans la conversation, puis passe le relais à un collaborateur pour finaliser la souscription.' },
+        { question: 'Quelle part des demandes une IA peut-elle traiter ?', reponse: 'Chez Mieux Assuré, une IA alimentée par les FAQ auto et habitation traite 40&nbsp;% des sollicitations de service client, et oriente les autres demandes vers un humain.' },
+      ],
       titre: 'WhatsApp pour l’assurance · Messaging Me',
       description: 'Campagnes WhatsApp, réponses avec IA et relais vers votre réseau : rapprochez-vous de vos assurés. Les cas Gan Prévoyance, Groupama et Mieux Assuré.',
       menu: 'Joindre ses assurés sur WhatsApp',
@@ -526,6 +553,11 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       },
     },
     en: {
+      faq: [
+        { question: 'How does an insurance company use WhatsApp?', reponse: 'To reach its customers with WhatsApp campaigns, answer routine questions with AI and hand over to an advisor in the network. At Gan Prévoyance, the campaigns on retirement savings and individual protection reached 30% engagement and more than 85% read rate.' },
+        { question: 'Can I give a quote on WhatsApp?', reponse: 'Yes: with Groupama, a Click-to-WhatsApp campaign for dog and cat insurance gives the quote and the answers in the conversation, then hands over to a colleague to finalise the subscription.' },
+        { question: 'How many requests can an AI handle?', reponse: 'At Mieux Assuré, an AI fed with the car and home insurance FAQs handles 40% of customer service requests, and routes the other requests to a human.' },
+      ],
       titre: 'WhatsApp for insurance · Messaging Me',
       description: 'WhatsApp campaigns, AI answers and handover to your network: get closer to your policyholders. The Gan Prévoyance, Groupama and Mieux Assuré cases.',
       menu: 'Reaching policyholders on WhatsApp',
@@ -629,6 +661,11 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
   },
   tourisme: {
     fr: {
+      faq: [
+        { question: 'Comment préparer l’arrivée des clients sur WhatsApp ?', reponse: 'Par des messages de check-in avant le séjour. Chez Odalys, un pilote d’early check-in sur WhatsApp facilite les démarches avant l’arrivée, et plus de 80&nbsp;% des messages de check-in sont lus.' },
+        { question: 'Un bot peut-il aider à choisir un séjour ?', reponse: 'Oui : chez Odalys, un bot conversationnel guide les vacanciers parmi les offres, répond aux questions fréquentes et passe le relais à un conseiller lorsque nécessaire.' },
+        { question: 'Combien de messages une marque de tourisme traite-t-elle sur WhatsApp ?', reponse: 'Odalys en traite plus de 2&nbsp;000 par mois.' },
+      ],
       titre: 'WhatsApp pour le voyage et le tourisme · Messaging Me',
       description: 'Réservation, préparation de l’arrivée et services pendant le séjour : gardez le lien avec vos voyageurs sur WhatsApp. Le cas Odalys.',
       menu: 'Accompagner chaque séjour sur WhatsApp',
@@ -716,6 +753,11 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       },
     },
     en: {
+      faq: [
+        { question: 'How do I prepare guests’ arrival on WhatsApp?', reponse: 'With check-in messages before the stay. At Odalys, an early check-in pilot on WhatsApp makes formalities easier before arrival, and more than 80% of check-in messages are read.' },
+        { question: 'Can a bot help choose a stay?', reponse: 'Yes: at Odalys, a conversational bot guides holidaymakers through the offers, answers frequent questions and hands over to an advisor when needed.' },
+        { question: 'How many messages does a tourism brand handle on WhatsApp?', reponse: 'Odalys handles more than 2,000 a month.' },
+      ],
       titre: 'WhatsApp for travel and tourism · Messaging Me',
       description: 'Booking, arrival preparation and services during the stay: stay connected with your travellers on WhatsApp. The Odalys case.',
       menu: 'Supporting every stay on WhatsApp',

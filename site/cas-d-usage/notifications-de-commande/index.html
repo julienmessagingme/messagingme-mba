@@ -307,14 +307,14 @@
   </section>
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">L’expédition, le suivi, la lecture  : 30 secondes.</h2>
+      <h2 class="f-titre">Le film&nbsp;: une notification de commande WhatsApp, en 30 secondes.</h2>
       <p class="f-texte">De la demande dans Claude Code à la commande marquée lue, sur une vraie conversation WhatsApp.</p>
       <video class="f-video" src="/films/cas-notifications.mp4?v=1" poster="/films/cas-notifications.webp?v=1" data-vertical="/films/cas-notifications-9x16.mp4?v=1" data-affiche-verticale="/films/cas-notifications-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film : les notifications de commande avec Messaging Me"></video>
     </div>
   </section>
   <section class="f-bloc cas-schema">
     <div class="cadre">
-      <h2 class="f-titre">Comment ça circule.</h2>
+      <h2 class="f-titre">Comment part la notification de commande.</h2>
       <figure class="dessin"><svg class="dessin-h" viewBox="0 0 1160 320" role="img" aria-labelledby="schema-titre"><title id="schema-titre">Le message d’expédition, sa lecture, et la réponse du client</title><defs><marker id="pt-h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud d-app" x="10" y="110" width="200" height="100" rx="14"/><text class="d-t" x="110" y="154" text-anchor="middle">Votre boutique</text><text class="d-s" x="110" y="178" text-anchor="middle">commande expédiée</text><path class="d-fl" d="M210 160H368" marker-end="url(#pt-h)"/><text class="d-api" x="289" y="148" text-anchor="middle">POST /v1/sends</text><rect class="d-noeud" x="376" y="110" width="280" height="100" rx="14"/><text class="d-t" x="516" y="154" text-anchor="middle">Le client sur WhatsApp</text><text class="d-s" x="516" y="178" text-anchor="middle">le suivi, un bouton</text><path class="d-fl" d="M656 160H700Q720 160 720 140V80Q720 60 740 60H872" marker-end="url(#pt-h)"/><text class="d-etiq" x="806" y="32" text-anchor="middle">Livré, puis lu</text><text class="d-api" x="806" y="52" text-anchor="middle">message.read</text><path class="d-fl" d="M656 160H700Q720 160 720 180V240Q720 260 740 260H872" marker-end="url(#pt-h)"/><text class="d-etiq" x="806" y="288" text-anchor="middle">Il répond</text><rect class="d-noeud d-app" x="880" y="10" width="270" height="100" rx="14"/><text class="d-t" x="1015" y="54" text-anchor="middle">Commande « Lue »</text><text class="d-s" x="1015" y="78" text-anchor="middle">dans votre admin</text><rect class="d-noeud d-app" x="880" y="210" width="270" height="100" rx="14"/><text class="d-t" x="1015" y="254" text-anchor="middle">L’agent IA répond</text><text class="d-s" x="1015" y="278" text-anchor="middle">votre politique de livraison</text></svg><svg class="dessin-v" viewBox="0 0 360 586" aria-hidden="true"><defs><marker id="pt-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud d-app" x="50" y="8" width="260" height="80" rx="14"/><text class="d-t" x="180" y="42" text-anchor="middle">Votre boutique</text><text class="d-s" x="180" y="66" text-anchor="middle">commande expédiée</text><path class="d-fl" d="M180 88V150" marker-end="url(#pt-v)"/><text class="d-api" x="190" y="124">POST /v1/sends</text><rect class="d-noeud" x="30" y="158" width="300" height="80" rx="14"/><text class="d-t" x="180" y="192" text-anchor="middle">Le client sur WhatsApp</text><text class="d-s" x="180" y="216" text-anchor="middle">le suivi, un bouton</text><path class="d-fl" d="M60 238V366Q60 380 74 380H88" marker-end="url(#pt-v)"/><text class="d-etiq" x="96" y="296" text-anchor="start">Livré, puis lu</text><text class="d-api" x="96" y="316" text-anchor="start">message.read</text><rect class="d-noeud d-app" x="96" y="336" width="256" height="88" rx="14"/><text class="d-t" x="224" y="374" text-anchor="middle">Commande « Lue »</text><text class="d-s" x="224" y="398" text-anchor="middle">dans votre admin</text><path class="d-fl" d="M60 238V518Q60 532 74 532H88" marker-end="url(#pt-v)"/><text class="d-etiq" x="96" y="452" text-anchor="start">Il répond</text><rect class="d-noeud d-app" x="96" y="488" width="256" height="88" rx="14"/><text class="d-t" x="224" y="526" text-anchor="middle">L’agent IA répond</text><text class="d-s" x="224" y="550" text-anchor="middle">votre politique de livraison</text></svg><figcaption class="masque">Votre boutique envoie le message d’expédition par POST /v1/sends. Les accusés message.delivered puis message.read reviennent sur votre route, qui marque la commande lue ; si le client répond, l’agent IA prend la conversation.</figcaption></figure>
     </div>
   </section>
@@ -367,7 +367,7 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
   </section>
   <section class="f-bloc cas-paie">
     <div class="cadre">
-      <h2 class="f-titre">Ce que vous payez.</h2>
+      <h2 class="f-titre">Combien coûte une notification de commande WhatsApp.</h2>
       <ul class="tarif-liste cas-liste">
         <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
         <li><strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.</li>
@@ -377,7 +377,7 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
   </section>
   <section class="f-bloc cas-faq" id="faq">
     <div class="cadre">
-      <h2 class="f-titre">Questions fréquentes.</h2>
+      <h2 class="f-titre">Questions fréquentes sur les notifications de commande.</h2>
       <div class="dev-faq">
         <details><summary>Le client doit-il avoir accepté de recevoir des messages&nbsp;?</summary><p>Meta demande que la personne ait accepté d’être contactée sur WhatsApp, par exemple en le cochant à la commande. Un client qui répond STOP ne reçoit plus rien.</p></details>
         <details><summary>Et si le client a désactivé les confirmations de lecture&nbsp;?</summary><p>WhatsApp n’envoie alors jamais la lecture&nbsp;: la commande reste «&nbsp;Livrée&nbsp;» dans votre admin.</p></details>

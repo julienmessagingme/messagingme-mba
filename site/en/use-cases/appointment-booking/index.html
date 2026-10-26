@@ -307,14 +307,14 @@
   </section>
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">The request, the slots, the booking: 30 seconds.</h2>
+      <h2 class="f-titre">The film: appointment booking on WhatsApp, in 30 seconds.</h2>
       <p class="f-texte">From the request in Claude Code to the booked appointment, on a real WhatsApp conversation.</p>
       <video class="f-video" src="/films/cas-rendez-vous-en.mp4?v=1" poster="/films/cas-rendez-vous-en.webp?v=1" data-vertical="/films/cas-rendez-vous-en-9x16.mp4?v=1" data-affiche-verticale="/films/cas-rendez-vous-en-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film: appointment booking with Messaging Me"></video>
     </div>
   </section>
   <section class="f-bloc cas-schema">
     <div class="cadre">
-      <h2 class="f-titre">How it flows.</h2>
+      <h2 class="f-titre">How appointment booking on WhatsApp works.</h2>
       <figure class="dessin"><svg class="dessin-h" viewBox="0 0 1160 320" role="img" aria-labelledby="schema-titre"><title id="schema-titre">The appointment request, from WhatsApp to your calendar, and the answer</title><defs><marker id="pt-h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud" x="10" y="40" width="300" height="100" rx="14"/><text class="d-t" x="160" y="84" text-anchor="middle">The customer on WhatsApp</text><text class="d-s" x="160" y="108" text-anchor="middle">“a quote in Lyon?”</text><path class="d-fl" d="M310 90H422" marker-end="url(#pt-h)"/><text class="d-etiq" x="366" y="78" text-anchor="middle">they write</text><rect class="d-noeud" x="430" y="40" width="300" height="100" rx="14"/><text class="d-t" x="580" y="84" text-anchor="middle">The AI agent</text><text class="d-s" x="580" y="108" text-anchor="middle">the reason and the city</text><path class="d-fl" d="M730 90H842" marker-end="url(#pt-h)"/><text class="d-api" x="786" y="78" text-anchor="middle">agent.action</text><rect class="d-noeud d-app" x="850" y="40" width="300" height="100" rx="14"/><text class="d-t" x="1000" y="84" text-anchor="middle">Your app</text><text class="d-s" x="1000" y="108" text-anchor="middle">your calendar</text><path class="d-fl" d="M1000 140V256Q1000 276 980 276H180Q160 276 160 256V148" marker-end="url(#pt-h)"/><text class="d-etiq" x="580" y="226" text-anchor="middle">Three slots, then the confirmation</text><text class="d-api" x="580" y="246" text-anchor="middle">POST /v1/messages/whatsapp</text></svg><svg class="dessin-v" viewBox="0 0 360 524" aria-hidden="true"><defs><marker id="pt-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud" x="60" y="8" width="280" height="80" rx="14"/><text class="d-t" x="200" y="42" text-anchor="middle">The customer on WhatsApp</text><text class="d-s" x="200" y="66" text-anchor="middle">“a quote in Lyon?”</text><path class="d-fl" d="M200 88V160" marker-end="url(#pt-v)"/><text class="d-etiq" x="210" y="130">they write</text><rect class="d-noeud" x="60" y="168" width="280" height="80" rx="14"/><text class="d-t" x="200" y="202" text-anchor="middle">The AI agent</text><text class="d-s" x="200" y="226" text-anchor="middle">the reason and the city</text><path class="d-fl" d="M200 248V320" marker-end="url(#pt-v)"/><text class="d-api" x="210" y="290">agent.action</text><rect class="d-noeud d-app" x="60" y="328" width="280" height="80" rx="14"/><text class="d-t" x="200" y="362" text-anchor="middle">Your app</text><text class="d-s" x="200" y="386" text-anchor="middle">your calendar</text><path class="d-fl" d="M200 408V448Q200 462 186 462H38Q24 462 24 448V62Q24 48 38 48H52" marker-end="url(#pt-v)"/><text class="d-etiq" x="200" y="492" text-anchor="middle">Three slots, then the confirmation</text><text class="d-api" x="200" y="512" text-anchor="middle">POST /v1/messages/whatsapp</text></svg><figcaption class="masque">The customer writes on WhatsApp. The AI agent notes the reason and the city, and triggers agent.action to your app, which reads your calendar and answers with POST /v1/messages/whatsapp with three slots, then with the confirmation.</figcaption></figure>
     </div>
   </section>
@@ -363,7 +363,7 @@ export async function POST(req: Request) {
   </section>
   <section class="f-bloc cas-paie">
     <div class="cadre">
-      <h2 class="f-titre">What you pay.</h2>
+      <h2 class="f-titre">What appointment booking on WhatsApp costs.</h2>
       <ul class="tarif-liste cas-liste">
         <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included; beyond that, Pro.</li>
         <li><strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.</li>
@@ -373,7 +373,7 @@ export async function POST(req: Request) {
   </section>
   <section class="f-bloc cas-faq" id="faq">
     <div class="cadre">
-      <h2 class="f-titre">Frequently asked questions.</h2>
+      <h2 class="f-titre">Frequently asked questions about appointment booking.</h2>
       <div class="dev-faq">
         <details><summary>Is a template approved by Meta needed?</summary><p>No: the customer writes first, and your app answers within the 24-hour window their message opens.</p></details>
         <details><summary>Can the same slot be booked twice?</summary><p>Your calendar decides: it books only a slot still free and offered to this customer, since two customers can pick the same, otherwise it offers other slots and a link to book. The same event received twice books once.</p></details>

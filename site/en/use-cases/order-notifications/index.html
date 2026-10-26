@@ -307,14 +307,14 @@
   </section>
   <section class="f-bloc f-film" id="film">
     <div class="cadre">
-      <h2 class="f-titre">The shipment, the tracking, the read receipt: 30 seconds.</h2>
+      <h2 class="f-titre">The film: a WhatsApp order notification, in 30 seconds.</h2>
       <p class="f-texte">From the request in Claude Code to the order marked read, on a real WhatsApp conversation.</p>
       <video class="f-video" src="/films/cas-notifications-en.mp4?v=1" poster="/films/cas-notifications-en.webp?v=1" data-vertical="/films/cas-notifications-en-9x16.mp4?v=1" data-affiche-verticale="/films/cas-notifications-en-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="Film: order notifications with Messaging Me"></video>
     </div>
   </section>
   <section class="f-bloc cas-schema">
     <div class="cadre">
-      <h2 class="f-titre">How it flows.</h2>
+      <h2 class="f-titre">How the order notification goes out.</h2>
       <figure class="dessin"><svg class="dessin-h" viewBox="0 0 1160 320" role="img" aria-labelledby="schema-titre"><title id="schema-titre">The shipping message, its read receipt, and the customer’s reply</title><defs><marker id="pt-h" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud d-app" x="10" y="110" width="200" height="100" rx="14"/><text class="d-t" x="110" y="154" text-anchor="middle">Your shop</text><text class="d-s" x="110" y="178" text-anchor="middle">order shipped</text><path class="d-fl" d="M210 160H368" marker-end="url(#pt-h)"/><text class="d-api" x="289" y="148" text-anchor="middle">POST /v1/sends</text><rect class="d-noeud" x="376" y="110" width="280" height="100" rx="14"/><text class="d-t" x="516" y="154" text-anchor="middle">The customer on WhatsApp</text><text class="d-s" x="516" y="178" text-anchor="middle">tracking, one button</text><path class="d-fl" d="M656 160H700Q720 160 720 140V80Q720 60 740 60H872" marker-end="url(#pt-h)"/><text class="d-etiq" x="806" y="32" text-anchor="middle">Delivered, then read</text><text class="d-api" x="806" y="52" text-anchor="middle">message.read</text><path class="d-fl" d="M656 160H700Q720 160 720 180V240Q720 260 740 260H872" marker-end="url(#pt-h)"/><text class="d-etiq" x="806" y="288" text-anchor="middle">They reply</text><rect class="d-noeud d-app" x="880" y="10" width="270" height="100" rx="14"/><text class="d-t" x="1015" y="54" text-anchor="middle">Order marked Read</text><text class="d-s" x="1015" y="78" text-anchor="middle">in your admin</text><rect class="d-noeud d-app" x="880" y="210" width="270" height="100" rx="14"/><text class="d-t" x="1015" y="254" text-anchor="middle">The AI agent answers</text><text class="d-s" x="1015" y="278" text-anchor="middle">your delivery policy</text></svg><svg class="dessin-v" viewBox="0 0 360 586" aria-hidden="true"><defs><marker id="pt-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="d-pointe" d="M0 0L10 5L0 10z"/></marker></defs><rect class="d-noeud d-app" x="50" y="8" width="260" height="80" rx="14"/><text class="d-t" x="180" y="42" text-anchor="middle">Your shop</text><text class="d-s" x="180" y="66" text-anchor="middle">order shipped</text><path class="d-fl" d="M180 88V150" marker-end="url(#pt-v)"/><text class="d-api" x="190" y="124">POST /v1/sends</text><rect class="d-noeud" x="30" y="158" width="300" height="80" rx="14"/><text class="d-t" x="180" y="192" text-anchor="middle">The customer on WhatsApp</text><text class="d-s" x="180" y="216" text-anchor="middle">tracking, one button</text><path class="d-fl" d="M60 238V366Q60 380 74 380H88" marker-end="url(#pt-v)"/><text class="d-etiq" x="96" y="296" text-anchor="start">Delivered, then read</text><text class="d-api" x="96" y="316" text-anchor="start">message.read</text><rect class="d-noeud d-app" x="96" y="336" width="256" height="88" rx="14"/><text class="d-t" x="224" y="374" text-anchor="middle">Order marked Read</text><text class="d-s" x="224" y="398" text-anchor="middle">in your admin</text><path class="d-fl" d="M60 238V518Q60 532 74 532H88" marker-end="url(#pt-v)"/><text class="d-etiq" x="96" y="452" text-anchor="start">They reply</text><rect class="d-noeud d-app" x="96" y="488" width="256" height="88" rx="14"/><text class="d-t" x="224" y="526" text-anchor="middle">The AI agent answers</text><text class="d-s" x="224" y="550" text-anchor="middle">your delivery policy</text></svg><figcaption class="masque">Your shop sends the shipping message with POST /v1/sends. The message.delivered then message.read receipts come back to your route, which marks the order read; if the customer replies, the AI agent takes the conversation.</figcaption></figure>
     </div>
   </section>
@@ -367,7 +367,7 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
   </section>
   <section class="f-bloc cas-paie">
     <div class="cadre">
-      <h2 class="f-titre">What you pay.</h2>
+      <h2 class="f-titre">What a WhatsApp order notification costs.</h2>
       <ul class="tarif-liste cas-liste">
         <li><strong>The Free plan is enough to start:</strong> <span data-offre="base.envois-modeles-mois">1,000</span> messages sent a month and <span data-offre="base.contacts">100</span> contacts (those who write to you count too), the API and the MCP server included; beyond that, Pro.</li>
         <li><strong>The AI agent</strong> is paid from the prepaid AI credit, per answer; €1 is offered when your first number is connected.</li>
@@ -377,7 +377,7 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
   </section>
   <section class="f-bloc cas-faq" id="faq">
     <div class="cadre">
-      <h2 class="f-titre">Frequently asked questions.</h2>
+      <h2 class="f-titre">Frequently asked questions about order notifications.</h2>
       <div class="dev-faq">
         <details><summary>Must the customer have agreed to receive messages?</summary><p>Meta asks that the person agreed to be contacted on WhatsApp, for example by ticking it at checkout. A customer who replies STOP receives nothing more.</p></details>
         <details><summary>What if the customer turned off read receipts?</summary><p>WhatsApp then never sends the read receipt: the order stays “Delivered” in your admin.</p></details>
