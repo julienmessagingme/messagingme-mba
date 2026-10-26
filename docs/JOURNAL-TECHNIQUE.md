@@ -4,6 +4,30 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 (soir) : le bastion SSH de la passerelle restreint au poste de Julien
+
+Le bastion de `mm-passerelle`, seule porte vers le réseau privé, était ouvert à toutes les adresses depuis la bascule
+(clés du projet seules). Décidé par Julien : sa liste ne porte plus que son poste, et chaque déploiement GitHub y
+ouvre l'adresse de son exécuteur le temps de tourner (`90584f48` ici, `3863172` dans mm-hubspot, `DEPLOY.md`).
+
+- **La relecture du lot** : un rouge. L'adresse n'était retenue qu'APRÈS l'ajout : un ajout pris chez Scaleway mais vu
+  en échec (délai dépassé, 502) aurait laissé l'adresse ouverte, la fermeture sautée, sans que le journal le dise.
+  Corrigé (retenue avant l'ajout, 404 au retrait = « déjà absente »), avec la plupart des jaunes : champ de la liste
+  vérifié, relecture après l'ajout, repli d'ipify, journal public qui n'imprime jamais la passerelle, retrait
+  réessayé, tests qui exécutent les programmes `jq` en CI.
+- **Le premier essai a échoué proprement, en 403** : le droit `VPCGatewayFullAccess` n'était pas sur `github-deploy`.
+  L'étape s'est arrêtée avant tout ajout, la liste n'a pas bougé. La variable a été retirée côté Messaging Me le temps
+  de corriger, pour ne bloquer aucun déploiement voisin. ⚠️ À la correction, la console a fait passer la portée de la
+  règle de « Messaging Me App » à « All Projects » : ramenée au projet seul.
+- **Le second essai, liste encore ouverte, a mesuré l'API** : l'adresse du runner entre dans `bastion_allowed_ips`
+  telle qu'envoyée (`x.x.x.x/32`), la passerelle passe en `configuring` environ 5 secondes, le SSH passe au premier
+  essai, le retrait par `%2F` passe du premier coup.
+- **La restriction** (Julien, console) : Scaleway propose de retirer `0.0.0.0/0` dans le même geste que l'ajout, sans
+  passer par une liste vide. Depuis le poste, la bannière SSH répond ; depuis le VPS, le délai expire (paquets jetés).
+- **Le déploiement de preuve du connecteur, liste fermée** : adresse ajoutée à côté de celle de Julien, déploiement
+  vert, adresse retirée, connecteur en 200 ; la variable devient obligatoire dans les deux workflows.
+- **Reste** : lire le premier déploiement de Messaging Me liste fermée (`todo.md`).
+
 ## 2026-10-26 : Cloudflare Pro sur `api.` et `mm-hubspot.`, posé et prouvé le soir de la bascule
 
 Souscrit et posé par Julien dans le tableau de bord, pas à pas ; préparé, puis mesuré à chaque étape par Claude. La

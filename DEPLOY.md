@@ -656,13 +656,16 @@ run `waiting` se règle d'abord, et Julien reçoit les deux liens.
   a répondu rupture de stock à Paris : c'est ce qui a envoyé la cible à Amsterdam. L'onglet Quotas de l'Organization
   Dashboard les montre (décocher « Show used quotas only », sinon la liste est vide).
 - 🔴 **LE BASTION N'EST OUVERT QU'AUX ADRESSES DE SA LISTE** (décision de Julien du 2026-10-26) : le poste de Julien
-  en permanence, et l'exécuteur GitHub le temps d'un déploiement. ⚠️ La liste porte encore `0.0.0.0/0` tant que le
-  déploiement d'essai n'a pas prouvé l'ouverture et la fermeture (`todo.md`, entrée Cloudflare Pro, point 5). Les deux workflows (celui-ci et celui du
-  connecteur) ajoutent l'adresse de leur exécuteur avant le premier SSH et la retirent à la fin, même sur un échec ou
-  une annulation (étapes « Ouvrir le bastion » et « Refermer le bastion »), sans jamais remplacer la liste : un PUT
-  effacerait l'adresse permanente. Sans `SCALEWAY_GATEWAY_ID`, ils n'y touchent pas. Les clés SSH du projet restent
-  exigées en plus. Trois gestes, dans la console Scaleway (Public Gateways, `mm-passerelle`, SSH bastion) ou par
-  l'API (`/vpc-gw/v2/zones/nl-ams-2/gateways/<id>/bastion-allowed-ips`) :
+  en permanence, et l'exécuteur GitHub le temps d'un déploiement. En place depuis le 2026-10-26 au soir, prouvé par un
+  déploiement du connecteur liste fermée. Les deux workflows (celui-ci et celui du connecteur) ajoutent l'adresse de
+  leur exécuteur avant le premier SSH et la retirent à la fin, même sur un échec ou une annulation (étapes « Ouvrir le
+  bastion » et « Refermer le bastion »), sans jamais remplacer la liste : un PUT effacerait l'adresse permanente.
+  `SCALEWAY_GATEWAY_ID` est exigée. Les clés SSH du projet restent exigées en plus. Mesuré : une adresse hors liste
+  n'obtient même pas de connexion (le délai expire, les paquets sont jetés) ; un ajout ou un retrait passe la
+  passerelle en `configuring` environ 5 secondes ; l'adresse est stockée telle qu'envoyée (`x.x.x.x/32`), et le
+  retrait prend la barre encodée (`%2F`). Trois gestes, dans la console Scaleway (Network, Public Gateways, zone
+  AMS 2, `mm-passerelle`, section SSH bastion, « Allowed IPs ») ou par l'API
+  (`/vpc-gw/v2/zones/nl-ams-2/gateways/<id>/bastion-allowed-ips`) :
   - **l'adresse du poste a changé** (le bastion refuse depuis chez Julien) : y ajouter la nouvelle, retirer l'ancienne.
     La production n'en souffre pas, et les déploiements GitHub continuent ;
   - **« Refermer le bastion » a échoué** (l'erreur du journal nomme l'adresse) : retirer cette adresse à la main ;

@@ -201,8 +201,9 @@ describe('le workflow de déploiement Scaleway', () => {
     expect(code.match(/-X DELETE/g)?.length).toBe(1);
     const ouvrir = etape('Ouvrir le bastion a l\'adresse de ce runner');
     expect(ouvrir).toMatch(/^ {8}id: bastion$/m);
-    // La voie inerte : sans la variable, rien n'est appelé.
-    expect(ouvrir).toContain('if [ -z "$PASSERELLE" ]; then echo "SCALEWAY_GATEWAY_ID absente');
+    // La liste est restreinte depuis le 2026-10-26 : la passerelle est EXIGÉE, un oubli se dit avant tout envoi.
+    expect(etape('La configuration est-elle complete ?')).toMatch(/for v in [^;]*\bPASSERELLE\b[^;]*; do/);
+    expect(ouvrir).not.toContain('SCALEWAY_GATEWAY_ID absente');
     // 🔴 `ajoutee` s'écrit AVANT l'ajout (relecture du 2026-10-26) : un ajout pris chez Scaleway mais vu en échec ici
     // (délai dépassé, 502) laisserait sinon l'adresse ouverte, la fermeture sautée. L'ajout ne se rejoue pas, et se
     // RELIT ensuite.

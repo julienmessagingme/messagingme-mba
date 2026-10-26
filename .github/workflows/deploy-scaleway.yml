@@ -30,7 +30,8 @@ name: Deploiement Scaleway (API et workers)
 # 🔴 LE BASTION N'EST OUVERT QU'AUX ADRESSES DE SA LISTE (decision de Julien du 2026-10-26) : le poste de Julien en
 # permanence, l'adresse de CE runner le temps du deploiement. Le workflow ajoute la sienne avant le premier SSH et la
 # retire a la fin, meme sur un echec ou une annulation. Il ne REMPLACE jamais la liste (un PUT effacerait l'adresse
-# permanente) et ne retire que ce qu'il a lui-meme ajoute. Sans la variable `SCALEWAY_GATEWAY_ID`, il n'y touche pas.
+# permanente) et ne retire que ce qu'il a lui-meme ajoute. La variable `SCALEWAY_GATEWAY_ID` est exigee : la liste
+# est restreinte depuis le 2026-10-26, et sans elle le bastion refuserait le runner.
 on:
   workflow_dispatch:
     inputs:
@@ -135,7 +136,7 @@ jobs:
           CONNUS: ${{ vars.SCALEWAY_KNOWN_HOSTS }}
         run: |
           manque=""
-          for v in CLE_SCW CLE_SSH CONNUS CONTENEUR BASTION WORKERS SHA; do [ -n "${!v}" ] || manque="$manque $v"; done
+          for v in CLE_SCW CLE_SSH CONNUS CONTENEUR BASTION WORKERS PASSERELLE SHA; do [ -n "${!v}" ] || manque="$manque $v"; done
           if [ -n "$manque" ]; then echo "::error::configuration incomplete :$manque (DEPLOY.md, section Scaleway)"; exit 1; fi
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -158,7 +159,6 @@ jobs:
         env:
           CLE_SCW: ${{ secrets.SCW_SECRET_KEY }}
         run: |
-          if [ -z "$PASSERELLE" ]; then echo "SCALEWAY_GATEWAY_ID absente : la liste du bastion n'est pas geree ici"; exit 0; fi
           ip=$(curl -fsS --retry 2 --connect-timeout 10 --max-time 20 https://api.ipify.org \
             || curl -fsS --retry 2 --connect-timeout 10 --max-time 20 https://checkip.amazonaws.com)
           ip=$(tr -d '[:space:]' <<< "$ip")
