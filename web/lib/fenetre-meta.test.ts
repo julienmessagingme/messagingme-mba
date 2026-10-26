@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { COEXISTENCE_BOUTON, COEXISTENCE_PHRASES, optionsFenetreMeta } from './fenetre-meta';
+import { PREREQUIS_META } from './partage/etapes-meta';
 import { LocaleFixe } from './i18n';
 import { ParcoursNumero } from '@/components/ParcoursNumero';
 import type { ApiConnexionNumero } from './api/connexion-numero';
@@ -42,14 +43,20 @@ describe('le parcours en coexistence', () => {
     for (const p of COEXISTENCE_PHRASES) expect(carte).toContain(p.fr);
     expect(html).not.toContain('data-testid="choix-fourni"');
     expect(html).not.toContain('data-testid="choix-apporte-ouvert"');
-    // Le prérequis d'un numéro hors de l'application contredirait ce choix : il n'est pas dit.
-    expect(html).not.toContain('Un numéro qui ne sert pas dans l’application WhatsApp');
+    // Le prérequis du numéro n'est pas dit : le numéro de l'application est déjà choisi.
+    expect(html).not.toContain(PREREQUIS_META[2]!.fr);
   });
 
   it('les mêmes, en anglais', () => {
     const html = rendre('en');
     expect(html).toContain(COEXISTENCE_BOUTON.en);
     for (const p of COEXISTENCE_PHRASES) expect(html).toContain(p.en.replace(/'/g, '&#x27;'));
+  });
+
+  it('🔴 le troisième prérequis de Meta cite ce bouton sous son nom exact', () => {
+    // Il se lit partout (console, Claude, FAQ, vitrine, fiche) : renommer le bouton sans lui ferait citer un bouton absent.
+    expect(PREREQUIS_META[2]!.fr).toContain(`« ${COEXISTENCE_BOUTON.fr} »`);
+    expect(PREREQUIS_META[2]!.en).toContain(`“${COEXISTENCE_BOUTON.en}”`);
   });
 
   it('🔴 les textes exacts du plan : rien de « gratuit » pour ce qui part par Messaging Me', () => {

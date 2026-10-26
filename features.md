@@ -2102,7 +2102,8 @@ scénario, comment importer des contacts.
   « Connecter WhatsApp », un encadré « Avant de commencer, chez Meta » donne les trois conditions : un compte Meta
   Business (le portefeuille d'entreprise, où l'on entre par un profil Facebook ou un compte Meta géré), rien à préparer
   pour le créer (la fenêtre de Meta le fait créer en chemin, mesuré à l'essai 161, ou on le crée avant, pas à pas, sur
-  business.facebook.com), et un numéro qui ne sert pas dans l'application WhatsApp. Claude Code dit
+  business.facebook.com), et un numéro : un numéro libre, qui ne sert pas dans l'application WhatsApp, ou celui de
+  l'application WhatsApp Business, qui y reste (« Garder mon application WhatsApp Business »). Claude Code dit
   la même chose avant de donner le lien de connexion, sans poser de question, et la vitrine le rappelle dans ses étapes
   et sa FAQ.
 - ✅ **La carte chez Meta, juste après la connexion.** Dans notre montage, Meta facture le client directement : sans

@@ -94,8 +94,8 @@ export const PAGES_CLAUDE: readonly PageClaude[] = [
         dire: { fr: 'Connecte mon numéro WhatsApp.', en: 'Connect my WhatsApp number.' },
         outils: ['get_setup_state'],
         reponse: {
-          fr: 'Claude rappelle ce que Meta exige (un portefeuille d’entreprise) et demande quel numéro utiliser : un numéro que nous fournissons, ou le vôtre, à condition qu’il ne serve pas dans l’application WhatsApp.',
-          en: 'Claude recalls what Meta requires (a business portfolio) and asks which number to use: a number we provide, or yours, as long as it is not used in the WhatsApp app.',
+          fr: 'Claude rappelle ce que Meta exige (un portefeuille d’entreprise) et demande quel numéro utiliser : un numéro que nous fournissons, le vôtre s’il ne sert pas dans l’application WhatsApp, ou celui de votre application WhatsApp Business, qui y reste.',
+          en: 'Claude recalls what Meta requires (a business portfolio) and asks which number to use: a number we provide, yours if it is not used in the WhatsApp app, or the number of your WhatsApp Business app, which stays in it.',
         },
       },
       {

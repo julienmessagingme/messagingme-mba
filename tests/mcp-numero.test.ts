@@ -7,6 +7,7 @@ import { RefusOutil } from '../src/mcp/saisie';
 import type { Issue } from '../src/lib/issue';
 import { signLienNumero, verifyLienNumero, DUREE_LIEN_NUMERO_MS } from '../src/auth/token';
 import { empreinteEtat, type EtatConnexion } from '../src/otp/etat-connexion';
+import { PREREQUIS_META } from '../web/lib/partage/etapes-meta';
 
 /**
  * LES OUTILS DE LA CONNEXION DU NUMÉRO (lot 3c, livraison A, tâche 4). `start_whatsapp_connection` donne le lien qui
@@ -349,8 +350,8 @@ describe('start_whatsapp_connection en coexistence', () => {
       + 'Messaging Me sont des modèles facturés par Meta. Pas encore de compte Meta Business ? La fenêtre le crée en chemin, avec un '
       + 'profil Facebook ; avant le premier modèle, Meta demandera un moyen de paiement sur le compte WhatsApp.');
     expect(consigne).toMatch(/watch_whatsapp_connection avec mode égal à « coexistence »/);
-    // Le prérequis d'un numéro hors de l'application contredirait ce mode : il n'est pas dit.
-    expect(consigne).not.toContain('Un numéro qui ne sert pas dans l’application WhatsApp');
+    // Le prérequis du numéro n'est pas dit : le numéro de l'application est déjà choisi.
+    expect(consigne).not.toContain(PREREQUIS_META[2]!.fr);
   });
 
   it('🔴 refusé avec la filière application : la coexistence est l’API officielle', async () => {

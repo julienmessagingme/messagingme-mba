@@ -32,10 +32,12 @@ export const PREREQUIS_META: ReadonlyArray<{ fr: string; en: string }> = [
       + 'business portfolio.',
   },
   {
-    fr: 'Un numéro qui ne sert pas dans l’application WhatsApp (ni WhatsApp Business) : une fois relié, il la quitte. '
-      + 'Pas de numéro libre ? Nous vous en fournissons un.',
-    en: 'A number that is not used in the WhatsApp app (nor WhatsApp Business): once connected, it leaves the app. No '
-      + 'spare number? We provide one.',
+    // Le numéro de l'application WhatsApp Business peut y rester (la coexistence de Meta, en production depuis le
+    // 2026-10-25) : c'est le bouton de la page, `COEXISTENCE_BOUTON` (`web/lib/fenetre-meta.ts`), dont le nom est cité.
+    fr: 'Un numéro libre, qui ne sert pas dans l’application WhatsApp, ou celui de votre application WhatsApp Business, '
+      + 'qui y reste avec « Garder mon application WhatsApp Business ». Pas de numéro libre ? Nous vous en fournissons un.',
+    en: 'A spare number, not used in the WhatsApp app, or the number of your WhatsApp Business app, which stays in it '
+      + 'with “Keep my WhatsApp Business app”. No spare number? We provide one.',
   },
 ];
 

@@ -384,9 +384,19 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   (écran 9). Refaire la capture de l'étape 9 si l'écran change (recette :
   `docs/prive/captures-coexistence-2026-10-25/captures-guide.cjs`), et des captures anglaises si le parcours est refait
   en anglais (la page anglaise reprend les françaises).
-- **« Ce qu'il faut chez Meta », point 3 (`PREREQUIS_META`), contredit « garder l'application »** : il dit qu'un numéro
-  relié quitte l'application WhatsApp Business, deux pages avant le guide qui la garde. À aligner avec l'arbre sans QR
-  code (la console, Claude, la fiche et le guide Meta des pages développeurs le lisent).
+- **Le troisième prérequis de Meta, selon le mode** (relecture du 2026-10-26, à prendre par le lot de l'arbre du numéro
+  sans QR code, plan `2026-10-26-numero-sans-qr-code.md`) : la phrase choisie par Julien cite « Garder mon application
+  WhatsApp Business ». (1) En `apporte`, la page `/brancher` ouverte par le lien de Claude n'a ni « Retour » ni ce
+  bouton, et Claude la dit avant le lien : n'y garder que le numéro libre, avec l'avertissement que la fenêtre ordinaire
+  le fait quitter l'application et que Meta le refuse tant qu'il y est. (2) En `fourni`, la console la montre encore
+  (`ParcoursNumero.tsx`), Claude non : `slice(0, 2)`, comme Claude. (3) Les commentaires de `ParcoursNumero.tsx` et de
+  `outils-numero.ts` qui la cachent en coexistence parce qu'elle « la contredirait » : la raison est désormais que le
+  numéro est déjà choisi.
+- **Une capture et un film montrent encore les anciens prérequis** : l'étape 2 de « Connecter mon numéro WhatsApp »
+  (`site/img/aide/connecter-mon-numero-whatsapp/etape-2.webp` et `-en`, les anciens points 2 et 3, deux choix sans
+  « Garder ») et l'affiche du film `claude-numero` (FR et EN, aussi `og:image` de la page développeurs « Connecter son
+  numéro »). La capture se refait par `npm run aide:captures`, le film dans `~/engageme-motion` ; un fichier remplacé
+  sous le même nom prend un `?v=` incrémenté dans chaque page qui le cite.
 - **La carte Codex de `/integrations/`** mène aux pages développeurs, qui n'expliquent pas encore Codex (essai 121 pas
   fait ; Julien garde la carte telle quelle en attendant, 2026-10-24).
 - **Remplacer un numéro relié par QR code par un numéro fourni** : `relierApplication` et `preparer` refusent un espace
