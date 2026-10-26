@@ -6,6 +6,7 @@ source_empreinte: b8364c
 publique: oui
 rubrique: demarrer
 rang: 3
+offre: non
 comment_faire: oui
 prerequis: ce-qu-il-faut-chez-meta
 video: oui

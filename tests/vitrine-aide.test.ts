@@ -245,7 +245,8 @@ describe('le centre d’aide de la vitrine', () => {
       expect(html.includes('class="aide-offre"'), p.cle).toBe(p.publication.offre);
     }
     expect(centre.filter((p) => !p.publication.offre).map((p) => p.cle).sort())
-      .toEqual(['ce-qu-il-faut-chez-meta', 'choisir-mon-offre', 'garder-mon-application-whatsapp-business', 'la-fenetre-de-24-heures']);
+      .toEqual(['ce-qu-il-faut-chez-meta', 'choisir-mon-offre', 'connecter-mon-numero-whatsapp',
+        'garder-mon-application-whatsapp-business', 'la-fenetre-de-24-heures']);
   });
 
   it('le plan du site et llms.txt citent chaque page, et sont à jour', () => {

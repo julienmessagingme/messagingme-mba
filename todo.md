@@ -350,8 +350,9 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
 - **« Ce qu'il faut chez Meta », point 3 (`PREREQUIS_META`), contredit « garder l'application »** : il dit qu'un numéro
   relié quitte l'application WhatsApp Business, deux pages avant le guide qui la garde. À aligner avec l'arbre sans QR
   code (la console, Claude, la fiche et le guide Meta des pages développeurs le lisent).
-- **« Connecter mon numéro WhatsApp » affiche « Avec l'offre Pro »**, alors que la Free ouvre l'Accueil et la fenêtre de
-  Meta (`MODULES_OUVERTS_AU_FREE`) : `offre: non` dans sa fiche, et la liste des pages sans offre des deux tests.
+- **« Connecter mon numéro WhatsApp », étape 4** : « Quatre chiffres sur 30 jours » sont des statistiques que l'Accueil
+  d'une Free ne lit pas (la page ne porte plus « Avec l'offre Pro » depuis le 2026-10-26, la Free y connecte son
+  numéro) : dire que ces chiffres viennent avec le Pro, puis retraduire la fiche anglaise.
 - **La carte Codex de `/integrations/`** mène aux pages développeurs, qui n'expliquent pas encore Codex (essai 121 pas
   fait ; Julien garde la carte telle quelle en attendant, 2026-10-24).
 - **Remplacer un numéro relié par QR code par un numéro fourni** : `relierApplication` et `preparer` refusent un espace
