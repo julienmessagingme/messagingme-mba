@@ -1,0 +1,30 @@
+# .gitleaksignore — empreintes de findings VÉRIFIÉS comme faux positifs.
+#
+# Audit sécurité du 2026-10-26 : 19 findings gitleaks, aucun vrai secret.
+#  - 16 generic-api-key : fixtures de test et exemples de doc/code (dont un
+#    secret webhook d'EXEMPLE whsec_... répété à l'identique dans la doc publique).
+#  - 3 private-key : descriptions de champ et « example: » OpenAPI (PEM) dans la
+#    doc de référence Meta Business Agent, pas de vraies clés.
+#
+# Format d'une empreinte : <commit>:<fichier>:<règle>:<ligne>. Chaque ligne ne tait
+# QUE ce finding précis à ce commit ; un vrai secret ajouté ailleurs reste détecté.
+
+d0e8a9c2453a96c04e23c0d96a94d0197867e998:tests/garde-banc.test.ts:generic-api-key:50
+d0e8a9c2453a96c04e23c0d96a94d0197867e998:tests/garde-banc.test.ts:generic-api-key:56
+d0e8a9c2453a96c04e23c0d96a94d0197867e998:tests/deploy-scaleway.test.ts:generic-api-key:339
+f24d6a0a7dd3b6dc98b3c13c5063d54daec8eeb4:scripts/vitrine/cas.ts:generic-api-key:84
+ef0347be3e7a41a574273eebcf1bfc561111a0f0:tests/deploy-scaleway.test.ts:generic-api-key:339
+57764621f1d1db2d978fe354b3ad09069b94d078:tests/garde-banc.test.ts:generic-api-key:50
+157bd3c2ec32105ad8aae0be1fb40f4f4d1e7613:tests/garde-banc.test.ts:generic-api-key:38
+6f55cccb87fd69a709bd3763a34a9185a55c30b8:web/public/developers/api/webhook-endpoints.md:generic-api-key:119
+6f55cccb87fd69a709bd3763a34a9185a55c30b8:web/public/developers/api/webhook-endpoints.en.md:generic-api-key:119
+6f55cccb87fd69a709bd3763a34a9185a55c30b8:web/public/llms-full.en.txt:generic-api-key:2107
+6f55cccb87fd69a709bd3763a34a9185a55c30b8:web/public/llms-full.txt:generic-api-key:2107
+dfc7832a28a77a055e7fa731bc4c4c4a49a76130:tests/sdk-webhook.test.ts:generic-api-key:78
+f7a75586d896aa327d1dd5e15e42ba234c9359d2:web/lib/api-exemples.ts:generic-api-key:374
+b8908c57ae0bb58c9b18fdccfaa3f896b90472a7:tests/evenements-signature.test.ts:generic-api-key:15
+b8908c57ae0bb58c9b18fdccfaa3f896b90472a7:tests/evenements-envoi.test.ts:generic-api-key:82
+b8908c57ae0bb58c9b18fdccfaa3f896b90472a7:web/e2e/webhooks-sortants.spec.ts:generic-api-key:10
+ce074b8c4329123286436fc69e809951ea9a1f40:mba documentation/agent knowledge connectors.md:private-key:785
+ce074b8c4329123286436fc69e809951ea9a1f40:mba documentation/meta-business-agent_reference_configure_connectors_v2.0.0.openapi.yaml:private-key:1317
+4ea91aaf09b30dc2b1634f11b293ddb0ad0e2b7d:docs/MBA-API-REFERENCE.md:private-key:2113
