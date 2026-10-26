@@ -4,6 +4,31 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 (nuit) : audit sécurité de la prod, durcissement de la vitrine, HSTS activé
+
+Première passe de sécurité sur la prod depuis la bascule Scaleway, à la demande de Julien.
+
+- **Passe passive** (sondes `curl` en-têtes / TLS / CORS / 401, lecture seule) sur api., console. et la
+  vitrine : la surface d'autorisation répond comme attendu (401 sans session, CORS en liste blanche sans
+  `credentials`, en-têtes de sécu de l'API conformes à `src/http/entetes-securite.ts`). Deux manques,
+  `Strict-Transport-Security` absent sur `api.messagingme.app` (pourtant annoncé « posé par Cloudflare »
+  dans `documentation.md`), et la vitrine `app.messagingme.fr` sans aucun en-tête de durcissement.
+- **Durcissement de la vitrine** (commit `3e45fc89`) : `X-Frame-Options: DENY`, `X-Content-Type-Options:
+  nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` ajoutés dans `site/vercel.json` (bloc
+  `headers`, source `/(.*)`). Vérifié en prod après déploiement Vercel (en-têtes servis, console du
+  navigateur sans erreur). Rien n'iframe la vitrine, types servis tous standard.
+- **Passe active** (`scripts/auto-attaque.mts --cible=https://api.messagingme.app`, JWT d'un compte de
+  TEST, espace démo) : **830 sondes, 0 faille réelle**. Les 6 « trouvailles » sont le même groupe de routes
+  `/tenants/:tenantId/integrations/salesforce*` en 404, car le module Salesforce n'est monté que si la clé
+  d'app est posée sur l'instance, ce qui n'est pas le cas en prod (voulu, déjà dans `todo.md` ; 404 Fastify
+  avant toute garde, aucune fuite). Effets de bord attendus et annoncés, alerte Telegram `/ops` (sonde 5),
+  budget des clés inconnues entamé une minute (sondes 13 / 13 bis). La passe est SÉQUENTIELLE (concurrence
+  1), elle n'a pas saturé le pool (la saturation de 22:48 venait d'un essai de médiathèque froide concurrent).
+- **HSTS activé** (Julien, dashboard Cloudflare, zone `messagingme.app`, SSL/TLS > Edge Certificates) :
+  `max-age` 6 mois, sans `includeSubDomains` ni `preload`. Vérifié : `Strict-Transport-Security:
+  max-age=15552000` sur api., le reste des en-têtes et les routes gardées inchangés. `includeSubDomains` et
+  `preload` laissés pour plus tard (preload étant quasi irréversible).
+
 ## 2026-10-26 (soir) : le bastion SSH de la passerelle restreint au poste de Julien
 
 Le bastion de `mm-passerelle`, seule porte vers le réseau privé, était ouvert à toutes les adresses depuis la bascule

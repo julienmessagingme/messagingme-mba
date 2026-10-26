@@ -3242,9 +3242,9 @@ qui peut poster un faux rapport déclarant une page de la console, donc une tabl
 ⚠️ **`Referrer-Policy: no-referrer` sur l'API ferme une fuite RÉELLE**, la seule de cette liste :
 `/r/<code>/<jeton>` identifie un destinataire, et un référent le livrerait au site de destination.
 
-⚠️ **HSTS n'est posé NULLE PART par nous** : Cloudflare le pose devant l'API, Vercel devant la console
-(mesuré). Le reposer créerait une seconde source pour une valeur unique, et c'est le plus court des deux
-`max-age` qui gagnerait sans qu'on le sache.
+⚠️ **HSTS n'est pas posé par le code** : Cloudflare le pose devant l'API (`max-age` 6 mois, sans
+`includeSubDomains` ni `preload`), Vercel devant la console. Le reposer dans le code créerait une seconde
+source pour une valeur unique, et c'est le plus court des deux `max-age` qui gagnerait sans qu'on le sache.
 
 🔴 **LE CONTENEUR TOURNE EN `node` (uid 1000), PAS EN ROOT** (2026-09-10). Ce qui le rend tenable est
 vérifié et non supposé : l'application n'écrit RIEN sur disque à l'exécution et le compose ne monte aucun
