@@ -2,7 +2,7 @@
  * L'INTERRUPTEUR HUBSPOT DE L'ESPACE, vu de la console (migration 0179, design validé par Julien le 2026-09-25).
  *
  * Les décisions d'affichage vivent ici, en fonctions pures, pour être testées sans navigateur. L'Accueil et
- * la carte de Paramètres > Intégrations les appellent ; aucun des deux ne refait le calcul à sa façon.
+ * la carte de Tools > Intégrations les appellent ; aucun des deux ne refait le calcul à sa façon.
  */
 
 /**
@@ -28,7 +28,7 @@ export type AffichageHubspotAccueil = 'bloc' | 'renvoi' | 'rien';
  * - interrupteur éteint MAIS portail relié : le bloc quand même. L'état est atteignable (on éteint pendant que
  *   la connexion ouverte dans un autre onglet aboutit), et cacher le bloc cacherait la seule porte de sortie,
  *   la « Déconnexion complète » ;
- * - éteint, sans portail : une ligne discrète renvoie vers Paramètres > Intégrations, où il s'allume.
+ * - éteint, sans portail : une ligne discrète renvoie vers Tools > Intégrations, où il s'allume.
  */
 export function affichageHubspotAccueil(p: { actif: boolean | undefined; aUnNumero: boolean; portailRelie: boolean }): AffichageHubspotAccueil {
   if (p.actif === undefined) return p.aUnNumero ? 'bloc' : 'rien';

@@ -11,11 +11,11 @@ import { HorsOffre } from '@/components/HorsOffre';
 import { useFermeture } from '@/lib/use-offre';
 
 /**
- * PARAMÈTRES > INTÉGRATIONS > BATCH (lot 6 de l'API publique, spec 2026-09-24, § 8) : les clés de l'outil qui
+ * TOOLS > INTÉGRATIONS > BATCH (lot 6 de l'API publique, spec 2026-09-24, § 8) : les clés de l'outil qui
  * reçoit les signaux. Réservé aux admins, comme tout l'écran où il vit, et comme ses routes (`g.admin`).
  *
  * ⚠️ C'EST LE SEUL ÉCRAN QUI NOMME L'OUTIL. La documentation, le journal des erreurs et le dictionnaire des
- * signaux parlent de « l'outil branché dans Paramètres > Intégrations » (demande de Julien du 2026-09-24).
+ * signaux parlent de « l'outil branché dans Tools > Intégrations » (demande de Julien du 2026-09-24).
  *
  * 🔴 LES CLÉS NE REVIENNENT JAMAIS À L'ÉCRAN : le serveur ne les rend pas, et celles qu'on vient de saisir sont
  * effacées des champs dès l'enregistrement. Un champ vide veut dire « garder celle qui est enregistrée ».

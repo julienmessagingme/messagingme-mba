@@ -32,6 +32,10 @@
   posée). Le compléter demande `npm run doc:md` et la suite web entière.
 - **Tests à ajouter** : la console puis le webhook rejoué donnent le même état ; le câblage `abonnement: … resume` dans
   `tests/offres-cablage.test.ts`.
+- **La formule affiche le prix de la grille, pas celui de l'abonné** (relecture du lot B) : juste tant que le tarif ne bouge
+  pas ; un abonné d'avant un changement de tarif lirait le nouveau prix. Le lire sur l'abonnement Stripe le jour où le tarif
+  change.
+- **Les onglets de l'Offre apparaissent une fois la vue lue** : un petit saut de mise en page au chargement.
 
 ## 🟡 Les types de réponse recopiés à la main côté console (audit simplicité, 2026-10-25)
 

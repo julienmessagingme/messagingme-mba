@@ -52,19 +52,23 @@ test.describe('Barre : où sont rangées les entrées', () => {
     expect(new URL(page.url()).pathname).toBe('/agents');
   });
 
-  test('🔴 « Paramètres » est un groupe du bloc bas : Général et Crédit IA', async ({ page }) => {
+  // Le Crédit IA est un onglet de l'Offre depuis le 2026-10-26 : il quitte la barre, l'Offre l'ouvre.
+  test('🔴 « Paramètres » est un groupe du bloc bas : Général, Médiathèque et Offre, dont l’onglet Crédit IA', async ({ page }) => {
     await mock(page);
-    await page.goto('/parametres/credit');
+    await page.goto('/offre?tab=credit');
     const blocBas = page.getByTestId('nav-bas');
     await expect(blocBas.getByRole('link', { name: 'Général', exact: true })).toHaveAttribute('href', '/parametres');
-    await expect(blocBas.getByRole('link', { name: 'Crédit IA', exact: true })).toHaveAttribute('href', '/parametres/credit');
+    await expect(blocBas.getByRole('link', { name: 'Offre', exact: true })).toHaveAttribute('href', '/offre');
+    await expect(blocBas.getByRole('link', { name: 'Crédit IA', exact: true })).toHaveCount(0);
     await expect(page.getByTestId('credit-solde')).toContainText('4');
   });
 
   test('les anciennes adresses mènent aux nouvelles : /agents/credit, /mba et /dashboard/erreurs', async ({ page }) => {
     await mock(page);
     await page.goto('/agents/credit');
-    await expect(page).toHaveURL(/\/parametres\/credit$/);
+    await expect(page).toHaveURL(/\/offre\?tab=credit$/);
+    await page.goto('/parametres/credit');
+    await expect(page).toHaveURL(/\/offre\?tab=credit$/);
     await page.goto('/mba');
     await expect(page).toHaveURL(/\/mba\/parametres$/);
     await page.goto('/dashboard/erreurs');

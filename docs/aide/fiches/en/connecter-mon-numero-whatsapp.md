@@ -1,6 +1,6 @@
 ---
 slug: connect-my-whatsapp-number
-traduit_de: 2fc91f
+traduit_de: d5336b
 ---
 # Connect my WhatsApp number, and read its status
 
@@ -53,7 +53,7 @@ exactly those of the Performance Lab, and a dash replaces the cost when Meta giv
 
 **Good to know.** For your workspace’s first number, €1 of AI credit is offered as soon as Meta has verified it, only
 once: at connection if it already is, otherwise when you activate it with the verification code. It pays for your AI
-agents, and for translation and transcription in the Inbox (see Settings > AI credit).
+agents, and for translation and transcription in the Inbox (see the AI credit tab of Settings > Plan).
 
 **One workspace runs one number.** Connecting a second one is refused, telling you which one is already there and
 what to do: create a second workspace, or detach this one. Accepting both would mix up the conversations of the same

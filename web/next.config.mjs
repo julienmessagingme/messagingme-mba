@@ -98,11 +98,15 @@ const nextConfig = {
    * 2026-09-21-outils-maison-mba, § 9.5). `/agents/credit` : le crédit IA paie les agents ET la traduction, c'est un
    * réglage de l'espace (2026-09-29). `/mba` : le guide qui vivait là est retiré (2026-09-29), le menu mène droit aux
    * paramètres. `/dashboard/erreurs` : le journal des erreurs a rejoint le centre de Sécurité (2026-09-17).
+   * `/parametres/credit` : le crédit IA est l'onglet « Crédit IA » de la page Offre (2026-10-26). 🔴 C'est l'adresse où Stripe
+   * ramène après une recharge (`pageCredit`, `src/index.ts`) et celle des e-mails « crédit épuisé » : sa requête
+   * (`?paiement=recu`) passe avec elle, Next la joint à celle de la destination.
    */
   async redirects() {
     return [
       { source: '/outils', destination: '/mba/parametres?tab=outils', permanent: false },
-      { source: '/agents/credit', destination: '/parametres/credit', permanent: false },
+      { source: '/agents/credit', destination: '/offre?tab=credit', permanent: false },
+      { source: '/parametres/credit', destination: '/offre?tab=credit', permanent: false },
       { source: '/mba', destination: '/mba/parametres', permanent: false },
       { source: '/dashboard/erreurs', destination: '/securite/erreurs', permanent: false },
     ];

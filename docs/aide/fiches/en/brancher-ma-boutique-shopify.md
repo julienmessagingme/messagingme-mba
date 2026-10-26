@@ -1,6 +1,6 @@
 ---
 slug: connect-my-shopify-store
-traduit_de: e3b0b5
+traduit_de: 15dd61
 bouton_claude: Connect Shopify from Claude Code, for free
 bouton_console: Connect Shopify in the console
 ---
@@ -25,7 +25,7 @@ go through the same management.
 
 Without Claude Code, the Shopify card of the console guides you from start to finish, in seven steps.
 
-**1. Open the Shopify card.** In Settings > General, scroll down to the integrations: the Shopify card says what it
+**1. Open the Shopify card.** In the Tools > Integrations menu, the Shopify card says what it
 does and guides you in two steps, the first at Shopify, the second in the console.
 
 It only shows to the workspace’s administrators.

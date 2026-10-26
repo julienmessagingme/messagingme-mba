@@ -11,7 +11,7 @@ import { etatCarteSalesforce, phraseEtatOrg, type IntegrationSalesforceVue } fro
 import { useFermeture } from '@/lib/use-offre';
 
 /**
- * PARAMÈTRES > INTÉGRATIONS > SALESFORCE : l'interrupteur de l'espace et l'état de l'org (plan 2026-09-26, lot L1).
+ * TOOLS > INTÉGRATIONS > SALESFORCE : l'interrupteur de l'espace et l'état de l'org (plan 2026-09-26, lot L1).
  * La connexion elle-même vit sur sa propre page (`/parametres/salesforce`), qui accueillera aussi les réglages.
  *
  * 🔴 UNE INTÉGRATION NEUVE NE S'AFFICHE PAS AVANT SON API. Vercel publie la console au push, l'API attend son

@@ -89,13 +89,13 @@ export function lignePublicites(etat: { configure?: unknown; connexion?: unknown
 
 /**
  * HUBSPOT : l'interrupteur de l'espace (migration 0179). 🔴 L'extinction est REFUSÉE tant qu'un portail est
- * relié, comme dans Paramètres > Intégrations et comme le serveur (409) : l'interrupteur est alors grisé, et
+ * relié, comme dans Tools > Intégrations et comme le serveur (409) : l'interrupteur est alors grisé, et
  * l'écran dit de faire d'abord la « Déconnexion complète ». Réglage inconnu (API plus ancienne) : pas
  * d'interrupteur.
  */
 export function ligneHubspot(p: { actif: boolean | undefined; portailRelie: boolean | undefined }): Ligne {
   // Lot 1bis : un portail relié, c'est HubSpot allumé, quel que soit l'ancien interrupteur d'affichage (une connexion
-  // faite depuis Paramètres > Intégrations ne le pose pas). Pas d'interrupteur : on le délie par la déconnexion complète.
+  // faite depuis Tools > Intégrations ne le pose pas). Pas d'interrupteur : on le délie par la déconnexion complète.
   if (p.portailRelie === true) return { allume: true, geste: null };
   if (p.actif === undefined) return SANS_INTERRUPTEUR;
   if (!p.actif) return { allume: false, geste: 'allumer_hubspot' };

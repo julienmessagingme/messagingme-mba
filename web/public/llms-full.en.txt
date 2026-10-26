@@ -3699,9 +3699,9 @@ Their reply opens a conversation. The AI agent that answers for the workspace (`
 
 ## What the console sends back
 
-When something happens on a contact, the console pushes an event, with the contact’s current state, to the tool your administrator connected in Settings > Integrations.
+When something happens on a contact, the console pushes an event, with the contact’s current state, to the tool your administrator connected in Tools > Integrations.
 
-- Only the tools offered in Settings > Integrations receive them: this is not a webhook to an address of your choice.
+- Only the tools offered in Tools > Integrations receive them: this is not a webhook to an address of your choice.
 - Names start with `em_`, and do not change from one tool to another, nor do the field names. A text is at most 300 characters long; a missing or empty value is not sent.
 - The profile is designated by your own id, `externalId`: a contact without one is not sent back (the settings screen counts those signals). Pass it on every call: contact, send, message.
 - The same event can arrive twice: deduplicate on `em_event_id`, which is stable.

@@ -104,13 +104,13 @@ describe('le rangement du 2026-09-29', () => {
     ]);
   });
 
-  // L'Offre (lot 6, 2026-10-07) s'y ajoute après le Crédit IA : c'est aussi un réglage de l'ESPACE.
-  it('🔴 « Paramètres » est un GROUPE du bloc bas : Général, Crédit IA, Médiathèque et Offre', () => {
+  // L'Offre (lot 6, 2026-10-07) s'y ajoute : c'est aussi un réglage de l'ESPACE. Le Crédit IA en est un onglet depuis le
+  // 2026-10-26 (`/offre?tab=credit`), et quitte la barre.
+  it('🔴 « Paramètres » est un GROUPE du bloc bas : Général, Médiathèque et Offre', () => {
     const groupe = arbresNav(t).adminBas.find((e) => e.label === 'Paramètres');
     expect(groupe?.href).toBeUndefined();
     expect((groupe?.children ?? []).map(feuille)).toEqual([
       { key: 'parametres', href: '/parametres', label: 'Général', enfants: 0 },
-      { key: 'parametres-credit', href: '/parametres/credit', label: 'Crédit IA', enfants: 0 },
       { key: 'parametres-medias', href: '/parametres/medias', label: 'Médiathèque', enfants: 0 },
       { key: 'offre', href: '/offre', label: 'Offre', enfants: 0 },
     ]);
@@ -122,6 +122,13 @@ describe('le rangement du 2026-09-29', () => {
     const tous = hrefs([...haut, ...adminBas, ...perf, ...inbox]);
     expect(tous).not.toContain('/mba');
     expect(tous).not.toContain('/agents/credit');
+    expect(tous).not.toContain('/parametres/credit');
+  });
+
+  it('🔴 « Intégrations » ouvre Tools (2026-10-26) : Batch, HubSpot, Salesforce et Shopify y vivent, réservées aux admins', () => {
+    const tools = arbresNav(t).console.find((e) => e.key === 'tools');
+    expect(tools?.children?.[0]).toEqual({ key: 'integrations', href: '/integrations', label: 'Intégrations' });
+    for (const role of ['manager', 'agent']) expect(accesAutorise('integrations', role)).toBe(false);
   });
 
   it('un manager garde le groupe Paramètres avec sa SEULE page, sans le Crédit IA ni l’Offre', () => {

@@ -10,7 +10,7 @@ import { espaceVerifie } from './scope';
 
 /**
  * LE CHOIX DES FONCTIONS HUBSPOT (lot 1bis de la reprise humaine, cadrage validé par Julien le 2026-10-23) : le client
- * branche ce qui lui plaît entre Messaging Me et HubSpot, depuis Paramètres > Intégrations > HubSpot.
+ * branche ce qui lui plaît entre Messaging Me et HubSpot, depuis Tools > Intégrations > HubSpot.
  */
 export interface HubspotChoixRouteDeps {
   /** Écrit le choix en une transaction et dit si c'est la première validation (`PgTenantSettingsStore`). */

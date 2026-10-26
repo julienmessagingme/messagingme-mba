@@ -14,7 +14,7 @@ import { ShopifyAssistant } from '@/components/ShopifyAssistant';
 import { ShopifyImport } from '@/components/ShopifyImport';
 
 /**
- * PARAMÈTRES > INTÉGRATIONS > SHOPIFY : brancher la boutique, régler ses trois messages, importer ses clients abonnés,
+ * TOOLS > INTÉGRATIONS > SHOPIFY : brancher la boutique, régler ses trois messages, importer ses clients abonnés,
  * couper (conception 2026-10-22, maquette validée par Julien). Sans boutique, le mode opératoire chez Shopify puis les
  * clés (`ShopifyBrancher`) ; avec, chaque message et son assistant (`ShopifyAssistant`). Claude Code fait la même
  * chose par la skill `shopify` du plugin : les deux passent par la même gestion côté serveur.

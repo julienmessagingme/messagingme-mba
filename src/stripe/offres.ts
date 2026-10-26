@@ -6,8 +6,8 @@
  * accorde, après l'avoir recoupé avec ce que Stripe dit avoir encaissé (`htCentimes`).
  *
  * HT (décision de Julien du 2026-09-28) : 50 € payés hors taxe donnent 50 € de crédit, la TVA s'ajoute au paiement.
- * Les recharges de 5 et 10 € (2026-10-22) ne sont proposées que par Claude (`buy_credit`) : l'écran Crédit IA de la
- * console garde 50 et 100 € (`web/app/parametres/credit/page.tsx`).
+ * Les recharges de 5 et 10 € (2026-10-22) sont proposées par Claude (`buy_credit`), et par l'onglet Crédit IA de la
+ * console depuis le 2026-10-26 (`web/components/OngletCreditIA.tsx`), avec 50 et 100 €.
  * Le crédit se DÉRIVE du prix hors taxe, il ne se recopie pas : deux nombres écrits séparément finiraient par
  * diverger, et le webhook refuserait alors tous les paiements de l'offre.
  */

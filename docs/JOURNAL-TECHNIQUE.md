@@ -4,6 +4,35 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : Tools > Intégrations, l'offre en deux onglets, et le Pro dit en clair (résilié et facturé dans la console)
+
+Demande de Julien du 2026-10-26, cadrée le même jour (plan `docs/superpowers/plans/2026-10-26-offre-credit-integrations.md`) :
+les factures se LISTENT dans la console, la résiliation s'y FAIT, la Free n'a pas l'onglet Crédit IA. Deux lots, aucune
+migration, travaillés dans une copie à part (l'arbre partagé avait 121 commits de retard et le travail d'une autre session).
+
+- **Lot A, l'API (b8fe1e25, déployé)** : la vue de l'offre porte `abonnement` (statut calculé une fois par `statutDuPro`,
+  souscription, renouvellement, fin prévue, essai, fin effective) ; `POST /offre/resiliation` pose ou retire
+  `cancel_at_period_end`, une clé d'idempotence par demande, la fin relue par `finPrevueDe`, le calcul désormais partagé
+  avec les deux branches du webhook ; `GET /offre/factures` liste les 24 dernières factures de l'espace. Relu à froid :
+  aucun rouge. Cinq jaunes corrigés avant le push : une fin DATÉE n'est plus retirée par un second appel (`cancel_at` vide
+  proratisait), un échec d'écriture après Stripe ne rend plus d'erreur, une échéance passée ou en retard n'est plus
+  annoncée, les factures quittent le plafond coûteux (celui des campagnes), le refus « aucun Pro » est neutre. Les quatre
+  autres sont dans `todo.md`. Vérifié en production par `get_plan` (le champ y est).
+- **Lot B, la console** : **Tools > Intégrations** (`/integrations`) porte Batch, HubSpot, Salesforce et Shopify, partis
+  de Paramètres > Général ; une ancienne ancre `/parametres#integration-…` y renvoie (le fragment n'atteint pas le
+  serveur : le renvoi est dans la page), et les e-mails Shopify pointent la carte (`pageParametres`, API et worker).
+  **Offre a deux onglets** (`/offre?tab=credit`) ; `/parametres/credit`, l'adresse du retour de Stripe et des e-mails de
+  crédit, redirige en gardant `?paiement=` (`web/next.config.mjs`). Quatre recharges, 5, 10, 50 et 100 € HT. La carte
+  « Votre abonnement » et « Vos factures » ; sans le champ (API plus ancienne), l'ancien bloc du portail reste.
+  « Paramètres > Intégrations » se dit « Tools > Intégrations » partout (textes affichés, doc des signaux, fiches).
+  Relu à froid : aucun rouge. Corrigés avant le push : la vue relue (et attendue) après un retrait de siège ou le choix
+  de rendre le numéro, sinon la carte et la section des utilisateurs se contredisaient ; une relecture en échec n'écrase
+  plus une vue valide ; le bouton « Ouvrir ma console » de la page Shopify vise la carte ; des textes et commentaires qui
+  disaient encore 50 et 100 € ; une garde e2e devenue aveugle. Deux jaunes au backlog.
+- **Les fiches d'aide** : neuf relues (cinq publiques retraduites, leurs pages régénérées), treize empreintes posées ; les
+  captures de « Choisir mon offre » (une quatrième étape, les factures), « Me repérer dans la console » et « Brancher ma
+  boutique Shopify » refaites.
+
 
 ## 2026-10-26 : l'envoi d'un opérateur dans un fil et la recharge Stripe sortent des routes (lot C de l'audit de structure)
 

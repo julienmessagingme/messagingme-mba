@@ -111,7 +111,7 @@ function AccueilInner({ session }: { session: Session }) {
   const [catchupNotice, setCatchupNotice] = useState(false);
   const [hubspotListsEnabled, setHubspotListsEnabled] = useState(false);
   /**
-   * L'interrupteur HubSpot de l'espace (Paramètres > Intégrations, migration 0179). `undefined` = pas lu, ou
+   * L'interrupteur HubSpot de l'espace (Tools > Intégrations, migration 0179). `undefined` = pas lu, ou
    * API plus ancienne : le bloc garde alors le comportement d'avant (`affichageHubspotAccueil`).
    */
   const [hubspotActif, setHubspotActif] = useState<boolean | undefined>(undefined);
@@ -378,7 +378,7 @@ function AccueilInner({ session }: { session: Session }) {
   }
 
 
-  // Ouvre le lien d'install/re-consentement HubSpot : le MÊME geste que la carte de Paramètres > Intégrations.
+  // Ouvre le lien d'install/re-consentement HubSpot : le MÊME geste que la carte de Tools > Intégrations.
   const { ouvrir: openHubspotInstall, enCours: installPending } = useInstallationHubspot(session.tenantId, isAdmin);
 
   /**
@@ -857,7 +857,7 @@ function AccueilInner({ session }: { session: Session }) {
                     </Modale>
                   )}
 
-                  {/* « Campagnes via données HubSpot » : un ÉTAT ici, le réglage vit dans Paramètres > Intégrations >
+                  {/* « Campagnes via données HubSpot » : un ÉTAT ici, le réglage vit dans Tools > Intégrations >
                       HubSpot avec les autres choix (lot 1bis), pour qu'un seul endroit l'écrive. */}
                   <div className="mt-3 border-t border-ink-50 pt-3">
                     <div className="flex items-center justify-between gap-3">
@@ -870,7 +870,7 @@ function AccueilInner({ session }: { session: Session }) {
                         </p>
                       </div>
                       {isAdmin && (
-                        <Link href="/parametres#integration-hubspot" className="shrink-0 text-sm text-brand-600 hover:underline">
+                        <Link href="/integrations#integration-hubspot" className="shrink-0 text-sm text-brand-600 hover:underline">
                           {t('Régler ce qui est branché', 'Choose what is connected')}
                         </Link>
                       )}
@@ -912,8 +912,8 @@ function AccueilInner({ session }: { session: Session }) {
           {consoleOuverte && !accountLoading && !accountError && affichageHubspot === 'renvoi' && (
             <p data-testid="hubspot-renvoi" className="text-xs text-ink-500 lg:col-span-2">
               {t('HubSpot est éteint pour cet espace.', 'HubSpot is off for this workspace.')}{' '}
-              <Link href="/parametres#integration-hubspot" data-testid="hubspot-renvoi-lien" className="text-brand-600 hover:underline">
-                {t('L’allumer dans Paramètres > Intégrations', 'Turn it on in Settings > Integrations')}
+              <Link href="/integrations#integration-hubspot" data-testid="hubspot-renvoi-lien" className="text-brand-600 hover:underline">
+                {t('L’allumer dans Tools > Intégrations', 'Turn it on in Tools > Integrations')}
               </Link>
             </p>
           )}

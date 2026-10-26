@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: b9cf29
+source_empreinte: b8364c
 ---
 # L'abonnement du numéro fourni : coupure, réabonnement, restitution
 

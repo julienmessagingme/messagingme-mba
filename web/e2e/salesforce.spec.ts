@@ -1,7 +1,7 @@
 import { test, expect, type Page } from './aide/test';
 
 /**
- * L'APP SALESFORCE, vue de l'écran (plan 2026-09-26, lot L1) : la carte de Paramètres > Intégrations, la page de
+ * L'APP SALESFORCE, vue de l'écran (plan 2026-09-26, lot L1) : la carte de Tools > Intégrations, la page de
  * connexion et le guide public. Le serveur tient ses frontières de son côté (`tests/http-salesforce.test.ts`) ;
  * ici, on regarde ce que l'écran MONTRE et ce qu'il ENVOIE, contre une API simulée.
  */
@@ -55,11 +55,11 @@ async function monter(page: Page, o: {
     if (chemin.endsWith('/me')) return json({ email: 'moi@e2e.test', name: 'Moi', role: o.role ?? 'admin' });
     return json({});
   });
-  await page.goto(o.chemin ?? '/parametres');
+  await page.goto(o.chemin ?? '/integrations');
   return trace;
 }
 
-test.describe('Paramètres > Intégrations > Salesforce : la carte', () => {
+test.describe('Tools > Intégrations > Salesforce : la carte', () => {
   test('🔴 éteint : on l’allume, l’écran envoie `actif: true`, puis mène à la page de connexion et au guide', async ({ page }) => {
     const trace = await monter(page, {});
     const bouton = page.getByTestId('integration-salesforce-toggle');
@@ -87,7 +87,7 @@ test.describe('Paramètres > Intégrations > Salesforce : la carte', () => {
   });
 });
 
-test.describe('Paramètres > Intégrations > Salesforce : la page de connexion', () => {
+test.describe('Tools > Intégrations > Salesforce : la page de connexion', () => {
   test('les liens d’installation viennent du serveur', async ({ page }) => {
     await monter(page, { vue: { ...VUE, actif: true }, chemin: '/parametres/salesforce' });
     await expect(page.getByTestId('salesforce-installation').getByRole('link', { name: 'Installer en production' }))
@@ -122,9 +122,10 @@ test.describe('Paramètres > Intégrations > Salesforce : la page de connexion',
     await expect(page.getByTestId('salesforce-deconnecter')).toBeVisible();
   });
 
-  test('🔴 un manager ne voit pas la page : elle le dit elle-même (AppShell le laisse entrer sous Paramètres)', async ({ page }) => {
+  // La page vit sous Tools > Intégrations depuis le 2026-10-26, un écran d'admin : la coquille renvoie le manager.
+  test('🔴 un manager n’entre pas : la coquille le renvoie à l’Inbox, sans rien de la connexion', async ({ page }) => {
     await monter(page, { role: 'manager', vue: { ...VUE, actif: true }, chemin: '/parametres/salesforce' });
-    await expect(page.getByTestId('salesforce-reserve')).toBeVisible();
+    await expect(page).toHaveURL(/\/inbox/);
     await expect(page.getByTestId('salesforce-connexion')).toHaveCount(0);
   });
 });

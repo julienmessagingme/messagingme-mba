@@ -707,7 +707,7 @@ export interface TenantSettings {
    */
   hubspotPortalConnecte?: boolean;
   /**
-   * L'INTERRUPTEUR HUBSPOT DE L'ESPACE (migration 0179, Paramètres > Intégrations). Allumé, le bloc HubSpot
+   * L'INTERRUPTEUR HUBSPOT DE L'ESPACE (migration 0179, Tools > Intégrations). Allumé, le bloc HubSpot
    * s'affiche sur l'Accueil, numéro ou pas.
    *
    * ⚠️ OPTIONNEL À LA LECTURE, pour la même raison que son voisin : une API antérieure ne le rend pas, et

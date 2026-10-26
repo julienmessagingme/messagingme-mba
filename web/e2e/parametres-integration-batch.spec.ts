@@ -41,11 +41,11 @@ async function monter(page: Page, initial: Record<string, unknown>, lectureEnPan
     if (chemin.endsWith('/me')) return json({ email: 'moi@e2e.test', name: 'Moi', role: 'admin' });
     return json({});
   });
-  await page.goto('/parametres');
+  await page.goto('/integrations');
   return trace;
 }
 
-test.describe('Paramètres > Intégrations > Batch', () => {
+test.describe('Tools > Intégrations > Batch', () => {
   test('🔴 non branché : il faut les DEUX clés, et le résumé part décoché', async ({ page }) => {
     const trace = await monter(page, { branche: false });
     const bouton = page.getByTestId('integration-batch-enregistrer');
@@ -89,7 +89,8 @@ test.describe('Paramètres > Intégrations > Batch', () => {
   test('🔴 une réponse sans `branche` se lit « non branché », sans faire tomber la page', async ({ page }) => {
     await monter(page, {});
     await expect(page.getByTestId('integration-batch-etat')).toContainText(/Non branché|Not connected/);
-    await expect(page.getByTestId('param-timezone')).toBeVisible();
+    // La page est toujours là : les autres cartes de Tools > Intégrations aussi.
+    await expect(page.getByTestId('integration-hubspot')).toBeVisible();
   });
 
   test('🔴 une lecture en ÉCHEC ne dit pas « non branché », et rien ne s’enregistre sur un état non lu', async ({ page }) => {

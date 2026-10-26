@@ -392,6 +392,9 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
     // appartient. Les serveurs MCP y sont depuis le 2026-09-17, à côté des connecteurs API : même place,
     // même raison, et la même bibliothèque d'outils derrière.
     { key: 'tools', label: t('Tools', 'Tools'), icone: icons.tools, children: [
+      // Les outils du client que la console alimente (Batch, HubSpot, Salesforce, Shopify), venus de Paramètres > Général le
+      // 2026-10-26 (demande de Julien). En tête : c'est l'entrée qui parle à un métier, les autres à un intégrateur.
+      { key: 'integrations', href: '/integrations', label: t('Intégrations', 'Integrations') },
       { key: 'webhooks', href: '/webhooks', label: t('Webhooks', 'Webhooks') },
       { key: 'connecteurs', href: '/connecteurs', label: t('Connecteurs API', 'API connectors') },
       // 🔴 « OUTILS » N'EST PLUS ICI (demande de Julien, 2026-09-18). Il y était depuis 0127, quand une
@@ -426,15 +429,17 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
      * PARAMÈTRES DEVIENT UN GROUPE le 2026-09-29 (décision de Julien) : « Général », la page d'aujourd'hui, et
      * « Crédit IA », venu de « Other AI agent ». Le crédit paie les agents ET la traduction de l'Inbox : c'est un
      * réglage de l'espace.
+     * 🔴 LE CRÉDIT IA EST UN ONGLET DE L'OFFRE DEPUIS LE 2026-10-26 (demande de Julien) : `/offre?tab=credit`, et
+     * `/parametres/credit` y redirige. Les intégrations sont parties le même jour dans Tools.
      * ⚠️ `parametres` reste la clé de la page GÉNÉRALE (ouverte aux managers, `ECRANS_ENCADREMENT`) ; le groupe a
-     * la sienne. Le Crédit IA reste admin : un manager voit le groupe avec la seule page qu'il peut ouvrir.
+     * la sienne. L'Offre reste admin : un manager voit le groupe avec la seule page qu'il peut ouvrir.
      */
     { key: 'parametres-groupe', label: t('Paramètres', 'Settings'), icone: icons.settings, children: [
       { key: 'parametres', href: '/parametres', label: t('Général', 'General') },
-      { key: 'parametres-credit', href: '/parametres/credit', label: t('Crédit IA', 'AI credit') },
       // Les fichiers que les messages envoient (spec médias du 2026-10-14) : la jauge du quota, la liste, la suppression.
       { key: 'parametres-medias', href: '/parametres/medias', label: t('Médiathèque', 'Media library'), fonction: 'scenarios' },
-      // L'offre de l'espace (lot 6) : la grille, ce qui est consommé, et « Passer en Pro ».
+      // L'offre de l'espace (lot 6) : l'abonnement, la grille, ce qui est consommé, « Passer en Pro », les factures ; et
+      // l'onglet Crédit IA.
       { key: 'offre', href: '/offre', label: t('Offre', 'Plan') },
     ] },
     { key: 'support', href: '/support', label: t('Support', 'Support'), icone: icons.support },

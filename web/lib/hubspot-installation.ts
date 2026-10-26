@@ -10,7 +10,7 @@ import { useT } from '@/lib/i18n';
  * Le lien est demandé au backend (route admin-only), qui y met un jeton SIGNÉ : le tenant n'est plus passé en
  * clair dans l'URL (elle était forgeable). On ouvre ensuite l'URL renvoyée.
  *
- * ⚠️ UN SEUL EXEMPLAIRE, partagé par l'Accueil et Paramètres > Intégrations (2026-09-25) : il vivait dans la
+ * ⚠️ UN SEUL EXEMPLAIRE, partagé par l'Accueil et Tools > Intégrations (2026-09-25) : il vivait dans la
  * page d'Accueil, et la carte de l'interrupteur HubSpot en avait besoin. Deux copies du même geste finiraient
  * par ouvrir deux liens différents.
  */

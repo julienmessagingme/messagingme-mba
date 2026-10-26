@@ -14,10 +14,10 @@ import { connecter, deconnecter, lireIntegration } from '@/lib/api-salesforce';
 import { lienEtape, lireRefusConnexion, phraseEtatOrg, type IntegrationSalesforceVue, type ManqueSalesforce } from '@/lib/salesforce';
 
 /**
- * PARAMÈTRES > INTÉGRATIONS > SALESFORCE : installer le package, relier l'org, la délier (plan 2026-09-26, lot L1).
+ * TOOLS > INTÉGRATIONS > SALESFORCE : installer le package, relier l'org, la délier (plan 2026-09-26, lot L1).
  *
- * 🔴 RÉSERVÉ AUX ADMINS, ET C'EST LA PAGE QUI LE TIENT : `AppShell` laisse entrer les managers sous la clé
- * `parametres` (ils y ont la prise des conversations). Les routes sont de toute façon sous `g.admin`.
+ * 🔴 RÉSERVÉ AUX ADMINS : sous la clé `integrations` (2026-10-26), la coquille renvoie un manager à l'Inbox ; la page
+ * garde sa propre réserve (`PageReservee`) au cas où. Les routes sont de toute façon sous `g.admin`.
  *
  * 🔴 LES LIENS D'INSTALLATION VIENNENT DU SERVEUR (la version publiée du package), jamais recomposés ici.
  *
@@ -27,7 +27,7 @@ import { lienEtape, lireRefusConnexion, phraseEtatOrg, type IntegrationSalesforc
 export default function SalesforcePage() {
   return (
     // La connexion Salesforce est un connecteur CRM (lot 6) : la coquille montre l'offre à sa place quand elle ne l'ouvre pas.
-    <AppShell active="parametres" fonction="crm">
+    <AppShell active="integrations" fonction="crm">
       {(session) => (session.role === 'admin'
         ? <ConnexionSalesforce tenantId={session.tenantId} />
         : <PageReservee />)}
@@ -115,7 +115,7 @@ function ConnexionSalesforce({ tenantId }: { tenantId: string }) {
   return (
     <div className="mx-auto max-w-formulaire space-y-6">
       <header className="space-y-1">
-        <Link href="/parametres#integration-salesforce" className={kicker}>{t('Paramètres', 'Settings')}</Link>
+        <Link href="/integrations#integration-salesforce" className={kicker}>{t('Intégrations', 'Integrations')}</Link>
         <TitrePage>Salesforce</TitrePage>
         <IntroPage>
           {t('Reliez votre org Salesforce : l’analyse de chaque conversation remonte sur vos Leads et Contacts.', 'Connect your Salesforce org: each conversation’s analysis flows to your Leads and Contacts.')}{' '}

@@ -2,7 +2,7 @@
  * L'APP SALESFORCE, vue de la console (plan 2026-09-26, lot L1).
  *
  * Les décisions d'affichage vivent ici, en fonctions pures, pour être testées sans navigateur. La carte de
- * Paramètres > Intégrations et la page de connexion les appellent ; aucune ne refait le calcul à sa façon.
+ * Tools > Intégrations et la page de connexion les appellent ; aucune ne refait le calcul à sa façon.
  */
 
 import { ETAPES_GUIDE, type EtapeGuide } from './partage/salesforce';
@@ -64,7 +64,7 @@ export function lireIntegrationSalesforce(corps: unknown): IntegrationSalesforce
 }
 
 /**
- * Ce que la carte de Paramètres > Intégrations permet.
+ * Ce que la carte de Tools > Intégrations permet.
  *
  * 🔴 L'EXTINCTION EST BLOQUÉE TANT QU'UNE ORG EST RELIÉE, quel que soit son état (le serveur rend 409) : l'écran le
  * dit AVANT le clic. Allumer n'est jamais bloqué. La page de connexion n'est proposée qu'allumé.

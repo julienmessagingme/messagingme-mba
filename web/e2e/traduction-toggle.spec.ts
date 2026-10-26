@@ -227,7 +227,7 @@ test.describe('Inbox : traduire les messages reçus', () => {
     await expect(page.getByTestId('traduction-indisponible')).toHaveAttribute('data-cause', 'credit');
     // 🔴 ET IL MÈNE QUELQUE PART (décision de Julien du 2026-09-29) : la page Crédit, sous Paramètres.
     await expect(page.getByTestId('traduction-recharger')).toBeVisible();
-    await expect(page.getByTestId('traduction-recharger')).toHaveAttribute('href', '/parametres/credit');
+    await expect(page.getByTestId('traduction-recharger')).toHaveAttribute('href', '/offre?tab=credit');
     // L'INTERRUPTEUR RESTE VISIBLE : le cacher laisserait croire à une panne de l'écran lui-même.
     await expect(interrupteur).toBeVisible();
     await expect(page.getByTestId('fil-messages')).toContainText('Hola, tengo un problema');
@@ -287,7 +287,7 @@ test.describe('Inbox : traduire les messages reçus', () => {
     const bandeau = page.getByTestId('traduction-indisponible');
     await expect(bandeau).toHaveAttribute('data-cause', 'credit_insuffisant');
     await expect(bandeau).toHaveText(/trop bas/i);
-    await expect(page.getByTestId('traduction-recharger')).toHaveAttribute('href', '/parametres/credit');
+    await expect(page.getByTestId('traduction-recharger')).toHaveAttribute('href', '/offre?tab=credit');
   });
 
   test('🔴 la clé qui s’ouvre (première traduction d’un espace) : prête, le fil ENTIER revient traduit, sans rouvrir', async ({ page }) => {

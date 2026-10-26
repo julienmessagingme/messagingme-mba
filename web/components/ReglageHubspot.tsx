@@ -12,7 +12,7 @@ import { useOffre } from '@/lib/use-offre';
 import { etapeHubspot, fermeeParLOffre, phraseDeLOffre, choixParDefaut, choixActuel, corpsDuChoix } from '@/lib/hubspot-choix';
 
 /**
- * PARAMÈTRES > INTÉGRATIONS > HUBSPOT : le client choisit ce qu'il branche entre Messaging Me et HubSpot (lot 1bis de
+ * TOOLS > INTÉGRATIONS > HUBSPOT : le client choisit ce qu'il branche entre Messaging Me et HubSpot (lot 1bis de
  * la reprise humaine, cadrage validé par Julien le 2026-10-23). Remplace l'interrupteur `hubspot_actif` de 0179, qui
  * ne gouvernait que l'affichage (décision 4) : l'Accueil montre le bloc HubSpot dès qu'un portail est relié.
  *

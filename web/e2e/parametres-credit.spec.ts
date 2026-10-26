@@ -1,7 +1,9 @@
 import { test, expect, type Page } from './aide/test';
 
 /**
- * LA PAGE CRÉDIT IA : recharger par Stripe, revenir, et lire ce qui a fait bouger le solde.
+ * L'ONGLET CRÉDIT IA DE LA PAGE OFFRE (une page à part jusqu'au 2026-10-26, dont l'adresse `/parametres/credit` y redirige :
+ * ces cas l'ouvrent par elle, retour de Stripe compris, ce qui prouve la redirection et sa requête) : recharger par Stripe,
+ * revenir, et lire ce qui a fait bouger le solde.
  *
  * 🔴 CE QUE SEUL UN TEST DE BOUT EN BOUT VOIT ICI. La route de paiement et le webhook sont tenus par leurs tests
  * serveur. Ce qui reste est à l'écran : que le clic parte bien vers la page de Stripe, que le RETOUR ne se prenne
@@ -71,13 +73,16 @@ async function monter(page: Page, o: Options = {}) {
   return { demandes, factures, lectures: () => lectures };
 }
 
-test.describe('Paramètres > Crédit IA', () => {
-  test('🔴 deux boutons HT ; un clic ouvre la page de paiement de Stripe pour CETTE offre', async ({ page }) => {
+test.describe('Paramètres > Offre > Crédit IA', () => {
+  test('🔴 quatre boutons HT, de 5 à 100 € ; un clic ouvre la page de paiement de Stripe pour CETTE offre', async ({ page }) => {
     const m = await monter(page);
     await page.goto('/parametres/credit');
+    await expect(page).toHaveURL(/tab=credit/);
+    await expect(page.getByTestId('mba-tab-credit')).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByTestId('credit-solde')).toContainText('4.2');
-    await expect(page.getByTestId('credit-offre-refill_50')).toHaveText(/Recharger 50 € HT/);
-    await expect(page.getByTestId('credit-offre-refill_100')).toHaveText(/Recharger 100 € HT/);
+    for (const euros of [5, 10, 50, 100]) {
+      await expect(page.getByTestId(`credit-offre-refill_${euros}`)).toHaveText(new RegExp(`Recharger ${euros} € HT`));
+    }
 
     await page.getByTestId('credit-offre-refill_100').click();
     await expect(page).toHaveURL(PAGE_STRIPE);

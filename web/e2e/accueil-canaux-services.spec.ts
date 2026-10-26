@@ -58,13 +58,13 @@ test.describe('Accueil : Canaux et services', () => {
     }
     await expect(page.getByTestId('canal-chaine-lien')).toHaveAttribute('href', '/chaine');
     await expect(page.getByTestId('canal-publicites-lien')).toHaveAttribute('href', '/publicites');
-    await expect(page.getByTestId('canal-hubspot-lien')).toHaveAttribute('href', '/parametres#integration-hubspot');
+    await expect(page.getByTestId('canal-hubspot-lien')).toHaveAttribute('href', '/integrations#integration-hubspot');
     // « Voir le numéro » et « Voir le canal » sont partis (2026-09-25) : le détail est juste en dessous.
     await expect(page.getByTestId('canal-numero-lien')).toHaveCount(0);
     await expect(page.getByTestId('canal-rcs-lien')).toHaveCount(0);
     await expect(page.getByText('Voir le numéro', { exact: true })).toHaveCount(0);
     await expect(page.getByText('Voir le canal', { exact: true })).toHaveCount(0);
-    await expect(page.getByTestId('canal-autres-lien')).toHaveAttribute('href', '/parametres');
+    await expect(page.getByTestId('canal-autres-lien')).toHaveAttribute('href', '/integrations');
     await expect(page.getByTestId('canal-autres-lien')).toHaveText('Autres intégrations');
     // 🔴 « Couper le canal RCS » est DEVENU l'interrupteur : la carte ne le porte plus.
     await expect(page.getByTestId('rcs-channel-card')).toBeVisible();

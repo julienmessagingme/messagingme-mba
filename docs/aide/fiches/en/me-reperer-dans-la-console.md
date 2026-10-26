@@ -1,6 +1,6 @@
 ---
 slug: find-your-way-around-the-console
-traduit_de: d31d58
+traduit_de: d2824f
 ---
 # Find your way around the console
 
@@ -13,9 +13,10 @@ your agents, your content and your tools.
 Its menu: Home, mini-CRM, Campaigns, Channel, Ads, Automation, AI Agent (MBA, which opens the settings of Meta’s
 agent; Other AI agent, which opens your AI agents), Content (organised by channel: WhatsApp with Templates and Forms,
 RCS with Messages, Email with Templates, then Scenario and the Library with your blocks, your tags and your fields)
-and Tools (Webhooks, API connectors, MCP connectors, SMTP email for the mailbox that sends your emails, WhatsApp
-widget). Pinned to the bottom of the bar, because they do not serve daily work but configure it: **Settings**
-(General, AI credit to top up the workspace’s credit, Media library, Plan), **Support**, **Security** (Consent, AI,
+and Tools (Integrations for Batch, HubSpot, Salesforce and Shopify, Webhooks, API connectors, MCP connectors, SMTP
+email for the mailbox that sends your emails, WhatsApp widget). Pinned to the bottom of the bar, because they do not
+serve daily work but configure it: **Settings** (General, Media library, Plan, with its AI credit tab to top up the
+workspace’s credit), **Support**, **Security** (Consent, AI,
 Audit trails, Error log) and **Developers** (API documentation, API keys, MCP server, Outgoing webhooks).
 
 **2. Inbox, for replying.** This tab has no navigation bar: it carries its own menu of folders, like a mailbox.
@@ -33,8 +34,8 @@ and **Billing** opens Stripe’s portal, where you find your invoices.
 browser, so it applies to you and not to your colleagues, and it is also available before you sign in.
 
 **5. Settings, at the bottom of the bar.** Settings > General holds your workspace’s time zone and your opening
-hours; Settings > AI credit shows the workspace’s prepaid credit, lets an administrator top it up, and lists what
-moved it.
+hours; the AI credit tab of Settings > Plan shows the workspace’s prepaid credit, lets an administrator top it up, and
+lists what moved it.
 
 Opening hours are set day by day, with an opening time, a closing time, or “Closed”. They are the basis for all the
 time conditions in your scenarios and for the option that limits a campaign to your opening hours. When your AI

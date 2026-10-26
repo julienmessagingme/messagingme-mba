@@ -3,7 +3,7 @@
 import { request } from './http';
 
 /**
- * LE CONNECTEUR SHOPIFY : la carte de Paramètres > Intégrations (plan 2026-10-21, lot 1 ; conception 2026-10-22). La
+ * LE CONNECTEUR SHOPIFY : la carte de Tools > Intégrations (plan 2026-10-21, lot 1 ; conception 2026-10-22). La
  * console lit l'état, branche une boutique (l'app créée à la main sur le tableau de bord de Shopify), règle ses messages
  * par l'assistant, importe ses clients abonnés et coupe.
  *

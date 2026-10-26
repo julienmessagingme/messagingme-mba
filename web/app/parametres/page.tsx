@@ -1,16 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { useT, useLocale } from '@/lib/i18n';
 import { getSettings, setTimezone as apiSetTimezone, setBusinessHours as apiSetBusinessHours, agentsPeuventPrendre as apiAgentsPeuventPrendre, setAgentsPeuventPrendre as apiSetAgentsPeuventPrendre, type BusinessHours } from '@/lib/api';
 import { TIMEZONES, timezoneLabel, DEFAULT_TIMEZONE } from '@/lib/timezones';
 import { inputClsAuto } from '@/lib/ui';
 import { BlockedContacts } from '@/components/BlockedContacts';
-import { ReglageIntegrationBatch } from '@/components/ReglageIntegrationBatch';
-import { ReglageHubspot } from '@/components/ReglageHubspot';
-import { ReglageSalesforce } from '@/components/ReglageSalesforce';
-import { ReglageShopify } from '@/components/ReglageShopify';
 import { Toggle } from '@/components/Toggle';
 import { Bouton } from '@/components/Bouton';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
@@ -134,6 +132,20 @@ function dayValid(d: { closed: boolean; open: string; close: string }): boolean 
   return d.closed || (d.open !== '' && d.close !== '' && d.close > d.open);
 }
 
+/**
+ * Une ancre d'avant le 2026-10-26 (`/parametres#integration-shopify`, dans des e-mails déjà partis, la page d'aide publique, des
+ * favoris) : la carte vit désormais dans Tools > Intégrations, sous la même ancre. Le fragment n'arrive jamais au serveur,
+ * d'où ce renvoi dans la page plutôt qu'une redirection de `next.config.mjs`.
+ */
+function RenvoiIntegrations() {
+  const router = useRouter();
+  useEffect(() => {
+    const ancre = window.location.hash;
+    if (ancre.startsWith('#integration-')) router.replace(`/integrations${ancre}`);
+  }, [router]);
+  return null;
+}
+
 function Parametres({ tenantId }: { tenantId: string }) {
   const t = useT();
   const { locale } = useLocale();
@@ -225,6 +237,7 @@ function Parametres({ tenantId }: { tenantId: string }) {
 
   return (
     <div className="mx-auto max-w-formulaire space-y-6">
+      <RenvoiIntegrations />
       <header className="space-y-1">
         <span className={kicker}>{t('Paramètres', 'Settings')}</span>
         <TitrePage>{t('Fuseau & heures d’ouverture', 'Time zone & business hours')}</TitrePage>
@@ -311,15 +324,13 @@ function Parametres({ tenantId }: { tenantId: string }) {
               qu on lui facture, alors que cette section vivait derriere un JWT qu il possede. Les six
               champs n ont pas ete reecrits, ils vivent dans `web/components/GrillePrixChamps.tsx`. */}
 
-          {/* INTÉGRATIONS (lot 6 de l'API publique) : l'outil qui reçoit les signaux. Admin seulement, comme
-              tout ce bloc : un manager ne voit que la section de la prise par les agents. */}
-          <ReglageIntegrationBatch tenantId={tenantId} />
-          {/* ...et l'interrupteur HubSpot (migration 0179) : c'est lui qui fait apparaître le bloc HubSpot de
-              l'Accueil, numéro ou pas. L'Accueil renvoie ici (`#integration-hubspot`) quand il est éteint. */}
-          <ReglageHubspot tenantId={tenantId} />
-      <ReglageSalesforce tenantId={tenantId} />
-          {/* ...et la boutique Shopify (2026-10-21) : brancher, régler les trois messages, importer les clients, couper. */}
-          <ReglageShopify tenantId={tenantId} />
+          {/* LES INTÉGRATIONS SONT PARTIES DANS TOOLS > INTÉGRATIONS LE 2026-10-26 (demande de Julien) : Batch, HubSpot,
+              Salesforce et Shopify. Une ligne le dit ici, pour qui les cherche encore à leur ancienne place, et une
+              ancienne ancre (`/parametres#integration-…`) y renvoie (`RenvoiIntegrations`). */}
+          <p className={`${cardCls} text-sm text-ink-500`} data-testid="param-integrations-deplacees">
+            {t('Batch, HubSpot, Salesforce et Shopify se règlent désormais dans ', 'Batch, HubSpot, Salesforce and Shopify are now set in ')}
+            <Link href="/integrations" className="font-medium text-brand-600 hover:underline">{t('Tools > Intégrations', 'Tools > Integrations')}</Link>.
+          </p>
 
           {/* Contacts bloqués : SEULE porte de sortie d'un blocage. Un contact bloqué n'apparaît nulle part
               ailleurs, donc sans cet écran il serait introuvable. La section se masque quand la liste est vide. */}

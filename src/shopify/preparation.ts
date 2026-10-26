@@ -147,7 +147,7 @@ export interface DepsActivation {
   /** Le ménage : programmer l'oubli du modèle que l'approbation remplace, ou de celui que Meta refuse. */
   programmerOubli: ProgrammerOubli;
   emails: { emettre(e: Emission): Promise<unknown> };
-  /** La page Paramètres de la console, où vit la carte Shopify : le lien des deux e-mails. */
+  /** La carte Shopify de la console (Tools > Intégrations, son ancre) : le lien des deux e-mails. */
   pageParametres: string;
 }
 

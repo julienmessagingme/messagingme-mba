@@ -45,3 +45,59 @@ export function changerSieges(tenantId: string, depuis: number, cible: number): 
 export function rendreNumero(tenantId: string, rendre: boolean): Promise<{ rendreNumero: boolean }> {
   return request(`/tenants/${tenantId}/offre/numero`, { method: 'PUT', body: JSON.stringify({ rendre }) });
 }
+
+/**
+ * Résilier le Pro à la fin de sa période (ou de son essai), ou annuler cette résiliation (2026-10-26). Rend la fin prévue
+ * que Stripe dit après le changement ; l'écran relit ensuite la vue (`relireOffre`).
+ */
+export function resilierPro(tenantId: string, resilier: boolean): Promise<{ finPrevueLe: string | null }> {
+  return request(`/tenants/${tenantId}/offre/resiliation`, { method: 'POST', body: JSON.stringify({ resilier }) });
+}
+
+export type StatutFacture = 'payee' | 'a_regler' | 'impayee' | 'annulee';
+
+/** Une facture de l'espace, telle que le serveur la rend (`src/stripe/gestion-pro.ts`). Les adresses sont `https`. */
+export interface FactureEspace {
+  id: string;
+  numero: string | null;
+  le: string;
+  objet: 'pro' | 'numero' | 'autre';
+  libelle: string | null;
+  totalCentimes: number;
+  devise: string;
+  statut: StatutFacture;
+  urlPage: string | null;
+  urlPdf: string | null;
+}
+
+const STATUTS_FACTURE: readonly string[] = ['payee', 'a_regler', 'impayee', 'annulee'];
+const httpsOuNul = (v: unknown): string | null => (typeof v === 'string' && v.startsWith('https://') ? v : null);
+
+/**
+ * Les factures de l'espace (2026-10-26). `null` : une API plus ancienne (404) ou Stripe pas configuré (503), rien à
+ * montrer. Une facture illisible est écartée ; une adresse qui n'est pas `https` n'est jamais gardée (l'écran y enverrait
+ * un onglet). Toute autre erreur remonte, avec le message du serveur.
+ */
+export async function lireFactures(tenantId: string): Promise<{ factures: FactureEspace[]; plusSurStripe: boolean } | null> {
+  let r: { factures?: unknown; plusSurStripe?: unknown };
+  try {
+    r = await request<{ factures?: unknown; plusSurStripe?: unknown }>(`/tenants/${tenantId}/offre/factures`);
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 404 || err.status === 503)) return null;
+    throw err;
+  }
+  if (!Array.isArray(r.factures)) return null;
+  const factures = r.factures.flatMap((f: unknown): FactureEspace[] => {
+    if (typeof f !== 'object' || f === null) return [];
+    const o = f as Record<string, unknown>;
+    if (typeof o.id !== 'string' || typeof o.le !== 'string' || typeof o.totalCentimes !== 'number' || typeof o.devise !== 'string') return [];
+    if (typeof o.statut !== 'string' || !STATUTS_FACTURE.includes(o.statut)) return [];
+    const objet = o.objet === 'pro' || o.objet === 'numero' ? o.objet : 'autre';
+    return [{
+      id: o.id, numero: typeof o.numero === 'string' ? o.numero : null, le: o.le, objet,
+      libelle: typeof o.libelle === 'string' ? o.libelle : null, totalCentimes: o.totalCentimes, devise: o.devise,
+      statut: o.statut as StatutFacture, urlPage: httpsOuNul(o.urlPage), urlPdf: httpsOuNul(o.urlPdf),
+    }];
+  });
+  return { factures, plusSurStripe: r.plusSurStripe === true };
+}

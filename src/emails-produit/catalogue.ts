@@ -71,7 +71,7 @@ const LIEN_OFFRE: Variable = { description: 'La page Offre de la console', forme
 const LIMITE: Variable = { description: 'La limite de l’offre de l’espace', forme: 'texte', exemple: '1000' };
 const BOUTIQUE_SHOPIFY: Variable = { description: 'Le domaine de la boutique Shopify branchée', forme: 'texte', exemple: 'ma-boutique.myshopify.com' };
 const MESSAGE_SHOPIFY: Variable = { description: 'Le message Shopify réglé dans la console', forme: 'texte', exemple: 'Relance de panier abandonné' };
-const LIEN_PARAMETRES: Variable = { description: 'La page Paramètres de la console, où vit la carte Shopify', forme: 'lien', exemple: 'https://console.messagingme.app/parametres' };
+const LIEN_PARAMETRES: Variable = { description: 'La carte Shopify de la console (Tools > Intégrations)', forme: 'lien', exemple: 'https://console.messagingme.app/integrations#integration-shopify' };
 const RAISON_REFUS: Variable = { description: 'La raison du refus, telle que Meta la donne', forme: 'texte', exemple: 'INVALID_FORMAT' };
 /** La limite de contacts du Pro, lue dans la grille (`DROITS.pro`), que l'e-mail de la Free cite (spec offres v2, livraison 5). */
 const LIMITE_PRO: Variable = { description: 'La limite de contacts de l’offre Pro', forme: 'texte', exemple: '5000' };

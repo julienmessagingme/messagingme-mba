@@ -7,8 +7,8 @@ import { ApiError, request } from './http';
  * Seul le webhook de Stripe, signé, crédite l'espace (`src/http/credit-stripe.ts`).
  */
 
-/** Les deux offres. Le client choisit une offre, jamais un montant : le prix vit chez Stripe, le crédit au serveur. */
-export type OffreRecharge = 'refill_50' | 'refill_100';
+/** Les quatre offres. Le client choisit une offre, jamais un montant : le prix vit chez Stripe, le crédit au serveur. */
+export type OffreRecharge = 'refill_5' | 'refill_10' | 'refill_50' | 'refill_100';
 
 /** Une ligne de l'historique, telle que le serveur la rend : sans note, la raison dit ce qui s'est passé. */
 export interface LigneCredit {

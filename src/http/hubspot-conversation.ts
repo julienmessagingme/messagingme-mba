@@ -169,7 +169,7 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
       return null;
     }
     if (!(await deps.reponseBranchee(tenantId))) {
-      reply.code(403).send({ error: 'La réponse depuis HubSpot n’est pas branchée pour cet espace (Paramètres > Intégrations > HubSpot).', code: 'reponse_hubspot_eteinte' });
+      reply.code(403).send({ error: 'La réponse depuis HubSpot n’est pas branchée pour cet espace (Tools > Intégrations > HubSpot).', code: 'reponse_hubspot_eteinte' });
       return null;
     }
     const ctx = await deps.inbox.getConversationContext(conversationId, tenantId);

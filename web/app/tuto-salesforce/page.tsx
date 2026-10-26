@@ -26,8 +26,8 @@ export default function TutoSalesforcePage() {
       id: 'package',
       title: t('Installer le package Messaging Me', 'Install the Messaging Me package'),
       body: t(
-        'Dans Messaging Me, Paramètres > Intégrations > Salesforce, ouvrez le lien d’installation (production ou sandbox) et connectez-vous en administrateur de votre org.',
-        'In Messaging Me, Settings > Integrations > Salesforce, open the installation link (production or sandbox) and log in as an administrator of your org.',
+        'Dans Messaging Me, Tools > Intégrations > Salesforce, ouvrez le lien d’installation (production ou sandbox) et connectez-vous en administrateur de votre org.',
+        'In Messaging Me, Tools > Integrations > Salesforce, open the installation link (production or sandbox) and log in as an administrator of your org.',
       ),
       sub: [
         t('Choisissez « Installer pour les administrateurs uniquement », puis validez.', 'Choose "Install for admins only", then confirm.'),
@@ -128,8 +128,8 @@ export default function TutoSalesforcePage() {
         </ol>
 
         <div className="mt-6 text-center">
-          <Link href="/parametres#integration-salesforce" className="text-sm font-medium text-brand-600 hover:underline">
-            {t('Retour aux paramètres', 'Back to settings')}
+          <Link href="/integrations#integration-salesforce" className="text-sm font-medium text-brand-600 hover:underline">
+            {t('Retour aux intégrations', 'Back to integrations')}
           </Link>
         </div>
       </div>

@@ -1,6 +1,6 @@
 ---
 slug: choose-my-plan
-traduit_de: 52c3df
+traduit_de: 285841
 ---
 # Choose my plan
 
@@ -8,7 +8,8 @@ Your workspace has a plan: **Free**, **Pro** (a subscription, monthly or yearly)
 decides which features are open, and the limits on what you can create or send.
 
 **1. See where you stand.** The Settings > Plan menu shows your plan, how much of each limit your workspace uses
-(contacts, templates sent this month, automations switched on, users), and the three plans side by side.
+(contacts, templates sent this month, automations switched on, users), and the three plans side by side. On Pro and
+Enterprise, its second tab, AI credit, tops up the prepaid credit of your AI agents.
 
 **2. Upgrade to Pro.** On the Plan page, choose “Monthly” or “Yearly”: you pay on Stripe’s secure page, where a
 promo code can be entered, and your workspace switches to Pro as soon as the payment is confirmed, usually within the
@@ -18,11 +19,19 @@ If your workspace has never had Pro, it starts with a free 14-day trial: the car
 before the trial ends, and the Plan page shows the end date. If these buttons do not appear, “Upgrade to Pro” opens
 Support with the subject already filled in. The Enterprise plan is requested through Support.
 
-**3. Manage my subscription.** On Pro, the “Manage my subscription” button on the Plan page opens Stripe’s portal:
-change your card, find your invoices or cancel.
+**3. Follow and cancel my subscription.** On Pro, the “Your Pro subscription” card, at the top of the Plan page, shows
+its status (active, free trial, payment overdue or cancellation scheduled), its billing and price, its start date, and
+its next renewal or its end date.
 
-To switch from monthly to yearly, write to us through Support. A cancellation takes effect at the end of the paid
-period; your workspace then goes back to Free.
+“Cancel my subscription” stops Pro at the end of the paid period, or of the trial
+without charging anything: the confirmation gives the exact date, and until that date “Keep my subscription” keeps it.
+“Change card” opens Stripe’s secure page.
+
+To switch from monthly to yearly, write to us through Support. A cancellation refunds nothing: your workspace keeps Pro
+until the end date, then goes back to Free.
+
+**4. Find my invoices.** The Plan page lists your workspace’s invoices, for the subscription, the number and the AI
+credit top-ups, with their amount and status. Each one opens on Stripe’s page, with its PDF.
 
 ## What each plan includes
 

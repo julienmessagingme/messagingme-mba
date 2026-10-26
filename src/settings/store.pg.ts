@@ -98,7 +98,7 @@ export interface TenantSettings {
    */
   agentsPeuventPrendre: boolean;
   /**
-   * L'interrupteur HubSpot de l'espace (Paramètres > Intégrations) : allumé, le bloc HubSpot s'affiche sur
+   * L'interrupteur HubSpot de l'espace (Tools > Intégrations) : allumé, le bloc HubSpot s'affiche sur
    * l'Accueil, numéro WhatsApp ou pas. `false` par défaut.
    * Il ne s'éteint pas tant qu'un portail est relié (la route rend 409) : les analyses partiraient encore
    * vers HubSpot depuis un espace où il paraîtrait éteint. Il ne gouverne pas le masquage des fonctions

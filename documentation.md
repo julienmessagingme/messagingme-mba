@@ -185,7 +185,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Liens tracés** | compter les clics sur les boutons URL d'un template | `src/links/` | | `tracked_links`, `tracked_link_clicks` | |
 | **Webhooks entrants** | un tiers poste du JSON, on en fait un contact et un événement | `src/webhook-entrant/` | `/webhooks` | `webhooks` | |
 | **Webhooks sortants** | l'application du client reçoit les événements, signés et réessayés 24 h (§ 6) | `src/evenements/`, `src/http/evenements.ts`, `src/mcp/outils-evenements.ts` | `/developers/evenements` | `adresses_evenements`, `envois_evenements` | `evenements-distribution`, `evenements-envoi` |
-| **Connecteur HubSpot** | import de listes, étapes de deal, la tâche d'un passage à l'équipe (`push-handoff`, ci-dessous § 6), le choix des fonctions par le client (§ 6) | `src/hubspot/`, `src/crm/hubspot-service.ts`, `src/analysis/push-handoff.ts`, `src/http/hubspot-choix.ts` | `/tuto-hubspot`, Paramètres > Intégrations | `tenant_settings` (`hubspot_*`) | `hubspot-catchup`, `push-handoff` |
+| **Connecteur HubSpot** | import de listes, étapes de deal, la tâche d'un passage à l'équipe (`push-handoff`, ci-dessous § 6), le choix des fonctions par le client (§ 6) | `src/hubspot/`, `src/crm/hubspot-service.ts`, `src/analysis/push-handoff.ts`, `src/http/hubspot-choix.ts` | `/tuto-hubspot`, Tools > Intégrations | `tenant_settings` (`hubspot_*`) | `hubspot-catchup`, `push-handoff` |
 | **Publicités Click-to-WhatsApp** | connecter le compte publicitaire, créer (image ou vidéo, audiences), publier, suivre, router le prospect | `src/pubs/`, `src/meta/pubs*.ts`, `src/http/pubs.ts` | `/publicites` | `pub_connexion`, `publicites`, `pubs_brouillons`, `pubs_connues`, `arrivees_pub` | balayage de suivi |
 | **Widget WhatsApp** | une bulle sur le site du client qui ouvre WhatsApp avec une phrase, et ce qui se passe quand cette phrase arrive | `src/widgets/`, `src/http/widgets.ts`, `src/http/widget-public.ts` | `/widgets` | `widgets`, `widget_tirs` | aucune : une étape de `processInbound` |
 | **API publique v1** | ce qu'un intégrateur du client appelle, son contrat OpenAPI (`GET /openapi.json`, dérivé de `src/api/openapi/`), et le SDK TypeScript qui en tire ses types (`sdk/`, publié par `.github/workflows/sdk.yml` dans le dépôt public `messagingme-sdk`) | `src/api/`, `src/http/v1-*.ts`, `src/http/openapi.ts`, `sdk/`, `scripts/sdk-contrat.ts` | `/developers` | `api_keys`, `api_idempotency` | |
@@ -2177,7 +2177,7 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
 | `repondeur_workflow_id` et `repondeur_delai_scenario_s` | le scénario du mode `scenario` et son délai (1 h à 30 jours, 24 h par défaut), même règle à sens unique (`tenant_settings_repondeur_scenario_chk`), clé étrangère en `on delete set null` vers `workflows` |
 | `repondeur_adresse_id` | l'adresse de webhooks sortants du mode `application` (0224), même règle à sens unique (`tenant_settings_repondeur_adresse_chk`), clé étrangère en `on delete set null` vers `adresses_evenements` : supprimer l'adresse laisse le mode lu `equipe` |
 | `hubspot_lists_enabled` | l'import de contacts HubSpot (pas les étapes de deal) |
-| `hubspot_actif` | l'interrupteur HubSpot de l'espace (0179, Paramètres > Intégrations) : allumé, le bloc HubSpot de l'Accueil s'affiche, numéro ou pas. `false` par défaut ; la reprise de 0179 l'a allumé pour les espaces reliés à un portail (`mmhs.tenant_portals` joint à `mmhs.portals`, la lecture de `getHubspotPortal`), gardée par `to_regclass` parce qu'une base sans connecteur n'a pas ce schéma. 🔴 **On ne l'éteint pas tant qu'un portail est relié** : `PATCH /settings/hubspot-actif` rend 409, sinon les analyses continueraient de partir vers HubSpot depuis un espace où il paraît éteint. 🔴 Et une lecture du portail en ÉCHEC refuse l'extinction (503, « réessayez »), elle ne vaut jamais « pas relié » ici : seul un schéma du connecteur absent (`42P01`) rend `false` dans le câblage (`src/index.ts`), toute autre erreur remonte, et seul l'affichage (`GET /settings`) la rattrape en « pas relié ». On délie d'abord (« Déconnexion complète »), et un espace SANS numéro le fait par `POST /hubspot/deconnexion`, la même fonction que la porte d'un numéro. ⚠️ Il ne gouverne PAS le masquage des fonctions HubSpot des campagnes et des automations, qui suit le portail relié (`hubspotPortalConnecte`). ⚠️ Côté console, `undefined` (API plus ancienne) n'est pas `false` : `affichageHubspotAccueil` (`web/lib/hubspot-actif.ts`) garde alors l'ancien comportement |
+| `hubspot_actif` | l'interrupteur HubSpot de l'espace (0179, Tools > Intégrations) : allumé, le bloc HubSpot de l'Accueil s'affiche, numéro ou pas. `false` par défaut ; la reprise de 0179 l'a allumé pour les espaces reliés à un portail (`mmhs.tenant_portals` joint à `mmhs.portals`, la lecture de `getHubspotPortal`), gardée par `to_regclass` parce qu'une base sans connecteur n'a pas ce schéma. 🔴 **On ne l'éteint pas tant qu'un portail est relié** : `PATCH /settings/hubspot-actif` rend 409, sinon les analyses continueraient de partir vers HubSpot depuis un espace où il paraît éteint. 🔴 Et une lecture du portail en ÉCHEC refuse l'extinction (503, « réessayez »), elle ne vaut jamais « pas relié » ici : seul un schéma du connecteur absent (`42P01`) rend `false` dans le câblage (`src/index.ts`), toute autre erreur remonte, et seul l'affichage (`GET /settings`) la rattrape en « pas relié ». On délie d'abord (« Déconnexion complète »), et un espace SANS numéro le fait par `POST /hubspot/deconnexion`, la même fonction que la porte d'un numéro. ⚠️ Il ne gouverne PAS le masquage des fonctions HubSpot des campagnes et des automations, qui suit le portail relié (`hubspotPortalConnecte`). ⚠️ Côté console, `undefined` (API plus ancienne) n'est pas `false` : `affichageHubspotAccueil` (`web/lib/hubspot-actif.ts`) garde alors l'ancien comportement |
 | `campaigns_paused` | coupe-circuit d'envoi pour tout l'espace |
 | `auto_retry_enabled` | auto-relance des échecs des campagnes d'AVANT la migration 0165 ; ce réglage n'a plus d'écran et ne s'écrit plus. Une campagne créée depuis obéit à SA case `campaigns.reessayer` (`campaigns.reessai_par_campagne`) |
 | `timezone` et `business_hours` | le fuseau (une heure murale sans fuseau est interprétée là) et les horaires |
@@ -3023,6 +3023,21 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   `no_payment_required` (code promo à 100 %) ouvre le Pro comme un paiement ; `en_retard` reste Pro, seul `fini_le`
   (`customer.subscription.deleted`, raison `impaye` si Stripe dit `payment_failed` ou `payment_disputed`) le termine, et
   `finir` dit si c'est la première fin (un rejeu ne réalerte pas).
+  🔴 **Le Pro se gère depuis la console** (2026-10-26, `src/stripe/gestion-pro.ts`). La vue de l'offre porte `abonnement`
+  (`PgAbonnementsOffreStore.resume` : le vivant, sinon le dernier fini, avec `cree_le`), son statut calculé une seule fois
+  par `statutDuPro` (`src/offres/vue.ts`, fini > en retard > fin posée > essai > actif) ; `prochaineEcheanceLe` est nul en
+  retard, une fois passé, et dès qu'une fin est posée. `POST /tenants/:tenantId/offre/resiliation` (`{ resilier }`, admin,
+  plafond coûteux) pose ou retire `cancel_at_period_end` sur le Pro VIVANT de l'espace (409 `aucun_pro` sinon), avec une
+  clé d'idempotence PAR DEMANDE (une clé par abonnement rejouerait la première réponse pendant 24 h), relit la fin dans la
+  réponse par `finPrevueDe` (`src/stripe/client.ts`, le calcul que le webhook Pro et celui du numéro partagent) et l'écrit
+  par `modifier`, comme `customer.subscription.updated` le refera ; un échec de cette écriture n'échoue pas la route. Une
+  fin DATÉE (`cancel_at` posé au tableau de bord) n'est pas retirée : 409 `fin_datee`, car la retirer recalcule la période
+  et peut proratiser. `GET /tenants/:tenantId/offre/factures` (admin, garde seule : le plafond coûteux est celui des
+  campagnes) liste les 24 dernières factures du client Stripe de l'espace (`listerFacturesStripe`) : brouillons, statuts
+  inconnus, factures illisibles ou d'un autre client écartés une à une, adresses `https` seules, l'objet lu sur la
+  métadonnée `produit` de l'abonnement (`pro`, `numero`), sinon le libellé de la première ligne. La console : la carte
+  `AbonnementPro` et `FacturesEspace` (`web/components/`), sur l'onglet Offre ; sans `abonnement` (API plus ancienne),
+  l'ancien bloc du portail reste.
   🔴 **L'essai de 14 jours** (spec offres v2, livraison 6, `ESSAI_PRO_JOURS`) : `ouvrirPro` le donne à un espace sans
   AUCUNE ligne `abonnements_offre` (`dejaEuUnPro`), par `subscription_data[trial_period_days]`, la carte toujours
   demandée et l'abonnement annulé s'il n'a aucun moyen de paiement à la fin ; la métadonnée `essai` est posée sur la
@@ -4093,7 +4108,7 @@ est écrit sans SDK (formulaire `x-www-form-urlencoded`, `Stripe-Version` éping
 webhook, `Idempotency-Key` sur chaque création, `client-<espace>` pour le client Stripe), avec un transport
 injectable : aucun test n'appelle Stripe.
 - `POST /tenants/:tenantId/credit/paiement` (admin, plafond coûteux) : le corps ne porte qu'une offre
-  (`OFFRES_RECHARGE` : `refill_5`, `refill_10`, `refill_50`, `refill_100` ; l'écran n'en propose que 50 et 100, `buy_credit` celles dont le prix est configuré, par `selonInstance` dans `tools/list`) ; le prix Stripe vient de la configuration, le crédit de `src/stripe/offres.ts`
+  (`OFFRES_RECHARGE` : `refill_5`, `refill_10`, `refill_50`, `refill_100` ; l'onglet Crédit IA de la console les propose toutes les quatre depuis le 2026-10-26, `buy_credit` celles dont le prix est configuré, par `selonInstance` dans `tools/list`) ; le prix Stripe vient de la configuration, le crédit de `src/stripe/offres.ts`
   (dérivé du HT). Le client Stripe de l'espace est créé au premier achat et gardé PAR MODE (`stripe_clients`,
   clé `(tenant_id, livemode)`) : un client de test n'existe pas en live. 🔴 **Le prix est relu chez Stripe AVANT
   tout** (`lirePrixStripe`, la clé restreinte a les prix en lecture) : s'il ne vaut pas le HT de l'offre, en
@@ -4130,7 +4145,8 @@ injectable : aucun test n'appelle Stripe.
   appliqués par `creerTraitementAbonnements` (`src/stripe/traitement-abonnements.ts`, `tests/traitement-abonnements.test.ts`),
   qui rend une issue que la route traduit. Une panne inattendue y remonte pour que Stripe rejoue ; un espace supprimé
   (23503) est définitif : alerte puis acquittement.
-- Le retour de Stripe se fait sur la page Crédit IA de la console (`APP_URL/parametres/credit`) et ne crédite
+- Le retour de Stripe se fait sur l'adresse historique de la page Crédit IA (`APP_URL/parametres/credit`), que
+  `web/next.config.mjs` redirige vers l'onglet `/offre?tab=credit` en gardant sa requête (2026-10-26), et ne crédite
   rien : il relit le solde et l'historique, et reconnaît l'arrivée à la ligne `achat` postérieure au départ vers
   Stripe (`achatArriveDepuis`, `web/lib/api-credit.ts`), dès la première lecture : un solde comparé à lui-même ne
   « montait » jamais quand le webhook passait avant.

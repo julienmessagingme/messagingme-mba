@@ -19,6 +19,18 @@ export function oublierOffre(): void {
   memo = null;
 }
 
+/**
+ * Un geste de la page vient de changer l'offre (une résiliation posée ou retirée, un siège retiré, le numéro à rendre) :
+ * la vue est relue, ATTENDUE (le bouton du geste reste en cours jusque-là), puis chaque écran la reprend. 🟡 Une relecture
+ * qui échoue ne remplace jamais une vue valide par « offre inconnue » : le geste a réussi, seule sa relecture a manqué.
+ */
+const OFFRE_CHANGEE_EVENT = 'mba:offre-changee';
+export async function relireOffre(tenantId: string): Promise<void> {
+  oublierOffre();
+  await offreEnMemoire(tenantId);
+  window.dispatchEvent(new Event(OFFRE_CHANGEE_EVENT));
+}
+
 export function offreEnMemoire(tenantId: string, maintenant = Date.now()): Promise<VueOffre | null> {
   if (memo && memo.tenantId === tenantId && maintenant - memo.at < VIE_MS) return memo.vue;
   const vue = lireOffre(tenantId).catch(() => {
@@ -50,8 +62,14 @@ export function useOffre(tenantId: string | null): VueOffre | null | undefined {
     const lire = () => { void offreEnMemoire(tenantId).then((v) => { if (vivant) setVue(v); }); };
     lire();
     const refusee = () => { oublierOffre(); lire(); };
+    const changee = () => { void offreEnMemoire(tenantId).then((v) => { if (vivant && v !== null) setVue(v); }); };
     window.addEventListener(OFFRE_REFUSEE_EVENT, refusee);
-    return () => { vivant = false; window.removeEventListener(OFFRE_REFUSEE_EVENT, refusee); };
+    window.addEventListener(OFFRE_CHANGEE_EVENT, changee);
+    return () => {
+      vivant = false;
+      window.removeEventListener(OFFRE_REFUSEE_EVENT, refusee);
+      window.removeEventListener(OFFRE_CHANGEE_EVENT, changee);
+    };
   }, [tenantId]);
   return vue;
 }

@@ -143,7 +143,7 @@ describe('le centre d’aide de la vitrine', () => {
         expect(contenu, `${chemin} ${m[1]}`).toContain(`<a class="aide-capture" href="${m[1]}?v=${empreinte}"`);
       }
     }
-    expect(vues).toBe(72);
+    expect(vues).toBe(74);
   });
 
   it('chaque page de la vitrine mène au centre d’aide et au blog par « Ressources », au bureau et dans le burger, et à l’aide en pied de page', () => {

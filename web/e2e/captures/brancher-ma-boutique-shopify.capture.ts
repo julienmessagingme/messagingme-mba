@@ -52,7 +52,7 @@ for (const locale of ['fr', 'en'] as Locale[]) {
         return json({});
       });
       await communs(page);
-      await page.goto('/parametres');
+      await page.goto('/integrations');
       const carte = page.getByTestId('integration-shopify');
       await expect(carte.getByTestId('shopify-mode-operatoire')).toBeVisible();
 
@@ -72,7 +72,7 @@ for (const locale of ['fr', 'en'] as Locale[]) {
 
       // 4. L'assistant de la relance : le texte proposé, ses données, l'aperçu.
       etat = A_REGLER;
-      await page.goto('/parametres');
+      await page.goto('/integrations');
       await page.getByTestId('integration-shopify-regler-checkout_abandoned').click();
       const assistant = page.getByTestId('shopify-assistant');
       await expect(assistant.getByTestId('shopify-assistant-texte')).toBeVisible();
@@ -89,14 +89,14 @@ for (const locale of ['fr', 'en'] as Locale[]) {
 
       // 6. L'import des clients abonnés : le compte d'abord, puis combien en importer. Rien n'est importé.
       etat = EN_SERVICE;
-      await page.goto('/parametres');
+      await page.goto('/integrations');
       await page.getByTestId('integration-shopify-importer').click();
       const apercu = page.getByTestId('shopify-import-apercu');
       await expect(apercu).toBeVisible();
       await capturer(page, CLE, 6, locale, apercu, 'haut', page.getByTestId('shopify-import-nombre'));
 
       // 7. La boutique branchée : ses messages, ses chiffres, et « Couper ».
-      await page.goto('/parametres');
+      await page.goto('/integrations');
       await expect(carte.getByTestId('integration-shopify-compteurs')).toBeVisible();
       await capturer(page, CLE, 7, locale, carte, 'haut', carte.getByTestId('integration-shopify-couper'));
     });

@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: b9cf29
+source_empreinte: b8364c
 ---
 # HubSpot sur l'Accueil : le brancher, le suivre, le couper
 
@@ -14,7 +14,7 @@ pendant la pause sont renvoyées à la reprise), et une **déconnexion complète
 et coupe tous les numéros de l'espace. Juste dessous, le bloc dit si vos listes HubSpot servent d'audience de
 campagne, avec un lien vers le réglage.
 
-**HubSpot se connecte et se règle dans Paramètres > Intégrations**, numéro WhatsApp ou pas : un espace tout neuf
+**HubSpot se connecte et se règle dans Tools > Intégrations**, numéro WhatsApp ou pas : un espace tout neuf
 peut donc connecter HubSpot avant d'avoir un numéro. Au retour de la connexion, l'écran vous demande ce que vous
 branchez : la fiche contact et l'analyse de chaque conversation, la tâche immédiate quand un client demande un
 humain, la création de tâches (sinon les propriétés seulement), le contact injoignable, la réponse aux clients

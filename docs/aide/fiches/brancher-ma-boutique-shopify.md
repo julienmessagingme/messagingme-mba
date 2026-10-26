@@ -1,7 +1,7 @@
 ---
-ecran: parametres
+ecran: integrations
 source_section: Boutique Shopify : les messages de commande sur WhatsApp (Claude Code ou console, 2026-10-21)
-source_empreinte: dd2293
+source_empreinte: 411389
 publique: oui
 rubrique: parler-aux-clients
 rang: 6
@@ -33,7 +33,7 @@ les deux chemins passent par la même gestion.
 
 Sans Claude Code, la carte Shopify de la console vous guide de bout en bout, en sept gestes.
 
-**1. Ouvrir la carte Shopify.** Dans Paramètres > Général, descendez jusqu'aux intégrations : la carte Shopify dit ce
+**1. Ouvrir la carte Shopify.** Dans le menu Tools > Intégrations, la carte Shopify dit ce
 qu'elle fait et vous guide en deux étapes, la première chez Shopify, la seconde dans la console.
 
 Elle n'apparaît qu'aux administrateurs de l'espace.

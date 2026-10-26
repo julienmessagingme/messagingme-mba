@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { AppShell } from '@/components/AppShell';
 import { getSoldeAgent } from '@/lib/api-agent';
 import {
   aUneFacture, achatArriveDepuis, estPageDePaiement, getMouvementsCredit, lireDepartPaiement, oublierDepartPaiement,
@@ -14,16 +13,17 @@ import { fmtCost } from '@/lib/format';
 import type { Locale } from '@/lib/locale';
 import type { Session } from '@/lib/session';
 import { useT, useLocale } from '@/lib/i18n';
-import { IntroPage, TitrePage } from '@/components/TitrePage';
+import { IntroPage } from '@/components/TitrePage';
 import { Squelette } from '@/components/Squelette';
 import { Bouton } from '@/components/Bouton';
 import { MbaNotice } from '@/components/MbaNotice';
 
 /**
- * LE CRÉDIT IA DE L'ESPACE : ce qu'il reste, comment recharger, et ce qui l'a fait bouger.
+ * LE CRÉDIT IA DE L'ESPACE : ce qu'il reste, comment recharger, et ce qui l'a fait bouger. Second onglet de Paramètres >
+ * Offre depuis le 2026-10-26 (demande de Julien) ; il était une page à part, `/parametres/credit`, qui redirige ici.
  *
  * 🔴 LE SOLDE EST CELUI DE L'ESPACE, pas d'un agent : les agents IA ET la traduction de l'Inbox y puisent. C'est
- * pour ça que la page vit dans Paramètres (2026-09-29, décision de Julien) et plus sous « Other AI agent ».
+ * pour ça qu'il vit dans Paramètres (2026-09-29, décision de Julien) et plus sous « Other AI agent ».
  *
  * 🔴 LE RETOUR DE STRIPE NE CRÉDITE RIEN. Il dit « paiement reçu » et RELIT le solde, quelques secondes, le temps
  * que le webhook signé de Stripe passe. Une adresse de retour se tape à la main, une signature ne se forge pas.
@@ -31,21 +31,23 @@ import { MbaNotice } from '@/components/MbaNotice';
  * ⚠️ LA CONSOLE PART AVANT L'API (Vercel publie au push). Tant que la route de paiement n'est pas déployée, ou que
  * Stripe n'est pas configuré, le serveur rend 404 ou 503 : l'écran dit « recharge pas encore disponible », jamais
  * une erreur brute.
+ *
+ * ⚠️ `useSearchParams` : la page qui monte cet onglet le place sous une frontière Suspense (règle de Next 15).
  */
-export default function CreditPage() {
-  return <AppShell active="parametres-credit">{(session) => <CreditInner session={session} />}</AppShell>;
-}
 
 /** Après un retour de paiement : combien de fois, et tous les combien, on relit le solde en attendant le webhook. */
 const RELECTURES_APRES_PAIEMENT = 10;
 const INTERVALLE_RELECTURE_MS = 3_000;
 
+/** Les quatre recharges, de la plus petite à la plus grande (`OFFRES_RECHARGE`, `src/stripe/offres.ts`). */
 const OFFRES: ReadonlyArray<{ offre: OffreRecharge; euros: number }> = [
+  { offre: 'refill_5', euros: 5 },
+  { offre: 'refill_10', euros: 10 },
   { offre: 'refill_50', euros: 50 },
   { offre: 'refill_100', euros: 100 },
 ];
 
-function CreditInner({ session }: { session: Session }) {
+export function OngletCreditIA({ session }: { session: Session }) {
   const t = useT();
   const { locale } = useLocale();
   const retour = useSearchParams().get('paiement');
@@ -167,16 +169,13 @@ function CreditInner({ session }: { session: Session }) {
   const admin = session.role === 'admin';
 
   return (
-    <div className="mx-auto max-w-formulaire space-y-4">
-      <header>
-        <TitrePage>{t('Crédit IA', 'AI credit')}</TitrePage>
-        <IntroPage>
-          {t(
-            'Le crédit prépayé de l’espace. Il paie vos agents IA et la traduction des conversations de l’Inbox.',
-            'The workspace’s prepaid credit. It pays for your AI agents and for translating Inbox conversations.',
-          )}
-        </IntroPage>
-      </header>
+    <div className="max-w-formulaire space-y-4">
+      <IntroPage>
+        {t(
+          'Le crédit prépayé de l’espace. Il paie vos agents IA et la traduction des conversations de l’Inbox.',
+          'The workspace’s prepaid credit. It pays for your AI agents and for translating Inbox conversations.',
+        )}
+      </IntroPage>
 
       {retour === 'recu' && (
         <MbaNotice kind="success" testid="credit-retour-recu">

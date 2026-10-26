@@ -1,7 +1,7 @@
 ---
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: fe1475
+source_empreinte: a8ff52
 publique: oui
 rubrique: demarrer
 rang: 1
@@ -15,7 +15,7 @@ Votre espace a une offre : **Free** (gratuite), **Pro** (un abonnement, au mois 
 
 **1. Voir où vous en êtes.** Le menu Paramètres > Offre montre votre offre, ce que votre espace consomme de chaque
 limite (contacts, modèles envoyés ce mois-ci, automations allumées, utilisateurs), et la grille des trois offres côte
-à côte.
+à côte. En Pro et en Entreprise, son second onglet, Crédit IA, recharge le crédit prépayé de vos agents IA.
 
 **2. Passer en Pro.** Sur la page Offre, choisissez « Mensuel » ou « Annuel » : vous payez sur la page sécurisée de
 Stripe, où un code promo se saisit, et votre espace passe en Pro dès que le paiement est confirmé, en général dans
@@ -25,11 +25,18 @@ Si votre espace n'a jamais eu le Pro, il commence par un essai gratuit de 14 jou
 n'est prélevé avant la fin de l'essai, et la page Offre dit la date de fin. Si ces boutons n'apparaissent pas,
 « Passer en Pro » ouvre le Support avec le sujet déjà rempli. L'offre Entreprise se demande au Support.
 
-**3. Gérer mon abonnement.** En Pro, le bouton « Gérer mon abonnement » de la page Offre ouvre le portail de
-Stripe : changer de carte, retrouver vos factures ou résilier.
+**3. Suivre et résilier mon abonnement.** En Pro, la carte « Votre abonnement », en tête de la page Offre, dit son
+statut (actif, essai gratuit, paiement en retard ou résiliation programmée), sa formule et son prix, sa date de
+souscription, et son prochain renouvellement ou sa date de fin.
 
-Pour passer du mensuel à l'annuel, écrivez-nous au Support. Une résiliation prend effet à la fin de la période
-payée ; votre espace revient alors en Free.
+« Résilier mon abonnement » arrête le Pro à la fin de la période payée, ou de l'essai sans rien prélever : la
+confirmation dit la date exacte, et jusqu'à cette date « Annuler la résiliation » le garde. « Changer de carte bancaire » ouvre la page sécurisée de Stripe.
+
+Pour passer du mensuel à l'annuel, écrivez-nous au Support. Une résiliation ne rembourse rien : votre espace garde le
+Pro jusqu'à la date de fin, puis revient en Free.
+
+**4. Retrouver mes factures.** La page Offre liste les factures de votre espace, celles de l'abonnement, du numéro et
+des recharges du crédit IA, avec leur montant et leur statut. Chacune s'ouvre sur la page de Stripe, avec son PDF.
 
 ## Ce que comprend chaque offre
 

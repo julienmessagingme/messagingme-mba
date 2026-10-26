@@ -1,7 +1,7 @@
 ---
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: b9cf29
+source_empreinte: b8364c
 publique: oui
 rubrique: demarrer
 rang: 3
@@ -64,7 +64,7 @@ sont exactement ceux du Performance Lab, et un tiret remplace le coût quand Met
 
 **Bon à savoir.** Pour le premier numéro de votre espace, 1 € de crédit IA vous est offert dès que Meta l'a
 vérifié, une seule fois : à la connexion s'il l'est déjà, sinon quand vous l'activez avec le code de vérification.
-Il paie vos agents IA, la traduction et la transcription de l'Inbox (voir Paramètres > Crédit IA).
+Il paie vos agents IA, la traduction et la transcription de l'Inbox (voir l'onglet Crédit IA de Paramètres > Offre).
 
 **Un espace pilote un seul numéro.** En connecter un second est refusé, en vous disant lequel est déjà là et quoi
 faire : créer un second espace, ou détacher celui-ci. Accepter les deux mélangerait les conversations d'une même

@@ -1,6 +1,6 @@
 ---
 source_section: Navigation (trois onglets en haut, barre latérale par onglet)
-source_empreinte: 586a76
+source_empreinte: 1e81ed
 publique: oui
 rubrique: demarrer
 rang: 4
@@ -18,10 +18,10 @@ scénarios, vos agents, vos contenus et vos outils.
 Son menu : Accueil, mini-CRM, Campagnes, Chaîne, Publicités, Automation, AI Agent (MBA, qui ouvre les paramètres de
 l'agent de Meta ; Other AI agent, qui ouvre vos agents IA), Contenu (rangé par canal : WhatsApp avec les Templates
 et les Formulaires, RCS avec les Messages, Email avec les Modèles, puis le Scénario et la Bibliothèque avec vos
-blocs, vos étiquettes et vos champs) et Tools (Webhooks, Connecteurs API, Connecteurs MCP, SMTP email pour la boîte
-qui envoie vos e-mails, Widget WhatsApp). Collés en bas de la barre, parce qu'ils ne servent pas le travail
-quotidien mais le règlent : **Paramètres** (Général, Crédit IA pour recharger le crédit de l'espace, Médiathèque,
-Offre), **Support**, **Sécurité** (Consentement, IA, Audit trails, Journal des erreurs) et **Developers**
+blocs, vos étiquettes et vos champs) et Tools (Intégrations pour Batch, HubSpot, Salesforce et Shopify, Webhooks,
+Connecteurs API, Connecteurs MCP, SMTP email pour la boîte qui envoie vos e-mails, Widget WhatsApp). Collés en bas de
+la barre, parce qu'ils ne servent pas le travail quotidien mais le règlent : **Paramètres** (Général, Médiathèque,
+Offre, avec son onglet Crédit IA pour recharger le crédit de l'espace), **Support**, **Sécurité** (Consentement, IA, Audit trails, Journal des erreurs) et **Developers**
 (Documentation API, Clés d'API, Serveur MCP, Webhooks sortants).
 
 **2. Inbox, pour répondre.** Cet onglet n'a aucune barre de navigation : il porte son propre menu de dossiers, à
@@ -41,8 +41,8 @@ mémorisée par navigateur, elle vaut donc pour vous et pas pour vos collègues,
 de vous connecter.
 
 **5. Les Paramètres, en bas de la barre.** Paramètres > Général porte le fuseau horaire de votre espace et vos
-heures d'ouverture ; Paramètres > Crédit IA montre le crédit prépayé de l'espace, permet à un administrateur de
-le recharger, et liste ce qui l'a fait bouger.
+heures d'ouverture ; l'onglet Crédit IA de Paramètres > Offre montre le crédit prépayé de l'espace, permet à un
+administrateur de le recharger, et liste ce qui l'a fait bouger.
 
 Les heures d'ouverture se règlent jour par jour, avec une heure de début, une heure de fin, ou « fermé ». C'est la
 base sur laquelle s'appuient toutes les conditions de temps de vos scénarios et l'option qui limite une campagne à

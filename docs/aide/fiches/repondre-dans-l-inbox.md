@@ -1,7 +1,7 @@
 ---
 ecran: inbox
 source_section: Inbox
-source_empreinte: 0a7e3d
+source_empreinte: 91b658
 publique: oui
 rubrique: parler-aux-clients
 rang: 1
@@ -53,7 +53,7 @@ et sa traduction, même si le vocal était en espagnol.
 ⚠️ La traduction est payée par le crédit de votre espace, contrairement à la transcription et à cette aide.
 Chaque traduction en est décomptée, au même tarif que les agents IA, et le journal du crédit les regroupe en une
 ligne par jour. Sans crédit, le fil reste dans sa langue d'origine et l'écran vous le dit. Un administrateur y
-trouve le lien « Recharger le crédit », vers Paramètres, Crédit IA ; si vous n'êtes pas administrateur, demandez
+trouve le lien « Recharger le crédit », vers l'onglet Crédit IA de Paramètres > Offre ; si vous n'êtes pas administrateur, demandez
 à l'un d'eux de le recharger. S'il dit que la traduction est momentanément indisponible, votre crédit n'est pas
 en cause, réessayez un peu plus tard. La toute première traduction de votre espace prend quelques secondes de
 plus : le fil s'affiche d'abord dans sa langue d'origine, puis revient traduit en entier, sans que vous ayez à

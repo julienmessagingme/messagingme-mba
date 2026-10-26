@@ -626,7 +626,7 @@ function Solde({ microEur }: { microEur: number }) {
   const euros = eurosDepuisMicro(microEur);
   // Depuis la recharge par Stripe (2026-09-29), le geste existe : on y mène, au lieu de « contactez-nous ».
   const recharger = (
-    <Link href="/parametres/credit" className="ml-1 font-medium underline" data-testid="agent-solde-recharger">
+    <Link href="/offre?tab=credit" className="ml-1 font-medium underline" data-testid="agent-solde-recharger">
       {t('Recharger le crédit IA', 'Top up the AI credit')}
     </Link>
   );

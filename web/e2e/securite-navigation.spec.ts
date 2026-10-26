@@ -440,6 +440,9 @@ test.describe('Centre de sécurité & compliance', () => {
     await bas.getByRole('button', { name: 'Paramètres' }).click();
     await expect(bas.getByRole('link', { name: 'Général' })).toBeVisible();
     await expect(bas.getByRole('link', { name: 'Crédit IA' })).toHaveCount(0);
+    // L'Offre (et son onglet Crédit IA, 2026-10-26) et la Médiathèque restent aux admins.
+    await expect(bas.getByRole('link', { name: 'Offre' })).toHaveCount(0);
+    await expect(bas.getByRole('link', { name: 'Médiathèque' })).toHaveCount(0);
     // Support et Developers sont dans le MEME bloc bas, et ils ne sont toujours pas pour lui.
     await expect(bas.getByRole('link', { name: 'Support' })).toHaveCount(0);
   });

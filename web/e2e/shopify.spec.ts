@@ -58,11 +58,11 @@ async function monter(page: Page, o: { etat?: Record<string, unknown> | 'absente
     if (chemin.endsWith('/me')) return json({ email: 'moi@e2e.test', name: 'Moi', role: 'admin' });
     return json({});
   });
-  await page.goto('/parametres');
+  await page.goto('/integrations');
   return trace;
 }
 
-test.describe('Paramètres > Intégrations > Shopify : la carte de la console', () => {
+test.describe('Tools > Intégrations > Shopify : la carte de la console', () => {
   test('🔴 sans boutique : le mode opératoire, puis les clés branchent la boutique, nettoyées', async ({ page }) => {
     const trace = await monter(page, { etat: VIDE, apresBranchement: BRANCHEE });
     const carte = page.getByTestId('integration-shopify');

@@ -17,7 +17,7 @@ export type OrigineOutil = 'mba' | 'http' | 'mcp';
 /**
  * Qui a déclenché un appel de connecteur, liste fermée gardée par un CHECK en base. À ne pas confondre avec
  * `OrigineOutil` (la nature de l'outil) : ceci dit quel chemin du produit a passé l'appel. `signaux` : la
- * poussée des signaux vers l'outil branché dans Paramètres > Intégrations, dont l'échec est de même nature
+ * poussée des signaux vers l'outil branché dans Tools > Intégrations, dont l'échec est de même nature
  * (le système du client a refusé).
  */
 export const SOURCES_APPEL = ['agent', 'scenario', 'optout', 'mba', 'signaux'] as const;

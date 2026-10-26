@@ -4,7 +4,7 @@ import { request } from './http';
 import { lireIntegrationSalesforce, type IntegrationSalesforceVue } from './salesforce';
 
 /**
- * L'APP SALESFORCE : Paramètres > Intégrations > Salesforce (plan 2026-09-26, lot L1).
+ * L'APP SALESFORCE : Tools > Intégrations > Salesforce (plan 2026-09-26, lot L1).
  *
  * ⚠️ Module importé EN DIRECT (`@/lib/api-salesforce`), jamais ajouté au barrel `lib/api.ts` : même famille que
  * `api-pubs`, les surfaces qui ont leur propre vocabulaire.

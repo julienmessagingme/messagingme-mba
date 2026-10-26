@@ -320,7 +320,7 @@ export function CanauxServices(p: {
       service: 'publicites', titre: t('Compte publicitaire', 'Ad account'), phrase: pubsHorsOffre?.phrase ?? phrasePubs(),
       lien: pubsHorsOffre?.lien ?? { href: '/publicites', texte: t('Ouvrir l’écran Publicités', 'Open the Ads screen') }, chiffre: null, Logo: LogoMeta, aTerminer: pubsATerminer,
     },
-    { service: 'hubspot', titre: 'HubSpot', phrase: phraseHubspot(), lien: { href: '/parametres#integration-hubspot', texte: t('Ouvrir le réglage', 'Open the setting') }, chiffre: null, Logo: LogoHubSpot },
+    { service: 'hubspot', titre: 'HubSpot', phrase: phraseHubspot(), lien: { href: '/integrations#integration-hubspot', texte: t('Ouvrir le réglage', 'Open the setting') }, chiffre: null, Logo: LogoHubSpot },
   ];
 
   // ⚠️ Les erreurs de la fenêtre Meta et de la clé RCS restent dans LEUR carte (la zone de connexion, la carte
@@ -390,11 +390,10 @@ export function CanauxServices(p: {
           );
         })}
         {/* La sixième case : les intégrations qui n'ont pas de carte ici. Pas un service, donc ni interrupteur ni
-            pastille. Elle mène à Paramètres « pour l'instant » (Julien, 2026-09-25) : sa cible changera le jour
-            où les intégrations auront leur propre écran. */}
+            pastille. Elle mène à leur écran, Tools > Intégrations, depuis qu'il existe (2026-10-26). */}
         <li data-testid="canal-autres">
           <Link
-            href="/parametres"
+            href="/integrations"
             data-testid="canal-autres-lien"
             className="flex h-full min-h-[7.5rem] items-center justify-center gap-1.5 rounded-carte border border-dashed border-ink-300 p-4 text-sm font-semibold text-brand-600 transition-colors duration-150 hover:border-brand-300 hover:bg-brand-50"
           >

@@ -6,9 +6,9 @@
 
 ## Ce que la console remonte
 
-Quand il se passe quelque chose sur une fiche, la console pousse un événement, avec l’état courant de la fiche, vers l’outil que votre administrateur a branché dans Paramètres > Intégrations.
+Quand il se passe quelque chose sur une fiche, la console pousse un événement, avec l’état courant de la fiche, vers l’outil que votre administrateur a branché dans Tools > Intégrations.
 
-- Seuls les outils proposés dans Paramètres > Intégrations les reçoivent : ce n’est pas un webhook vers une adresse de votre choix.
+- Seuls les outils proposés dans Tools > Intégrations les reçoivent : ce n’est pas un webhook vers une adresse de votre choix.
 - Les noms commencent par `em_`, et ne changent pas d’un outil à l’autre, ceux des champs non plus. Un texte fait 300 caractères au plus ; une valeur absente ou vide n’est pas envoyée.
 - Le profil est désigné par votre identifiant, `externalId` : une fiche qui n’en porte pas n’est pas remontée (l’écran du réglage compte ces signaux). Passez-le à chaque appel : fiche, envoi, message.
 - Un même événement peut arriver deux fois : dédupliquez sur `em_event_id`, stable.

@@ -1389,7 +1389,8 @@ async function main(): Promise<void> {
     store: shopifyStore,
     programmerOubli: programmerOubliShopify,
     emails: emetteurEmails,
-    pageParametres: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres`,
+    // La carte Shopify vit dans Tools > Intégrations depuis le 2026-10-26 (son ancre ne change pas).
+    pageParametres: `${config.APP_URL.trim().replace(/\/+$/, '')}/integrations#integration-shopify`,
     statutModele: async (tenant: string, modele: string, langue: string) => {
       const r = await statutsDuModele({ modeles: depsModeles }, tenant, modele, langue);
       if ('refus' in r) return null;
@@ -2558,7 +2559,7 @@ async function main(): Promise<void> {
     // Node « Envoi de mail » : boîtes SMTP + modèles (Contenu), et le résolveur qu'invalident les routes
     // d'écriture pour ne jamais garder un transport périmé (hôte/mot de passe changés).
     email: { accounts: emailAccounts, templates: emailTemplates, resolver: emailResolver, audit: auditSink },
-    // 🔴 Paramètres > Intégrations > Batch : les clés sont chiffrées ici, jamais stockées en clair. Le cache
+    // 🔴 Tools > Intégrations > Batch : les clés sont chiffrées ici, jamais stockées en clair. Le cache
     // de l'émetteur de l'API est invalidé à chaque changement : brancher ou débrancher prend effet aussitôt.
     // Développeurs > Webhooks sortants (lot 12) : la gestion partagée avec les outils MCP.
     evenements: { gestion: gestionEvenements, audit: auditSink },
@@ -2581,7 +2582,7 @@ async function main(): Promise<void> {
       },
       audit: auditSink,
     },
-    // Paramètres > Intégrations > Salesforce, monté seulement quand la clé d'app est posée (sinon 404, et la
+    // Tools > Intégrations > Salesforce, monté seulement quand la clé d'app est posée (sinon 404, et la
     // carte de la console ne s'affiche pas).
     // 🔴 Le secret de chaque org est tiré par la connexion, chiffré dans le store et posé dans l'org : aucune
     // route n'en voit la couleur. `satisfies` sur l'objet intérieur : le contrôle des propriétés ne traverse
@@ -2605,7 +2606,7 @@ async function main(): Promise<void> {
         audit: auditSink,
       } satisfies SalesforceRouteDeps;
     })() } : {}),
-    // Paramètres > Intégrations > Shopify : la carte en lecture et « Couper », par la gestion des outils MCP.
+    // Tools > Intégrations > Shopify : la carte en lecture et « Couper », par la gestion des outils MCP.
     shopify: { gestion: gestionShopify, preparation: preparationShopify, audit: auditSink } satisfies ShopifyRouteDeps,
     // Les webhooks des boutiques : la boutique se reconnaît à son domaine, son secret vérifie la signature.
     shopifyWebhooks: {

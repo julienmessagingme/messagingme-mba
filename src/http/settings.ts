@@ -103,7 +103,7 @@ export function registerSettings(
     const choix = await deps.choixHubspot(tenant);
     return reply.code(200).send({
       ...settings, rcsEnabled, hubspotPortalConnecte,
-      // Lot 1bis : le choix des fonctions HubSpot (l'écran Paramètres > Intégrations > HubSpot et son étape de choix).
+      // Lot 1bis : le choix des fonctions HubSpot (l'écran Tools > Intégrations > HubSpot et son étape de choix).
       hubspotAnalyse: choix.analyse,
       hubspotPassage: choix.passage,
       hubspotInjoignable: choix.injoignable,
@@ -131,7 +131,7 @@ export function registerSettings(
   });
 
   /**
-   * L'interrupteur HubSpot de l'espace (Paramètres > Intégrations), admin. Sa lecture voyage avec
+   * L'interrupteur HubSpot de l'espace (Tools > Intégrations), admin. Sa lecture voyage avec
    * `GET /settings` (`hubspotActif`). Allumer n'est jamais refusé.
    * 🔴 Éteindre est refusé (409) tant qu'un portail est relié : les analyses continuent de partir vers lui,
    * un interrupteur éteint mentirait. Le client délie d'abord (« Déconnexion complète »). 409 et non 5xx,

@@ -22,15 +22,15 @@ export function DocSignaux() {
       <Section id="signaux" titre={t('Ce que la console remonte', 'What the console sends back')}>
         <p>
           {t(
-            'Quand il se passe quelque chose sur une fiche, la console pousse un événement, avec l’état courant de la fiche, vers l’outil que votre administrateur a branché dans Paramètres > Intégrations.',
-            'When something happens on a contact, the console pushes an event, with the contact’s current state, to the tool your administrator connected in Settings > Integrations.',
+            'Quand il se passe quelque chose sur une fiche, la console pousse un événement, avec l’état courant de la fiche, vers l’outil que votre administrateur a branché dans Tools > Intégrations.',
+            'When something happens on a contact, the console pushes an event, with the contact’s current state, to the tool your administrator connected in Tools > Integrations.',
           )}
         </p>
         <Liste>
           <li>
             {t(
-              'Seuls les outils proposés dans Paramètres > Intégrations les reçoivent : ce n’est pas un webhook vers une adresse de votre choix.',
-              'Only the tools offered in Settings > Integrations receive them: this is not a webhook to an address of your choice.',
+              'Seuls les outils proposés dans Tools > Intégrations les reçoivent : ce n’est pas un webhook vers une adresse de votre choix.',
+              'Only the tools offered in Tools > Integrations receive them: this is not a webhook to an address of your choice.',
             )}
           </li>
           <li>

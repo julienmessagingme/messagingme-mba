@@ -1072,7 +1072,7 @@ function VocalMessage({ session, conversationId, message, traduire }: {
       if (err instanceof ApiError && err.status === 410) setExpire(true);
       // Le crédit IA paie la transcription (lot 6, C) : épuisé, « réessayez » serait faux, recharger règle le problème.
       else if (err instanceof ApiError && err.status === 402) {
-        setErreur(t('Crédit IA épuisé : rechargez-le dans Paramètres > Crédit IA pour transcrire ce vocal.', 'AI credit used up: top it up in Settings > AI credit to transcribe this voice note.'));
+        setErreur(t('Crédit IA épuisé : rechargez-le dans Paramètres > Offre, onglet Crédit IA, pour transcrire ce vocal.', 'AI credit used up: top it up in Settings > Plan, AI credit tab, to transcribe this voice note.'));
       } else setErreur(t('La transcription a échoué, réessayez.', 'Transcription failed, try again.'));
     } finally { setOccupe(null); }
   }
@@ -1862,7 +1862,7 @@ function Thread({ session, conversation, dossier, peutPrendre, onSent }: {
               le client règle lui-même. Et seulement pour un ADMIN : la page Crédit IA renvoie un non-admin vers
               l'Inbox, le lien le ferait tourner en rond ; la phrase lui dit déjà qu'un administrateur recharge. */}
           {causeDeCredit(traductionCause) && session.role === 'admin' && (
-            <Link href="/parametres/credit" data-testid="traduction-recharger" className="ml-1 font-medium underline hover:text-alerte-700">
+            <Link href="/offre?tab=credit" data-testid="traduction-recharger" className="ml-1 font-medium underline hover:text-alerte-700">
               {t('Recharger le crédit', 'Top up credit')}
             </Link>
           )}

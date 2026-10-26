@@ -452,7 +452,8 @@ export async function demarrerWorker(): Promise<void> {
     // Le ménage (2026-10-23) : l'activation ne fait que programmer l'oubli du modèle remplacé (file ci-dessous).
     programmerOubli: programmerOubliShopify,
     emails: { emettre: (e) => emetteurEmails.emettre(e) },
-    pageParametres: `${config.APP_URL.trim().replace(/\/+$/, '')}/parametres`,
+    // La carte Shopify vit dans Tools > Intégrations depuis le 2026-10-26 (son ancre ne change pas).
+    pageParametres: `${config.APP_URL.trim().replace(/\/+$/, '')}/integrations#integration-shopify`,
   };
 
   /**

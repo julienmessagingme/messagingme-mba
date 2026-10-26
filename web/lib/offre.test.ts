@@ -209,3 +209,22 @@ describe('les sièges du Pro (spec offres v2, livraison 7)', () => {
     expect(lireSiegeRequis(null)).toBeNull();
   });
 });
+
+describe('l’abonnement Pro dans la vue (2026-10-26)', () => {
+  const ABO = {
+    statut: 'resiliation_programmee', periodicite: 'mois', debutLe: '2026-09-12T08:00:00.000Z', prochaineEcheanceLe: null,
+    finPrevueLe: '2026-11-12T08:00:00.000Z', essaiFinLe: null, finiLe: null, finRaison: null,
+  };
+
+  it('lu tel que le serveur le calcule', () => {
+    expect(lireVueOffre({ ...BASE, abonnement: ABO })!.abonnement).toEqual(ABO);
+  });
+
+  it('🔴 une API qui ne le porte pas, ou un abonnement illisible : la vue reste lisible, sans abonnement (l’ancien bloc)', () => {
+    expect(lireVueOffre(BASE)!.abonnement).toBeNull();
+    for (const casse of [{ ...ABO, statut: 'suspendu' }, { ...ABO, periodicite: 'semaine' }, { ...ABO, debutLe: 'hier' }, { ...ABO, finPrevueLe: 42 }, { ...ABO, finRaison: 'autre' }]) {
+      expect(lireVueOffre({ ...BASE, abonnement: casse })).not.toBeNull();
+      expect(lireVueOffre({ ...BASE, abonnement: casse })!.abonnement).toBeNull();
+    }
+  });
+});

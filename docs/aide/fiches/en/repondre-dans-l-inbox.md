@@ -1,6 +1,6 @@
 ---
 slug: reply-in-the-inbox
-traduit_de: 56ff2f
+traduit_de: 9065c1
 ---
 # Reply to a customer in the Inbox
 
@@ -44,7 +44,7 @@ even if the voice message was in Spanish.
 ⚠️ Translation is paid from your workspace’s credit, unlike transcription and this help. Each translation is
 deducted from it, at the same rate as AI agents, and the credit log groups them into one line per day. Without
 credit, the thread stays in its original language and the screen tells you so. An administrator finds the “Top up
-credit” link there, to Settings, AI credit; if you are not an administrator, ask one of them to top it up. If it
+credit” link there, to the AI credit tab of Settings > Plan; if you are not an administrator, ask one of them to top it up. If it
 says translation is temporarily unavailable, your credit is not the cause, try again a little later. Your
 workspace’s very first translation takes a few more seconds: the thread first shows in its original language, then
 comes back fully translated, without you having to reopen the conversation.

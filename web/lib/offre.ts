@@ -87,7 +87,26 @@ export interface VueOffre {
   sieges: { inclus: number; achetes: number; periodicite: 'mois' | 'an' } | null;
   /** Le prix HT d'un siège, en centimes ; `null` tant que les sièges ne sont pas en vente, ou sur une API plus ancienne. */
   prixSiege: { moisCentimes: number; anCentimes: number } | null;
+  /**
+   * L'abonnement Pro dit en clair (2026-10-26) : statut, souscription, renouvellement ou fin, essai, tels que le serveur les
+   * calcule (`statutDuPro`, `src/offres/vue.ts`). `null` sans Pro, vivant ou fini, ou sur une API plus ancienne : la page
+   * garde alors son ancien bloc d'abonnement.
+   */
+  abonnement: AbonnementPro | null;
   upgradeUrl: string;
+}
+
+export type StatutAbonnementPro = 'termine' | 'en_retard' | 'resiliation_programmee' | 'essai' | 'actif';
+
+export interface AbonnementPro {
+  statut: StatutAbonnementPro;
+  periodicite: 'mois' | 'an';
+  debutLe: string;
+  prochaineEcheanceLe: string | null;
+  finPrevueLe: string | null;
+  essaiFinLe: string | null;
+  finiLe: string | null;
+  finRaison: 'resiliation' | 'impaye' | null;
 }
 
 type Objet = Record<string, unknown>;
@@ -158,11 +177,28 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     essai: lireEssai(brut.essai),
     sieges: lireSieges(brut.sieges),
     prixSiege: lirePrixPro(brut.prixSiege),
+    abonnement: lireAbonnement(brut.abonnement),
     upgradeUrl: brut.upgradeUrl,
   };
 }
 
 const estPeriodicite = (v: unknown): v is 'mois' | 'an' => v === 'mois' || v === 'an';
+
+const STATUTS_PRO: readonly StatutAbonnementPro[] = ['termine', 'en_retard', 'resiliation_programmee', 'essai', 'actif'];
+const dateOuNulle = (v: unknown): v is string | null => v === null || (typeof v === 'string' && !Number.isNaN(Date.parse(v)));
+
+/** Un abonnement absent ou illisible ne rend pas la vue illisible : la page garde son ancien bloc. */
+function lireAbonnement(v: unknown): VueOffre['abonnement'] {
+  if (!estObjet(v) || !(STATUTS_PRO as readonly unknown[]).includes(v.statut) || !estPeriodicite(v.periodicite)) return null;
+  if (typeof v.debutLe !== 'string' || Number.isNaN(Date.parse(v.debutLe))) return null;
+  if (![v.prochaineEcheanceLe, v.finPrevueLe, v.essaiFinLe, v.finiLe].every(dateOuNulle)) return null;
+  if (v.finRaison !== null && v.finRaison !== 'resiliation' && v.finRaison !== 'impaye') return null;
+  return {
+    statut: v.statut as StatutAbonnementPro, periodicite: v.periodicite, debutLe: v.debutLe,
+    prochaineEcheanceLe: v.prochaineEcheanceLe as string | null, finPrevueLe: v.finPrevueLe as string | null,
+    essaiFinLe: v.essaiFinLe as string | null, finiLe: v.finiLe as string | null, finRaison: v.finRaison,
+  };
+}
 
 /** Des sièges absents ou illisibles ne rendent pas la vue illisible : la page n'en parle pas. */
 function lireSieges(v: unknown): VueOffre['sieges'] {

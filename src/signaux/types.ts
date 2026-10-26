@@ -97,7 +97,7 @@ export type ChampEvenement<N extends NomEvenement> = (typeof CHAMPS_EVENEMENT)[N
  * Le libellé d'une poussée ratée dans le journal des erreurs, le même pour tout adaptateur. Il ne nomme aucun
  * outil : ce journal est lu par la marque, le nom de l'outil est réservé à l'écran de réglage de son adaptateur.
  */
-export const NOM_APPEL_SIGNAUX = 'Outil branché (Paramètres > Intégrations) : mise à jour des profils';
+export const NOM_APPEL_SIGNAUX = 'Outil branché (Tools > Intégrations) : mise à jour des profils';
 
 /**
  * Au plus autant de signaux par job : une action en masse (désabonnement de milliers de fiches) s'enfile en

@@ -1,21 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { Squelette } from '@/components/Squelette';
 import { Icone } from '@/components/Icone';
 import { Bouton, classesBouton } from '@/components/Bouton';
 import { useConfirmation } from '@/components/Confirmation';
+import { MbaTabs } from '@/components/MbaTabs';
+import { OngletCreditIA } from '@/components/OngletCreditIA';
+import { AbonnementPro } from '@/components/AbonnementPro';
+import { FacturesEspace } from '@/components/FacturesEspace';
 import type { Session } from '@/lib/session';
 import { useT } from '@/lib/i18n';
-import { oublierOffre, useOffre } from '@/lib/use-offre';
+import { oublierOffre, relireOffre, useOffre } from '@/lib/use-offre';
 import { changerSieges, payerPro, portailPro, rendreNumero } from '@/lib/api/offre';
 import { ApiError, erreurDeChargement } from '@/lib/http';
 import {
   FONCTIONS_OFFRE, NOMS_OFFRES, libelleFonction, nomDeLOffre, offreQuiOuvre,
-  type FonctionOffre, type LimitesOffre, type NomOffre,
+  type FonctionOffre, type LimitesOffre, type NomOffre, type VueOffre,
 } from '@/lib/offre';
 
 /**
@@ -29,10 +34,54 @@ import {
  *
  * Le Pro se paie sur la page de Stripe (livraison B1) : « Mensuel » ou « Annuel », aux prix que porte la vue. Tant qu'il
  * n'est pas en vente (`prixPro` nul : prix Stripe pas posés, ou API plus ancienne), « Passer en Pro » mène au Support,
- * sujet prérempli. Un Pro gère son abonnement au portail de Stripe.
+ * sujet prérempli.
+ *
+ * 🔴 DEUX ONGLETS DEPUIS LE 2026-10-26 (demande de Julien) : « Offre » et « Crédit IA » (`?tab=credit`), qui était la page
+ * `/parametres/credit` (elle redirige ici, `web/next.config.mjs`, retour de Stripe et e-mails compris). La Free n'a pas
+ * l'onglet Crédit IA : la console ne lui ouvre pas cet écran, elle recharge depuis Claude (ses routes de solde sont fermées).
+ * Une offre inconnue (API plus ancienne) garde les deux onglets : tout reste ouvert. Le Pro y lit son abonnement en clair
+ * (`AbonnementPro`), le résilie ou annule la résiliation, et toutes les factures de l'espace s'y listent (`FacturesEspace`).
  */
 export default function OffrePage() {
-  return <AppShell active="offre">{(session) => <OffreInner session={session} />}</AppShell>;
+  // `useSearchParams` impose une frontière Suspense au build (règle de Next 15).
+  return <AppShell active="offre">{(session) => <Suspense fallback={null}><Offre session={session} /></Suspense>}</AppShell>;
+}
+
+type Onglet = 'offre' | 'credit';
+
+function Offre({ session }: { session: Session }) {
+  const t = useT();
+  const router = useRouter();
+  const params = useSearchParams();
+  // Avant `useOffre` : le retour d'un paiement du Pro oublie l'offre gardée, que la lecture qui suit refait donc.
+  const [retour] = useState(retourDeStripe);
+  const vue = useOffre(session.tenantId);
+  // La Free n'a pas l'écran du crédit ; une offre inconnue (`null`) garde tout ouvert.
+  const avecCredit = vue === null || (vue !== undefined && vue.fonctions.has('console'));
+  const onglet: Onglet = params.get('tab') === 'credit' && avecCredit ? 'credit' : 'offre';
+  // L'onglet vit dans l'adresse : la page est partageable, et le retour de Stripe y ramène.
+  const choisir = (cle: string): void => { router.replace(cle === 'credit' ? '/offre?tab=credit' : '/offre', { scroll: false }); };
+
+  return (
+    <div className="mx-auto max-w-liste space-y-6">
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <span className="text-xs font-medium text-ink-500">{t('Paramètres', 'Settings')}</span>
+          <TitrePage>{t('Offre', 'Plan')}</TitrePage>
+        </div>
+        {avecCredit && (
+          <MbaTabs
+            tabs={[{ key: 'offre', label: t('Offre', 'Plan') }, { key: 'credit', label: t('Crédit IA', 'AI credit') }]}
+            active={onglet}
+            onSelect={choisir}
+          />
+        )}
+      </div>
+      {vue === undefined
+        ? <Squelette forme="carte" />
+        : onglet === 'credit' ? <OngletCreditIA session={session} /> : <OffreInner session={session} vue={vue} retour={retour} />}
+    </div>
+  );
 }
 
 /** La fonction qui a mené ici, depuis un menu grisé (`/offre?fonction=inbox`). Lue après le montage de la coquille. */
@@ -62,11 +111,8 @@ function retourDeStripe(): 'recu' | 'abandon' | null {
 /** Un prix en euros, sans centimes quand il n'en a pas (« 49 € », « 490 € »). */
 const euros = (centimes: number): string => `${(centimes / 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} €`;
 
-function OffreInner({ session }: { session: Session }) {
+function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre | null; retour: 'recu' | 'abandon' | null }) {
   const t = useT();
-  // Avant `useOffre` : le retour d'un paiement oublie l'offre gardée, que la lecture qui suit refait donc.
-  const [retour] = useState(retourDeStripe);
-  const vue = useOffre(session.tenantId);
   const [demandee] = useState(fonctionDemandee);
   const [paiement, setPaiement] = useState<'mois' | 'an' | 'portail' | null>(null);
   const [erreurPaiement, setErreurPaiement] = useState<string | null>(null);
@@ -97,7 +143,8 @@ function OffreInner({ session }: { session: Session }) {
     setErreurSieges(null);
     try {
       setAchetesChoisis((await changerSieges(session.tenantId, achetes, achetes - 1)).sieges);
-      oublierOffre();
+      // La carte d'abonnement dit aussi les sièges : la vue entière est relue, pas seulement oubliée.
+      await relireOffre(session.tenantId);
     } catch (err) {
       setErreurSieges(erreurDeChargement(err, t));
     } finally {
@@ -111,6 +158,8 @@ function OffreInner({ session }: { session: Session }) {
     setErreurRendre(null);
     try {
       setRendreChoisi((await rendreNumero(session.tenantId, rendre)).rendreNumero);
+      // La confirmation de résiliation dit ce que devient le numéro : elle lit la vue, qui est relue.
+      await relireOffre(session.tenantId);
     } catch (err) {
       setErreurRendre(erreurDeChargement(err, t));
     } finally {
@@ -164,17 +213,11 @@ function OffreInner({ session }: { session: Session }) {
     return v.toLocaleString('fr-FR');
   };
 
-  if (vue === undefined) {
-    return <div className="mx-auto max-w-liste space-y-4"><Squelette forme="carte" /></div>;
-  }
   if (vue === null) {
     return (
-      <div className="mx-auto max-w-liste space-y-4">
-        <TitrePage>{t('Offre', 'Plan')}</TitrePage>
-        <p className="text-sm text-ink-500" data-testid="offre-inconnue">
-          {t('L’offre de cet espace n’est pas encore disponible. Réessayez dans quelques minutes.', 'This workspace’s plan is not available yet. Try again in a few minutes.')}
-        </p>
-      </div>
+      <p className="text-sm text-ink-500" data-testid="offre-inconnue">
+        {t('L’offre de cet espace n’est pas encore disponible. Réessayez dans quelques minutes.', 'This workspace’s plan is not available yet. Try again in a few minutes.')}
+      </p>
     );
   }
 
@@ -194,10 +237,14 @@ function OffreInner({ session }: { session: Session }) {
     { cle: 'membres', libelle: t('Utilisateurs', 'Users'), utilise: vue.usage.membres, max: vue.limites.utilisateurs },
   ];
 
+  // L'abonnement Pro en clair : en tête quand il court, après « Passer en Pro » quand il est fini (une Free revenue).
+  const abonnement = vue.abonnement;
+  const carteAbonnement = abonnement ? <AbonnementPro tenantId={session.tenantId} vue={{ ...vue, abonnement }} /> : null;
+  const proVivant = abonnement !== null && abonnement.statut !== 'termine';
+
   return (
-    <div className="mx-auto max-w-liste space-y-6">
+    <div className="space-y-6">
       <div>
-        <TitrePage>{t('Offre', 'Plan')}</TitrePage>
         <IntroPage>
           {t('Votre espace est en offre', 'Your workspace is on the')}{' '}
           <strong className="font-semibold text-ink-900" data-testid="offre-actuelle">{nomDeLOffre(vue.offre, t)}</strong>
@@ -215,6 +262,8 @@ function OffreInner({ session }: { session: Session }) {
           </p>
         )}
       </div>
+
+      {proVivant && carteAbonnement}
 
       {demandee && offreDemandee && offreDemandee !== vue.offre && (
         <p className="rounded-carte border border-brand-200 bg-brand-50 px-4 py-3 text-sm text-brand-700" data-testid="offre-raison">
@@ -306,6 +355,8 @@ function OffreInner({ session }: { session: Session }) {
         </section>
       )}
 
+      {!proVivant && carteAbonnement}
+
       {vue.offre === 'pro' && vue.suiteDuNumero && (() => {
         // La suite du numéro fourni (lot 6, B2b) : inclus tant que le Pro court ; à sa fin prévue, 3,50 € HT par mois sur
         // la même carte, ou rendu si l'administrateur l'a choisi (réversible tant que le Pro court).
@@ -369,7 +420,8 @@ function OffreInner({ session }: { session: Session }) {
         );
       })()}
 
-      {vue.offre === 'pro' && (
+      {/* L'ancien bloc, pour une API qui ne rend pas encore l'abonnement (la console part avant l'API). */}
+      {vue.offre === 'pro' && abonnement === null && (
         <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-abonnement">
           {vue.essai?.finLe && (
             <p className="w-full text-sm text-ink-700" data-testid="offre-essai-fin">
@@ -387,6 +439,8 @@ function OffreInner({ session }: { session: Session }) {
           {erreurPaiement && <p className="w-full text-sm text-danger" data-testid="offre-paiement-erreur">{erreurPaiement}</p>}
         </section>
       )}
+
+      <FacturesEspace tenantId={session.tenantId} />
 
       <section className="overflow-x-auto rounded-carte border border-ink-200 bg-white" data-testid="offre-grille">
         <table className="w-full min-w-[34rem] text-sm">

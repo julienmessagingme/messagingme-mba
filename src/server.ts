@@ -261,12 +261,12 @@ export interface ServerDeps {
   rcsMessages?: RcsMessageRouteDeps;
   /** Activation du canal RCS d'un workspace (page d'accueil). Écritures admin-only. */
   rcsChannel?: RcsChannelRouteDeps;
-  /** Paramètres > Intégrations > Batch : l'outil qui reçoit les signaux. Admin, lecture comprise. */
+  /** Tools > Intégrations > Batch : l'outil qui reçoit les signaux. Admin, lecture comprise. */
   integrationBatch?: IntegrationBatchRouteDeps;
   /** Développeurs > Webhooks sortants (lot 12). */
   evenements?: EvenementsRouteDeps;
   /**
-   * Paramètres > Intégrations > Salesforce : l'interrupteur, la connexion de l'org, ses réglages. Admin,
+   * Tools > Intégrations > Salesforce : l'interrupteur, la connexion de l'org, ses réglages. Admin,
    * lecture comprise. Monté seulement quand la clé d'app Salesforce est posée sur l'instance.
    */
   salesforce?: SalesforceRouteDeps;

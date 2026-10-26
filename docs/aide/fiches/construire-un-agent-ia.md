@@ -1,7 +1,7 @@
 ---
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 21990f
+source_empreinte: 6a5ad9
 ---
 # Construire un agent IA
 
@@ -156,8 +156,8 @@ quelle que soit la conversation, et son premier tour lit le message qui l'a déc
 Le solde descend à chaque tour, au tarif affiché dans la liste des
 modèles (notre commission comprise, celle de votre offre), recherche dans la base de connaissance comprise, et aussi
 à la préparation des fiches de connaissance et à chaque traduction ou transcription de l'Inbox. Un avertissement apparaît quand
-il devient bas, et un bandeau rouge à zéro. Un administrateur le recharge dans **Paramètres > Crédit IA**
-(50 € ou 100 € hors taxe, payés sur la page de Stripe ; depuis Claude, aussi 5 € ou 10 €), et 1 € est offert au premier numéro WhatsApp de
+il devient bas, et un bandeau rouge à zéro. Un administrateur le recharge dans l'onglet **Crédit IA** de **Paramètres > Offre**
+(5, 10, 50 ou 100 € hors taxe, payés sur la page de Stripe), et 1 € est offert au premier numéro WhatsApp de
 l'espace, une fois que Meta l'a vérifié. **Sans crédit, on ne peut pas créer d'agent et le
 bac à sable refuse** : un essai appelle vraiment le modèle, il se paie comme une conversation.
 

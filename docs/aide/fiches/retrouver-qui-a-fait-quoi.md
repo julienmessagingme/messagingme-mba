@@ -1,7 +1,7 @@
 ---
 ecran: securite-audit
 source_section: Journaux et traces (menu Sécurité)
-source_empreinte: fde9a8
+source_empreinte: 193233
 ---
 # Retrouver qui a fait quoi, et pourquoi un message n'est pas parti
 
@@ -46,7 +46,7 @@ ne répond à rien. Elle n'a rien d'immuable, et elle disparaît avec le contact
 
 **Les erreurs système** disent quels appels la console a passés vers VOS systèmes sans qu'ils aboutissent :
 qui appelait (un agent IA, le bloc « Appel HTTP » d'un scénario, la poussée d'un désabonnement, l'agent de
-Meta, ou la remontée des signaux vers l'outil branché dans Paramètres > Intégrations) et ce que votre système
+Meta, ou la remontée des signaux vers l'outil branché dans Tools > Intégrations) et ce que votre système
 a répondu.
 
 **On cherche dans les deux** par mot-clé, par utilisateur ou par numéro de client, et les deux s'exportent

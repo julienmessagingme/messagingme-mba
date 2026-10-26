@@ -163,18 +163,23 @@ Le reste de ses prérogatives n'est toujours pas décidé.
 **Console** : **Accueil · mini-CRM · Campagnes · Chaîne · Scénario · Automation · AI Agent (MBA / Other AI
 agent) · Contenu (Templates WhatsApp / Formulaires WhatsApp / Modèles
 d'email / Messages RCS / Blocs / Étiquettes / Champs, rangés par canal depuis le 2026-09-02 : WhatsApp /
-RCS / Email / Bibliothèque) · Tools (Webhooks / Connecteurs API / Connecteurs MCP / SMTP email / Widget WhatsApp)**, puis, collés **en bas** de la barre,
-**Paramètres (Général / Crédit IA) · Support · Developers (Documentation API / Clés d'API / Serveur MCP)**.
+RCS / Email / Bibliothèque) · Tools (Intégrations / Webhooks / Connecteurs API / Connecteurs MCP / SMTP email / Widget WhatsApp)**, puis, collés **en bas** de la barre,
+**Paramètres (Général / Médiathèque / Offre) · Support · Developers (Documentation API / Clés d'API / Serveur MCP)**.
 ⚠️ **Paramètres et Support sont descendus en bas le 2026-09-08** : ils ne servent pas le travail quotidien,
 ils le règlent, comme Developers. Aucune adresse n'a changé.
 - ✅ **« AI Agent » tient en deux liens directs** (2026-09-29, décision de Julien) : **MBA** mène droit aux
   paramètres de l'agent de Meta, **Other AI agent** droit à l'écran des agents IA. Le guide du MBA a été
   retiré (son adresse `/mba` mène aux paramètres), et ce qu'il disait de juste sur l'éligibilité est dit là où
   elle bloque, sur le bandeau du numéro pas encore ouvert.
-- ✅ **« Paramètres » se déplie en deux** (2026-09-29) : **Général** (la page d'avant, inchangée) et **Crédit
-  IA**, venu de « Other AI agent » : le crédit paie les agents IA ET la traduction de l'Inbox, c'est un réglage
-  de l'espace et pas d'un agent. L'ancienne adresse `/agents/credit` mène à `/parametres/credit`. Un manager
-  n'y voit que Général.
+- ✅ **« Paramètres » se déplie** (2026-09-29) : **Général** (la page d'avant) et **Crédit IA**, venu de « Other AI
+  agent » : le crédit paie les agents IA ET la traduction de l'Inbox, c'est un réglage de l'espace et pas d'un agent. Un
+  manager n'y voit que Général. **Depuis le 2026-10-26** (demande de Julien), le Crédit IA est le second onglet de
+  **Offre** (`/offre?tab=credit`) et quitte la barre, qui garde Général, Médiathèque et Offre ; `/agents/credit` et
+  `/parametres/credit` y mènent.
+- ✅ **Tools > Intégrations** (2026-10-26, demande de Julien) : les cartes **Batch, HubSpot, Salesforce et Shopify**
+  quittent Paramètres > Général, qui ne règle plus que l'espace (fuseau, heures d'ouverture, prise des conversations,
+  contacts bloqués, et une ligne qui dit où elles sont parties). Réservé aux admins. Une ancienne ancre
+  (`/parametres#integration-shopify`, dans des e-mails déjà partis ou un favori) ouvre la même carte dans Intégrations.
 - ✅ **En Free, la console se réduit à l'essentiel** (spec offres v2, 2026-10-17) : **Accueil** (le numéro, et les
   trois gestes pour piloter l'espace depuis Claude Code, Cursor ou l'API), **Clés d'API**, **Documentation API**,
   **Serveur MCP**, **Offre**, le **Compte** et le **Support**. Les autres écrans restent dans la barre, grisés, et
@@ -1297,7 +1302,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
       seul point final, elle n'en a aucun par elle-même. Arrêter ne touche pas à l'historique déjà envoyé.
     - Supprimer une adresse dont une campagne vivante se nourrit est **refusé**, en nommant la campagne.
   - **🔗 HubSpot** (2026-07-18, sous « Autre ») : importe une **liste HubSpot** comme destinataires. Le bouton est actif seulement
-    si « Vos listes HubSpot comme audience de campagne » est branché (Paramètres > Intégrations > HubSpot) **et** que la synchronisation HubSpot
+    si « Vos listes HubSpot comme audience de campagne » est branché (Tools > Intégrations > HubSpot) **et** que la synchronisation HubSpot
     n'est pas en pause : pendant une pause, la source est **grisée** avec l'explication au survol, au lieu d'ouvrir
     un panneau vide. On choisit une liste du portail (nom, nombre de contacts, active/statique), on importe ses
     contacts (taggés `HubSpot: <nom>`, opt-in accordé : la liste HubSpot en porte la preuve ; sauf à qui a répondu
@@ -1494,7 +1499,7 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   une recharge qui rend la traduction possible).
   Un espace sans crédit ne traduit pas, et l'écran le dit au lieu de rester muet. Il distingue **trois
   causes** : crédit épuisé (un administrateur peut le recharger, et le bandeau porte le lien « Recharger le
-  crédit » vers Paramètres, Crédit IA, montré aux admins seulement : la page Crédit IA renvoie un non-admin vers
+  crédit » vers l'onglet Crédit IA de Paramètres > Offre, montré aux admins seulement : la page Crédit IA renvoie un non-admin vers
   l'Inbox, et la phrase du bandeau lui dit déjà qu'un administrateur recharge), traduction momentanément indisponible
   (l'espace a du crédit, recharger n'y changerait rien) ou traduction pas encore activée sur le serveur
   (rien à faire côté client).
@@ -2197,7 +2202,7 @@ scénario, comment importer des contacts.
   interrupteur ni pastille. Réservé aux administrateurs. Côté API : `POST /v1/sends` sur un numéro délié refuse en
   409 `number_unlinked` si le premier envoi part par WhatsApp (rien n'est créé, la clé d'idempotence est rendue ;
   une cible qui ouvre en RCS est acceptée), et l'outil MCP `reply_in_open_window` rend un refus lisible.
-- ✅ **Le client choisit ce qu'il branche entre Messaging Me et HubSpot** (2026-10-23, **Paramètres > Intégrations >
+- ✅ **Le client choisit ce qu'il branche entre Messaging Me et HubSpot** (2026-10-23, **Tools > Intégrations >
   HubSpot**, admin). Sans portail, la carte propose « Connecter HubSpot », numéro WhatsApp ou pas. Au retour de la
   connexion (faite dans un autre onglet, la carte se relit d'elle-même), elle demande **ce que vous branchez**, les
   défauts cochés : la fiche contact et l'analyse de chaque conversation, la tâche immédiate quand un client demande
@@ -2414,7 +2419,7 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
   l'affirmation est tracée (qui, quand).
 - **Limite de contacts atteinte** : les nouveaux clients ne reçoivent plus leurs messages ; la carte et l'outil d'état
   les comptent, et un e-mail part aux admins au premier refus du mois.
-- **Paramètres > Intégrations > Shopify** (Pro et Entreprise, 2026-10-22) :
+- **Tools > Intégrations > Shopify** (Pro et Entreprise, 2026-10-22) :
   - **sans boutique**, un mode opératoire de cinq minutes chez Shopify : créer l'app à la main sur le tableau de bord
     développeur (son adresse et ses droits se copient d'un clic), l'installer sur la boutique, copier son identifiant et
     son secret ; puis les coller dans la carte, qui branche la boutique et abonne ses événements ;
@@ -2694,12 +2699,12 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
   avec la doc entière en un fichier par langue (`llms-full.txt`, `llms-full.en.txt`). Le Markdown est tiré des pages
   elles-mêmes, et la CI refuse une page changée sans lui.
 
-### Ce que la console remonte vers l'outil du client (Paramètres > Intégrations)
+### Ce que la console remonte vers l'outil du client (Tools > Intégrations)
 
 - ✅ **Un dictionnaire de signaux, le même pour tous les outils** : quand un message est délivré, lu ou en
   échec, quand le contact répond, clique un lien suivi ou se désabonne, et quand sa conversation est analysée,
   la console pousse un ÉVÉNEMENT, avec l'état courant de la fiche, vers l'outil qu'un admin a branché dans
-  **Paramètres > Intégrations** (ses clés s'y saisissent, ne se réaffichent jamais, et le branchement comme le
+  **Tools > Intégrations** (ses clés s'y saisissent, ne se réaffichent jamais, et le branchement comme le
   débranchement s'inscrivent au journal des actions). Les noms commencent par `em_`, et les noms des champs de
   chaque événement sont fixés par le dictionnaire : un adaptateur par outil les TRANSPORTE, il ne les renomme
   pas. La liste complète est dans Developers > Documentation API, page Événements (`/developers/api/events`).
@@ -3220,7 +3225,7 @@ boîte par sous-menu.
     supprimez.
   - **Erreurs système** : les appels que la console passe vers VOS systèmes et qui n'ont pas abouti, avec
     qui appelait (un agent IA, le bloc « Appel HTTP » d'un scénario, la poussée d'un désabonnement, l'agent de
-    Meta, ou la remontée des signaux vers l'outil branché dans Paramètres > Intégrations) et ce que votre
+    Meta, ou la remontée des signaux vers l'outil branché dans Tools > Intégrations) et ce que votre
     système a répondu. Aucun numéro ici : personne n'attend au bout d'un téléphone.
 - ✅ **Recherche dans les deux** : par mot-clé, par utilisateur, par numéro de client. ⚠️ Dans le journal des
   actions, chercher par numéro passe par la fiche du contact, donc **un contact effacé ne s'y retrouve plus**,
@@ -3356,7 +3361,7 @@ répond : quand c'est un agent IA, il reste en veille.
 parlant, le bac à sable, le tour de production et le solde prépayé.
 ➡️ **Claude peut aussi le construire**, connecté à l'espace : voir « Serveur MCP », « Construire un agent IA depuis
 Claude ».
-⚠️ **Sans crédit, un agent ne répond pas** (voir « Le crédit » plus bas, et la page **Paramètres > Crédit IA**,
+⚠️ **Sans crédit, un agent ne répond pas** (voir « Le crédit » plus bas, et l'onglet **Crédit IA** de Paramètres > Offre,
 où un admin le recharge). ⚠️ **Rien n'a encore tourné sur du vrai trafic** : un contact qui atteint un bloc agent, une
 réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario, tout cela reste à voir en vol.
 
@@ -3914,7 +3919,7 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
   (« c'est bas, au bout vos agents cesseront de répondre »), et un bandeau rouge à zéro (« vos agents ne
   répondent plus et sortent par Plafond atteint »). L'agent IA qui répond au client, lui, laisse alors chaque message à
   l'équipe (voir plus haut).
-- ✅ **Un admin le recharge lui-même, en payant** (2026-09-29) : **Paramètres > Crédit IA**, 50 € ou 100 € HT (depuis Claude, par `buy_credit`, aussi 5 € ou 10 € HT, le chemin de la Free),
+- ✅ **Un admin le recharge lui-même, en payant** (2026-09-29) : l'onglet **Crédit IA** de Paramètres > Offre, 5, 10, 50 ou 100 € HT (depuis Claude, par `buy_credit`, aux mêmes montants, le chemin de la Free),
   sur la page de paiement de Stripe (voir « Crédit IA »). Un client ne s'écrit jamais de crédit : seul le paiement
   confirmé par Stripe en ajoute. La recharge à la main par l'exploitation reste possible (voir la section `/ops`).
 - ✅ **1 € OFFERT AU PREMIER NUMÉRO WHATSAPP VÉRIFIÉ PAR META** (5 € du 2026-09-29 au lot 6 ; 1 € pour toutes les
@@ -3997,17 +4002,19 @@ minutes », 30 minutes par défaut, 24 heures au maximum). Passé ce délai, le 
 - ⛔ **Pas de « temps 2 »** : l'agent ne relit pas ses vraies conversations pour se corriger tout seul. Cela
   n'a de valeur qu'une fois qu'il existe des conversations.
 
-## Crédit IA (menu « Paramètres » > Crédit IA)
+## Crédit IA (menu « Paramètres » > Offre, onglet Crédit IA)
 
 Le crédit prépayé de l'espace. Il paie **les agents IA** (chaque échange avec leur modèle et chaque recherche dans
 leur base de connaissance, en production comme au bac à sable), **la préparation des fiches de connaissance, et la
 traduction et la transcription des conversations de l'Inbox**, au tarif de l'offre de l'espace, celui de l'onglet
 Modèle d'un agent (notre commission comprise). Écran réservé aux admins. Il vivait sous « AI Agent » > Other AI agent >
-Crédit jusqu'au 2026-09-29 ; l'ancienne adresse y mène toujours.
+Crédit jusqu'au 2026-09-29, puis dans Paramètres > Crédit IA jusqu'au 2026-10-26, où il est devenu le second onglet de la
+page Offre ; les anciennes adresses y mènent toujours, retour de paiement et liens des e-mails compris.
 
 - ✅ **Le solde**, en euros, avec un avertissement sous 0,50 € et un bandeau rouge à zéro (« vos agents ne
   répondent plus et l'Inbox ne traduit plus »).
-- ✅ **Recharger 50 € HT ou 100 € HT** (2026-09-29, lot 2 du chantier Stripe) : deux boutons. Un clic ouvre la
+- ✅ **Recharger 5, 10, 50 ou 100 € HT** (50 et 100 € le 2026-09-29, lot 2 du chantier Stripe ; 5 et 10 € dans la console
+  le 2026-10-26, Claude les proposait déjà) : quatre boutons. Un clic ouvre la
   **page de paiement hébergée par Stripe**, où l'admin saisit sa carte, sa raison sociale, son adresse de
   facturation et, s'il le veut, son numéro de TVA. La TVA s'ajoute au paiement ; 50 € HT payés donnent 50 € de
   crédit. **Stripe émet la facture** et l'envoie par e-mail. Le crédit n'expire pas et n'est pas remboursé.
@@ -4081,11 +4088,25 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   ouverte.
 - ✅ **La page Offre** (admins) : l'offre de l'espace, ce qu'il consomme de chaque limite (avec une jauge ; en Free,
   celle des contacts dit que ceux qui écrivent les premiers comptent aussi), la grille des trois offres, et le passage en Pro.
+  Deux onglets depuis le 2026-10-26 : **Offre** et **Crédit IA** (voir « Crédit IA »), sauf en Free, qui n'a pas l'écran du
+  crédit et recharge depuis Claude.
 - ✅ **Le Pro se paie en ligne** (livraison B1) : un espace en Free choisit « Mensuel » ou « Annuel » sur la page Offre et
   paie sur la page de Stripe, code promo accepté. L'espace passe en Pro dès que Stripe confirme le paiement (dans la
-  minute), et la page Offre le dit au retour. Un Pro y trouve « Gérer mon abonnement », le portail de Stripe : carte,
-  factures, résiliation. Passer du mensuel à l'annuel n'y est pas ouvert (réglage du portail). Une résiliation prend effet à la fin de la période payée,
-  et l'espace revient alors en Free ; un renouvellement refusé le laisse en Pro pendant les relances de Stripe.
+  minute), et la page Offre le dit au retour. Passer du mensuel à l'annuel n'est pas ouvert (réglage du portail). Une
+  résiliation prend effet à la fin de la période payée, et l'espace revient alors en Free ; un renouvellement refusé le
+  laisse en Pro pendant les relances de Stripe.
+  ✅ **Le Pro dit en clair, résilié et facturé sans quitter la console** (2026-10-26, demande de Julien) : en tête de la
+  page Offre, la carte « Votre abonnement » donne le **statut** (actif, essai gratuit, paiement en retard, résiliation
+  programmée, ou terminé pour un ancien Pro), la **formule** et son prix HT (avec les utilisateurs payés en plus), la
+  **date de souscription**, le **prochain renouvellement** ou la **date de fin**, et la fin de l'essai qui court. Le montant
+  exact du prochain prélèvement n'est pas annoncé (un code promo le rendrait faux) : les factures le disent.
+  « **Résilier mon abonnement** » se confirme, avec la date exacte de fin, « rien n'est remboursé » (« vous ne serez pas
+  prélevé » pendant l'essai) et ce que devient le numéro fourni ; la fin est posée chez Stripe à la fin de la période
+  payée, et jusque-là « **Annuler la résiliation** » la retire. Une fin posée par nous à une date précise ne se retire pas
+  d'ici (« contactez-nous »). « **Changer de carte bancaire** » ouvre le portail de Stripe. « **Vos factures** » liste les
+  24 dernières factures de l'espace (le Pro, le numéro, les recharges du crédit IA), avec leur montant TTC, leur statut
+  (payée, à régler, impayée, annulée) et un lien vers leur page et leur PDF chez Stripe ; les plus anciennes restent sur le
+  portail. Claude lit le même abonnement par `get_plan`.
   ✅ **Un essai gratuit de 14 jours** (spec offres v2, livraison 6) pour un espace qui n'a JAMAIS eu de Pro : la carte est
   demandée sur la page de Stripe, rien n'est prélevé avant la fin de l'essai, le Pro est ouvert tout de suite (numéro
   fourni compris), et la page Offre, comme Claude, dit la date de fin. Un seul essai par espace. À la fin d'un essai sans

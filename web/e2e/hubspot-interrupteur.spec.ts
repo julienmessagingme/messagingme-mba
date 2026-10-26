@@ -6,7 +6,7 @@ import { mockAccueil } from './support/accueil';
  *
  * 🔴 LE DÉFAUT DE DÉPART : sur un espace neuf, SANS numéro WhatsApp, l'Accueil n'offrait aucun bouton pour
  * connecter HubSpot, parce que le bloc ne s'affichait qu'avec un numéro. C'est désormais l'interrupteur de
- * Paramètres > Intégrations qui le fait apparaître. Le serveur tient sa frontière de son côté
+ * Tools > Intégrations qui le fait apparaître. Le serveur tient sa frontière de son côté
  * (`tests/hubspot-interrupteur.test.ts`) ; ici, on regarde ce que l'écran MONTRE et ce qu'il ENVOIE.
  */
 const PORTAIL = { connected: true, hubId: '139615673', hubDomain: 'cobaye.hubspot.com', listsScopeGranted: true };
@@ -24,10 +24,10 @@ test.describe('Accueil : le bloc HubSpot suit l’interrupteur', () => {
     await expect(page.getByTestId('hubspot-renvoi')).toHaveCount(0);
   });
 
-  test('SANS numéro, interrupteur éteint : pas de bloc, une ligne renvoie vers Paramètres > Intégrations', async ({ page }) => {
+  test('SANS numéro, interrupteur éteint : pas de bloc, une ligne renvoie vers Tools > Intégrations', async ({ page }) => {
     await mockAccueil(page, { account: SANS_NUMERO, settings: { ...REGLAGES, hubspotActif: false } });
     await expect(page.getByTestId('hubspot-renvoi')).toBeVisible();
-    await expect(page.getByTestId('hubspot-renvoi-lien')).toHaveAttribute('href', '/parametres#integration-hubspot');
+    await expect(page.getByTestId('hubspot-renvoi-lien')).toHaveAttribute('href', '/integrations#integration-hubspot');
     await expect(page.getByTestId('hubspot-card')).toHaveCount(0);
   });
 
@@ -109,13 +109,13 @@ async function parametres(page: Page, o: { reglages: Record<string, unknown>; co
     if (chemin.endsWith('/me')) return json({ email: 'moi@e2e.test', name: 'Moi', role: 'admin' });
     return json({});
   });
-  await page.goto('/parametres');
+  await page.goto('/integrations');
   return trace;
 }
 
 const CHOIX_FAIT = { hubspotPortalConnecte: true, hubspotAnalyse: true, hubspotPassage: true, hubspotInjoignable: true, hubspotReponse: false, hubspotListsEnabled: false, hubspotChoixValideLe: '2026-10-20T10:00:00.000Z' };
 
-test.describe('Paramètres > Intégrations > HubSpot : le choix des fonctions (lot 1bis)', () => {
+test.describe('Tools > Intégrations > HubSpot : le choix des fonctions (lot 1bis)', () => {
   test('rien de relié : « Connecter HubSpot » et le tuto, pas de choix', async ({ page }) => {
     await parametres(page, { reglages: { hubspotPortalConnecte: false } });
     await expect(page.getByTestId('integration-hubspot-etat')).toContainText('Aucun portail HubSpot relié');

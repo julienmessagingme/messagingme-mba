@@ -46,7 +46,7 @@ export function revokeApiKey(tenantId: string, id: string): Promise<{ id: string
   return request(`/tenants/${tenantId}/api-keys/${id}`, { method: 'DELETE' });
 }
 
-// --- Intégrations : l'outil qui reçoit les signaux (Paramètres > Intégrations) ---
+// --- Intégrations : l'outil qui reçoit les signaux (Tools > Intégrations) ---
 
 /**
  * L'état du branchement, tel que le serveur le rend (`src/http/integration-batch.ts`). Les clés n'y sont

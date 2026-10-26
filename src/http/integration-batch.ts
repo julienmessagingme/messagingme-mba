@@ -6,7 +6,7 @@ import { espaceVerifie } from './scope';
 import type { VueIntegrationBatch } from '../signaux/integration-batch.pg';
 
 /**
- * Paramètres > Intégrations > Batch : brancher l'outil qui reçoit les signaux.
+ * Tools > Intégrations > Batch : brancher l'outil qui reçoit les signaux.
  * 🔴 Réservé aux admins, lecture comprise (monté sous `g.admin`) : ces clés font sortir des données de contacts.
  * 🔴 Les clés ne reviennent jamais, ni dans une réponse ni dans l'audit ; le chiffrement se fait dans le câblage.
  */
