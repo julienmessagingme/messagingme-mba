@@ -687,8 +687,12 @@ Spec `docs/superpowers/specs/2026-10-14-medias-message-rapide-design.md`, plan d
   pendant `GRACE_SUPPRESSION_JOURS` : `/m/` sert encore le fichier, pour un visuel RCS téléchargé tard. L'étape `medias`
   de la rétention générale efface au-delà. 🔴 Les écrans qui téléversent sont inventoriés par
   `tests/medias-lieux.test.ts` : un écran neuf qui pose `<ChampImageHebergee>` doit dire où son contenu est enregistré.
-- **Où vivent les octets** : dans `rcs_media.bytes`, jusqu'au lot A du plan, qui les sort vers un bucket APRÈS la
-  bascule Scaleway. La carte « octets en base » de `/ops` les compte.
+- **Où vivent les octets** : dans `rcs_media.bytes`, jusqu'au lot A du plan, qui les sort vers un bucket avant
+  l'ouverture du site (l'épreuve de la médiathèque froide, `docs/ARCHITECTURE-CIBLE.md` § 11). La carte « octets en
+  base » de `/ops` les compte.
+- **Le cache devant `/m/`** : Cloudflare garde chaque image un jour (le `cache-control` de la route), sous une clé qui
+  IGNORE la chaîne de requête (règle de cache « Images /m/ sans chaîne de requête » de la zone `messagingme.app`). 🔴 La
+  route ne lit donc jamais un paramètre de requête : une variante (`?w=200`) recevrait la copie de l'adresse nue.
 
 ### 4.4 Un agent IA répond
 

@@ -3074,6 +3074,8 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
 
 🔴 **ET AVANT L'OUVERTURE DU SITE** : l'épreuve de la médiathèque froide a échoué le 2026-10-26 au soir chez Scaleway
 (`docs/ARCHITECTURE-CIBLE.md` § 11 : 33 images lues ensemble, 1,7 s au pire, 12 attentes du pool de l'API sur 42).
+⚠️ La clé de cache de `/m/` chez Cloudflare ignore la chaîne de requête : la route réécrite par le lot ne doit lire
+aucun paramètre de requête (`documentation.md`, le cache devant `/m/`).
 
 Les lots B (médiathèque, quota, suppression) et C (vidéo et PDF dans le bloc « message rapide ») sont livrés le
 2026-10-15 avec les fichiers EN BASE (`rcs_media.bytes`), décision de Julien. Reste le lot A, à faire APRÈS la bascule :
