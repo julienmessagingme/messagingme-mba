@@ -29,6 +29,8 @@ const limite = (offre: 'base' | 'pro', nom: 'contacts' | 'envoisModelesMois'): n
   if (v === null) throw new Error(`boutique-textes : ${offre}.${nom} est illimité`);
   return v;
 };
+/** L'icône de l'application WhatsApp Business (la bulle au « + »), à côté de la question qui la nomme, pour la reconnaître sur son téléphone. */
+const LOGO_APPLICATION = '/img/logos/whatsapp-business.png';
 const milliers = (n: number, langue: Langue): string =>
   (langue === 'fr' ? n.toLocaleString('fr-FR').replace(/\s/g, '&nbsp;') : n.toLocaleString('en-US'));
 
@@ -38,7 +40,7 @@ export interface Etape { readonly titre: string; readonly texte: string }
 /** Une réponse mène à une autre question ou à une issue (`vers`) ; sans `vers`, elle montre l'aide de sa question.
  * `note` : une phrase qui s'affiche sous la question quand on la choisit (le « Non » au compte n'arrête rien). */
 export interface Reponse { readonly libelle: string; readonly vers?: string; readonly note?: string }
-export interface Question { readonly id: string; readonly texte: string; readonly precision?: string; readonly aide?: string; readonly reponses: readonly Reponse[]; readonly voies?: readonly Voie[] }
+export interface Question { readonly id: string; readonly texte: string; readonly precision?: string; readonly aide?: string; readonly reponses: readonly Reponse[]; readonly voies?: readonly Voie[]; readonly logo?: string }
 /** Une des deux voies d'une issue à choix (QR code ou API), avec ce qu'elle apporte et ce qu'elle coûte. */
 export interface Voie { readonly titre: string; readonly plus: readonly string[]; readonly moins: readonly string[] }
 /** `situation` se lit sans script, quand toutes les issues s'affichent l'une sous l'autre. */
@@ -192,7 +194,7 @@ const fr = (): TexteBoutique => {
           ],
         },
         {
-          id: 'application-compte', texte: 'Avez-vous l’application WhatsApp Business sur le numéro de votre entreprise ?', precision: 'L’application des professionnels, distincte de WhatsApp.',
+          id: 'application-compte', texte: 'Avez-vous l’application WhatsApp Business sur le numéro de votre entreprise ?', precision: 'L’application des professionnels, distincte de WhatsApp.', logo: LOGO_APPLICATION,
           reponses: [{ libelle: 'Oui', vers: 'garder-compte' }, { libelle: 'Non', vers: 'numero' }],
         },
         {
@@ -200,7 +202,7 @@ const fr = (): TexteBoutique => {
           reponses: [{ libelle: 'Le garder dans l’application', vers: 'garder-application' }, { libelle: 'Un numéro à part', vers: 'numero' }],
         },
         {
-          id: 'application', texte: 'Avez-vous l’application WhatsApp Business sur le numéro de votre entreprise ?', precision: 'L’application des professionnels, distincte de WhatsApp.',
+          id: 'application', texte: 'Avez-vous l’application WhatsApp Business sur le numéro de votre entreprise ?', precision: 'L’application des professionnels, distincte de WhatsApp.', logo: LOGO_APPLICATION,
           reponses: [{ libelle: 'Oui', vers: 'garder' }, { libelle: 'Non', vers: 'choix' }],
         },
         {
@@ -414,7 +416,7 @@ const en = (): TexteBoutique => {
           ],
         },
         {
-          id: 'application-compte', texte: 'Do you have the WhatsApp Business app on your business’s number?', precision: 'The app for businesses, separate from WhatsApp.',
+          id: 'application-compte', texte: 'Do you have the WhatsApp Business app on your business’s number?', precision: 'The app for businesses, separate from WhatsApp.', logo: LOGO_APPLICATION,
           reponses: [{ libelle: 'Yes', vers: 'garder-compte' }, { libelle: 'No', vers: 'numero' }],
         },
         {
@@ -422,7 +424,7 @@ const en = (): TexteBoutique => {
           reponses: [{ libelle: 'Keep it in the app', vers: 'garder-application' }, { libelle: 'A separate number', vers: 'numero' }],
         },
         {
-          id: 'application', texte: 'Do you have the WhatsApp Business app on your business’s number?', precision: 'The app for businesses, separate from WhatsApp.',
+          id: 'application', texte: 'Do you have the WhatsApp Business app on your business’s number?', precision: 'The app for businesses, separate from WhatsApp.', logo: LOGO_APPLICATION,
           reponses: [{ libelle: 'Yes', vers: 'garder' }, { libelle: 'No', vers: 'choix' }],
         },
         {

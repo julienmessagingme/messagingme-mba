@@ -4,9 +4,9 @@ import { PAGES_GUIDE, pageAvecGuide } from '../scripts/vitrine/guide-meta';
 import { lire, texte } from './vitrine-lecture';
 
 /**
- * LE GUIDE « VOTRE COMPTE META BUSINESS, PAS À PAS » (Julien, 2026-10-19). C'est le seul prérequis que la page
- * Développeurs annonce (« Il vous faut seulement un compte Meta Business ») : la promesse y mène, et ses étapes sont
- * celles que la console et Claude donnent, écrites une fois dans `web/lib/partage/etapes-meta.ts`.
+ * LE GUIDE « VOTRE COMPTE META BUSINESS, PAS À PAS » (Julien, 2026-10-19). C'est le compte qui fait passer un numéro par
+ * l'API officielle, et la page Développeurs y renvoie : ses étapes sont celles que la console et Claude donnent, écrites
+ * une fois dans `web/lib/partage/etapes-meta.ts`.
  */
 describe('le guide Meta Business de la vitrine', () => {
   for (const { chemin, langue } of PAGES_GUIDE) {

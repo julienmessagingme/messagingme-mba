@@ -64,7 +64,7 @@ const etapes = (liste: readonly Etape[]) => [
 function guide(n: TexteBoutique['numero']): string[] {
   const question = (q: Question, i: number) => [
     `          <fieldset class="bt-question" data-question="${q.id}"${q.voies ? ` aria-describedby="voies-${q.id}"` : ''}${i > 0 ? ' hidden' : ''}>`,
-    `            <legend>${q.texte}${q.precision ? `<span class="bt-precision">${q.precision}</span>` : ''}</legend>`,
+    `            <legend${q.logo ? ' class="bt-avec-logo"' : ''}>${q.logo ? `<img class="bt-logo" src="${q.logo}" alt="" width="40" height="40">` : ''}${q.texte}${q.precision ? `<span class="bt-precision">${q.precision}</span>` : ''}</legend>`,
     // Les voies sont lues avec la question, même quand le focus saute directement à sa première réponse.
     ...(q.voies ? [`            <div class="bt-voies" id="voies-${q.id}">`, ...q.voies.flatMap(voie), '            </div>'] : []),
     `            <div class="bt-reponses">${q.reponses.map((r, k) => r.vers

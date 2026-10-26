@@ -42,7 +42,7 @@ métier (répondre à vos clients, leur écrire au bon moment, brancher à votre
 d'usage ou à la documentation, la même liste que le README du plugin sur GitHub), le branchement par le code (API, SDK,
 webhooks signés) et ce que permet l'offre gratuite. « Développeurs », dans le menu de toutes les pages, y mène. Le titre porte la
 mention « Gratuit et sans abonnement ». Sous les boutons du haut, trois promesses : aucun compte à créer, un numéro
-fourni si l'on n'en a pas, seulement un compte Meta Business à avoir ; la troisième mène au guide « Votre compte Meta
+fourni si l'on n'en a pas, seulement un compte Meta Business ou l'application WhatsApp Business à avoir ; la troisième mène au guide « Votre compte Meta
 Business, pas à pas » (`/developpeurs/compte-meta-business/` et sa jumelle anglaise), dont les étapes sont celles que
 donnent la console et Claude, générées depuis `web/lib/partage/etapes-meta.ts`. En haut et en bas de la page, « Installer le plugin » mène aux trois étapes et « Le plugin sur
 GitHub » à son dépôt : depuis le

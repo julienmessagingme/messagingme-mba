@@ -203,7 +203,8 @@ describe('le démarrage passe par le plugin, sans créer d’espace avant (Julie
       expect(html).toContain('<section class="f-bloc dev-etapes bande-claire" id="demarrer">');
       expect(html.split('href="#demarrer"').length - 1, 'le haut et le bas de la page').toBe(2);
       expect(html).toContain('href="https://github.com/julienmessagingme/messagingme-plugin"');
-      // Sous les boutons du haut : aucun compte, un numéro fourni, un compte Meta Business seulement (Julien, 2026-10-19).
+      // Sous les boutons du haut : aucun compte, un numéro fourni, un compte Meta Business ou l'application WhatsApp Business
+      // seulement (Julien, 2026-10-19, puis 2026-10-26).
       const promesses = html.split('<ul class="dev-sans">')[1]?.split('</ul>')[0] ?? '';
       expect(promesses.split('<li>').length - 1).toBe(3);
     });

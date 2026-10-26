@@ -1,6 +1,6 @@
 # Messaging Me for Claude Code
 
-WhatsApp for your app, from Claude Code: an official WhatsApp number, an AI agent that answers your customers and a
+WhatsApp for your app, from Claude Code: your WhatsApp number, an AI agent that answers your customers and a
 chat bubble for your site, set up in one session with [Messaging Me](https://app.messagingme.fr/en/developers/).
 
 **No account to create, no key to copy. No WhatsApp number? We provide one. No Meta Business account? Meta's window
@@ -39,9 +39,9 @@ This is where most people get lost, so here are the five words first.
   (templates: confirmations, reminders, campaigns, Shopify messages). It needs a Meta Business account and a payment
   method at Meta, which bills the templates, and the replies too beyond a monthly allowance. The number leaves the
   WhatsApp app, unless you keep it.
-- **Keeping your WhatsApp Business app** (coming soon): the same number stays in the app on your phone and also goes
-  through the API. You keep replying from your phone, and the messages your application sends go out from Messaging
-  Me.
+- **Keeping your WhatsApp Business app**: the same number stays in the app on your phone and also goes through the
+  API. You keep replying from your phone, and the messages your application sends go out from Messaging Me. What you
+  type in the app does not show in Messaging Me yet, and you need to open the app at least every two weeks.
 - **The QR code**: your WhatsApp Business app linked to Messaging Me like a linked device, with no account at all (no
   Facebook profile, no card at Meta), and Meta does not bill its replies. But it only answers the customers who write
   to you:
@@ -55,7 +55,7 @@ Then `/messagingme:demarrer` asks you, one question at a time:
 1. **Do you have a Meta Business account?** No is not a problem: Meta's window has you create one, or the QR code does
    without it. Not sure: business.facebook.com lists your portfolios, under "Home".
 2. **Do you have the WhatsApp Business app on your business's number?**
-3. **If so, do you want to keep this number in the app, or take a separate number?** Keeping it comes soon.
+3. **If so, do you want to keep this number in the app, or take a separate number?**
 4. **Without a Meta Business account, for a separate or a new number: the QR code, or an account created along the
    way?** The QR code needs no account at all and Meta does not bill its replies, but it only answers (later, the same
    number can keep its app and go through Meta to write first); the account lets your number write first right away.

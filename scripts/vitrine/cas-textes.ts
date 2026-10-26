@@ -66,7 +66,7 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
       liste: [
         { titre: 'Vous installez le plugin', texte: 'Deux commandes dans Claude Code. Il est gratuit, et sans abonnement.' },
         { titre: 'Vous autorisez avec Google', texte: 'Votre espace se crée à ce moment, sans formulaire&nbsp;: aucun compte à remplir.' },
-        { titre: 'Vous reliez votre numéro', texte: 'Il vous faut un compte Meta Business. Pas de numéro&nbsp;? On vous en fournit un.' },
+        { titre: 'Vous reliez votre numéro', texte: 'Il vous faut un compte Meta Business, gratuit, que la fenêtre de Meta vous fait créer en chemin s’il vous manque. Pas de numéro&nbsp;? On vous en fournit un.' },
       ],
       lien: 'Les trois étapes en détail',
     },
@@ -90,7 +90,7 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
       liste: [
         { titre: 'You install the plugin', texte: 'Two commands in Claude Code. It is free, with no subscription.' },
         { titre: 'You authorize with Google', texte: 'Your workspace is created right then, with no form: no account to fill in.' },
-        { titre: 'You connect your number', texte: 'You need a Meta Business account. No number? We provide one.' },
+        { titre: 'You connect your number', texte: 'You need a free Meta Business account, which Meta’s window has you create along the way if you lack one. No number? We provide one.' },
       ],
       lien: 'The three steps in detail',
     },

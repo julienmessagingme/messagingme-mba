@@ -4,6 +4,33 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : le compte Meta Business n'est plus « le seul prérequis », et le logo de l'application WhatsApp Business
+
+Accord de Julien (2026-10-26) : les endroits publics qui disaient le compte Meta Business « le seul prérequis » disent
+qu'il est gratuit et que la fenêtre de Meta le fait créer en chemin. Ils ne parlent pas du QR code, que l'arbre du
+numéro quitte (décision du même jour, portée par le lot de la session produit).
+
+- **Pages développeurs** (écrites à la main, dans les deux langues) : l'étape du numéro ; la promesse « Il vous faut
+  seulement un compte Meta Business », en haut et dans l'appel final, devient « un compte Meta Business ou l'application
+  WhatsApp Business » (Julien, le même jour ; `features.md` suit) ; l'accroche et sa carte de partage promettent « votre
+  numéro WhatsApp ».
+- **Le guide « Compte Meta Business »** (dans les deux langues) : sa description, sa carte de partage et son chapeau ;
+  `llms.txt` suit.
+- **La page SaaS** (`cas-textes.ts`, son étape 3) et **le plugin** : l'accroche du README, la description de
+  `plugin.json` et de `marketplace.json` (« your WhatsApp number »). Version 0.3.12, une seule montée avec le lot
+  Shopify de la session produit.
+- **Garder l'application WhatsApp Business n'est plus « bientôt »** : la voie est en production depuis le lot 1 de la
+  coexistence (essai 161). Le README (le mot et la question 3), la FAQ (« Puis-je garder ce numéro dans
+  l'application WhatsApp ? », réécrite, et « Numéro de l'API ou application WhatsApp Business ») et la skill
+  `mise-en-service` (Claude la propose quand la personne a l'application sur ce numéro et le garde) ne disent plus
+  « bientôt », sans rien promettre du lot 2 : ce qu'on tape dans l'application n'apparaît pas encore dans Messaging Me,
+  et il faut l'ouvrir au moins toutes les deux semaines. Le QR code de la skill part avec l'arbre sans QR code.
+- **Le logo** : l'icône de l'application WhatsApp Business (la bulle au « + », fichier fourni par Julien) à côté des
+  deux questions « Avez-vous l'application WhatsApp Business ? » du guide de la page Boutiques Shopify, dans les deux
+  langues (`site/img/logos/whatsapp-business.png` : l'icône carrée découpée du fichier, le blanc extérieur rendu
+  transparent, 128 px affichés en 40, dans une marge à gauche pour que la question reste alignée sur téléphone). Vue en
+  local, au bureau et au téléphone, avant de pousser.
+
 ## 2026-10-26 : la réserve de numéros fournis en un module (lot B de l'audit de structure), et le 500 de /ops
 
 Plan `docs/superpowers/plans/2026-10-26-audits-simplicite-structure.md`, lot B. « Un numéro revenu à la réserve va

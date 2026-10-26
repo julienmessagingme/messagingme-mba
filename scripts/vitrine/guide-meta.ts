@@ -1,6 +1,6 @@
 // scripts/vitrine/guide-meta.ts
-// Le guide « Votre compte Meta Business, pas à pas » de la vitrine (Julien, 2026-10-19 : le seul prérequis, derrière
-// la promesse « Il vous faut seulement un compte Meta Business » de la page Développeurs).
+// Le guide « Votre compte Meta Business, pas à pas » de la vitrine (Julien, 2026-10-19) : le compte qui fait passer un
+// numéro par l'API officielle, gratuit, créé en chemin dans la fenêtre de Meta ; la page Développeurs y renvoie.
 //
 // Ses étapes ne s'écrivent PAS ici : elles viennent de `web/lib/partage/etapes-meta.ts`, que lisent déjà la console
 // (« Connecter WhatsApp »), les outils MCP et la FAQ du plugin. `npm run vitrine:guide-meta` les écrit dans les deux

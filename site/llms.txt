@@ -18,7 +18,7 @@
 
 - [Messaging Me pour les développeurs](https://app.messagingme.fr/developpeurs/) : WhatsApp dans votre app en une session Claude Code. Installer le plugin Claude Code (l’espace se crée à l’autorisation, avec Google), l’API, le SDK et ce que permet l’offre gratuite.
 - [Messaging Me for developers](https://app.messagingme.fr/en/developers/) : the same page in English.
-- [Votre compte Meta Business, pas à pas](https://app.messagingme.fr/developpeurs/compte-meta-business/) : le seul prérequis pour brancher WhatsApp avec Messaging Me (aucun compte à créer chez nous, un numéro fourni si besoin), puis la carte chez Meta.
+- [Votre compte Meta Business, pas à pas](https://app.messagingme.fr/developpeurs/compte-meta-business/) : le compte, gratuit, qui fait passer votre numéro par l’API officielle et que la fenêtre de Meta vous fait créer en chemin s’il vous manque (aucun compte à créer chez nous, un numéro fourni si besoin), puis la carte chez Meta.
 - [Your Meta Business account, step by step](https://app.messagingme.fr/en/developers/meta-business-account/) : the same guide in English.
 - [Questions fréquentes des développeurs](https://app.messagingme.fr/developpeurs/#faq) : l’API officielle, ce qu’il faut chez Meta, ce que Meta facture, la fenêtre de 24 h, les limites d’envoi, le numéro fourni, la mise à jour du plugin ([en anglais](https://app.messagingme.fr/en/developers/#faq)).
 - [Le plugin Claude Code](https://github.com/julienmessagingme/messagingme-plugin) : `/plugin marketplace add julienmessagingme/messagingme-plugin`, puis `/plugin install messagingme@messagingme` et `/messagingme:demarrer`.

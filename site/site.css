@@ -755,6 +755,8 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .bt-guide{margin:28px 0 0;max-width:820px}
 .bt-question{margin:0 0 20px;padding:0;border:0;min-width:0}
 .bt-question legend{margin:0 0 10px;padding:0;font-weight:700;font-size:1.05rem}
+.bt-question legend.bt-avec-logo{position:relative;padding-left:52px;min-height:42px}
+.bt-logo{position:absolute;left:0;top:2px;width:40px;height:40px}
 .bt-reponses{display:flex;flex-wrap:wrap;gap:10px}
 .bt-reponses .bouton{padding:.7em 1.2em;font-family:inherit;font-size:.95rem;cursor:pointer}
 .bt-reponses .bouton-texte{background:none;border:0;font:inherit;font-weight:600;font-size:.95rem;text-decoration:underline;color:var(--action-ink);cursor:pointer}
