@@ -61,7 +61,9 @@ test.describe('La console d’une Free', () => {
     // Les routes d'espace ouvertes à la Free (`src/server.ts`), en chemins relatifs à l'espace. Un appel ajouté demain à
     // l'un de ces écrans vers une autre route casserait en silence après le déploiement de l'API : ce test le voit.
     const OUVERTES = [
-      /^GET \/offre$/, /^(POST|PUT) \/offre\/(paiement|portail|numero)$/, /^GET \/abonnement-numero$/, /^GET \/me$/,
+      // `resiliation` et `factures` (2026-10-26) : dans le module `offrePaiement`, ouvert tout entier à la Free.
+      /^GET \/offre$/, /^(POST|PUT) \/offre\/(paiement|portail|numero|resiliation)$/, /^GET \/offre\/factures$/,
+      /^GET \/abonnement-numero$/, /^GET \/me$/,
       /^GET \/espaces$/, /^POST \/changer-espace$/, /^(GET|PUT) \/moi\/emails$/, /^GET \/account-status$/, /^GET \/nom$/,
       /^(GET|POST) \/embedded-signup\//, /^(GET|POST) \/numero\//, /^POST \/360dialog\//, /^(GET|POST) \/numero-fourni/,
       /^GET \/connexion-numero$/, /^(GET|POST|DELETE) \/api-keys/, /^(GET|DELETE|POST) \/oauth\/(autorisations|autoriser)/,
