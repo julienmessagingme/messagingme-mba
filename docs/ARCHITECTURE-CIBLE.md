@@ -500,6 +500,10 @@ Les workers vivent sur des instances **sans adresse publique**. Or ils APPELLENT
 le Gateway de Vercel, HubSpot, les connecteurs des clients. **Sans passerelle de sortie, ils ne joignent rien.**
 Il faut une **Public Gateway** sur le réseau privé (sortie seule, aucune entrée), et son coût. ⚠️ Le mémo du
 2026-09-19 l'avait oubliée : c'est la pièce qui aurait manqué le jour J.
+⚠️ **Une entrée existe pourtant : le bastion SSH de la passerelle**, seule porte vers le réseau privé (déploiements,
+migrations, exploitation). Ouvert à toutes les adresses à la bascule, clés du projet seules ; décidé par Julien le
+2026-10-26 : sa liste se réduit au poste de Julien, et chaque déploiement y ouvre l'adresse de son exécuteur GitHub
+le temps de tourner (`DEPLOY.md`, le bastion).
 
 ⚠️ **L'API APPELLE AUSSI LES CONNECTEURS DES CLIENTS, depuis le relais du Meta Business Agent (2026-09-21,
 migration 0161).** Meta appelle `POST /mba/relais/outils/:id` et attend la réponse pendant que l'API fait

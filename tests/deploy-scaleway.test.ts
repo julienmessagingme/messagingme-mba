@@ -189,6 +189,70 @@ describe('le workflow de déploiement Scaleway', () => {
     expect(ssh.match(/StrictHostKeyChecking yes/g)?.length).toBe(2);
   });
 
+  // Les deux programmes `jq` du bastion, tels que le workflow les porte : exigés en texte ici, EXÉCUTÉS plus bas.
+  const PRESENTE = '(.bastion_allowed_ips | type) == "array" and (.bastion_allowed_ips | index($r) != null)';
+  const ABSENTE = '(.bastion_allowed_ips | type) == "array" and (.bastion_allowed_ips | index($r) == null)';
+
+  it('🔴 le bastion ne s’ouvre à ce runner que le temps du déploiement, et sa liste n’est jamais remplacée', () => {
+    // Décision de Julien du 2026-10-26 : la liste du bastion porte son poste en permanence. Un PUT la remplacerait et
+    // l'effacerait, sous quelque forme qu'il soit écrit ; retirer une adresse que ce workflow n'a pas retenue aussi.
+    const code = WORKFLOW.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+    expect(code).not.toMatch(/(-X|--request)\s+PUT\b/);
+    expect(code.match(/-X DELETE/g)?.length).toBe(1);
+    const ouvrir = etape('Ouvrir le bastion a l\'adresse de ce runner');
+    expect(ouvrir).toMatch(/^ {8}id: bastion$/m);
+    // La voie inerte : sans la variable, rien n'est appelé.
+    expect(ouvrir).toContain('if [ -z "$PASSERELLE" ]; then echo "SCALEWAY_GATEWAY_ID absente');
+    // 🔴 `ajoutee` s'écrit AVANT l'ajout (relecture du 2026-10-26) : un ajout pris chez Scaleway mais vu en échec ici
+    // (délai dépassé, 502) laisserait sinon l'adresse ouverte, la fermeture sautée. L'ajout ne se rejoue pas, et se
+    // RELIT ensuite.
+    const retenue = ouvrir.indexOf('echo "ajoutee=$ip/32" >> "$GITHUB_OUTPUT"');
+    const ajout = ouvrir.indexOf('-X POST');
+    expect(retenue).toBeGreaterThan(0);
+    expect(ajout).toBeGreaterThan(retenue);
+    expect(ouvrir.split('\n').find((l) => l.includes('-X POST'))).not.toContain('--retry');
+    expect(ouvrir.indexOf(PRESENTE, ajout)).toBeGreaterThan(ajout);
+    expect(WORKFLOW.indexOf('- name: Ouvrir le bastion a l\'adresse de ce runner'))
+      .toBeLessThan(WORKFLOW.indexOf('- name: Ouvrir le chemin SSH, par le bastion de la passerelle'));
+    // La première connexion attend que la passerelle applique sa liste.
+    expect(etape('Ouvrir le chemin SSH, par le bastion de la passerelle'))
+      .toContain('ssh -o ConnectTimeout=10 -o BatchMode=yes workers true');
+    // Le retrait : la DERNIÈRE étape (aucune autre après, `uses:` compris), même sur un échec ou une annulation, de
+    // l'adresse retenue et d'elle seule, un 404 valant « déjà absente », puis la liste relue.
+    const fermer = etape('Refermer le bastion');
+    expect(fermer).toMatch(/^ {8}if: always\(\) && steps\.bastion\.outputs\.ajoutee != ''$/m);
+    expect(fermer).toContain('AJOUTEE: ${{ steps.bastion.outputs.ajoutee }}');
+    expect(fermer).toContain('"$api/bastion-allowed-ips/${AJOUTEE%/*}%2F32"');
+    expect(fermer).toContain('2??|404) retire=1; break ;;');
+    expect(fermer).toContain(ABSENTE);
+    expect(WORKFLOW.lastIndexOf('\n      - ')).toBe(WORKFLOW.indexOf('\n      - name: Refermer le bastion'));
+  });
+
+  it('🔴 la passerelle lue ne s’imprime jamais dans le journal public : elle porte l’adresse permanente', () => {
+    for (const nom of ['Ouvrir le bastion a l\'adresse de ce runner', 'Refermer le bastion']) {
+      const e = etape(nom);
+      expect(e).not.toBe('');
+      expect(e).not.toMatch(/echo[^\n]*\$passerelle/);
+      expect(e).not.toContain('--fail-with-body');
+    }
+  });
+
+  const jqLa = spawnSync('jq', ['--version']).status === 0;
+  it.skipIf(!jqLa)('🔴 les programmes jq du bastion, exécutés : un champ absent ne vaut ni « présente » ni « absente »', () => {
+    const verdict = (programme: string, corps: unknown) =>
+      spawnSync('jq', ['-e', '--arg', 'r', '1.2.3.4/32', programme], { input: JSON.stringify(corps), encoding: 'utf8' }).status;
+    const avec = { bastion_allowed_ips: ['0.0.0.0/0', '1.2.3.4/32'] };
+    const sans = { bastion_allowed_ips: ['0.0.0.0/0'] };
+    expect(verdict(PRESENTE, avec)).toBe(0);
+    expect(verdict(PRESENTE, sans)).not.toBe(0);
+    expect(verdict(ABSENTE, sans)).toBe(0);
+    expect(verdict(ABSENTE, avec)).not.toBe(0);
+    // Le défaut relevé en relecture : sans le champ, `null | index($r)` rendait « absente », donc « bastion referme »
+    // sans rien avoir vérifié.
+    expect(verdict(PRESENTE, {})).not.toBe(0);
+    expect(verdict(ABSENTE, {})).not.toBe(0);
+  });
+
   it('⚠️ le fichier de secrets de la machine est refusé s’il porte des guillemets', () => {
     // Compose (les workers) les retire, `docker run --env-file` (la migration) les garde : deux configurations.
     const garde = etape('Le fichier de secrets de la machine est present, et sans guillemets');

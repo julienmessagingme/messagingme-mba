@@ -1878,10 +1878,15 @@ et seuils : `docs/prive/2026-10-26-cloudflare-pro.md`). Reste :
    entrer (`documentation.md` § 7). Si elle dérive, un test qui compare l'inventaire du serveur construit à une copie
    versionnée de la liste la tiendrait.
 4. Ne pas acheter Business/Enterprise, Bot Management ou un second WAF sans exigence ou incident précis.
-5. **Hors Cloudflare, à trancher par Julien : le bastion SSH de la passerelle** (`mm-passerelle`, port 61000) est ouvert
-   à toutes les adresses (`bastion_allowed_ips` à `0.0.0.0/0`, relu le 2026-10-26), clés du projet seules. C'est la
-   seule porte vers le réseau privé. La restreindre à une liste d'adresses casserait le déploiement depuis GitHub,
-   dont les adresses changent.
+5. **Hors Cloudflare : restreindre le bastion SSH de la passerelle** (`mm-passerelle`, port 61000), ouvert à toutes
+   les adresses (`0.0.0.0/0`, relu le 2026-10-26), clés du projet seules. Décidé par Julien le 2026-10-26 : son poste
+   en permanence, l'exécuteur GitHub le temps d'un déploiement (les deux workflows le font, inertes tant que
+   `SCALEWAY_GATEWAY_ID` manque ; `DEPLOY.md`). Reste, dans l'ordre : `VPCGatewayFullAccess` sur l'application IAM
+   `github-deploy` (Julien), `SCALEWAY_GATEWAY_ID` dans l'environnement `scaleway` des deux dépôts, un déploiement
+   d'essai liste encore ouverte (il prouve le nom du champ, le format stocké, l'ajout et le retrait, pas le filtrage),
+   puis la liste réduite au poste, et JUSTE APRÈS un déploiement de preuve (même SHA, `migration=aucune` : un refus
+   échoue avant toute écriture). Ensuite, `PASSERELLE` entre dans « La configuration est-elle complète ? » des deux
+   workflows, pour qu'un oubli de variable dise sa cause au lieu d'un refus du bastion au bout de trois minutes.
 
 ## 🟡 Deux écarts que la revue finale du déploiement a laissés porter (2026-09-23)
 

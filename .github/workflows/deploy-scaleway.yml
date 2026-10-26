@@ -7,8 +7,8 @@ name: Deploiement Scaleway (API et workers)
 # 🔴 LES SECRETS DE PRODUCTION N'Y PASSENT JAMAIS (§13, point 18). Julien les pose une fois : variables secretes du
 # conteneur de l'API, fichier /opt/messagingme/.env.prod de la machine des workers. Ce workflow ne change que l'IMAGE,
 # et la TAILLE declaree du conteneur de l'API (`ops/scaleway/conteneur-api.json` : copies, sonde, pools), sans secret.
-# Ses deux seuls secrets ouvrent le registre et le conteneur (SCW_SECRET_KEY, application IAM `github-deploy`, sans
-# aucun droit sur les secrets) et la machine des workers par le bastion (DEPLOY_SSH_KEY).
+# Ses deux seuls secrets ouvrent le registre, le conteneur et la liste du bastion (SCW_SECRET_KEY, application IAM
+# `github-deploy`, sans aucun droit sur les secrets) et la machine des workers par le bastion (DEPLOY_SSH_KEY).
 # `tests/deploy-scaleway.test.ts` refuse tout autre secret.
 #
 # 🔴 DEUX JOBS, SUR LE MODELE DE `plugin.yml` : `construire` execute du code tiers (le `npm ci` du Dockerfile) sans
@@ -26,6 +26,11 @@ name: Deploiement Scaleway (API et workers)
 #
 # ⚠️ AMSTERDAM (`nl-ams`), decision de Julien du 2026-10-14 : Paris refusait toute nouvelle machine (rupture de
 # stock). Le registre et l'API doivent etre dans la meme region que le reseau prive et la base : le test le tient.
+#
+# 🔴 LE BASTION N'EST OUVERT QU'AUX ADRESSES DE SA LISTE (decision de Julien du 2026-10-26) : le poste de Julien en
+# permanence, l'adresse de CE runner le temps du deploiement. Le workflow ajoute la sienne avant le premier SSH et la
+# retire a la fin, meme sur un echec ou une annulation. Il ne REMPLACE jamais la liste (un PUT effacerait l'adresse
+# permanente) et ne retire que ce qu'il a lui-meme ajoute. Sans la variable `SCALEWAY_GATEWAY_ID`, il n'y touche pas.
 on:
   workflow_dispatch:
     inputs:
@@ -57,6 +62,8 @@ env:
   REGION: nl-ams
   REGISTRE: rg.nl-ams.scw.cloud/messagingme
   IMAGE: mba
+  # La passerelle (et son bastion) est une ressource de ZONE, pas de region.
+  ZONE: nl-ams-2
 
 jobs:
   construire:
@@ -119,6 +126,7 @@ jobs:
       CONTENEUR: ${{ vars.SCALEWAY_CONTAINER_ID }}
       BASTION: ${{ vars.SCALEWAY_BASTION }}
       WORKERS: ${{ vars.SCALEWAY_WORKERS_IP }}
+      PASSERELLE: ${{ vars.SCALEWAY_GATEWAY_ID }}
     steps:
       - name: La configuration est-elle complete ?
         env:
@@ -140,6 +148,43 @@ jobs:
           printf '%s' "$CLE_SCW" | docker login rg.$REGION.scw.cloud -u nologin --password-stdin
           docker push "$REGISTRE/$IMAGE:$SHA"
           docker logout rg.$REGION.scw.cloud
+      # 🔴 `ajoutee` s'ecrit AVANT l'ajout : un ajout applique chez Scaleway mais vu en echec ici (delai depasse, 502)
+      # laisserait sinon l'adresse ouverte, « Refermer » sautee. GitHub lit `GITHUB_OUTPUT` quelle que soit l'issue de
+      # l'etape, et « Refermer » prend un 404 pour « deja absente ». Une adresse deja presente (l'adresse permanente, ou
+      # un autre deploiement en cours depuis la meme) n'est jamais retenue, donc jamais retiree. Le POST ne se rejoue
+      # pas. La passerelle lue ne s'imprime jamais : elle porte l'adresse permanente, et ce journal est public.
+      - name: Ouvrir le bastion a l'adresse de ce runner
+        id: bastion
+        env:
+          CLE_SCW: ${{ secrets.SCW_SECRET_KEY }}
+        run: |
+          if [ -z "$PASSERELLE" ]; then echo "SCALEWAY_GATEWAY_ID absente : la liste du bastion n'est pas geree ici"; exit 0; fi
+          ip=$(curl -fsS --retry 2 --connect-timeout 10 --max-time 20 https://api.ipify.org \
+            || curl -fsS --retry 2 --connect-timeout 10 --max-time 20 https://checkip.amazonaws.com)
+          ip=$(tr -d '[:space:]' <<< "$ip")
+          [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "::error::adresse publique du runner illisible"; exit 1; }
+          api="https://api.scaleway.com/vpc-gw/v2/zones/$ZONE/gateways/$PASSERELLE"
+          lire() { curl -fsS --retry 3 --retry-delay 5 --connect-timeout 10 --max-time 60 -H "X-Auth-Token: $CLE_SCW" "$api"; }
+          passerelle=$(lire) || { echo "::error::lecture de la passerelle refusee (curl $?)"; exit 1; }
+          jq -e '(.bastion_allowed_ips | type) == "array"' <<< "$passerelle" > /dev/null \
+            || { echo "::error::la passerelle ne rend pas de liste bastion_allowed_ips : l'API a change"; exit 1; }
+          entrees=$(jq '.bastion_allowed_ips | length' <<< "$passerelle")
+          echo "liste du bastion : $entrees entree(s) avant l'ajout"
+          if jq -e --arg r "$ip/32" '(.bastion_allowed_ips | type) == "array" and (.bastion_allowed_ips | index($r) != null)' <<< "$passerelle" > /dev/null; then
+            echo "$ip/32 est deja dans la liste du bastion : rien a ajouter, rien a retirer"; exit 0
+          fi
+          echo "ajoutee=$ip/32" >> "$GITHUB_OUTPUT"
+          curl -fsS --connect-timeout 10 --max-time 60 -X POST -H "X-Auth-Token: $CLE_SCW" -H 'Content-Type: application/json' \
+            -d "{\"ip_range\":\"$ip/32\"}" "$api/bastion-allowed-ips" > /dev/null \
+            || { echo "::error::ajout de $ip/32 au bastion refuse (curl $?) : « Refermer le bastion » le retire s'il a pris"; exit 1; }
+          vu=""
+          for i in $(seq 1 6); do
+            passerelle=$(lire) || { echo "::error::relecture de la passerelle refusee (curl $?)"; exit 1; }
+            if jq -e --arg r "$ip/32" '(.bastion_allowed_ips | type) == "array" and (.bastion_allowed_ips | index($r) != null)' <<< "$passerelle" > /dev/null; then vu=1; break; fi
+            sleep 5
+          done
+          [ -n "$vu" ] || { echo "::error::$ip/32 n'apparait pas dans la liste du bastion apres l'ajout"; exit 1; }
+          echo "bastion ouvert a $ip/32 le temps du deploiement"
       # Les retours chariot sont retires : une cle collee depuis Windows en porte, et OpenSSH la refuse alors
       # (« invalid format ») sans dire pourquoi. Les sondes de vie gardent ouverte une connexion muette (la migration
       # ecrit dans un fichier, pas dans la session).
@@ -170,6 +215,10 @@ jobs:
             echo "  ServerAliveInterval 30"
             echo "  ServerAliveCountMax 20"
           } > ~/.ssh/config
+          # La passerelle applique sa liste en quelques secondes : la premiere connexion se reessaie, trois minutes au plus.
+          ok=""
+          for i in $(seq 1 12); do ssh -o ConnectTimeout=10 -o BatchMode=yes workers true && { ok=1; break; }; sleep 5; done
+          [ -n "$ok" ] || { echo "::error::ce runner n'atteint pas la machine : liste du bastion, ou machine arretee (DEPLOY.md)"; exit 1; }
       # Le meme fichier est lu par deux chemins qui ne le lisent pas pareil : compose (les workers) retire les
       # guillemets d'une valeur, `docker run --env-file` (la migration) les garde. Une valeur entre guillemets donnerait
       # aux deux une configuration differente : refusee ici, avant tout changement. Rien n'en est imprime.
@@ -280,3 +329,27 @@ jobs:
         if: env.MIGRATION == 'apres'
         run: |
           ssh workers "umask 077; docker run --rm --env-file /opt/messagingme/.env.prod '$REGISTRE/$IMAGE:$SHA' npm run migrate > /root/migrate-$SHA.log 2>&1; c=\$?; grep -oE '^-> [^ ]+( \(hors transaction\))? \.\.\. (ok|ECHEC)?|^[0-9]+ migration\(s\) appliquée\(s\)$|^à jour, rien à appliquer$|^ +(code|table|constraint|schema|column): .*' /root/migrate-$SHA.log; [ \$c -eq 0 ] || echo \"migration en echec (code \$c) : journal complet sur la machine, /root/migrate-$SHA.log\"; exit \$c"
+      # TOUJOURS la derniere etape, et `always()` : un deploiement en echec ou annule referme aussi. Le retrait se
+      # reessaie (la passerelle peut refuser une ecriture pendant qu'elle applique la precedente), un 404 vaut « deja
+      # absente » (un ajout qui n'a jamais pris), et la liste est RELUE : un echec laisse l'adresse d'un runner
+      # ouverte, et se dit en erreur, avec elle, pour la retirer a la main (DEPLOY.md).
+      - name: Refermer le bastion
+        if: always() && steps.bastion.outputs.ajoutee != ''
+        env:
+          CLE_SCW: ${{ secrets.SCW_SECRET_KEY }}
+          AJOUTEE: ${{ steps.bastion.outputs.ajoutee }}
+        run: |
+          api="https://api.scaleway.com/vpc-gw/v2/zones/$ZONE/gateways/$PASSERELLE"
+          retire=""
+          for i in $(seq 1 6); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 60 -X DELETE \
+              -H "X-Auth-Token: $CLE_SCW" "$api/bastion-allowed-ips/${AJOUTEE%/*}%2F32") || code=000
+            case "$code" in 2??|404) retire=1; break ;; esac
+            echo "retrait refuse (HTTP $code), nouvel essai dans 10 s"; sleep 10
+          done
+          [ -n "$retire" ] || { echo "::error::$AJOUTEE n'a pas pu etre retiree de la liste du bastion, a retirer a la main"; exit 1; }
+          passerelle=$(curl -fsS --retry 3 --retry-delay 5 --connect-timeout 10 --max-time 60 -H "X-Auth-Token: $CLE_SCW" "$api") \
+            || { echo "::error::relecture de la passerelle refusee (curl $?) : verifier a la main que $AJOUTEE n'y est plus"; exit 1; }
+          jq -e --arg r "$AJOUTEE" '(.bastion_allowed_ips | type) == "array" and (.bastion_allowed_ips | index($r) == null)' <<< "$passerelle" > /dev/null \
+            || { echo "::error::$AJOUTEE est encore dans la liste du bastion, a retirer a la main"; exit 1; }
+          echo "bastion referme a $AJOUTEE"

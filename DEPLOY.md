@@ -530,7 +530,8 @@ privées par `scaleway-cli ipam ip list private-network-id=<mm-prive> region=nl-
 ### Les gestes uniques de Julien (aucun secret ne passe par Claude ni par GitHub)
 
 1. ✅ Une application IAM `github-deploy` : `ContainerRegistryFullAccess` et `ContainersFullAccess` sur le projet,
-   RIEN sur Secret Manager ni sur IAM. Sa clé secrète est le secret `SCW_SECRET_KEY` de l'environnement GitHub
+   plus `VPCGatewayFullAccess` (ouvrir et refermer le bastion à l'adresse du runner, 2026-10-26 ; aucun droit plus
+   fin n'existe), RIEN sur Secret Manager ni sur IAM. La même clé sert au workflow du connecteur HubSpot. Sa clé secrète est le secret `SCW_SECRET_KEY` de l'environnement GitHub
    `scaleway` : `gh secret set SCW_SECRET_KEY --env scaleway --body (Get-Clipboard)`.
 2. ✅ Une paire de clés SSH dédiée au déploiement (`github-deploy-scaleway`) : la PUBLIQUE dans les clés SSH du projet
    AVANT la création de la machine (Scaleway ne les injecte qu'au premier démarrage), la PRIVÉE en secret
@@ -538,8 +539,9 @@ privées par `scaleway-cli ipam ip list private-network-id=<mm-prive> region=nl-
    `scaleway-cli vpc-gw gateway refresh-ssh-keys <passerelle> zone=nl-ams-2`.
 3. ✅ L'environnement GitHub `scaleway` (jamais `production`, piège plus bas), avec Julien en relecteur obligatoire,
    limité à la branche `main`, et ses variables `SCALEWAY_BASTION` (`<ip de la passerelle>:61000`),
-   `SCALEWAY_WORKERS_IP` (l'adresse PRIVÉE de la machine), `SCALEWAY_KNOWN_HOSTS` et, une fois le conteneur créé,
-   `SCALEWAY_CONTAINER_ID`. `SCALEWAY_KNOWN_HOSTS` porte une ligne par hôte, au format de `known_hosts` :
+   `SCALEWAY_WORKERS_IP` (l'adresse PRIVÉE de la machine), `SCALEWAY_KNOWN_HOSTS`, une fois le conteneur créé,
+   `SCALEWAY_CONTAINER_ID`, et `SCALEWAY_GATEWAY_ID` (l'identifiant de la passerelle : c'est elle qui fait gérer la
+   liste du bastion par le workflow, voir plus bas). `SCALEWAY_KNOWN_HOSTS` porte une ligne par hôte, au format de `known_hosts` :
    `[<ip de la passerelle>]:61000 ssh-ed25519 …` pour le bastion, `<ip privée> ssh-ed25519 …` pour la machine,
    relevées à la première connexion depuis le poste et comparées aux empreintes annoncées.
 4. Sur la machine : une clé de LECTURE du registre (application IAM `workers-registre`, `ContainerRegistryReadOnly`
@@ -648,8 +650,18 @@ run `waiting` se règle d'abord, et Julien reçoit les deux liens.
 - **Un compte neuf avait ses quotas d'Instances à 0 dans les trois zones de Paris**, ouverts ailleurs, et le support
   a répondu rupture de stock à Paris : c'est ce qui a envoyé la cible à Amsterdam. L'onglet Quotas de l'Organization
   Dashboard les montre (décocher « Show used quotas only », sinon la liste est vide).
-- **Le bastion reste ouvert à toutes les adresses** (`0.0.0.0/0`) : les exécuteurs de GitHub n'ont pas d'adresses
-  fixes. Il n'accepte que des clés SSH, celles du projet.
+- 🔴 **LE BASTION N'EST OUVERT QU'AUX ADRESSES DE SA LISTE** (décision de Julien du 2026-10-26) : le poste de Julien
+  en permanence, et l'exécuteur GitHub le temps d'un déploiement. ⚠️ La liste porte encore `0.0.0.0/0` tant que le
+  déploiement d'essai n'a pas prouvé l'ouverture et la fermeture (`todo.md`, entrée Cloudflare Pro, point 5). Les deux workflows (celui-ci et celui du
+  connecteur) ajoutent l'adresse de leur exécuteur avant le premier SSH et la retirent à la fin, même sur un échec ou
+  une annulation (étapes « Ouvrir le bastion » et « Refermer le bastion »), sans jamais remplacer la liste : un PUT
+  effacerait l'adresse permanente. Sans `SCALEWAY_GATEWAY_ID`, ils n'y touchent pas. Les clés SSH du projet restent
+  exigées en plus. Trois gestes, dans la console Scaleway (Public Gateways, `mm-passerelle`, SSH bastion) ou par
+  l'API (`/vpc-gw/v2/zones/nl-ams-2/gateways/<id>/bastion-allowed-ips`) :
+  - **l'adresse du poste a changé** (le bastion refuse depuis chez Julien) : y ajouter la nouvelle, retirer l'ancienne.
+    La production n'en souffre pas, et les déploiements GitHub continuent ;
+  - **« Refermer le bastion » a échoué** (l'erreur du journal nomme l'adresse) : retirer cette adresse à la main ;
+  - **retour arrière** : remettre `0.0.0.0/0` dans la liste.
 - `vpc-gw` n'a pas de sous-commande `wait` (relire par `get`), et `rdb instance get` répond « transient state »
   tant que la base se crée.
 - **Le certificat de la base se met dans l'image**, comme celui de Supabase (`certs/`, `DB_SSL_CA_FILE`) : c'est un
