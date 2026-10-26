@@ -882,6 +882,8 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
     `api.`, puis le nom disparaît (proxy NPM, DNS, conteneur `mba-web`). Les liens `/r/` et les visuels `/m/` déjà
     envoyés sous `mba.` cessent de répondre : **assumé par Julien**, qui a écarté la redirection. Il ne reste qu'une
     adresse de production, `api.messagingme.app`, et l'étape ne coûte plus rien au jour J.
+    ✅ **Le nom est supprimé chez Cloudflare le 2026-10-26** (Julien), après onze jours de journaux relus ; l'hôte NPM et
+    `mba-web` partent avec le VPS.
 11. ~~Le connecteur HubSpot~~ : déjà parti, à l'étape 0 (§8).
 12. Dérouler les **tests d'acceptation du §11**, dont le banc de l'API rejoué sur la cible (§ 7.8) : 🔴 **le site
     ne s'ouvre pas au public avant**, et le plafond global se repose sur sa mesure.
@@ -938,7 +940,7 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
 - `https://api.messagingme.app/live` répond, à travers Cloudflare.
 - Le nom technique du conteneur, appelé en direct sans le jeton d'origine, **refuse**.
 - Le webhook de Meta arrive sur `api.messagingme.app/webhooks/meta`, et `mba.messagingme.app` ne répond plus
-  (supprimé, §10 étape 10).
+  (supprimé, §10 étape 10). ✅ Les deux depuis le 2026-10-26 (le webhook depuis le 15, le nom supprimé le 26).
 - Les Managed Rules Cloudflare sont actives sur `api.`, avec leur configuration exportée ou capturée.
 - Toute règle de débit Pro réellement activée est testée sur ses chemins exacts ; un dépassement est visible
   dans Security Events et ne touche aucun webhook, callback RCS, relais MBA/HubSpot, lien `/r/` ni média `/m/`.
@@ -948,6 +950,9 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   documentation de Scaleway ne donne aucun plafond pour les conteneurs (les 6 Mio qui circulent concernent les
   Functions). Si la porte coupe plus bas, la création d'un modèle à vidéo casse en silence, et le dépôt passe par une
   URL signée vers le bucket (relevé par la session des médias des messages rapides, le 2026-10-14).
+  ✅ **La moitié Scaleway est prouvée le 2026-10-26** : 24 117 242 octets envoyés au conteneur d'essai par son adresse
+  technique arrivent jusqu'à l'application (401 faute de session, en 9 s), et 30 Mo sont refusés PAR ELLE (son 413).
+  Reste la traversée de Cloudflare, au jour J.
 
 **Ce qui doit rester fermé**
 - La base n'a plus d'endpoint public ; ni elle ni Redis (s'il existe) ne sont joignables d'Internet.
@@ -978,6 +983,10 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   entre deux copies ; arrêt propre sans requête coupée ; arrêt brutal, toute clé coupée aboutit une fois le bail
   passé, ZÉRO campagne orpheline ; webhooks acquittés sous pression de pool ; chaque copie sous son `DB_POOL_MAX`.
   Sa recette de montage est en tête de `scripts/banc-deux-api.mts`.
+  ✅ **Ramené au serverless et joué le 2026-10-26** (`scripts/banc-serverless.mts`) : le serverless n'adresse ni
+  n'arrête une copie précise, donc l'idempotence et la pression de pool, propriétés du code prouvées le 2026-10-03,
+  ne s'y rejouent pas. Mesuré : au plus 11 connexions par copie, 42 au total, 4 copies pendant une relève, 2 requêtes
+  perdues sur 38 071 pendant un redéploiement sous 1 250 requêtes par seconde. Le détail est au journal, même date.
 - **Le banc de l'API publique rejoué sur la cible** (`scripts/banc-api.sh`, lot 14) : cent espaces, paliers de débit
   sur `/v1` et `/mcp` avec webhooks de Meta, rafale d'accusés, plafond global allumé. Sur le VPS et la base de Londres
   (10 ms), il a tenu 150 appels/s sans casser. À la cible, il se rejoue avec la latence de la région

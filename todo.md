@@ -488,6 +488,20 @@ d'un modèle par `waba-v2.360dialog.io/messages` ET par MM Lite (`/marketing_mes
 - **À demander à 360dialog avant le lot 2** : l'agent de Meta (MBA) sur leurs numéros, qu'aucune clé ne permet
   d'essayer ; et si la Multi-Partner Solution existe chez eux (elle garderait tout en direct chez Meta).
 
+## 🟡 Le conteneur serverless sous un pic : ce que le banc du 2026-10-26 laisse
+
+Mesuré sur le conteneur d'essai (`scripts/banc-serverless.mts`, journal du même jour), à 150 requêtes en parallèle,
+180 fois le trafic réel : rien ne bloque la bascule, deux points à reprendre quand la charge viendra.
+- **La montée depuis une seule copie** : sous un pic soudain, passer de 1 à 3 copies prend environ 50 s, avec des
+  délais de connexion pendant ce temps (355 sur les 50 premières secondes). Meta rejoue un webhook refusé, un client de
+  l'API non. Si une campagne ou un client `/v1` fait ce pic, `min_scale` à 2 (environ 40 € par mois de plus) ou un
+  seuil de requêtes simultanées plus bas que 50 (`ops/scaleway/conteneur-api.json`), à remesurer par le même banc.
+- **Après une relève sous charge**, la nouvelle version n'est pas remontée à trois copies et le débit a chuté, pendant
+  que chaque requête de la base d'essai (DB-DEV-M, processeur partagé) passait d'environ 24 à 100 ms. À rejouer sur
+  une base de la gamme de production avant d'en tirer une règle : la mesure ne sépare pas l'autoscaler de la base.
+- La liste des origines des rapports CSP nomme encore `mba.messagingme.app` (`src/index.ts`, `cspRapports`) : à
+  retirer au prochain lot qui touche ce câblage.
+
 ## 🟡 Lot 5 de la bascule, le connecteur HubSpot chez Scaleway : ce qui reste (2026-10-15)
 
 - 🟡 **Retirer le connecteur du VPS après quelques jours d'observation** : ses deux conteneurs arrêtés, l'hôte NPM

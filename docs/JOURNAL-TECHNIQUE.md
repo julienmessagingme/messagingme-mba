@@ -4,6 +4,41 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : le banc du conteneur serverless, la répétition sur la vraie instance, et `mba.` supprimé
+
+La veille de la bascule Scaleway, fixée par Julien au soir même (gel de `main` à 18 h, coupure à 21 h, heure de Paris).
+
+- **Le déploiement d'essai** de `main` (`a7f7b688`) par le workflow, `migration=avant` sur la base jetable (0247 à
+  0253) : workers puis API, la taille déclarée relue conforme.
+- **Le banc du serverless** (`scripts/banc-serverless.mts`, `39ee6b9c`) : la charge depuis le poste, avec le jeton du
+  conteneur privé, et le relevé des connexions sur la machine, en lecture seule. Deux passages à 150 requêtes en
+  parallèle, jusqu'à 1 250 par seconde : au plus 11 connexions par copie (budget 14), 42 au total sur 147, 4 copies à
+  la fois pendant une relève, aucune écoute côté API ; un redéploiement en plein trafic (55 s de relève) perd 2
+  requêtes sur 38 071, sur un délai de connexion ; chaque copie a son nom dans `pool_attentes`. Deux constats, au
+  backlog : partir d'une seule copie sous un pic soudain coûte environ 50 s de montée (355 délais de connexion) ; après
+  la relève, la nouvelle version n'est pas remontée à trois copies sous la même charge, pendant que chaque requête de
+  la base d'essai (DB-DEV-M, processeur partagé) passait d'environ 24 à 100 ms. Le trafic réel culmine à 414 requêtes
+  par minute sur `api.` : 180 fois moins que le banc.
+- **La requête de 23 Mo** (§ 11) : 24 117 242 octets envoyés au conteneur par son adresse technique arrivent jusqu'à
+  l'application (401 faute de session, en 9 s), et 30 Mo sont refusés par elle (413). Reste la traversée de Cloudflare.
+- **Les extensions dans `rdb`**, la base de production : `mba_admin` y a le droit de créer, et `vector` 0.8.2,
+  `pg_trgm` 1.6 et `unaccent` 1.1 s'y créent, essayé dans une transaction annulée (rien n'est resté).
+- **La répétition de la copie sur la vraie instance**, dans une base jetable `repetition` recréée puis supprimée, VPS en
+  marche : 40 Mo extraits de Supabase en 13 s, restaurés en 8 s, 38 s en tout ; 133 tables identiques sur 134, la
+  dernière (`pool_attentes`) écrite par le VPS pendant la copie ; 33 secrets sur 33 déchiffrés avec la vraie clé, 0
+  avec une fausse ; aucune migration en attente (0253).
+- **`mba.messagingme.app` supprimé** (lot 7, Julien chez Cloudflare) : depuis le 15, plus aucun appel de Meta,
+  d'UptimeRobot ni du MCP ; depuis le 19, plus aucun clic de lien ; restaient des scanners, nos sondes (la fumée, des
+  codes `/m/` factices) et une session de la console, le 21, sur l'espace SANDBOX. Les liens tracés de toute la base
+  sont ceux de SANDBOX. La fumée ne sonde plus `mba.`.
+- **Trouvé en préparant** : l'API serverless ne pouvait pas joindre `mba-application`, que le VPS appelle par son nom
+  Docker : le port 8090 s'ouvre sur l'adresse privée de la machine, et le conteneur recevra `http://172.16.0.4:8090`.
+  `PORT` reste hors du conteneur (Scaleway le réserve) et `APP_DATABASE_URL` part (plus de pooler). Les relais `/r/`,
+  `/m/`, `/mcp` et `/api/backend/*` de la console sont inertes chez Vercel (`DNS_HOSTNAME_RESOLVED_PRIVATE`).
+- **Appris** : les scripts de la répétition du 15 vivaient dans le dossier temporaire d'une session, perdus avec elle,
+  et ont été retrouvés dans son journal. Ceux du jour J vivent dans `docs/prive/bascule/`, hors du dépôt public parce
+  qu'ils nomment le VPS et le bastion.
+
 ## 2026-10-26 : les petits de l'audit de simplicité et de structure (lot A), six copies en moins
 
 Plan `docs/superpowers/plans/2026-10-26-audits-simplicite-structure.md`, lot A, livré en direct. Aucun changement de

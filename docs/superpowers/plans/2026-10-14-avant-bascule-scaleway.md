@@ -223,6 +223,12 @@ message entrant sont arrivés par `api.`, le message dans l'Inbox à la seconde 
 de Meta sur `mba.` ensuite. Restent, dans l'ordre : UptimeRobot (Julien), des journaux muets quelques jours, une vérification chez Meta
 qu'aucun modèle approuvé ne porte un bouton en `mba.…/r/`, puis la suppression, avec la sonde de l'ancienne
 adresse dans `scripts/fumee.mjs` et `DEPLOY.md`.
+✅ **Supprimé le 2026-10-26** (Julien, chez Cloudflare), après onze jours de journaux relus : plus aucun appel de
+Meta, d'UptimeRobot ni du MCP depuis le 15, plus aucun clic de lien depuis le 19 ; n'y arrivaient plus que des
+scanners, nos sondes et une session de la console sur l'espace SANDBOX. Les liens tracés de toute la base sont ceux
+de SANDBOX : aucun client ne perd un lien. La fumée ne le sonde plus (`39ee6b9c`). Restent, après la bascule, l'hôte
+NPM 21 et le conteneur `mba-web`, qui partent avec le VPS, et les relais de la console (tâche 5), déjà inertes chez
+Vercel (`DNS_HOSTNAME_RESOLVED_PRIVATE`).
 
 **Pourquoi** : décision de Julien du 2026-10-14, une seule adresse de production (§13, point 13). Le faire sur le
 VPS, avant la bascule, retire une étape au jour J.

@@ -55,14 +55,13 @@ local avant de pousser.
 
 ## Déploiement
 
-🔴 **TROIS NOMS DEPUIS LE 2026-09-03 (QUATRE avec la vitrine du 2026-09-25), et ils n'ont pas le même hébergeur.** Détail et journal d'exécution :
+🔴 **TROIS NOMS, et ils n'ont pas le même hébergeur** (`mba.messagingme.app` est supprimé depuis le 2026-10-26). Détail et journal d'exécution :
 [docs/PLAN-BASCULE-VERCEL-2026-09-03.md](docs/PLAN-BASCULE-VERCEL-2026-09-03.md).
 
 | Nom | Sert | Où | Comment on déploie |
 |---|---|---|---|
 | `console.messagingme.app` (ex-`engageme.messagingme.app`, même projet) | la console | **Vercel** (projet `messagingme-mba`, Root Directory `web`) | automatique à chaque `git push` |
 | `api.messagingme.app` | l'API et le worker | VPS Docker (`mba-api`, `mba-worker`) | `git pull` + `compose up -d --build` |
-| `mba.messagingme.app` | l'ANCIENNE console, plus toutes les adresses historiques | VPS (`mba-web` + routage NPM) | idem |
 | `app.messagingme.fr` | la VITRINE publique (`site/`, HTML statique) | **Vercel** (projet `engageme-site`, Root Directory `site`, CNAME chez OVH) | automatique au `git push` qui touche `site/` (Ignored Build Step dans `site/vercel.json`, sur `VERCEL_GIT_PREVIOUS_SHA`) |
 
 ⚠️ **La vitrine n'a AUCUNE variable d'environnement, et elle ne doit pas en avoir.** À l'import, Vercel
@@ -119,14 +118,10 @@ redevient privé, le fetch échoue et la vitrine se redéploie à l'identique un
 🔴 **`/mcp` REND 404 SUR `engageme.messagingme.app`** (mesuré le 2026-09-25 ; `api.` et `mba.` rendent 401) :
 toute adresse MCP donnée à un intégrateur se dérive de `BASE` (l'API), jamais du domaine de la console.
 
-⚠️ **`mba.messagingme.app` porte un routage par CHEMIN dans NPM** (`advanced_config` du proxy host 21), et
-c'est ce qui rend la migration sans risque : `/api/backend/*` va à `mba-api` **avec le préfixe retiré par
-nginx**, `/r/`, `/m/` et `/mcp` y vont directement, tout le reste va à `mba-web`. Conséquences :
-- **l'ancienne adresse du webhook Meta route encore** (`/api/backend/webhooks/meta`), mais Meta appelle
-  `api.messagingme.app/webhooks/meta` depuis le 2026-10-15 ;
-- les liens tracés et visuels RCS déjà envoyés continuent de résoudre ;
-- 🔴 **un conteneur de FRONT n'est plus sur le chemin critique de réception des messages clients**. Avant,
-  le webhook de Meta traversait `mba-web` : si le site tombait, plus aucun message entrant n'arrivait.
+🔴 **`mba.messagingme.app` N'EXISTE PLUS** (supprimé chez Cloudflare le 2026-10-26, lot 7 de la bascule) : Meta, UptimeRobot et
+le MCP appellent `api.` depuis le 2026-10-15 ; ses liens `/r/` et visuels `/m/` déjà envoyés sont morts, ce que Julien a accepté (seul
+SANDBOX avait des liens tracés). Une adresse distribuée se dérive de `PUBLIC_API_URL`, jamais de la console : ses relais `/r/`, `/m/`,
+`/mcp` et `/api/backend/*` ne mènent à rien chez Vercel (`DNS_HOSTNAME_RESOLVED_PRIVATE`, relevé le même jour).
 
 🔴 **LES RÉGLAGES DE CHARGE SONT PROVISOIRES JUSQU'À LA BASCULE SCALEWAY** (plafond global dans `.env.prod`, tailles de
 pools, concurrence des statuts) : mesurés sur le VPS et la base de Londres, ils se remesurent sur la cible avec

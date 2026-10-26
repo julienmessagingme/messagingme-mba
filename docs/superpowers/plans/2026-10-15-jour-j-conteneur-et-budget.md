@@ -66,3 +66,13 @@ connexions) est précisément ce que le test encode.
 L'essai réel qui clôt le lot : le second banc (`scripts/banc-deux-api-2.mts`, ses cinq épreuves, dont l'arrêt d'une
 copie) rejoué sur le conteneur serverless ainsi réglé, et `/ops` qui montre chaque copie sous son propre nom. Ensuite
 seulement, la base de test `mm-banc` se supprime.
+
+✅ **Joué le 2026-10-26, ramené à ce que le serverless change** (`scripts/banc-serverless.mts`) : le serverless
+n'adresse ni n'arrête une copie précise, et sa base d'essai (`rdb`) n'est pas de celles qu'accepte la garde des bancs,
+donc l'idempotence entre copies et la pression de pool, propriétés du code déjà prouvées le 2026-10-03, n'y sont pas
+rejouées. Deux passages à 150 requêtes en parallèle (jusqu'à 1 250 par seconde) : au plus 11 connexions par copie, 42
+au total, 4 copies à la fois pendant la relève ; un redéploiement en plein trafic perd 2 requêtes sur 38 071 (délai de
+connexion) ; chaque copie a son nom dans `pool_attentes`, donc dans `/ops`. Deux constats pour `todo.md` : partir d'une
+seule copie sous un pic soudain coûte environ 50 s de montée (355 délais de connexion), et après la relève la nouvelle
+version n'est pas remontée à trois copies sous la même charge (la base d'essai, à processeur partagé, ralentissait).
+`mm-banc` reste jusqu'au lendemain de la bascule.

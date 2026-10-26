@@ -30,13 +30,11 @@ qui est en ligne se lit dans [features.md](features.md) (« Le centre d'aide pub
 ## LA BASCULE SCALEWAY (EN COURS)
 
 L'état de chaque lot se lit dans [le plan avant la bascule](docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md),
-la séquence du jour J dans [docs/ARCHITECTURE-CIBLE.md](docs/ARCHITECTURE-CIBLE.md) § 10, le récit dans le journal. Ce
-qui reste avant le jour J, au 2026-10-15 :
-- un premier déploiement par le workflow avec la taille déclarée (`ops/scaleway/conteneur-api.json`), approuvé par
-  Julien, puis le second banc sur le conteneur serverless (l'essai réel qui clôt le plan du 2026-10-15) ;
-- le script des secrets de production, lancé par Julien la veille ;
-- la date ;
-- la suppression de `mba.`, une fois ses journaux muets quelques jours (lot 7).
+la séquence du jour J dans [docs/ARCHITECTURE-CIBLE.md](docs/ARCHITECTURE-CIBLE.md) § 10, le récit dans le journal.
+🔴 **LE JOUR J EST LE LUNDI 26 OCTOBRE AU SOIR** (Julien) : `main` gelé dès 18 h (aucun push, déploiement ni
+migration), coupure à 21 h, heure de Paris, jusqu'au message de fin de la session de la bascule. Tout ce qui précède
+est fait le même jour : le déploiement d'essai et le banc du serverless, la répétition de la copie sur la vraie
+instance, la suppression de `mba.`, les scripts du jour J (`docs/prive/bascule/`, hors du dépôt).
 
 ## TOUT SUR LA FICHE (LOTS 1 À 3 DÉPLOYÉS ET ESSAYÉS ; LOT 4 EN COURS)
 
