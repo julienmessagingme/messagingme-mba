@@ -1055,6 +1055,10 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   la copie d'API, `API_COPIE`) et `http_latences` (`GET /m/:fichier`). Preuve attendue : aucune attente de pool, et
   `/m/:fichier` en dizaines de millisecondes. Sinon, le lot « les fichiers sortent de Postgres » (§6) passe AVANT
   l'ouverture du site.
+  🔴 **Échoué le 2026-10-26 au soir, chez Scaleway** : les 33 images de production (14 Mo, un seul espace) lues
+  ensemble à froid ; `GET /m/:fichier` à 657 ms de moyenne et 1,7 s au pire, côté serveur ; le pool de l'API à 12
+  attentes sur 42 prises, 1,6 s au pire ; le pool de réception, sans aucune attente. Le protocole et ses pièges :
+  `docs/prive/ESSAIS-REELS.md`. Le lot A passe donc avant l'ouverture.
 
 **Les deux workers**
 - Tuer le worker d'analyse ne ralentit ni les entrants ni les campagnes.

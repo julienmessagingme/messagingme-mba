@@ -3072,6 +3072,9 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
 
 ## 🟠 Médias, lot A : les fichiers sortent de Postgres APRÈS la bascule Scaleway
 
+🔴 **ET AVANT L'OUVERTURE DU SITE** : l'épreuve de la médiathèque froide a échoué le 2026-10-26 au soir chez Scaleway
+(`docs/ARCHITECTURE-CIBLE.md` § 11 : 33 images lues ensemble, 1,7 s au pire, 12 attentes du pool de l'API sur 42).
+
 Les lots B (médiathèque, quota, suppression) et C (vidéo et PDF dans le bloc « message rapide ») sont livrés le
 2026-10-15 avec les fichiers EN BASE (`rcs_media.bytes`), décision de Julien. Reste le lot A, à faire APRÈS la bascule :
 bucket privé en `nl-ams`, recopie de TOUT ce que la table porte (images, vidéos, PDF), retrait de la colonne en deux
