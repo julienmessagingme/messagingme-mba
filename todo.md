@@ -1,5 +1,22 @@
 # todo.md : backlog
 
+## 🟡 La relance Shopify sans question de consentement : ce que la relecture laisse (2026-10-26)
+
+`63fe87f9`, en production le même jour. Aucun rouge après la lecture en base (aucune relance « en pause » à rallumer).
+
+- **Le retour à l'image d'avant n'est sûr qu'en partie** : les paniers ouverts notés par la nouvelle image restent en
+  base ; si un marchand réaffirmait sous l'ancienne image, jusqu'à sept jours de paniers partiraient d'un coup. Les
+  fiches écrites consentantes ne sont pas défaites par un retour (voulu). À dire dans le runbook d'un retour arrière.
+- **Un plugin 0.3.11 ou plus ancien pose encore la question** : `customers_consented` est ignoré sans le dire, et un
+  retrait (`false`) ne fait plus rien. Répondre à `false` par une phrase vraie (« plus rien à retirer ; pour arrêter,
+  `active: false` ») plutôt que de l'ignorer (`tests/shopify-gestion.test.ts`).
+- **Un onglet resté sur l'ancienne console** affiche « en pause » et « Reprendre » pour une relance qui part, jusqu'au
+  rechargement.
+- **À trancher par Julien : deux régimes d'import subsistent.** Importé par la console, un client arrive sans
+  consentement WhatsApp ; importé par Claude, consentant ; et dans les deux cas sa première commande le rend consentant.
+- **Les colonnes `consentement_par` et `consentement_le`** se suppriment par une migration quand le retour à l'image
+  d'avant 2026-10-26 ne sera plus nécessaire.
+
 ## 🟡 La Free au-delà de 100 contacts, la suppression en masse par Claude : ce que la relecture laisse (2026-10-26)
 
 Plan `docs/superpowers/plans/2026-10-26-free-au-dela-de-100-contacts.md` (`prepare_contacts_deletion`, `delete_contacts`,
@@ -108,9 +125,6 @@ levait sans rien prouver, et le mot « coexistence » de la doc publique d'un ou
 Aucun rouge (d405ed44, en production le même jour). Décision de Julien : par Claude, l'accord des contacts est déclaré
 par le client, le STOP toujours respecté.
 
-- **Tranché par Julien le 2026-10-26 : oui**, l'affirmation de la relance de panier est supprimée (plan
-  `docs/superpowers/plans/2026-10-26-shopify-sans-question-de-consentement.md`). Plus aucune question, ni par Claude
-  ni par la console : chaque message né d'un événement Shopify écrit la fiche consentante, le STOP toujours respecté.
 - **L'audit** : l'import Shopify par Claude n'écrit aucune ligne d'audit (un journal seulement, `outils-shopify.ts`),
   alors que la console écrit `shopify.import` ; le `contact.optin` d'un envoi n'a pas d'acteur et porte `source: api` ;
   le « qui » n'existe qu'en UUID dans `opt_in_source`, que ni la console ni `get_contact` ne montrent.

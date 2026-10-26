@@ -4,6 +4,50 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : la relance Shopify sans question de consentement, et la Free qui supprime ses contacts en trop par Claude
+
+Deux décisions de Julien du matin, deux lots déployés le même après-midi, avant le gel de main de 18 h (bascule vers
+Scaleway le soir même).
+
+- **La relance de panier Shopify sans la question du consentement** (`63fe87f9`, plan
+  `docs/superpowers/plans/2026-10-26-shopify-sans-question-de-consentement.md`). À « on supprime cette question ? »,
+  Julien répond « Oui » : ce qui dépendait de l'affirmation du marchand se comporte comme si elle était donnée. Chaque
+  envoi né d'un événement Shopify porte `consent: opted_in`, source `shopify:<domaine>` ; `appliquerConsentement` ne lève
+  jamais un STOP. Partent le paramètre `customers_consented`, `customers_consented_at`, la case et l'état « en pause » de
+  la console ; les routes de la console acceptent encore `consentementAffirme` et l'ignorent ; les colonnes restent en
+  base, sans migration.
+  - **La relecture** : un seul rouge, qui dépendait des données. Une relance restée active alors que l'affirmation avait
+    été retirée (retrait, reconnexion) serait repartie d'elle-même au déploiement. Lu en base avant le `up` (lecture
+    seule) : une seule boutique, celle de l'espace de démonstration, relance active ET affirmée ; aucune relance en
+    attente chez Meta. Le rouge est tombé ; les jaunes vont au `todo.md`.
+  - **Recalé deux fois** sur les lots voisins de la journée (le lot B des intégrations a déplacé la carte Shopify vers
+    Tools > Intégrations et refait les sept captures de la fiche) : les captures 4 à 7 de la fiche « Brancher ma boutique
+    Shopify », FR et EN, sont refaites sur la console fusionnée (sans la case du consentement), sur un port libre ; les
+    1 à 3 sont ressorties identiques à l'octet.
+  - **Déployé** : CI verte job par job, `mba-api` et `mba-worker` puis `mba-worker-analyse` à `63fe87f9`, garde de
+    révision ; `aide:charger` fait (158 lignes). Le plugin reste en 0.3.12 et la session Vitrine le publie une seule fois
+    avec son propre lot.
+- **Une Free au-delà de 100 contacts le sait, et supprime ses contacts en trop par Claude** (`783b4529`, plan
+  `docs/superpowers/plans/2026-10-26-free-au-dela-de-100-contacts.md`). Décisions : « au passage en Free on demande au
+  client de supprimer jusqu'à moins de 100, sinon ça bloque », ce qui bloque est « comme une Free pleine », la
+  suppression se fait « par Claude, en masse », sans le plafond de 10 par jour tant que l'espace dépasse. Deux outils
+  (`prepare_contacts_deletion`, `delete_contacts`, un code HMAC lié à l'espace, à l'échéance et à l'empreinte des fiches,
+  sans table), l'exemption dans `QuotaSuppressions.consommer`, l'e-mail `limite_contacts_depassee`, `contactsEnTrop`
+  dans la vue de l'offre.
+  - **La relecture** : un rouge, corrigé dans le lot. Le critère « inactifs depuis N jours » lisait
+    `conversations.last_message_at`, or les fils sont purgés par la conservation (30 jours en Free) et effacés à la
+    déconnexion du numéro : un client qui a écrit il y a trois mois paraissait « jamais actif ». Le critère est retiré
+    (une clé `inactive_days` est refusée), il reviendra avec une date de dernier message gardée sur la fiche. Corrigés
+    aussi : 1 000 fiches au plus par appel, l'aperçu compté dans les opérations lourdes, la page Offre qui dit d'en
+    supprimer quelques-uns de plus.
+  - **Une interaction de fusion attrapée par `tsc`** : le lot A des intégrations avait rendu `abonnement` obligatoire
+    dans les dépendances de la vue de l'offre ; un cas de test neuf du lot ne le portait pas. Une ligne, avant le push.
+  - **Déployé** : CI verte job par job (le test d'intégration de la sélection compris), les trois services à
+    `783b4529`, `aide:charger` fait ; vérifié en production : `get_plan` rend `contactsEnTrop`.
+- **Reste** : l'essai réel des deux lots (`docs/prive/ESSAIS-REELS.md`, 170 et 171) ; les textes publics de la FAQ et des
+  pages développeurs (« supprimer par l'API, une fiche à la fois ») à la session Vitrine ; le lot « arbre du numéro sans
+  QR code », après la bascule, par le workflow Scaleway.
+
 ## 2026-10-26 : Tools > Intégrations, l'offre en deux onglets, et le Pro dit en clair (résilié et facturé dans la console)
 
 Demande de Julien du 2026-10-26, cadrée le même jour (plan `docs/superpowers/plans/2026-10-26-offre-credit-integrations.md`) :
