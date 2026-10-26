@@ -871,8 +871,6 @@ l'écran et en Telegram, boucle de purge bornée. Restent :
 - **Un client enregistré purgé (30 jours sans autorisation vivante) qui revient sans se réenregistrer** voit une page
   texte « client inconnu » à `/oauth/authorize`, sans signal lisible par l'application ; au renouvellement, il reçoit
   `invalid_client`, que le SDK MCP TypeScript sait traiter. À observer à l'essai réel.
-- **Le plafond par adresse lit `CF-Connecting-IP`**, forgeable par un appel qui contournerait Cloudflare : le plafond
-  global le borne. Il deviendra sûr le jour où l'origine ne répondra qu'à Cloudflare (`docs/ARCHITECTURE-CIBLE.md` § 7).
 
 ## 🟡 Lot 13, la liste de refus des fiches effacées : ce qu'elle ne couvre pas (2026-10-09)
 
@@ -1866,54 +1864,25 @@ Lot borné à livrer, sans refonte générale :
 de construction, embeddings, reranking, transcription, traduction et analyses restent à inventorier. On ne
 répond « tous les traitements IA restent en France » que lorsqu'ils sont tous couverts et testés.
 
-## 🟠 Configurer et prouver Cloudflare Pro, sans casser les webhooks (2026-09-21)
+## 🟠 Cloudflare Pro : ce qui reste après sa mise en place (2026-10-26)
 
-**Décision de Julien :** Cloudflare Pro est retenu pour `api.messagingme.app` et `mba.messagingme.app`.
-`engageme.messagingme.app` reste directement chez Vercel. L'abonnement seul ne ferme aucun écart RSSI : ce
-sont la configuration, la fermeture de l'origine et les preuves qui comptent. Source :
-`docs/ARCHITECTURE-CIBLE.md`, §7.3 à §7.7.
+En place depuis le 2026-10-26 sur `api.` et `mm-hubspot.`, prouvé (journal technique du même jour ; configuration
+et seuils : `docs/prive/2026-10-26-cloudflare-pro.md`). Reste :
 
-**Déjà acquis, ne pas refaire :** `api.messagingme.app` et `mba.messagingme.app` sont déjà proxifiés ; l'origine
-VPS refuse l'accès direct et le vrai chemin Meta a été éprouvé le 2026-09-21 (`DEPLOY.md`, lignes 15 à 41).
-Les plafonds applicatifs existent déjà par clé sur `/v1`, `/mcp` et `/mba/relais/outils/*`, et par code sur
-`/w/:code`.
-
-Reste à faire, par petits changements réversibles :
-
-1. relever l'état du compte Cloudflare ; si ce n'est pas déjà acquis, imposer MFA, comptes nominatifs et
-   moindre privilège. Une configuration déjà active devient une preuve, pas un chantier à refaire ;
-2. vérifier si le **Cloudflare Managed Ruleset** est déjà actif ; sinon l'activer avec ses actions par défaut,
-   relire les faux positifs, puis ne
-   durcir que les règles comprises ; laisser l'OWASP Core Ruleset éteint tant qu'une mesure ou une exigence
-   ne justifie pas son bruit supplémentaire ;
-3. ne pas chercher à « consommer » les deux règles de rate limiting parce qu'elles sont incluses. Pro compte
-   seulement par IP et ne sait ni compter par clé API, ni reproduire les quotas par espace ; ses compteurs ne
-   sont pas exacts à la requête près. Deux candidats réels existent, à activer seulement avec des seuils
-   mesurés :
-   - un fusible large sur l'API externe : `/v1/*` sur `api.`, son ancien chemin `/api/backend/v1/*` sur
-     `mba.`, et `/mcp` sur `mba.`. Inclure `/mcp`, oublié dans la version précédente du lot ;
-   - les chemins d'authentification anonymes qui écrivent : `/auth/login`, `/auth/choose-workspace`,
-     `/auth/google`, `/auth/signup`, `/auth/forgot-password`, `/auth/reset-password` et
-     `/auth/invitations/accept`. Ne pas inclure `/auth/config` ni tout `/auth/*` en bloc ;
-4. pour l'auth, compter largement par IP au bord sans remplacer les limites applicatives par discriminant.
-   `engageme.` ne relaie pas ces appels : le navigateur appelle `api.` directement, donc Cloudflare voit bien
-   l'appelant. Prévoir le cas d'une entreprise entière derrière une IP partagée et préférer un refus HTTP à
-   un challenge susceptible de casser un appel `fetch` ;
-5. n'appliquer **aucun challenge navigateur** à un appel machine à machine, y compris `/v1/*`, `/mcp`,
-   `/webhooks/meta`, `/rcs/callback/*`, `/w/*`, `/hubspot/deal-stage` et `/mba/relais/outils/*`. Une exception
-   WAF se limite à la règle qui produit un faux positif : ne jamais désactiver tout le WAF sur ces chemins ;
-6. avant un blocage, éprouver les chemins publics réellement utilisés, y compris leurs variantes historiques
-   sous `mba.messagingme.app/api/backend/*` : vrai message Meta entrant, vrais statuts, rappel RCS, webhook
-   entrant, relais HubSpot/MBA, `/v1`, `/mcp`, lien `/r/*` et média `/m/*` ;
-7. préserver la fermeture actuelle du VPS et sa preuve ; ne la reconfigurer que si elle régresse. À la bascule
-   Scaleway seulement, vérifier que le nom technique du conteneur refuse un appel sans authentification
-   d'origine avant de changer le DNS ;
-8. distinguer les preuves : les **Audit Logs** retracent les changements de configuration Cloudflare ; les
-   **Security Events** montrent le trafic filtré mais leur rétention Pro est courte. Conserver captures et
-   exports de configuration, tandis que les journaux durables restent aujourd'hui dans Messaging Me et, après
-   la migration seulement, dans Cockpit ;
-9. ne pas acheter Cloudflare Business/Enterprise, Bot Management ou un second WAF Scaleway sans exigence ou
-   incident précis.
+1. **La semaine d'observation, jusqu'au 2026-11-02 (Julien)** : Security Events filtré sur les deux noms, relu chaque
+   jour (rétention courte sur Pro), avec une capture ; un faux positif se traite par une exception sur la SEULE règle
+   fautive. Vérifier au passage que les deux règles de débit y laissent bien leur trace.
+2. **Passer en facturation annuelle** une fois la semaine passée sans incident (20 $ au lieu de 25 $ par mois).
+3. **La sécurité du compte Cloudflare**, jamais relevée : MFA, comptes nominatifs, moindre privilège. Les **Audit
+   Logs** retracent les changements de configuration, les Security Events ne sont pas un journal durable.
+4. **La liste des webhooks signés vit chez Cloudflare, tenue à la main** : une route signée ajoutée au code doit y
+   entrer (`documentation.md` § 7). Si elle dérive, un test qui compare l'inventaire du serveur construit à une copie
+   versionnée de la liste la tiendrait.
+5. Ne pas acheter Business/Enterprise, Bot Management ou un second WAF sans exigence ou incident précis.
+6. **Hors Cloudflare, à trancher par Julien : le bastion SSH de la passerelle** (`mm-passerelle`, port 61000) est ouvert
+   à toutes les adresses (`bastion_allowed_ips` à `0.0.0.0/0`, relu le 2026-10-26), clés du projet seules. C'est la
+   seule porte vers le réseau privé. La restreindre à une liste d'adresses casserait le déploiement depuis GitHub,
+   dont les adresses changent.
 
 ## 🟡 Deux écarts que la revue finale du déploiement a laissés porter (2026-09-23)
 
@@ -3127,8 +3096,6 @@ Ce que les relectures des lots B et C laissent, aucun ne casse la production :
   fichier existant ; supprimé avant que le bloc soit enregistré, ce fichier n'est cité par rien, donc la suppression
   passe, et le bloc pointe un fichier en grâce, purgé 30 jours plus tard (l'envoi est alors refusé).
   Fenêtre étroite : deux personnes, le même fichier, la même minute.
-- **Avant la bascule, mesurer qu'un corps de 23 Mo traverse le conteneur Scaleway** : sa limite de corps n'est pas
-  trouvée dans la doc. Il traverse aujourd'hui Cloudflare puis NPM jusqu'à l'API du VPS.
 
 ## 🟡 Bloc Formulaire à deux sorties : ce que la relecture laisse (2026-10-15)
 

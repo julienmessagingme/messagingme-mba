@@ -2935,6 +2935,8 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | Garde | Où | Ce qu'elle ferme |
 |---|---|---|
 | Conteneur privé et jeton d'origine | le conteneur `mba-api` (privé chez Scaleway) et la règle « Jeton d'origine api » de Cloudflare, qui pose `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` § 7.3) | un appel direct sur l'adresse technique du conteneur, qui contournerait Cloudflare : refusé (403) |
+| Cloudflare Managed Ruleset (offre Pro de la zone) | `api.` et `mm-hubspot.`, SAUF les webhooks signés (règle « Webhooks signés : pas de règles gérées ») | une attaque connue portée par une requête (injection, Log4Shell, etc.), arrêtée avant le conteneur |
+| Deux règles de débit Cloudflare, par IP | `/v1` et `/mcp` (« Fusible de l'API externe ») ; les entrées anonymes qui écrivent, formulaire de la vitrine compris (« Entrées anonymes qui écrivent ») | une seule adresse qui vide le budget des clés inconnues ou le plafond global, ou qui essaie mille comptes : aucun plafond du code ne compte par IP |
 | Signature du webhook | avant de lire le corps | un tiers qui se ferait passer pour Meta |
 | `etapeEspace` (règle `scopeTenant`), posée au montage | toute route `:tenantId` d'un module `tenant` (§ 5) | l'accès aux données d'un autre client (IDOR) |
 | `requireAdmin` (`g.admin`, au montage) ; `forbidNonAdmin` dans le handler des modules sur `g.auth`, plus deux écarts délibérés sur `g.admin` (`contacts`, dont les lectures de conformité passent par `g.encadrement`, et `mbaAssistant`) | écritures | un opérateur d'inbox qui modifierait la configuration |
@@ -2948,6 +2950,17 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 | Signature `ftyp`, bornes du morceau (`src/pubs/video.ts`), parseur d'octets muet | dépôt d'une vidéo publicitaire | autre chose qu'une vidéo envoyé chez Meta sous l'identité du client, et un corps tamponné avant l'authentification |
 | En-têtes de sécurité | toute réponse de l'API et de la console | ce qu'une faille future pourrait faire depuis le navigateur |
 | Étape d'offre (`etapeOffre`, `src/offres/etape.ts`), posée au montage juste après `etapeEspace` | les routes des modules dont l'entrée du registre déclare une fonction, et la console sur toutes les autres routes d'espace hors `MODULES_OUVERTS_AU_FREE` | l'usage d'une fonction que l'offre de l'espace n'ouvre pas (402 `plan_feature_unavailable`) |
+
+🔴 **UNE ROUTE SIGNÉE AJOUTÉE AU CODE ENTRE DANS LA RÈGLE CLOUDFLARE « WEBHOOKS SIGNÉS »** (2026-10-26). Sur ces
+chemins, le corps est le texte d'un tiers ou du client final (un message WhatsApp, une réponse tapée dans HubSpot), et
+l'appelant est authentifié par sa signature avant toute lecture : un faux positif du pare-feu y serait un message perdu
+en silence, rejoué puis bloqué de la même façon. Ils sortent donc des règles gérées, et de rien d'autre. La liste vit
+chez Cloudflare, pas dans le dépôt : elle se recalcule depuis le serveur construit
+(`npx tsx scripts/auto-attaque.mts --inventaire=true`, classes `signature-*` et `code-url` qui reçoivent un corps, plus
+le relais de l'agent de Meta). De même, une entrée anonyme qui écrit entre dans la règle de débit « Entrées anonymes
+qui écrivent ». Aucun challenge sur `api.` ni `mm-hubspot.` (règle « API : aucun challenge ») : tout y est appelé par
+`fetch` ou par une machine. La configuration exacte, ses seuils et ses preuves : `docs/prive/2026-10-26-cloudflare-pro.md`,
+hors du dépôt.
 
 ### L'offre d'un espace (lot 6)
 
@@ -3565,14 +3578,15 @@ passe PAS. Un refus coûte une écriture la première fois qu'une copie voit la 
 sa fin (`memoireDesPleines`) ; un refus d'une fenêtre sur deux en coûte une seconde, qui rend ce que l'autre avait
 compté. ⚠️ Plus de plafond de clés vivantes sur la connexion : il bornait la MÉMOIRE d'une copie contre un robot qui
 invente des adresses ; en base, ces lignes vivent une minute et la tâche `compteurs-debit` les efface toutes les
-cinq minutes. Le vrai fusible contre une telle rafale est la règle Cloudflare des POST d'authentification
-(`docs/ARCHITECTURE-CIBLE.md` §7.7).
+cinq minutes. Le fusible contre une telle rafale est au bord : la règle de débit Cloudflare « Entrées anonymes qui
+écrivent », par IP (§ 7, tableau des gardes).
 
-⚠️ **LA CLÉ PAR IP N'EST PAS L'ADRESSE DU CLIENT, et ce lot ne l'a pas changé** (c'est un sujet d'infra) : Fastify
-tourne sans `trustProxy`, donc `req.ip` est l'adresse du proxy (NPM aujourd'hui), et la clé `ip::adresse` vaut en
-pratique un plafond par identité tentée pour toute la plateforme. Derrière un répartiteur qui présenterait
-plusieurs adresses sources, la même identité se répartirait sur plusieurs clés, donc un plafond multiplié
-d'autant. `CF-Connecting-IP` ne deviendra lisible qu'avec une origine qui ne répond qu'à Cloudflare (§7.3).
+⚠️ **LA CLÉ PAR IP N'EST PAS L'ADRESSE DU CLIENT** : Fastify tourne sans `trustProxy`, donc `req.ip` est l'adresse du
+frontal de Scaleway devant le conteneur, et la clé `ip::adresse` vaut en pratique un plafond par identité tentée pour
+toute la plateforme. Derrière un répartiteur qui présenterait plusieurs adresses sources, la même identité se
+répartirait sur plusieurs clés, donc un plafond multiplié d'autant. Le compte par IP se fait chez Cloudflare.
+`CF-Connecting-IP` est désormais fiable (§ 7.7 de `docs/ARCHITECTURE-CIBLE.md`) : le conteneur ne répond qu'avec le
+jeton d'origine que pose Cloudflare, et l'en-tête n'est forgeable que par qui détient ce jeton.
 
 🔴 **Les portes publiques ont leurs propres plafonds, et un plafond ne compte que des clés qui EXISTENT.**
 - `/v1` et `/mcp` : un budget GLOBAL (`API_KEY_PREFILTRE_MAX`, clé constante, 600 par minute) freine les empreintes
@@ -3710,7 +3724,7 @@ pas de SVG, qui est du XML exécutable. La réponse porte `nosniff` et le type r
 ### 🔴 Aucun message destiné à l'utilisateur dans un 5xx
 
 Mesuré : par l'URL publique, un `502 {"error":"..."}` revient en `text/html` de 6 429 octets, la page de
-Cloudflare, notre corps disparu. **Les deux noms qui servent l'API (`api.` et `mba.`) sont Proxied** ; la
+Cloudflare, notre corps disparu. **Le nom qui sert l'API (`api.`) est Proxied**, comme celui du connecteur HubSpot ; la
 console `console.`, servie en direct par Vercel, ne l'est pas, et ne porte aucune réponse de l'API. Un refus lisible
 sort donc en **422** (409 pour une ambiguïté, 400 pour une saisie invalide), et il est **journalisé côté
 serveur** en plus : le corps peut être détruit en route, le log reste.

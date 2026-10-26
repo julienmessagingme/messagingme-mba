@@ -4,6 +4,34 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : Cloudflare Pro sur `api.` et `mm-hubspot.`, posé et prouvé le soir de la bascule
+
+Souscrit et posé par Julien dans le tableau de bord, pas à pas ; préparé, puis mesuré à chaque étape par Claude. La
+configuration exacte et ses seuils vivent hors du dépôt : `docs/prive/2026-10-26-cloudflare-pro.md`.
+
+- **Avant toute règle** : la zone `messagingme.app` entière passe en Pro, donc aussi les projets du VPS. Super Bot Fight
+  Mode laissé sur « Allow » partout (il défie le trafic d'API), JavaScript detections éteint.
+- **Deux règles Skip** : « API : aucun challenge » (Super Bot Fight Mode, Browser Integrity Check et Security Level
+  contournés sur `api.` et `mm-hubspot.`) et « Webhooks signés : pas de règles gérées » (quinze chemins signés, liste
+  dérivée de l'inventaire du serveur construit). Le second est un écart voulu avec l'« exception étroite » de
+  `docs/ARCHITECTURE-CIBLE.md` § 7.7, validé par Julien : un faux positif sur un webhook est un message perdu en silence.
+- **Le Cloudflare Managed Ruleset**, limité aux deux noms, en actions par défaut ; OWASP éteint. Prouvé par une chaîne
+  Log4Shell inoffensive : 403 de Cloudflare sur `/live`, `/openapi.json`, `/auth/login` ; jusqu'à l'application sur les
+  quinze chemins signés (45 essais sur 45). L'essai réel : un vrai message WhatsApp contenant du faux script, du faux
+  SQL et la même chaîne est arrivé dans l'Inbox de la SANDBOX. L'agent de Meta n'y a pas répondu, ce qui ne tient pas à
+  Cloudflare (le webhook est arrivé, et le relais d'outils passe).
+- **Appris** : juste après le déploiement, une requête piégée sur quatre passait encore (même adresse, même centre de
+  Paris), puis plus aucune trois minutes plus tard. C'est la propagation, pas la règle : on ne juge une règle qu'après.
+- **Deux règles de débit**, par IP : « Fusible de l'API externe » (`/v1` et `/mcp`, 600 par 10 s, blocage d'une minute)
+  et « Entrées anonymes qui écrivent » (14 chemins exacts, 100 par minute, blocage de dix minutes). Déclenchées depuis
+  la machine des workers : 429 après 105 et 679 appels (comptage approximatif, la rafale a chevauché deux fenêtres),
+  avec le corps JSON de l'API. Elles ferment ce qu'aucun plafond du code ne voyait : `req.ip` est le frontal de
+  Scaleway, donc aucun compte ne se fait par IP, et le plafond du formulaire de la vitrine est global.
+- **La requête de 23 Mo** traverse Cloudflare, pare-feu compris, jusqu'à l'application (401 en 7,7 s) : la dernière
+  moitié du test du § 11.
+- **Reste** : la semaine d'observation de Security Events (Julien, jusqu'au 2026-11-02), le passage à l'annuel ensuite,
+  et la sécurité du compte Cloudflare (`todo.md`).
+
 ## 2026-10-26 (soir) : la console de l'audit de structure (lot D), après la bascule
 
 Plan `docs/superpowers/plans/2026-10-26-audits-simplicite-structure.md`, lot D, poussé après la bascule Scaleway. Aucune

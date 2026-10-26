@@ -580,6 +580,18 @@ Cloudflare de demain.
   de limitation de débit. L'OWASP Core Ruleset reste éteint par défaut et ne s'ajoute qu'après une mesure qui
   justifie ses faux positifs possibles. La protection DDoS standard existe déjà sur toutes les offres ; elle
   ne doit pas être présentée comme un gain propre à Pro.
+  ✅ **En place depuis le 2026-10-26** (Julien), sur `api.` et `mm-hubspot.` seulement : le Managed Ruleset en actions
+  par défaut, aucun challenge sur ces deux noms, les deux règles de débit ci-dessous, et les webhooks signés hors des
+  règles gérées (point suivant). Preuves et configuration exacte : `docs/prive/2026-10-26-cloudflare-pro.md`.
+  ⚠️ Un déploiement de règle met environ trois minutes à se propager : mesuré, une requête sur quatre passait encore
+  juste après, puis aucune. On ne juge une règle qu'après ce délai.
+- 🔴 **LES WEBHOOKS SIGNÉS SORTENT DES RÈGLES GÉRÉES, ENTIÈREMENT : un écart voulu avec l'« exception étroite » ci-dessous**
+  (Julien, 2026-10-26). Sur `/webhooks/*`, `/shopify/webhooks`, `/hubspot/*`, `/rcs/callback/*`, `/w/*`, `/internes/otp/*`
+  et `/mba/relais/*` (et `/hubspot/webhook`, `/ingest`, `/service/*`, `/card/*` de `mm-hubspot`), le corps est le texte
+  d'un tiers ou du client final, et l'appelant est authentifié avant toute lecture. Un faux positif y est un message
+  perdu en silence : Meta rejoue sept jours, chaque rejeu est bloqué pareil, personne ne voit le 403. Prouvé le jour
+  même par un vrai message contenant du faux script, du faux SQL et la chaîne Log4Shell, arrivé dans l'Inbox. Partout
+  ailleurs, l'exception reste étroite.
 - **Pro ne remplace pas les contrôles applicatifs.** Ses limites de débit ne savent pas porter nos quotas par
   clé et par espace avec la précision du code : Pro compte seulement par IP et ses compteurs ne sont pas exacts
   à la requête près. On ne configure pas deux règles pour remplir deux cases. Les deux candidats utiles sont
@@ -942,14 +954,23 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
 ## 11. Les tests d'acceptation : la bascule n'est finie que si ces preuves existent
 
 **Le chemin public**
-- `https://api.messagingme.app/live` répond, à travers Cloudflare.
-- Le nom technique du conteneur, appelé en direct sans le jeton d'origine, **refuse**.
+- `https://api.messagingme.app/live` répond, à travers Cloudflare. ✅ 200 le 2026-10-26.
+- Le nom technique du conteneur, appelé en direct sans le jeton d'origine, **refuse**. ✅ 403 du frontal de Scaleway,
+  avant l'application, pour `mba-api` comme pour `mm-hubspot-api` (2026-10-26).
 - Le webhook de Meta arrive sur `api.messagingme.app/webhooks/meta`, et `mba.messagingme.app` ne répond plus
   (supprimé, §10 étape 10). ✅ Les deux depuis le 2026-10-26 (le webhook depuis le 15, le nom supprimé le 26).
 - Les Managed Rules Cloudflare sont actives sur `api.`, avec leur configuration exportée ou capturée.
+  ✅ 2026-10-26, sur `api.` et `mm-hubspot.` : une chaîne Log4Shell inoffensive est bloquée (403 de Cloudflare) sur les
+  chemins ordinaires et traverse jusqu'à l'application sur les quinze chemins signés (§ 7.7). Configuration écrite
+  dans `docs/prive/2026-10-26-cloudflare-pro.md`.
 - Toute règle de débit Pro réellement activée est testée sur ses chemins exacts ; un dépassement est visible
   dans Security Events et ne touche aucun webhook, callback RCS, relais MBA/HubSpot, lien `/r/` ni média `/m/`.
-- Un échantillon de faux positifs est relu avant de passer une règle sensible en blocage.
+  ✅ Les deux déclenchées le 2026-10-26 depuis la machine des workers, avec leur 429 au format de l'API ; leurs
+  expressions ne nomment aucun de ces chemins. Leur trace dans Security Events se relit pendant la semaine
+  d'observation.
+- Un échantillon de faux positifs est relu avant de passer une règle sensible en blocage. Les règles gérées sont en
+  blocage dès le 2026-10-26 (actions par défaut, chemins silencieux exclus) : la relecture se fait pendant la semaine
+  d'observation, jusqu'au 2026-11-02, et un faux positif s'y traite par une exception sur la seule règle fautive.
 - 🔴 **Une requête de 23 Mo arrive jusqu'au conteneur de l'API**, à travers Cloudflare : `POST
   /tenants/:tenantId/media` reçoit déjà des corps jusqu'à 24 Mo (vidéo d'en-tête d'un modèle, en base64), et la
   documentation de Scaleway ne donne aucun plafond pour les conteneurs (les 6 Mio qui circulent concernent les
@@ -957,10 +978,12 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   URL signée vers le bucket (relevé par la session des médias des messages rapides, le 2026-10-14).
   ✅ **La moitié Scaleway est prouvée le 2026-10-26** : 24 117 242 octets envoyés au conteneur d'essai par son adresse
   technique arrivent jusqu'à l'application (401 faute de session, en 9 s), et 30 Mo sont refusés PAR ELLE (son 413).
-  Reste la traversée de Cloudflare, au jour J.
+  ✅ **La traversée de Cloudflare aussi, le 2026-10-26 au soir**, pare-feu de Pro actif : 24 000 056 octets envoyés à
+  `api.messagingme.app` arrivent jusqu'à l'application (401 faute de session, en 7,7 s).
 
 **Ce qui doit rester fermé**
-- La base n'a plus d'endpoint public ; ni elle ni Redis (s'il existe) ne sont joignables d'Internet.
+- La base n'a plus d'endpoint public ; ni elle ni Redis (s'il existe) ne sont joignables d'Internet. ✅ Relu le
+  2026-10-26 : les trois bases managées du projet n'ont chacune qu'une adresse, privée, et la machine des workers aucune IP publique.
 - Les buckets et les objets sont privés par défaut.
 
 **Les vrais échanges**, jamais des simulations
