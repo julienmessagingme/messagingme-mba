@@ -1,7 +1,7 @@
 ---
 description: Connect a WhatsApp number to Messaging Me from Meta's window, get one if needed, have it verified, then read its status on the Home screen.
 slug: connect-my-whatsapp-number
-traduit_de: d5336b
+traduit_de: 4ecd95
 ---
 # Connect my WhatsApp number, and read its status
 
@@ -49,8 +49,9 @@ Just below, a **WhatsApp Business account** panel shows Meta’s review of the a
 and the owning business, each with its badge. Your payment method cannot be read from here: the screen sends you to
 Meta’s Business Manager instead of showing an invented value.
 
-**Four figures over 30 days** open the page (contacts, messages exchanged, templates sent, estimated cost). They are
-exactly those of the Performance Lab, and a dash replaces the cost when Meta gives no rate.
+**Four figures over 30 days** open the page (contacts, messages exchanged, templates sent, estimated cost), with the
+Pro plan: the Free plan has no statistics. They are exactly those of the Performance Lab, and a dash replaces the cost
+when Meta gives no rate.
 
 **Good to know.** For your workspace’s first number, €1 of AI credit is offered as soon as Meta has verified it, only
 once: at connection if it already is, otherwise when you activate it with the verification code. It pays for your AI

@@ -61,8 +61,9 @@ Juste en dessous, un panneau **Compte WhatsApp Business** reprend la revue du co
 votre entreprise et le business propriétaire, chacun avec sa pastille. Votre moyen de paiement n'est pas lisible
 depuis ici : l'écran vous renvoie au Business Manager de Meta au lieu d'afficher une valeur inventée.
 
-**Quatre chiffres sur 30 jours** ouvrent la page (contacts, messages échangés, modèles envoyés, coût estimé). Ce
-sont exactement ceux du Performance Lab, et un tiret remplace le coût quand Meta ne donne aucun tarif.
+**Quatre chiffres sur 30 jours** ouvrent la page (contacts, messages échangés, modèles envoyés, coût estimé), avec
+l'offre Pro : la Free n'a pas de statistiques. Ce sont exactement ceux du Performance Lab, et un tiret remplace le
+coût quand Meta ne donne aucun tarif.
 
 **Bon à savoir.** Pour le premier numéro de votre espace, 1 € de crédit IA vous est offert dès que Meta l'a
 vérifié, une seule fois : à la connexion s'il l'est déjà, sinon quand vous l'activez avec le code de vérification.
