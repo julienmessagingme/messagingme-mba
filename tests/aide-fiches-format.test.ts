@@ -196,6 +196,10 @@ describe('les fiches publiques', () => {
     'poser-une-bulle-whatsapp-sur-mon-site': ['parler-aux-clients', 7],
     'publier-sur-ma-chaine-whatsapp': ['parler-aux-clients', 8],
     'envoyer-un-message-rcs': ['parler-aux-clients', 9],
+    // Les trois fiches longues du même choix, publiées après la bascule Scaleway.
+    'construire-un-agent-ia': ['parler-aux-clients', 10],
+    'le-repondeur-de-meta': ['parler-aux-clients', 11],
+    'creer-une-publicite': ['parler-aux-clients', 12],
   };
   /** Les six écrans qui portent « Comment faire », et leur page. */
   const COMMENT_FAIRE: Record<string, string> = {
@@ -234,8 +238,9 @@ describe('les fiches publiques', () => {
 
   it('les pages sans capture et sans mention d’offre sont celles prévues', () => {
     expect(publiques.filter((f) => !f.publication.captures).map((f) => f.cle).sort())
-      .toEqual(['ce-qu-il-faut-chez-meta', 'envoyer-un-message-rcs', 'hubspot-sur-l-accueil', 'la-fenetre-de-24-heures',
-        'poser-une-bulle-whatsapp-sur-mon-site', 'publier-sur-ma-chaine-whatsapp']);
+      .toEqual(['ce-qu-il-faut-chez-meta', 'construire-un-agent-ia', 'creer-une-publicite', 'envoyer-un-message-rcs',
+        'hubspot-sur-l-accueil', 'la-fenetre-de-24-heures', 'le-repondeur-de-meta', 'poser-une-bulle-whatsapp-sur-mon-site',
+        'publier-sur-ma-chaine-whatsapp']);
     // Connecter son numéro et garder son application se font depuis Claude Code (Free) ou l'Accueil, ouvert à la
     // Free (`ECRANS_FREE`, `MODULES_OUVERTS_AU_FREE`) : aucune offre à dire.
     expect(publiques.filter((f) => !f.publication.offre).map((f) => f.cle).sort())

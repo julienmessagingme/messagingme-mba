@@ -1,7 +1,12 @@
 ---
+description: Le Meta Business Agent, le répondeur de WhatsApp : quand il répond, comment le régler, son plafond, et comment reprendre la main.
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
 source_empreinte: 14d8a0
+publique: oui
+rubrique: parler-aux-clients
+rang: 11
+captures: non
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 

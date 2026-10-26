@@ -1,7 +1,12 @@
 ---
+description: Lancer une publicité Click-to-WhatsApp depuis Messaging Me : le compte publicitaire, le visuel, les audiences, qui répond, et l’entonnoir.
 ecran: publicites
 source_section: Publicités Click-to-WhatsApp (menu Publicités)
 source_empreinte: 3df984
+publique: oui
+rubrique: parler-aux-clients
+rang: 12
+captures: non
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 
