@@ -351,7 +351,8 @@ describe('le conteneur de l’API chez Scaleway et le budget de connexions', () 
   /** Migrations, sondes, sauvegardes et console d'administration. */
   const MARGE = 10;
   // TOUS les services du compose de la machine comptent, pas seulement ceux qu'on connaît aujourd'hui. Un worker : son
-  // pool, son pg-boss, et une connexion d'écoute des notifications. Le service de connexions de la filière application :
+  // pool, son pg-boss, et une connexion d'écoute des notifications, comptée même pour l'analyse, qui n'écoute plus
+  // (`ecouteLesFiles`, 2026-10-26) : une connexion de marge. Le service de connexions de la filière application :
   // son pool seul, qu'il prête à pg-boss pour empiler, comme l'API.
   const SERVICES = [...blocRacine(COMPOSE_SCALEWAY, 'services').matchAll(/^ {2}([a-z0-9-]+):$/gm)].map((m) => m[1]!);
   const estConnexions = (bloc: string) => /^\s+command:.*src\/application\/service\.ts/m.test(bloc);

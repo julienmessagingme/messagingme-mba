@@ -1,4 +1,4 @@
-import type { BASE_QUEUES } from '../queue/names';
+import { FILES_NOTIFIEES, type BASE_QUEUES } from '../queue/names';
 import type { OptionsTache, RegistreDeTaches } from './taches';
 
 /**
@@ -183,6 +183,16 @@ export function minuterieDuRole(nom: string, role: RoleWorker): boolean {
  */
 export function superviseLesFiles(role: RoleWorker): boolean {
   return role !== 'analyse';
+}
+
+/**
+ * QUI ÉCOUTE LES NOTIFICATIONS : un rôle qui consomme au moins une file réveillée par notification (`FILES_NOTIFIEES`).
+ * L'écouteur tient une connexion de session permanente ; celui de l'analyse ne servait à rien, aucune de ses files
+ * n'étant notifiée (audit du 2026-10-26). Dérivé des deux tables plutôt qu'écrit par rôle : une file notifiée
+ * confiée demain à l'analyse lui rend son écouteur sans qu'on y pense.
+ */
+export function ecouteLesFiles(role: RoleWorker): boolean {
+  return Object.entries(FILES_NOTIFIEES).some(([nom, notifiee]) => notifiee && fileDuRole(nom, role));
 }
 
 export function nomDuProcessus(role: RoleWorker): string {

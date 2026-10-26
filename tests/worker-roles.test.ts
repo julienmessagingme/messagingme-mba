@@ -10,6 +10,7 @@ import {
   minuterieDuRole,
   nomDuProcessus,
   superviseLesFiles,
+  ecouteLesFiles,
   tachesDuRole,
   type RoleWorker,
 } from '../src/worker/roles';
@@ -120,6 +121,13 @@ describe('ce qui tourne HORS du registre suit le même partage (relecture du 202
     expect(superviseLesFiles('principal')).toBe(true);
     expect(superviseLesFiles('all')).toBe(true);
     expect(superviseLesFiles('analyse')).toBe(false);
+  });
+
+  it('🔴 seul un rôle qui consomme une file notifiée écoute : le principal (ou l’unique), pas l’analyse', () => {
+    expect(ecouteLesFiles('principal')).toBe(true);
+    expect(ecouteLesFiles('all')).toBe(true);
+    // Aucune file de l'analyse n'est réveillée par notification : son écouteur tenait une connexion pour rien.
+    expect(ecouteLesFiles('analyse')).toBe(false);
   });
 
   it('minuterieDuRole rend le partage de la table, et lève sur un nom inconnu', () => {

@@ -343,7 +343,8 @@ describe('cadence de polling par file', () => {
   it('🔴 seul le worker ECOUTE : l’API empile, un ecouteur y prendrait une connexion pour rien', () => {
     const api = sansCommentaires(readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8'));
     const worker = sansCommentaires(readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8'));
-    expect(worker, 'le worker depile, donc il doit etre reveille').toMatch(/ecouteNotifications:\s*true/);
+    // Le worker depile, donc il doit etre reveille : son ecoute suit son role (`ecouteLesFiles`, `tests/worker-roles.test.ts`).
+    expect(worker, 'le worker depile, donc il doit etre reveille').toMatch(/ecouteNotifications: ecouteLesFiles\(config\.WORKER_ROLE\),/);
     expect(api, 'l’API ne depile aucune file : pas d’ecouteur').not.toMatch(/ecouteNotifications:\s*true/);
     // Un repli MUET serait pire que le repli : on croirait les entrants reveilles alors qu'ils attendraient
     // leur tour d'horloge. pg-boss le signale par un avertissement, encore faut-il l'ecouter.

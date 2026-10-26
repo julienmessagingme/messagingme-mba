@@ -263,7 +263,8 @@ describe('câblage des deux processus', () => {
   it('🔴 le worker garde sa chaîne de connexion, son plafond et son écoute', () => {
     const src = sansCommentaires('../src/worker.ts');
     expect(src).toMatch(/new PgBossQueue\(config\.DATABASE_URL, config\.PGBOSS_SCHEMA, \{\s*max: config\.PGBOSS_MAX,/);
-    expect(src).toMatch(/ecouteNotifications: true/);
+    // L'écoute suit le rôle : le principal écoute, l'analyse non (`ecouteLesFiles`, `tests/worker-roles.test.ts`).
+    expect(src).toMatch(/ecouteNotifications: ecouteLesFiles\(config\.WORKER_ROLE\),/);
     expect(src.match(/new PgBossQueue\(/g)).toHaveLength(1);
   });
 });

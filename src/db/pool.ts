@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, type PoolConfig } from 'pg';
 import { config } from '../config';
 import { pgSsl } from './ssl';
 import { MesureAttentePool, instrumenterPool, type PoolInstrumentable } from './attente-pool';
@@ -15,6 +15,21 @@ export function resolveAppDatabaseUrl(cfg: { APP_DATABASE_URL: string; DATABASE_
 }
 
 /**
+ * Les connexions inactives restent ouvertes cinq minutes, au lieu des 10 s par défaut de `pg` (audit du 2026-10-26).
+ * Ouvrir une connexion TLS vers la base coûte 13 ms en médiane et 43 ms au p95, une requête 0,5 ms : à 10 s, presque
+ * chaque webhook de Meta et chaque reprise de la console rouvrait la sienne (21 ouvertures par minute au repos). Le
+ * budget de connexions ne bouge pas, il compte déjà chaque pool plein (`tests/deploy-scaleway.test.ts`).
+ * `keepAlive` sonde toutes les 60 s une connexion qui dort : le réseau ne l'oublie pas en silence, et une base
+ * disparue se voit avant la requête suivante plutôt qu'à son échec.
+ * Le `satisfies` est posé sur l'objet lui-même : à travers un spread, une option mal orthographiée ne serait pas vue.
+ */
+const GARDER_OUVERTES = {
+  idleTimeoutMillis: 5 * 60_000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 60_000,
+} satisfies PoolConfig;
+
+/**
  * Pool Postgres applicatif partagé (tous les stores, API et worker), à connexion paresseuse.
  * `max` et `connectionTimeoutMillis` sont obligatoires : sans `max`, `pg` en prend 10 par process ; sans timeout,
  * une acquisition sur pool saturé attend indéfiniment et la requête HTTP ne répond jamais. Le calcul de `max` vit
@@ -25,6 +40,7 @@ export const pool = new Pool({
   ssl: pgSsl(),
   max: config.DB_POOL_MAX,
   connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
+  ...GARDER_OUVERTES,
 });
 ecouterErreursDuPool(pool);
 
@@ -43,6 +59,7 @@ export function creerPoolReception(): Pool {
     ssl: pgSsl(),
     max: config.DB_POOL_RECEPTION_MAX,
     connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
+    ...GARDER_OUVERTES,
   });
   ecouterErreursDuPool(reception);
   instrumenterPool(reception as unknown as PoolInstrumentable, mesureAttenteReception);

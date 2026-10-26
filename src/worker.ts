@@ -115,7 +115,7 @@ import type { Campaign } from './campaign/types';
 import { sendTelegram } from './ops/telegram';
 import { installGracefulShutdown } from './shutdown';
 import { registreDeTaches } from './worker/taches';
-import { fileDuRole, minuterieDuRole, nomDuProcessus, superviseLesFiles, tachesDuRole } from './worker/roles';
+import { ecouteLesFiles, fileDuRole, minuterieDuRole, nomDuProcessus, superviseLesFiles, tachesDuRole } from './worker/roles';
 import { tenter } from './lib/tenter';
 import { messageDe, texteDe } from './lib/erreur';
 import { balayerAbonnements } from './numero/balayage-abonnements';
@@ -161,7 +161,8 @@ export async function demarrerWorker(): Promise<void> {
     max: config.PGBOSS_MAX,
     connectionTimeoutMillis: config.DB_CONN_TIMEOUT_MS,
     flowIntervalSeconds: 60,
-    ecouteNotifications: true,
+    // N'écoute que le rôle qui consomme une file notifiée : pas l'analyse (`src/worker/roles.ts`).
+    ecouteNotifications: ecouteLesFiles(config.WORKER_ROLE),
     // Un seul worker supervise : le principal (`src/worker/roles.ts`).
     supervise: superviseLesFiles(config.WORKER_ROLE),
   });
