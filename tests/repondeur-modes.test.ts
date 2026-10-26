@@ -309,9 +309,7 @@ describe('🔴 A3 : la fin d’un parcours ne rend au MBA qu’en mode `mba`', (
     // veille chaque parcours fini, et chaque étape sans choix cesserait de bloquer.
     // Depuis le lot 6 (B2a), la question se pose SOUS L'OFFRE : en Base, l'agent de Meta n'est jamais le répondeur.
     const source = readFileSync(new URL('../src/workflow/wiring.ts', import.meta.url), 'utf8');
-    const cablage = source.slice(source.indexOf('mbaActifPour: async (tenant) => {'), source.indexOf('mbaActifPour: async (tenant) => {') + 250);
-    expect(cablage).toContain('const [r, o] = await Promise.all([settingsStore.get(tenant), offres.offreDe(tenant)]);');
-    expect(cablage).toContain('return leMbaRepond(sousLOffre(r, o.droits.fonctions));');
+    expect(source).toContain('mbaActifPour: async (tenant) => leMbaRepond(await reglagesSousLOffre({ reglages: settingsStore, offres }, tenant)),');
     expect(source).not.toMatch(/mbaActifPour:[^\n]*\.mbaEnabled/);
   });
 });

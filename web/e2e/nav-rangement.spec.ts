@@ -61,12 +61,14 @@ test.describe('Barre : où sont rangées les entrées', () => {
     await expect(page.getByTestId('credit-solde')).toContainText('4');
   });
 
-  test('les anciennes adresses mènent aux nouvelles : /agents/credit et /mba', async ({ page }) => {
+  test('les anciennes adresses mènent aux nouvelles : /agents/credit, /mba et /dashboard/erreurs', async ({ page }) => {
     await mock(page);
     await page.goto('/agents/credit');
     await expect(page).toHaveURL(/\/parametres\/credit$/);
     await page.goto('/mba');
     await expect(page).toHaveURL(/\/mba\/parametres$/);
+    await page.goto('/dashboard/erreurs');
+    await expect(page).toHaveURL(/\/securite\/erreurs$/);
   });
 
   test('les onglets se distinguent du logo : un écart', async ({ page }) => {

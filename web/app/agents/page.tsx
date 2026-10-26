@@ -10,6 +10,7 @@ import { EnteteAgent } from '@/components/EnteteAgent';
 import { logoDuModele, pastilleDuModele } from '@/lib/logos-llm';
 import { useT, useLocale } from '@/lib/i18n';
 import { cardCls, inputCls, kickerCls } from '@/lib/ui';
+import { ChampSortie } from '@/components/ChampSortie';
 import {
   createAgent, deleteAgent, getAgent, getSoldeAgent, listAgentsEtRepondeur, patchAgent,
   type AgentComplet, type AgentResume, type PatchAgent, type SortieAgent,
@@ -683,57 +684,32 @@ function Activation({ agent, busy, onChange }: { agent: AgentComplet; busy: bool
   );
 }
 
-/** Champ texte enregistré à la sortie du champ, comme les écrans MBA : pas de bouton par champ, pas de
- *  sauvegarde à chaque frappe. */
-function Champ({ label, aide, valeur, multi, onSave, testId, busy }: {
-  label: string; aide?: string; valeur: string; multi?: boolean; testId: string; busy: boolean;
-  onSave: (v: string) => void;
-}) {
-  const [v, setV] = useState(valeur);
-  useEffect(() => { setV(valeur); }, [valeur]);
-  const commun = {
-    'data-testid': testId,
-    className: inputCls,
-    value: v,
-    disabled: busy,
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setV(e.target.value),
-    onBlur: () => { if (v !== valeur) onSave(v); },
-  };
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-ink-900">{label}</label>
-      {multi ? <textarea rows={4} {...commun} /> : <input {...commun} />}
-      {aide && <p className="text-xs leading-relaxed text-ink-500">{aide}</p>}
-    </div>
-  );
-}
-
 function OngletIdentite({ agent, busy, onSave }: { agent: AgentComplet; busy: boolean; onSave: (p: PatchAgent) => void }) {
   const t = useT();
   const c = agent.contenu;
   return (
     <div className={`${cardCls} flex flex-col gap-4`}>
-      <Champ
+      <ChampSortie
         testId="agent-label" busy={busy} label={t('Nom interne', 'Internal name')}
         aide={t('Ce que vous voyez dans la liste et dans le builder. Le contact ne le voit jamais.', 'What you see in the list and in the builder. The contact never sees it.')}
         valeur={agent.label} onSave={(v) => onSave({ label: v })}
       />
-      <Champ
+      <ChampSortie
         testId="agent-nom" busy={busy} label={t('Nom donné au contact', 'Name given to the contact')}
         aide={t('Laissé vide, l’agent ne se donne aucun nom.', 'Left empty, the agent gives itself no name.')}
         valeur={c.nom} onSave={(v) => onSave({ contenu: { ...c, nom: v } })}
       />
-      <Champ
-        testId="agent-ton" busy={busy} multi label={t('Ton', 'Tone')}
+      <ChampSortie
+        testId="agent-ton" busy={busy} multi lignes={4} label={t('Ton', 'Tone')}
         aide={t('Vouvoiement, phrases courtes, pas d’emoji… écrivez-le comme vous le diriez à une nouvelle recrue.', 'Formal, short sentences, no emoji… write it as you would tell a new hire.')}
         valeur={c.ton} onSave={(v) => onSave({ contenu: { ...c, ton: v } })}
       />
-      <Champ
-        testId="agent-personnalite" busy={busy} multi label={t('Personnalité', 'Personality')}
+      <ChampSortie
+        testId="agent-personnalite" busy={busy} multi lignes={4} label={t('Personnalité', 'Personality')}
         valeur={c.personnalite} onSave={(v) => onSave({ contenu: { ...c, personnalite: v } })}
       />
-      <Champ
-        testId="agent-mention" busy={busy} multi label={t('Mention d’IA', 'AI disclosure')}
+      <ChampSortie
+        testId="agent-mention" busy={busy} multi lignes={4} label={t('Mention d’IA', 'AI disclosure')}
         aide={t(
           'La phrase qui annonce que l’interlocuteur parle à une IA. Elle ne peut pas être vide ; c’est le réglage ci-dessous qui décide quand elle est dite.',
           'The sentence telling the contact they are talking to an AI. It cannot be empty; the setting below decides when it is said.',
@@ -776,13 +752,13 @@ function OngletObjectif({ agent, busy, onSave }: { agent: AgentComplet; busy: bo
   return (
     <div className="flex flex-col gap-4">
       <div className={`${cardCls} flex flex-col gap-4`}>
-        <Champ
-          testId="agent-objectif" busy={busy} multi label={t('Objectif de l’agent', 'The agent’s objective')}
+        <ChampSortie
+          testId="agent-objectif" busy={busy} multi lignes={4} label={t('Objectif de l’agent', 'The agent’s objective')}
           aide={t('Ce qu’il est là pour faire, en une ou deux phrases. C’est le champ qui pèse le plus sur ce qu’il répondra.', 'What it is there to do, in a sentence or two. This is the field that weighs most on what it answers.')}
           valeur={c.objectif} onSave={(v) => onSave({ contenu: { ...c, objectif: v } })}
         />
-        <Champ
-          testId="agent-transferts" busy={busy} multi label={t('Quand passer la main à un humain', 'When to hand over to a human')}
+        <ChampSortie
+          testId="agent-transferts" busy={busy} multi lignes={4} label={t('Quand passer la main à un humain', 'When to hand over to a human')}
           aide={t('En français, comme vous le diriez. Par exemple : dès qu’on parle d’un remboursement, ou si le contact s’énerve.', 'In plain words. For example: as soon as a refund comes up, or if the contact gets upset.')}
           valeur={c.reglesTransfert} onSave={(v) => onSave({ contenu: { ...c, reglesTransfert: v } })}
         />

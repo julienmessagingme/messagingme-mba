@@ -1,5 +1,8 @@
 # Mesure d'un tour d'agent réel, 2026-09-02
 
+> ⚠️ Le banc `scripts/mesure-tour-agent.mts` a été retiré du dépôt le 2026-10-26 (audit simplicité) : son résultat est ici, et
+> le script se retrouve dans l'historique git (`git log --all -- scripts/mesure-tour-agent.mts`).
+
 > Geste 4 du chantier IA. Trois passages du banc `scripts/mesure-tour-agent.mts` contre le **vrai** Gateway
 > Vercel, modèle de production `zai/glm-4.7-flash`, avec le corpus Hyundai (17 modèles) comme base de
 > connaissance. Aucune session d'agent ouverte, aucun crédit débité, rien écrit en base.

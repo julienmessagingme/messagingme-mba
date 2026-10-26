@@ -48,7 +48,7 @@ import { renderText, contactVars } from '../crm/render';
 import { adressesDestinataires, type SendEmailAction } from './engine';
 import type { BesoinsContexte, EvalContext } from './conditions';
 import type { ControleDuFil } from '../inbox/fil';
-import { leMbaRepond, sousLOffre } from '../repondeur/mode';
+import { leMbaRepond, reglagesSousLOffre } from '../repondeur/mode';
 import { creerTransmettreHorsParcours } from '../mba/transmettre-hors-parcours';
 import { cacheCourt } from '../lib/cache-court';
 import type { MetaClient } from '../meta/client';
@@ -428,10 +428,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
     // L'agent de Meta est-il le RÉPONDEUR de ce client (mode `mba`, RC6) ? Décide qu'une étape sans choix cesse de
     // bloquer le parcours, et qu'on rende le fil à Meta en fin de chaîne. Allumé en veille : non.
     // Sous l'offre (lot 6, B2a) : en Base, l'agent de Meta n'est jamais le répondeur.
-    mbaActifPour: async (tenant) => {
-      const [r, o] = await Promise.all([settingsStore.get(tenant), offres.offreDe(tenant)]);
-      return leMbaRepond(sousLOffre(r, o.droits.fonctions));
-    },
+    mbaActifPour: async (tenant) => leMbaRepond(await reglagesSousLOffre({ reglages: settingsStore, offres }, tenant)),
     /**
      * Le bloc « Envoyer au MBA » (RC6) : le contrôle du fil confie le contact à l'agent de Meta, avec son dernier
      * message (`derniereSaisieDuContact`, le texte que le client vient d'écrire), ou le passe à l'équipe quand l'agent

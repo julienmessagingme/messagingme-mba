@@ -46,6 +46,23 @@ export function sousLOffre<T extends ReglageDuRepondeur>(r: T, fonctions: Readon
 }
 
 /**
+ * Les réglages d'un espace lus SOUS SON OFFRE : les deux lectures en parallèle, puis `sousLOffre`. Le point de passage de
+ * ceux qui confient un contact (le contrôle du fil, la fin d'un parcours, le balayage d'accompagnement par e-mail du
+ * worker, « Rendre la main » de MCP) et de `choixDeLAncienneFormeSousLOffre`, pour qu'aucun ne lise un `mbaEnabled` brut
+ * par oubli de la seconde lecture.
+ */
+export async function reglagesSousLOffre<T extends ReglageDuRepondeur>(
+  deps: {
+    reglages: { get(tenantId: string): Promise<T> };
+    offres: { offreDe(tenantId: string): Promise<{ droits: { fonctions: ReadonlySet<Fonction> } }> };
+  },
+  tenantId: string,
+): Promise<T> {
+  const [r, o] = await Promise.all([deps.reglages.get(tenantId), deps.offres.offreDe(tenantId)]);
+  return sousLOffre(r, o.droits.fonctions);
+}
+
+/**
  * L'agent de Meta est-il le RÉPONDEUR de l'espace ? La seule question que se posent la remise « personne ne suit »,
  * la fin d'un parcours, « Rendre la main » et le balayage avant de lui confier un contact. Allumé en veille : non.
  */

@@ -90,6 +90,24 @@ const nextConfig = {
     }];
   },
 
+  /**
+   * LES ADRESSES HISTORIQUES DE LA CONSOLE, gardées pour les liens partagés, les signets et les specs qui les citent : un
+   * 404 se lit comme une panne, une redirection emmène là où l'écran vit maintenant. Côté serveur (307), et non plus par
+   * une page qui faisait `router.replace` : rien ne clignote, et le bouton « précédent » ne ramène pas sur une page qui
+   * repart aussitôt. `/outils` : les outils de l'agent de Meta sont un onglet de ses paramètres (spec
+   * 2026-09-21-outils-maison-mba, § 9.5). `/agents/credit` : le crédit IA paie les agents ET la traduction, c'est un
+   * réglage de l'espace (2026-09-29). `/mba` : le guide qui vivait là est retiré (2026-09-29), le menu mène droit aux
+   * paramètres. `/dashboard/erreurs` : le journal des erreurs a rejoint le centre de Sécurité (2026-09-17).
+   */
+  async redirects() {
+    return [
+      { source: '/outils', destination: '/mba/parametres?tab=outils', permanent: false },
+      { source: '/agents/credit', destination: '/parametres/credit', permanent: false },
+      { source: '/mba', destination: '/mba/parametres', permanent: false },
+      { source: '/dashboard/erreurs', destination: '/securite/erreurs', permanent: false },
+    ];
+  },
+
   async rewrites() {
     return [
       { source: '/api/backend/:path*', destination: `${backend}/:path*` },

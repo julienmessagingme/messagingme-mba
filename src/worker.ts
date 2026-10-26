@@ -85,7 +85,7 @@ import { contactPublic } from './evenements/types';
 import { creerGestesEnvoiAgent } from './agent/gestes-envoi';
 import { creerEscaladeVersHumain } from './agent/escalade';
 import { automatique } from './inbox/evenements';
-import { modeEffectif, sousLOffre, standbyPourNous } from './repondeur/mode';
+import { modeEffectif, reglagesSousLOffre, standbyPourNous } from './repondeur/mode';
 import { PgConversationAnalysisStore } from './analysis/store.pg';
 import { analyzeConversationJob } from './analysis/job';
 import { analyseDeLaConversation } from './analysis/fiche';
@@ -1047,7 +1047,7 @@ export async function demarrerWorker(): Promise<void> {
     const accompagnes = await balayerAccompagnement({
       espacesRecents: () => emailsProduit.espacesRecents(),
       // Sous l'offre, comme la console et `get_setup_state` : un Pro repassé en Free n'a plus son scénario.
-      modeRepondeur: async (t) => modeEffectif(sousLOffre(await settingsStore.get(t), (await offres.offreDe(t)).droits.fonctions)),
+      modeRepondeur: async (t) => modeEffectif(await reglagesSousLOffre({ reglages: settingsStore, offres }, t)),
       aDesMessages: (t) => emailsProduit.aDesMessages(t),
       emettre: (e) => emetteurEmails.emettre(e),
       pages: {

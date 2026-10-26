@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { AudienceNonConfirmee, FENETRES_BUDGET, MbaClient, UNITES_BUDGET, ecrireRollout, fusionnerBusinessInfo, modifierSettings } from '../mba/client';
+import { AudienceNonConfirmee, FENETRES_BUDGET, MbaClient, UNITES_BUDGET, ecrireRollout, ecrireRolloutPuisDrapeau, fusionnerBusinessInfo, modifierSettings } from '../mba/client';
 import type { BudgetAgent, BusinessInfo, Faq, FenetreBudget, Skill, UniteBudget } from '../mba/client';
 import { ID_MESSAGE_RE, validerCreation, validerModification } from '../mba/messages-interactifs';
 import { extraireDepuisCsvHorsBoucle, extraireDepuisHtmlHorsBoucle, extraireDepuisJson, normaliser, planifierImport } from '../mba/faq-import';
@@ -469,7 +469,7 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const enabled = (req.body as { enabled?: unknown } | null)?.enabled;
     if (typeof enabled !== 'boolean') return reply.code(400).send({ error: 'enabled requis (booléen)' });
     try {
-      await ecrireRollout(ctx.client, ctx.pn, enabled, { attendre: (ms) => deps.attendre(ms) });
+      await ecrireRolloutPuisDrapeau(ctx.client, ctx.pn, enabled, { attendre: (ms) => deps.attendre(ms) }, (e) => deps.reglages.setMbaEnabled(ctx.tenant, e));
     } catch (err) {
       // 4xx, jamais 5xx : Cloudflare remplacerait le corps, et l'écran ne dirait plus pourquoi rien n'a changé.
       if (!(err instanceof AudienceNonConfirmee)) throw err;
@@ -477,7 +477,6 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
       console.error(`mba rollout: ${err.message} (${ctx.tenant})`);
       return reply.code(409).send({ error: 'Meta n’a pas confirmé que l’agent ne répond qu’aux contacts de sa liste : il n’a pas été allumé. Réessayez dans un instant.' });
     }
-    await deps.reglages.setMbaEnabled(ctx.tenant, enabled);
     return reply.code(200).send(await ctx.client.getSettings(ctx.pn));
   });
 

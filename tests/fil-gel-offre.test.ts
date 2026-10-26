@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { bancDuFil } from './banc-du-fil';
-import { sousLOffre, modeEffectif, leMbaRepond, type ReglageDuRepondeur } from '../src/repondeur/mode';
+import { sousLOffre, reglagesSousLOffre, modeEffectif, leMbaRepond, type ReglageDuRepondeur } from '../src/repondeur/mode';
 import { DROITS } from '../src/offres/offres';
 
 /**
@@ -43,6 +43,19 @@ describe('sousLOffre : les réglages tels que l’offre les laisse jouer', () =>
     const apres = sousLOffre(avant, DROITS.base.fonctions);
     expect(avant.mbaEnabled).toBe(true);
     expect(apres.controlHandbackSeconds).toBe(42);
+  });
+
+  it('`reglagesSousLOffre` lit les réglages et l’offre de CET espace, puis applique `sousLOffre`', async () => {
+    const lus: string[] = [];
+    const deps = {
+      reglages: { get: async (t: string) => { lus.push(`reglages:${t}`); return { ...r(), controlHandbackSeconds: 7 }; } },
+      offres: { offreDe: async (t: string) => { lus.push(`offre:${t}`); return { droits: { fonctions: DROITS.base.fonctions } }; } },
+    };
+    const lu = await reglagesSousLOffre(deps, 't1');
+    expect(lus.sort()).toEqual(['offre:t1', 'reglages:t1']);
+    expect(lu.mbaEnabled).toBe(false);
+    expect(modeEffectif(lu)).toBe('equipe');
+    expect(lu.controlHandbackSeconds).toBe(7);
   });
 });
 

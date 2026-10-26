@@ -25,7 +25,7 @@ import type { PlafondPartage } from '../auth/plafond-partage';
 import { RefusOutil, dateAvecFuseau, entierBorne, texteObligatoire, valeurOuRefus } from './saisie';
 import { decoderCurseur, encoderCurseur, idPublic, type DepotConversationsV1 } from '../api/conversations-v1';
 import { AgentDeMetaGardeLeFil, type ControleDuFil, type IssueRendreLaMain } from '../inbox/fil';
-import { modeEffectif, sousLOffre } from '../repondeur/mode';
+import { modeEffectif, reglagesSousLOffre } from '../repondeur/mode';
 import { OUTILS_AGENT, signataire, type DepsAgentMcp } from './outils-agent';
 import { estUuid } from '../http/scope';
 import { OUTILS_OFFRE, type DepsOffreMcp } from './outils-offre';
@@ -893,7 +893,7 @@ export const OUTILS: OutilMcp[] = [
       // Le mode « équipe » (lu sous l'offre, comme le fait le contrôle du fil) : aucun répondeur automatique. Le geste
       // reste utile (il sort la conversation d'« À traiter », et rend un parcours qui attendait le contact), mais aucun
       // robot ne répondra au message suivant : le résultat le dit plutôt que de laisser croire le contraire.
-      const reglage = sousLOffre(await deps.agentIa.repondeur.reglages.get(tenantId), (await deps.offres.offreDe(tenantId)).droits.fonctions);
+      const reglage = await reglagesSousLOffre({ reglages: deps.agentIa.repondeur.reglages, offres: deps.offres }, tenantId);
       const sansRepondeur = modeEffectif(reglage) === 'equipe';
       // 🔴 « Rendre la main » de la console confie à l'agent de Meta sans la garde du consentement : un geste humain,
       // délibéré (`rendreLaMain`, `src/inbox/fil.ts`). Cet outil s'ouvre aussi derrière une clé d'API : un contact qui a

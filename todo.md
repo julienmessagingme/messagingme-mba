@@ -1,5 +1,18 @@
 # todo.md : backlog
 
+## 🟡 Les types de réponse recopiés à la main côté console (audit simplicité, 2026-10-25)
+
+- Environ 80 types de `web/lib/api/*.ts` et `web/lib/api-*.ts` redéclarent une réponse du serveur sous le même nom
+  (`TemplateSummary`, `CampaignSummary`, `DashboardStats`, `AccountStatusResponse`, `LigneCoutCampagne`...), sans test de
+  parité. Ils ne sont PAS identiques champ pour champ : `TemplateSummary` déclare `body` facultatif et `headerFormat`
+  comme une union fermée côté console, `body` obligatoire et `headerFormat` en texte libre côté serveur
+  (`web/lib/api/templates.ts:16` contre `src/meta/templates.ts:56`). Les commentaires ont déjà divergé.
+- La cible : un fichier de types purs par domaine dans `web/lib/partage/`, lu par le serveur et la console, chaque paire
+  RÉCONCILIÉE (le serveur fait foi ; un écart trouvé est peut-être un défaut d'écran), puis les copies retirées.
+  `Performance` et `VueOffre` restent hors du lot, comme le lot B du 2026-10-09 l'a décidé.
+- Décision de Julien le 2026-10-26 : au backlog, à cadrer à part. Plan des autres lots :
+  `docs/superpowers/plans/2026-10-26-audits-simplicite-structure.md`.
+
 ## 🟡 La Free limitée à 100 contacts de toutes origines : ce que le lot laisse ouvert (2026-10-25)
 
 Plan `docs/superpowers/plans/2026-10-25-free-100-contacts.md`. Relu sans rouge ; corrigés dans le lot : un STOP dont
@@ -956,8 +969,6 @@ l'écran et en Telegram, boucle de purge bornée. Restent :
   posée par l'API peut refuser chaque appel sans le signaler. Câbler un dépôt dans `src/index.ts` pour la pose.
 - **Un cycle entre scénarios** (un agent dans A lance B, un agent dans B relance A) n'est borné que par le crédit :
   chaque saut est une décision du modèle, et les plafonds repartent à zéro à chaque session.
-- `scripts/mesure-tour-agent.mts` exclut désormais aussi `poser_tag` et `ecrire_variable` : ses mesures de latence et
-  de jetons ne sont plus comparables à celles d'avant RC4.
 - 🟡 **Un outil tiré d'un appel de connecteur fige les variables de l'appel à sa création** (`agent_tools.params`,
   copiés à la création de l'outil, jamais rafraîchis depuis la requête). Vu sur l'espace Groupama le 2026-10-08 : la
   variable `age_mois` de l'appel « tarif » renommée `age`, l'outil `obtenir_tarif` garde `age_mois` et doit être

@@ -145,7 +145,7 @@ describe('le câblage du worker', () => {
   const bloc = worker.slice(worker.indexOf("taches.programmer('emails-produit-accompagnement'"), worker.indexOf("sweeper:emails-produit-accompagnement'"));
 
   it('🔴 le répondeur se lit SOUS L’OFFRE, comme la console (un Pro repassé en Free n’a plus son scénario)', () => {
-    expect(bloc).toContain('modeRepondeur: async (t) => modeEffectif(sousLOffre(await settingsStore.get(t), (await offres.offreDe(t)).droits.fonctions)),');
+    expect(bloc).toContain('modeRepondeur: async (t) => modeEffectif(await reglagesSousLOffre({ reglages: settingsStore, offres }, t)),');
   });
 
   it('🔴 le récapitulatif ne va qu’aux espaces ouverts en Free, et lit son occasion avant de compter', () => {

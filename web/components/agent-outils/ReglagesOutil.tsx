@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useLocale, useT } from '@/lib/i18n';
 import { cardCls, inputCls, inputClsAuto } from '@/lib/ui';
+import { ChampSortie } from '@/components/ChampSortie';
 import { MbaNotice } from '@/components/MbaNotice';
 import { normaliserNomOutil } from '@/lib/agent-outils';
 import { Bouton } from '@/components/Bouton';
@@ -128,13 +129,13 @@ export function ReglagesOutil({ outil, modele, busy, onSave, onAutonomie }: {
       )}
 
       <NomExpose outil={outil} busy={busy} onSave={(name) => onSave({ name })} />
-      <Champ
+      <ChampSortie
         testId={`outil-description-${outil.id}`} busy={busy} multi
         label={t('Quand l’appeler', 'When to call it')}
         aide={t('C’est ce texte que le modèle lit pour décider. Le soigner change beaucoup ce que fait l’agent.', 'This is the text the model reads to decide. Care here changes a lot of what the agent does.')}
         valeur={outil.description} onSave={(v) => onSave({ description: v })}
       />
-      <Champ
+      <ChampSortie
         testId={`outil-nepasutiliser-${outil.id}`} busy={busy} multi
         label={t('Quand ne pas l’appeler', 'When not to call it')}
         valeur={outil.nePasUtiliser} onSave={(v) => onSave({ nePasUtiliser: v })}
@@ -182,30 +183,6 @@ function NomExpose({ outil, busy, onSave }: { outil: OutilAgent; busy: boolean; 
       <p className="text-xs leading-relaxed text-ink-500">
         {t('Un nom parlant fait un meilleur agent. Minuscules, chiffres et tirets bas seulement.', 'A meaningful name makes a better agent. Lowercase, digits and underscores only.')}
       </p>
-    </div>
-  );
-}
-
-/** Champ texte enregistré à la sortie du champ, comme le reste des écrans d'agent. */
-function Champ({ label, aide, valeur, multi, onSave, testId, busy }: {
-  label: string; aide?: string; valeur: string; multi?: boolean; testId: string; busy: boolean;
-  onSave: (v: string) => void;
-}) {
-  const [v, setV] = useState(valeur);
-  useEffect(() => { setV(valeur); }, [valeur]);
-  const commun = {
-    'data-testid': testId,
-    className: inputCls,
-    value: v,
-    disabled: busy,
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setV(e.target.value),
-    onBlur: () => { if (v !== valeur) onSave(v); },
-  };
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-sm font-medium text-ink-900">{label}</label>
-      {multi ? <textarea rows={3} {...commun} /> : <input {...commun} />}
-      {aide && <p className="text-xs leading-relaxed text-ink-500">{aide}</p>}
     </div>
   );
 }

@@ -7,7 +7,7 @@ import { destinataireAgentEvent, evenementMessageSansSuite, traceReponse, type E
 import type { DemarreurRepondeur } from '../repondeur/demarrer';
 import type { DemarreurScenario } from '../repondeur/scenario';
 import type { DemandeALApplication } from '../evenements/besoin-reponse';
-import { leMbaRepond, modeEffectif, sousLOffre, type ReglageDuRepondeur } from '../repondeur/mode';
+import { leMbaRepond, modeEffectif, reglagesSousLOffre, type ReglageDuRepondeur } from '../repondeur/mode';
 import type { SourceOffres } from '../offres/offre.pg';
 import { journaliser } from '../lib/journal';
 
@@ -456,11 +456,8 @@ type IssueConfier =
 export function creerControleDuFil(deps: DepsControleDuFil): ControleDuFil {
   const { depot } = deps;
 
-  /** Les réglages de l'espace SOUS SON OFFRE (`sousLOffre`) : la seule lecture des réglages de ce module. */
-  const reglagesDe = async (tenantId: string) => {
-    const [r, o] = await Promise.all([deps.reglages.get(tenantId), deps.offres.offreDe(tenantId)]);
-    return sousLOffre(r, o.droits.fonctions);
-  };
+  /** Les réglages de l'espace SOUS SON OFFRE (`reglagesSousLOffre`) : la seule lecture des réglages de ce module. */
+  const reglagesDe = (tenantId: string) => reglagesSousLOffre(deps, tenantId);
   const mbaAllume = async (tenantId: string): Promise<boolean> => (await reglagesDe(tenantId)).mbaEnabled;
 
   /**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MbaClient, RELECTURE_AUDIENCE_ATTENTE_MS, ecrireRollout, fusionnerBusinessInfo, modifierSettings, nomLisibleOutil } from '../src/mba/client';
+import { MbaClient, RELECTURE_AUDIENCE_ATTENTE_MS, ecrireRollout, ecrireRolloutPuisDrapeau, fusionnerBusinessInfo, modifierSettings, nomLisibleOutil } from '../src/mba/client';
 import { MetaApiError } from '../src/meta/errors';
 
 /** Faux fetch : enregistre les appels et rend des réponses scriptées. Aucun réseau. */
@@ -293,6 +293,18 @@ describe('ecrireRollout : allumer dans l’ordre', () => {
     await ecrireRollout(new MbaClient('tok', impl), 'PN1', true, { ...sansDormir(), agentId: 'ag-assistant' });
     expect(appels[1]!.url).toContain('agent_id=ag-assistant');
     expect(appels[3]!.url).toContain('agent_id=ag-assistant');
+  });
+
+  it('🔴 `ecrireRolloutPuisDrapeau` : notre drapeau après Meta, et jamais sur un refus de Meta', async () => {
+    const poses: boolean[] = [];
+    const poser = async (e: boolean) => { poses.push(e); };
+    const ok = faux([{ body: [{ agent_id: 'a1' }] }, { body: {} }, { body: [{ agent_id: 'a1', ai_audience: 'ALLOWLISTED_ONLY' }] }, { body: {} }]);
+    await ecrireRolloutPuisDrapeau(new MbaClient('tok', ok.impl), 'PN1', true, sansDormir(), poser);
+    expect(poses).toEqual([true]);
+    const tousLeMonde = { body: [{ agent_id: 'a1', ai_audience: 'EVERYONE' }] };
+    const refus = faux([{ body: [{ agent_id: 'a1' }] }, { body: {} }, tousLeMonde, tousLeMonde]);
+    await expect(ecrireRolloutPuisDrapeau(new MbaClient('tok', refus.impl), 'PN1', true, sansDormir(), poser)).rejects.toThrow(/audience/);
+    expect(poses, 'le refus de Meta ne pose pas le drapeau').toEqual([true]);
   });
 });
 

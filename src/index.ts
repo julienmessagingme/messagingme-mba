@@ -286,6 +286,20 @@ async function main(): Promise<void> {
   } = construireSocle({ pool, queue, config });
 
   /**
+   * La clé de chiffrement est-elle utilisable ? Mesuré UNE fois, avec la vraie fonction de chiffrement et non une copie
+   * de sa règle : c'est exactement ce que les enregistrements de secrets appelleront, et `config.ENCRYPTION_KEY` ne
+   * change pas pendant la vie du process. Lu par les webhooks sortants, Shopify, l'intégration par lot et Salesforce.
+   */
+  const chiffrementPret = (() => {
+    try {
+      encryptSecret('sonde', config.ENCRYPTION_KEY);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  /**
    * Les webhooks sortants (lot 12) : UNE gestion, partagée par la route de la console et les outils MCP. Le secret est
    * chiffré ici (jamais stocké en clair), l'essai part par les mêmes gardes que le worker (`fetchPublic`), et chaque
    * écriture d'une adresse invalide le cache de l'émetteur de l'API : elle reçoit aussitôt ce que l'API émet.
@@ -294,14 +308,7 @@ async function main(): Promise<void> {
     adresses: adressesEvenements,
     envois: envoisEvenements,
     limiteAdresses: async (tenant) => (await offres.offreDe(tenant)).droits.limites.adressesWebhook,
-    chiffrementPret: (() => {
-      try {
-        encryptSecret('sonde', config.ENCRYPTION_KEY);
-        return true;
-      } catch {
-        return false;
-      }
-    })(),
+    chiffrementPret,
     chiffrer: (clair) => encryptSecret(clair, config.ENCRYPTION_KEY),
     dechiffrer: (chiffre) => decryptSecret(chiffre, config.ENCRYPTION_KEY),
     verifierAdresse: (url) => resolutionPublique(url),
@@ -1297,14 +1304,7 @@ async function main(): Promise<void> {
     verifier: (domaine, clientId, secret) => verifierBoutique(domaine, clientId, secret),
     // La MÊME lecture du modèle chez Meta que l'envoi qui le fera partir.
     lireModele: (tenant, nom, langue) => depsEnvois.lireModele(tenant, nom, langue),
-    chiffrementPret: (() => {
-      try {
-        encryptSecret('sonde', config.ENCRYPTION_KEY);
-        return true;
-      } catch {
-        return false;
-      }
-    })(),
+    chiffrementPret,
     // L'import des clients (lot 3) : le MÊME import que celui d'une liste HubSpot, et les places comptées par le
     // magasin qui refusera, pour que l'annonce et le refus comptent pareil.
     jeton: (domaine, clientId, secret) => demanderJeton(domaine, clientId, secret),
@@ -2536,16 +2536,7 @@ async function main(): Promise<void> {
     evenements: { gestion: gestionEvenements, audit: auditSink },
     integrationBatch: {
       batch: integrationBatch,
-      // Mesuré avec la vraie fonction de chiffrement, pas une copie de sa règle : c'est exactement ce
-      // qu'`enregistrer` va appeler.
-      chiffrementPret: (() => {
-        try {
-          encryptSecret('sonde', config.ENCRYPTION_KEY);
-          return true;
-        } catch {
-          return false;
-        }
-      })(),
+      chiffrementPret,
       enregistrer: async (tenant, r) => {
         const fait = await integrationBatch.enregistrer(tenant, {
           cleRestChiffree: r.cleRest === undefined ? null : encryptSecret(r.cleRest, config.ENCRYPTION_KEY),
@@ -2578,14 +2569,7 @@ async function main(): Promise<void> {
         connecter: (tenant: string, adresse: string, auteur: string | null) => connecterSalesforce(depsConnexion, tenant, adresse, auteur),
         deconnecter: (tenant: string) => deconnecterSalesforce(depsConnexion, tenant),
         cleAppPosee: true,
-        chiffrementPret: (() => {
-          try {
-            encryptSecret('sonde', config.ENCRYPTION_KEY);
-            return true;
-          } catch {
-            return false;
-          }
-        })(),
+        chiffrementPret,
         liensInstallation: version === '' ? null : {
           production: `https://login.salesforce.com/packaging/installPackage.apexp?p0=${version}`,
           sandbox: `https://test.salesforce.com/packaging/installPackage.apexp?p0=${version}`,

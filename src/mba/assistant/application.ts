@@ -1,7 +1,7 @@
 import { estSuppression, type Operation } from './proposition';
 import type { LigneHistorique } from '../../reglages/historique';
 import { messageDe, texteDe } from '../../lib/erreur';
-import { ecrireRollout, type Skill } from '../client';
+import { ecrireRolloutPuisDrapeau, type Skill } from '../client';
 import {
   ID_MESSAGE_RE, validerCreation, validerModification,
   type CreationMessageInteractif, type MessageInteractif, type ModificationMessageInteractif,
@@ -293,8 +293,7 @@ async function executer(
     case 'activation.mettreEnService': {
       // L'ordre que Meta prescrit (audience, relecture, puis `rollout`), sur la configuration de cet agent. Puis
       // notre drapeau : Meta d'abord, nous ensuite.
-      await ecrireRollout(client, numero, true, { attendre: (ms) => deps.attendre(ms), agentId });
-      await deps.drapeau.setMbaEnabled(tenantId, true);
+      await ecrireRolloutPuisDrapeau(client, numero, true, { attendre: (ms) => deps.attendre(ms), agentId }, (e) => deps.drapeau.setMbaEnabled(tenantId, e));
       return;
     }
     default: throw new Error('operation inconnue');

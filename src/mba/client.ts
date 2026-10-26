@@ -747,3 +747,19 @@ export async function ecrireRollout(
   if (relu.ai_audience !== AUDIENCE_DE_L_AGENT) throw new AudienceNonConfirmee(relu.ai_audience);
   return ecrireReglages(client, phoneNumberId, relu, { rollout: { enabled: true } }, agentId);
 }
+
+/**
+ * `ecrireRollout` puis notre drapeau : Meta d'abord, nous ensuite, comme `appliquerActivation`. Un refus de Meta
+ * (`AudienceNonConfirmee` comprise) lève avant le drapeau, qui garde donc l'état vrai. Sans le drapeau, un agent allumé
+ * chez Meta restait à `false` chez nous, et ses réponses en `standby` n'étaient prises par personne (vécu par la route).
+ */
+export async function ecrireRolloutPuisDrapeau(
+  client: ClientReglages,
+  phoneNumberId: string,
+  enabled: boolean,
+  o: { attendre(ms: number): Promise<void>; agentId?: string },
+  poserDrapeau: (enabled: boolean) => Promise<void>,
+): Promise<void> {
+  await ecrireRollout(client, phoneNumberId, enabled, o);
+  await poserDrapeau(enabled);
+}

@@ -12,7 +12,7 @@ import { estUuid } from '../http/scope';
 import { refus, type Issue } from '../lib/issue';
 import { journaliser } from '../lib/journal';
 import {
-  DELAI_SCENARIO_MAX_S, DELAI_SCENARIO_MIN_S, modeEffectif, sousLOffre, type ModeRepondeur, type ReglageDuRepondeur,
+  DELAI_SCENARIO_MAX_S, DELAI_SCENARIO_MIN_S, modeEffectif, reglagesSousLOffre, sousLOffre, type ModeRepondeur, type ReglageDuRepondeur,
 } from './mode';
 import type { SourceOffres } from '../offres/offre.pg';
 import { refusFonction } from '../offres/refus';
@@ -204,8 +204,7 @@ export function choixDeLAncienneForme(agentId: string | null, mbaAllume: boolean
 export async function choixDeLAncienneFormeSousLOffre(
   deps: Pick<DepsReglageRepondeur, 'reglages' | 'offres'>, tenantId: string, agentId: string | null,
 ): Promise<ChoixRepondeur> {
-  const [r, o] = await Promise.all([deps.reglages.get(tenantId), deps.offres.offreDe(tenantId)]);
-  return choixDeLAncienneForme(agentId, sousLOffre(r, o.droits.fonctions).mbaEnabled);
+  return choixDeLAncienneForme(agentId, (await reglagesSousLOffre(deps, tenantId)).mbaEnabled);
 }
 
 /** L'erreur Postgres d'une contrainte, lue sans `as` sur sa forme. */

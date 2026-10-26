@@ -4,6 +4,30 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : les petits de l'audit de simplicité et de structure (lot A), six copies en moins
+
+Plan `docs/superpowers/plans/2026-10-26-audits-simplicite-structure.md`, lot A, livré en direct. Aucun changement de
+comportement voulu, aucune migration :
+
+- `reglagesSousLOffre` (`src/repondeur/mode.ts`) remplace cinq compositions « réglages et offre lus ensemble, puis
+  `sousLOffre` » (le contrôle du fil, la fin d'un parcours, le balayage d'accompagnement du worker, « Rendre la main »
+  de MCP, `choixDeLAncienneFormeSousLOffre`). La sixième, `lireRepondeur`, reste dans son `Promise.all` à six lectures.
+- `ecrireRolloutPuisDrapeau` (`src/mba/client.ts`) : « Meta d'abord, nous ensuite » pour la route `PUT .../rollout` et
+  l'assistant. Dans la route, l'écriture du drapeau entre dans le `try` qui traduit `AudienceNonConfirmee` en 409 ; toute
+  autre erreur est relancée, le même 500 qu'avant.
+- `scripts/mesure-tour-agent.mts` retiré (banc ponctuel, son résultat reste dans `docs/MESURE-TOUR-AGENT-2026-09-02.md`).
+- Les quatre pages qui ne faisaient qu'un `router.replace` (`/outils`, `/agents/credit`, `/mba`, `/dashboard/erreurs`)
+  deviennent des `redirects()` de `web/next.config.mjs`, en 307.
+- Une seule sonde de chiffrement dans `src/index.ts` (`chiffrementPret`) au lieu de quatre.
+- `ChampSortie` (`web/components/`) : le champ enregistré à la sortie, en un exemplaire (agent IA, réglages d'un outil).
+
+- **Relecture indépendante, aucun 🔴.** Jaunes corrigés dans le lot : le plan annonçait six compositions et un autre
+  nom de fonction, le manuel (§ 13) ne listait pas les trois points de passage, un commentaire oubliait deux appelants,
+  un titre d'e2e était périmé.
+- **Vérifié** dans une extraction de `main` : typecheck racine et console, lint, suite racine, build de la console et
+  e2e. Trois rouges locaux qui ne viennent pas du lot : `sdk-contrat` (le zod des `node_modules` du poste n'est pas celui
+  du lockfile), `mcp-agent` et `latence-http`, instables sous la charge de la suite entière et verts seuls.
+
 ## 2026-10-26 : la carte HubSpot lit le fil, répond et rend la main (lot 2 de la reprise humaine), déployé inerte
 
 `085726bd` (plan `~/mm-hubspot/docs/2026-10-23-lot2-lire-repondre-plan.md`, connecteur `4c44bbc`). Trois routes signées
