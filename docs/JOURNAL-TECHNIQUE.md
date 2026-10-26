@@ -49,8 +49,9 @@ Heures de Paris.
   `cloudflare-origine`, apparue en clair dans une capture le matin, est remplacée par Julien le soir même.
 - **Appris** : une copie dans une base qui n'appartient pas au rôle qui restaure rend des refus de propriétaire sans
   effet, qu'un script de copie doit connaître d'avance ; le schéma d'une API se relit au moment de s'en servir, pas sur
-  la foi d'un script qui passait par la CLI ; l'horloge du poste sous Git Bash est en UTC, et deux heures annoncées à
-  Julien étaient fausses d'une heure, corrigées le soir même.
+  la foi d'un script qui passait par la CLI ; sous Git Bash, `date` seul rend l'heure de Paris et `TZ=Europe/Paris date`
+  l'UTC sans le dire (nom de zone inconnu) : un `date` local lu comme de l'UTC a fait annoncer à Julien deux heures
+  avec une heure d'avance, corrigées le soir même (les heures ci-dessus sont les bonnes).
 
 ## 2026-10-26 : les trois fiches d'aide longues sur la vitrine (plan SEO, C6)
 
