@@ -59,6 +59,9 @@ migration, aucun changement de comportement voulu :
   suite racine (les rouges sont les fichiers lents sous charge et `sdk-contrat`, rouges aussi sur l'arbre de
   référence), e2e entiers sur un serveur construit (1 651 sur 1 652 ; `console-free`, en dépassement de délai sous
   charge, passe deux fois sur deux relancé seul).
+- **Publié** : Vercel a mis `dabc1f58` en production le soir même ; CI verte job par job (`unit`, `integration`,
+  `securite`, console en topologies Vercel et proxy). Le volet serveur suit le prochain déploiement Scaleway. L’essai
+  réel (n° 170 de la liste privée, une conversation traduite dans l’Inbox) reste à faire.
 
 ## 2026-10-26 : le troisième prérequis de Meta dit qu'on peut garder son application WhatsApp Business
 
