@@ -445,7 +445,9 @@ plus forte qui manque), sur le gabarit des cas, film compris.
 - **D5** : les sept fiches de C6 (`creer-une-publicite`, `construire-un-agent-ia`, `le-repondeur-de-meta`,
   `publier-sur-ma-chaine-whatsapp`, `envoyer-un-message-rcs`, `hubspot-sur-l-accueil`,
   `poser-une-bulle-whatsapp-sur-mon-site`), APRÈS la bascule Scaleway, parce que leur publication finit par un
-  `aide:charger` en production.
+  `aide:charger` en production. Julien a ensuite demandé de publier avant la bascule : quatre sont publiques le
+  2026-10-26 (HubSpot, bulle, chaîne, RCS, sans capture) ; les trois longues et l'`aide:charger` restent
+  (`todo.md`, avec la phrase sur la commission de `construire-un-agent-ia` à trancher).
 
 ## Ordre et rayon de souffle
 

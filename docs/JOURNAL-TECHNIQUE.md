@@ -4,6 +4,17 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : quatre fiches d'aide de plus sur la vitrine (plan SEO, C6)
+
+- **Publiques, en français et en anglais** : « HubSpot sur l'Accueil » (Démarrer, 6), « Poser une bulle WhatsApp sur
+  mon site » (7), « Publier sur ma chaîne WhatsApp » (8) et « Envoyer un message RCS » (9) dans Parler aux clients,
+  sans capture, avec une description courte chacune.
+- Le premier paragraphe de la bulle et du RCS est coupé en deux, mot pour mot, pour tenir sous les 320 caractères
+  d'un chapeau public : le bot lira la nouvelle coupe après le prochain `aide:charger`.
+- Les listes en dur de `tests/aide-fiches-format.test.ts` et `tests/vitrine-aide.test.ts` suivent.
+- Les trois fiches longues (publicité, agent IA, Meta Business Agent) attendent : traduction, et la phrase « notre
+  commission comprise » de la fiche agent IA à trancher par Julien (`todo.md`).
+
 ## 2026-10-26 : cas d'usage, secteurs, tarifs et contact pour les moteurs et les assistants IA (lot 4 du plan SEO et GEO)
 
 - **Cas d'usage** (7 pages, FR et EN) : le film, le schéma, le prix et la FAQ se titrent par leur sujet (« Combien

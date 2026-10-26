@@ -1,13 +1,20 @@
 ---
+description: Poser une bulle WhatsApp sur votre site : la créer, choisir son message pré-rempli et qui répond, puis coller la balise sur vos pages.
 ecran: widgets
 source_section: Widget WhatsApp (menu Tools > Widget WhatsApp)
 source_empreinte: 36269d
+publique: oui
+rubrique: parler-aux-clients
+rang: 7
+captures: non
 ---
 # Poser une bulle WhatsApp sur mon site
 
 Le widget WhatsApp est une bulle que vous posez sur votre site. Le visiteur clique, WhatsApp s'ouvre avec un
 message déjà écrit, il l'envoie : c'est lui qui parle le premier, donc la conversation s'ouvre sans modèle
-approuvé, et elle arrive dans votre Inbox. Sur un téléphone, la bulle ouvre WhatsApp directement ; sur un
+approuvé, et elle arrive dans votre Inbox.
+
+Sur un téléphone, la bulle ouvre WhatsApp directement ; sur un
 ordinateur, elle montre un QR code à scanner.
 
 **Créer le widget.** Donnez-lui un nom (pour vous y retrouver, le visiteur ne le voit pas), le message

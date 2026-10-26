@@ -1,7 +1,12 @@
 ---
+description: Publier sur votre chaîne WhatsApp depuis Messaging Me : le message, la photo, le bouton « Discuter » qui lance un scénario, et ce qui se mesure.
 ecran: chaine
 source_section: Chaîne WhatsApp (menu Chaîne) : publier, et démarrer des conversations
 source_empreinte: 13e8a5
+publique: oui
+rubrique: parler-aux-clients
+rang: 8
+captures: non
 ---
 # Publier sur ma chaîne WhatsApp
 

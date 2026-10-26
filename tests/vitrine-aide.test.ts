@@ -25,7 +25,7 @@ const centre = pagesDuCentre();
 
 describe('le centre d’aide de la vitrine', () => {
   it('l’accueil et une page par fiche publique, dans les deux langues', () => {
-    expect(centre.length).toBe(11);
+    expect(centre.length).toBe(15);
     expect(generees.length).toBe(2 * (1 + centre.length + PAGES_CLAUDE.length));
   });
 

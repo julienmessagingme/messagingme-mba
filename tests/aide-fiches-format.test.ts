@@ -191,6 +191,11 @@ describe('les fiches publiques', () => {
     'importer-mes-contacts': ['parler-aux-clients', 4],
     'lancer-une-campagne': ['parler-aux-clients', 5],
     'brancher-ma-boutique-shopify': ['parler-aux-clients', 6],
+    // Quatre fiches choisies par Julien le 2026-10-26 (plan SEO, C6, D5), publiées sans capture.
+    'hubspot-sur-l-accueil': ['demarrer', 6],
+    'poser-une-bulle-whatsapp-sur-mon-site': ['parler-aux-clients', 7],
+    'publier-sur-ma-chaine-whatsapp': ['parler-aux-clients', 8],
+    'envoyer-un-message-rcs': ['parler-aux-clients', 9],
   };
   /** Les six écrans qui portent « Comment faire », et leur page. */
   const COMMENT_FAIRE: Record<string, string> = {
@@ -229,7 +234,8 @@ describe('les fiches publiques', () => {
 
   it('les pages sans capture et sans mention d’offre sont celles prévues', () => {
     expect(publiques.filter((f) => !f.publication.captures).map((f) => f.cle).sort())
-      .toEqual(['ce-qu-il-faut-chez-meta', 'la-fenetre-de-24-heures']);
+      .toEqual(['ce-qu-il-faut-chez-meta', 'envoyer-un-message-rcs', 'hubspot-sur-l-accueil', 'la-fenetre-de-24-heures',
+        'poser-une-bulle-whatsapp-sur-mon-site', 'publier-sur-ma-chaine-whatsapp']);
     // Connecter son numéro et garder son application se font depuis Claude Code (Free) ou l'Accueil, ouvert à la
     // Free (`ECRANS_FREE`, `MODULES_OUVERTS_AU_FREE`) : aucune offre à dire.
     expect(publiques.filter((f) => !f.publication.offre).map((f) => f.cle).sort())

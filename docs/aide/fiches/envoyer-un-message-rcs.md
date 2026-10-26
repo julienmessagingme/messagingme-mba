@@ -1,13 +1,19 @@
 ---
+description: Envoyer un message RCS : activer le canal, composer un message ou un carrousel et ses boutons, puis l’envoyer en campagne, en scénario ou depuis l’Inbox.
 ecran: rcs-messages
 source_section: Canal RCS (menu Contenu > Messages RCS, et canal de campagne)
 source_empreinte: 464234
+publique: oui
+rubrique: parler-aux-clients
+rang: 9
+captures: non
 ---
 # Envoyer un message RCS
 
 Le RCS est le second canal, à côté de WhatsApp. Vos messages partent sous un **agent de marque** : votre nom
-et votre logo s'affichent dans l'application Messages du destinataire, avec la pastille de vérification. Il
-n'y a pas de numéro d'expéditeur, et surtout **aucun modèle à faire approuver** : vous écrivez, vous
+et votre logo s'affichent dans l'application Messages du destinataire, avec la pastille de vérification.
+
+Il n'y a pas de numéro d'expéditeur, et surtout **aucun modèle à faire approuver** : vous écrivez, vous
 enregistrez, vous envoyez.
 
 **Le canal reste éteint tant qu'aucune clé d'API n'est posée.** Sur l'Accueil, sous votre numéro WhatsApp, le

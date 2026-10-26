@@ -1,7 +1,12 @@
 ---
+description: Relier HubSpot à Messaging Me : le connecter dans Tools > Intégrations, choisir ce qui se synchronise, répondre depuis HubSpot, mettre en pause ou couper.
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
 source_empreinte: b8364c
+publique: oui
+rubrique: demarrer
+rang: 6
+captures: non
 ---
 # HubSpot sur l'Accueil : le brancher, le suivre, le couper
 

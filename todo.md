@@ -1,14 +1,18 @@
 # todo.md : backlog
 
-## 🟡 Publier sept fiches d'aide sur la vitrine, APRÈS la bascule Scaleway (plan SEO, C6, décision D5 du 2026-10-26)
+## 🟡 Trois fiches d'aide encore à publier sur la vitrine, et un aide:charger (plan SEO, C6, décision D5 du 2026-10-26)
 
-Julien a choisi les sept fiches de `docs/superpowers/plans/2026-10-26-seo-geo-vitrine.md` § C6 : `creer-une-publicite`,
-`construire-un-agent-ia`, `le-repondeur-de-meta`, `publier-sur-ma-chaine-whatsapp`, `envoyer-un-message-rcs`,
-`hubspot-sur-l-accueil`, `poser-une-bulle-whatsapp-sur-mon-site`. Par fiche : `publique: oui`, `rubrique`, `rang`, une
-`description:` de 155 caractères au plus si le chapeau dépasse 160, sa version `docs/aide/fiches/en/` (avec `slug` et
-`traduit_de`), les captures (`npm run aide:captures`), `npm run vitrine:aide`, puis `aide:charger` en production après le
-push. `tests/aide-proposer.test.ts` avant le push. Rendu montré à Julien avant le push (pages d'un genre neuf sur la
-vitrine).
+Quatre des sept fiches choisies par Julien sont publiques depuis le 2026-10-26 (HubSpot, bulle, chaîne, RCS), sans
+capture. Restent :
+- **`creer-une-publicite`, `construire-un-agent-ia`, `le-repondeur-de-meta`** : environ 6 600 mots à traduire
+  (`docs/aide/fiches/en/`, avec `slug` et `traduit_de`), un chapeau à ramener sous 320 caractères si besoin, puis
+  `npm run vitrine:aide` et les listes en dur de `tests/aide-fiches-format.test.ts` et `tests/vitrine-aide.test.ts`.
+  🔴 **`construire-un-agent-ia` écrit « notre commission comprise, celle de votre offre »** à propos du crédit IA :
+  la décision du 2026-10-19 tient la commission hors des pages publiques. Demander à Julien avant de publier
+  (retirer la phrase de la fiche, ce qui change ce que lit le bot, ou ne pas publier cette fiche).
+- **`aide:charger` en production**, après la bascule : le premier paragraphe de `envoyer-un-message-rcs` et de
+  `poser-une-bulle-whatsapp-sur-mon-site` a été coupé en deux (chapeau public limité à 320 caractères), mot pour mot ;
+  le bot garde l'ancienne coupe tant que l'aide n'est pas rechargée.
 
 ## 🟡 Deux réponses de l'Inbox jamais arrivées à l'API (essai réel du lot 2b HubSpot, 2026-10-26)
 
