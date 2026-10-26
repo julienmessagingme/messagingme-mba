@@ -341,6 +341,11 @@ Fait au lot 4 (2026-10-26), avec ces écarts :
 
 ## Lot 5 : pages nouvelles
 
+**Décisions de Julien du 2026-10-26 au soir** : pas de glossaire (N1 abandonné, gardé ci-dessous pour mémoire), les
+pages par concurrent plus tard (N3), la page Intégrations existe déjà (N4, publiée par une autre session). Fait : N2,
+la page `/solutions/` et `/en/solutions/`, générée par `cas.ts` (`pagesSolutions`), `/industries/` supprimée et
+redirigée en 301, le lien « Solutions » du pied de page vers elle.
+
 **N1. Glossaire** `/glossaire/` et `/en/glossary/`, JSON-LD `DefinedTermSet` (un `DefinedTerm` par entrée, avec
 son ancre). Entrée au menu « Ressources » (que la session voisine est en train d'ajouter) et au pied de page.
 Définitions de départ, à relire par Julien :

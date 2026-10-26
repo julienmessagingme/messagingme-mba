@@ -1,12 +1,12 @@
 # todo.md : backlog
 
-## 🟡 Le lot 5 du plan SEO de la vitrine : les pages nouvelles (plan validé par Julien le 2026-10-26)
+## 🟡 Plus tard : les pages par concurrent sur la vitrine (plan SEO, lot 5, N3)
 
-`docs/superpowers/plans/2026-10-26-seo-geo-vitrine.md`, lot 5 : le glossaire `/glossaire/` et `/en/glossary/` (N1, les
-définitions de départ y sont), la page qui regroupe les solutions `/solutions/` avec `/industries/` redirigée (N2), les
-pages par concurrent sous `/comparatif/` (N3 : Brevo et 360dialog exclus, chaque affirmation sourcée et datée, relue par
-Julien), puis la page Intégrations (N4). Les lots 1 à 4 et les sept fiches d'aide sont en ligne ; le hors-site (Search
-Console, Bing, annuaires) est à Julien (`docs/prive/ESSAIS-REELS.md`).
+`docs/superpowers/plans/2026-10-26-seo-geo-vitrine.md`, N3 : une page par concurrent sous `/comparatif/` (Twilio, Bird,
+respond.io, WATI, Superchat, Alcmeon ; Brevo et 360dialog exclus), chaque affirmation sourcée sur la page publique du
+concurrent et datée, relue par Julien avant publication. Repoussé par Julien le 2026-10-26 ; le glossaire (N1) est
+abandonné. Le reste du plan est en ligne ; le hors-site (Search Console, Bing, annuaires) est à Julien
+(`docs/prive/ESSAIS-REELS.md`).
 
 ## 🟡 Deux réponses de l'Inbox jamais arrivées à l'API (essai réel du lot 2b HubSpot, 2026-10-26)
 

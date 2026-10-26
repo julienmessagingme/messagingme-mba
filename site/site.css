@@ -1100,7 +1100,10 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .hub-texte strong{display:block;font-size:1rem}
 .hub-texte small{display:block;margin-top:2px;color:var(--muted);font-size:.86rem;line-height:1.4}
 .hub-fleche{color:var(--action-ink)}
-@media (max-width:900px){.hub-split{grid-template-columns:minmax(0,1fr)}.hub-film{position:static;order:-1}}
+.hub-grille .hub-liste{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.hub-mini-icone{display:grid;place-items:center;background:var(--action-wash);color:var(--action-ink)}
+.hub-mini-icone .ic{font-size:1.8rem}
+@media (max-width:900px){.hub-split{grid-template-columns:minmax(0,1fr)}.hub-film{position:static;order:-1}.hub-grille .hub-liste{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:480px){.hub-carte{grid-template-columns:96px minmax(0,1fr)}.hub-mini{width:96px;height:54px}.hub-fleche{display:none}}
 /* Le menu Solutions (2026-10-20, Julien) : les secteurs, puis « SaaS et app builders », dont les cas ne s'ouvrent
    qu'au survol ou au focus, dans un panneau à côté ; un pont invisible le garde ouvert pendant que la souris y va.

@@ -26,6 +26,16 @@
       "permanent": true
     },
     {
+      "source": "/industries/",
+      "destination": "/solutions/",
+      "permanent": true
+    },
+    {
+      "source": "/en/industries/",
+      "destination": "/en/solutions/",
+      "permanent": true
+    },
+    {
       "source": "/index.html",
       "destination": "/",
       "permanent": true

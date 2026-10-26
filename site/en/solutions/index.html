@@ -1,24 +1,141 @@
 <!doctype html>
-<!-- Page de la vitrine Messaging Me. L'en-tête, le pied et les icônes sont RECOPIÉS de l'accueil (site/index.html) :
-     une modification de l'un d'eux se reporte dans toutes les pages. Le style et le script sont communs
-     (/site.css, /site.js). Les écrans des fonctionnalités sont rendus depuis les sources des films du reel. -->
+<!-- La page Solutions, qui regroupe secteurs, boutiques et cas d’usage, GÉNÉRÉE par npm run vitrine:cas depuis le registre : ne pas modifier à la main. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Industries · Messaging Me</title>
-<meta name="description" content="Messaging Me by industry: this page is under construction. In the meantime, request a demo on your own case.">
-<meta name="robots" content="noindex">
-<link rel="canonical" href="https://app.messagingme.fr/en/industries/">
-<link rel="alternate" hreflang="fr" href="https://app.messagingme.fr/industries/">
-<link rel="alternate" hreflang="en" href="https://app.messagingme.fr/en/industries/">
-<link rel="alternate" hreflang="x-default" href="https://app.messagingme.fr/industries/">
+<title>WhatsApp solutions by industry and use case · Messaging Me</title>
+<meta name="description" content="WhatsApp for insurance, higher education, transport, tourism, Shopify stores and SaaS: customer cases and use cases.">
+<link rel="canonical" href="https://app.messagingme.fr/en/solutions/">
+<link rel="alternate" hreflang="fr" href="https://app.messagingme.fr/solutions/">
+<link rel="alternate" hreflang="en" href="https://app.messagingme.fr/en/solutions/">
+<link rel="alternate" hreflang="x-default" href="https://app.messagingme.fr/solutions/">
+<meta property="og:url" content="https://app.messagingme.fr/en/solutions/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="fr_FR">
+<meta property="og:site_name" content="Messaging Me">
+<meta property="og:title" content="WhatsApp solutions by industry and use case · Messaging Me">
+<meta property="og:description" content="WhatsApp for insurance, higher education, transport, tourism, Shopify stores and SaaS: customer cases and use cases.">
+<meta property="og:image" content="https://app.messagingme.fr/img/partage/developers-en.jpg?v=2">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#010630">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/fonts/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
 <script>document.documentElement.classList.add('js')</script>
 <script src="/site.js" defer></script>
 <link rel="stylesheet" href="/site.css">
+<script type="application/ld+json">
+{
+ "@context": "https://schema.org",
+ "@graph": [
+  {
+   "@type": "BreadcrumbList",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "name": "Home",
+     "item": "https://app.messagingme.fr/en/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "name": "Solutions",
+     "item": "https://app.messagingme.fr/en/solutions/"
+    }
+   ]
+  },
+  {
+   "@type": "ItemList",
+   "name": "WhatsApp solutions by industry and use case",
+   "inLanguage": "en-US",
+   "itemListElement": [
+    {
+     "@type": "ListItem",
+     "position": 1,
+     "name": "Transport and mobility",
+     "url": "https://app.messagingme.fr/en/solutions/transport-and-mobility/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 2,
+     "name": "Higher education",
+     "url": "https://app.messagingme.fr/en/solutions/higher-education/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 3,
+     "name": "Insurance",
+     "url": "https://app.messagingme.fr/en/solutions/insurance/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 4,
+     "name": "Travel and tourism",
+     "url": "https://app.messagingme.fr/en/solutions/travel-and-tourism/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 5,
+     "name": "Shopify stores",
+     "url": "https://app.messagingme.fr/en/solutions/shopify-stores/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 6,
+     "name": "SaaS and app builders",
+     "url": "https://app.messagingme.fr/en/solutions/saas-and-app-builders/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 7,
+     "name": "Appointment booking",
+     "url": "https://app.messagingme.fr/en/use-cases/appointment-booking/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 8,
+     "name": "Appointment reminders",
+     "url": "https://app.messagingme.fr/en/use-cases/appointment-reminders/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 9,
+     "name": "AI support and human handover",
+     "url": "https://app.messagingme.fr/en/use-cases/ai-support-human-handover/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 10,
+     "name": "WhatsApp bubble on your website",
+     "url": "https://app.messagingme.fr/en/use-cases/whatsapp-bubble-lovable-site/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 11,
+     "name": "SaaS onboarding and activation",
+     "url": "https://app.messagingme.fr/en/use-cases/saas-onboarding-activation/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 12,
+     "name": "Failed payment recovery",
+     "url": "https://app.messagingme.fr/en/use-cases/failed-payment-recovery/"
+    },
+    {
+     "@type": "ListItem",
+     "position": 13,
+     "name": "Order notifications",
+     "url": "https://app.messagingme.fr/en/use-cases/order-notifications/"
+    }
+   ]
+  }
+ ]
+}
+</script>
 </head>
 <body>
 <!-- Icônes Phosphor (MIT, @phosphor-icons/core 2.1.1, style regular), recopiées telles quelles. -->
@@ -32,6 +149,7 @@
   <symbol id="i-micro" viewBox="0 0 256 256"><path d="M128,176a48.05,48.05,0,0,0,48-48V64a48,48,0,0,0-96,0v64A48.05,48.05,0,0,0,128,176ZM96,64a32,32,0,0,1,64,0v64a32,32,0,0,1-64,0Zm40,143.6V240a8,8,0,0,1-16,0V207.6A80.11,80.11,0,0,1,48,128a8,8,0,0,1,16,0,64,64,0,0,0,128,0,8,8,0,0,1,16,0A80.11,80.11,0,0,1,136,207.6Z"/></symbol>
   <symbol id="i-coches" viewBox="0 0 256 256"><path d="M149.61,85.71l-89.6,88a8,8,0,0,1-11.22,0L10.39,136a8,8,0,1,1,11.22-11.41L54.4,156.79l84-82.5a8,8,0,1,1,11.22,11.42Zm96.1-11.32a8,8,0,0,0-11.32-.1l-84,82.5-18.83-18.5a8,8,0,0,0-11.21,11.42l24.43,24a8,8,0,0,0,11.22,0l89.6-88A8,8,0,0,0,245.71,74.39Z"/></symbol>
   <symbol id="i-lien" viewBox="0 0 256 256"><path d="M224,104a8,8,0,0,1-16,0V59.32l-66.33,66.34a8,8,0,0,1-11.32-11.32L196.68,48H152a8,8,0,0,1,0-16h64a8,8,0,0,1,8,8Zm-40,24a8,8,0,0,0-8,8v72H48V80h72a8,8,0,0,0,0-16H48A16,16,0,0,0,32,80V208a16,16,0,0,0,16,16H176a16,16,0,0,0,16-16V136A8,8,0,0,0,184,128Z"/></symbol>
+  <symbol id="i-github" viewBox="0 0 256 256"><path d="M208.31,75.68A59.78,59.78,0,0,0,202.93,28,8,8,0,0,0,196,24a59.75,59.75,0,0,0-48,24H124A59.75,59.75,0,0,0,76,24a8,8,0,0,0-6.93,4,59.78,59.78,0,0,0-5.38,47.68A58.14,58.14,0,0,0,56,104v8a56.06,56.06,0,0,0,48.44,55.47A39.8,39.8,0,0,0,96,192v8H72a24,24,0,0,1-24-24A40,40,0,0,0,8,136a8,8,0,0,0,0,16,24,24,0,0,1,24,24,40,40,0,0,0,40,40H96v16a8,8,0,0,0,16,0V192a24,24,0,0,1,48,0v40a8,8,0,0,0,16,0V192a39.8,39.8,0,0,0-8.44-24.53A56.06,56.06,0,0,0,216,112v-8A58.14,58.14,0,0,0,208.31,75.68ZM200,112a40,40,0,0,1-40,40H112a40,40,0,0,1-40-40v-8a41.74,41.74,0,0,1,6.9-22.48A8,8,0,0,0,80,73.83a43.81,43.81,0,0,1,.79-33.58,43.88,43.88,0,0,1,32.32,20.06A8,8,0,0,0,119.82,64h32.35a8,8,0,0,0,6.74-3.69,43.87,43.87,0,0,1,32.32-20.06A43.81,43.81,0,0,1,192,73.83a8.09,8.09,0,0,0,1,7.65A41.72,41.72,0,0,1,200,104Z"/></symbol>
   <symbol id="i-fleche" viewBox="0 0 256 256"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></symbol>
   <symbol id="i-instagram" viewBox="0 0 256 256"><path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160ZM176,24H80A56.06,56.06,0,0,0,24,80v96a56.06,56.06,0,0,0,56,56h96a56.06,56.06,0,0,0,56-56V80A56.06,56.06,0,0,0,176,24Zm40,152a40,40,0,0,1-40,40H80a40,40,0,0,1-40-40V80A40,40,0,0,1,80,40h96a40,40,0,0,1,40,40ZM192,76a12,12,0,1,1-12-12A12,12,0,0,1,192,76Z"/></symbol>
   <symbol id="i-facebook" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,191.63V152h24a8,8,0,0,0,0-16H136V112a16,16,0,0,1,16-16h16a8,8,0,0,0,0-16H152a32,32,0,0,0-32,32v24H96a8,8,0,0,0,0,16h24v63.63a88,88,0,1,1,16,0Z"/></symbol>
@@ -123,7 +241,7 @@
       </details>
       <a class="burger-ligne" href="/en/developers/">Developers</a>
       <div class="langues burger-langues" role="group" aria-label="Site language">
-        <a class="langue" href="/industries/" hreflang="fr" lang="fr" title="Version française"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Version française de cette page</span></a>
+        <a class="langue" href="/solutions/" hreflang="fr" lang="fr" title="Version française"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Version française de cette page</span></a>
         <span class="langue" aria-current="true" title="English"><svg aria-hidden="true"><use href="#drapeau-uk"/></svg><span class="masque">English, language of this page</span></span>
       </div>
       <a class="bouton bouton-vert burger-connexion" href="https://console.messagingme.app/login?lang=en">Sign in<span class="bouton-rond" aria-hidden="true"><svg class="ic"><use href="#i-sign-in"/></svg></span></a>
@@ -175,7 +293,7 @@
     <a class="lien nav-dev" href="/en/developers/">Developers</a>
     <div class="nav-droite">
       <div class="langues" role="group" aria-label="Site language">
-        <a class="langue" href="/industries/" hreflang="fr" lang="fr" title="Version française"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Version française de cette page</span></a>
+        <a class="langue" href="/solutions/" hreflang="fr" lang="fr" title="Version française"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Version française de cette page</span></a>
         <span class="langue" aria-current="true" title="English"><svg aria-hidden="true"><use href="#drapeau-uk"/></svg><span class="masque">English, language of this page</span></span>
       </div>
       <a class="bouton bouton-vert" href="https://console.messagingme.app/login?lang=en">Sign in<span class="bouton-rond" aria-hidden="true"><svg class="ic"><use href="#i-sign-in"/></svg></span></a>
@@ -185,13 +303,54 @@
 </div>
 
 <main>
-  <section class="cadre f-une-large chantier">
+  <section class="cadre f-une">
     <div>
-      <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-buildings"/></svg>Industries</span> Page under construction.</h1>
-      <p class="chapeau">Use cases by industry are coming here. In the meantime, let us talk about yours: a demo on your own case, with your customers and your channels.</p>
+      <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-buildings"/></svg>Solutions</span> WhatsApp for your industry and your use case.</h1>
+      <p class="chapeau">The industries where brands already talk to their customers on WhatsApp with Messaging Me, and the use cases an application plugs in during one Claude Code session.</p>
       <div class="appels">
         <a class="bouton bouton-plein" href="/en/contact/#formulaire">Request a demo</a>
-        <a class="bouton bouton-texte" href="/en/">Back to the home page <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
+        <a class="bouton bouton-texte" href="#cas">See the use cases <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
+      </div>
+    </div>
+  </section>
+
+  <section class="f-bloc hub hub-grille" id="secteurs">
+    <div class="cadre">
+      <h2 class="f-titre">By industry.</h2>
+      <p class="f-texte">A customer case, its figures and the conversations that matter in each business.</p>
+      <ul class="hub-liste">
+          <li><a class="hub-carte" href="/en/solutions/transport-and-mobility/"><video class="hub-mini" src="/films/cas-transport-en.mp4?v=1" poster="/films/cas-transport-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>Transport and mobility</strong><small>Passenger information on WhatsApp</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/solutions/higher-education/"><video class="hub-mini" src="/films/cas-education-en.mp4?v=1" poster="/films/cas-education-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>Higher education</strong><small>Recruiting candidates on WhatsApp</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/solutions/insurance/"><video class="hub-mini" src="/films/cas-assurance-en.mp4?v=1" poster="/films/cas-assurance-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>Insurance</strong><small>Reaching policyholders on WhatsApp</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/solutions/travel-and-tourism/"><video class="hub-mini" src="/films/cas-tourisme-en.mp4?v=1" poster="/films/cas-tourisme-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>Travel and tourism</strong><small>Supporting every stay on WhatsApp</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/solutions/shopify-stores/"><span class="hub-mini hub-mini-icone" aria-hidden="true"><svg class="ic"><use href="#i-cart"/></svg></span><span class="hub-texte"><strong>Shopify stores</strong><small>Recover checkouts on WhatsApp</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/solutions/saas-and-app-builders/"><video class="hub-mini" src="/films/cas-onboarding-en.mp4?v=1" poster="/films/cas-onboarding-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>SaaS and app builders</strong><small>Getting started and every use case</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="f-bloc hub hub-grille" id="cas">
+    <div class="cadre">
+      <h2 class="f-titre">By use case.</h2>
+      <p class="f-texte">Each case with its film and its code, plugged in from Claude Code.</p>
+      <ul class="hub-liste">
+          <li><a class="hub-carte" href="/en/use-cases/appointment-booking/"><video class="hub-mini" src="/films/cas-rendez-vous-en.mp4?v=1" poster="/films/cas-rendez-vous-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>Appointment booking</strong><small>The customer asks on WhatsApp, the AI agent notes the reason and the city, your app offers three slots and books.</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/use-cases/appointment-reminders/"><video class="hub-mini" src="/films/cas-rappels-en.mp4?v=1" poster="/films/cas-rappels-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>Appointment reminders</strong><small>The evening before, a reminder with two buttons: the customer confirms or reschedules, and your calendar follows.</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/use-cases/ai-support-human-handover/"><video class="hub-mini" src="/films/cas-support-en.mp4?v=1" poster="/films/cas-support-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>AI support and human handover</strong><small>An AI agent answers your customers from your docs, and your team takes over when needed.</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/use-cases/whatsapp-bubble-lovable-site/"><video class="hub-mini" src="/films/cas-bulle-en.mp4?v=1" poster="/films/cas-bulle-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>WhatsApp bubble on your website</strong><small>A WhatsApp bubble on your site, and an AI agent that answers from your content.</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/use-cases/saas-onboarding-activation/"><video class="hub-mini" src="/films/cas-saas-en.mp4?v=1" poster="/films/cas-saas-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>SaaS onboarding and activation</strong><small>At sign-up, the welcome on WhatsApp, with a button to the first use. Only to those who ticked the box.</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/use-cases/failed-payment-recovery/"><video class="hub-mini" src="/films/cas-saas-en.mp4?v=1" poster="/films/cas-saas-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>Failed payment recovery</strong><small>Stripe reports the failure, the user gets on WhatsApp the link to update their card.</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+          <li><a class="hub-carte" href="/en/use-cases/order-notifications/"><video class="hub-mini" src="/films/cas-notifications-en.mp4?v=1" poster="/films/cas-notifications-en.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video><span class="hub-texte"><strong>Order notifications</strong><small>The order ships: the customer gets their tracking on WhatsApp, and your admin sees when they read it.</small></span><svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg></a></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="f-appel">
+    <div class="cadre">
+      <h2 class="f-titre">Let’s talk about your case.</h2>
+      <p class="f-texte">A demo on your industry: your customers, your conversations, your first results.</p>
+      <div class="appels">
+        <a class="bouton bouton-plein" href="/en/contact/#formulaire">Request a demo <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
     </div>
   </section>
@@ -208,7 +367,7 @@
       <h3>Messaging&nbsp;Me platform</h3>
       <ul>
         <li><a href="/en/#fonctionnalites">Features</a></li>
-        <li><a href="/en/solutions/saas-and-app-builders/">Solutions</a></li>
+        <li><a href="/en/solutions/">Solutions</a></li>
         <li><a href="/en/pricing/">Pricing</a></li>
         <li><a href="/en/help/">Help</a></li>
         <li><a href="/en/developers/">Developers</a></li>

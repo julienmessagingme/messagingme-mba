@@ -30,6 +30,8 @@
 
 ## Cas d’usage
 
+- [Solutions](https://app.messagingme.fr/solutions/) : WhatsApp pour l’assurance, l’enseignement supérieur, le transport, le tourisme, les boutiques Shopify et les SaaS : cas clients et cas d’usage.
+- [Solutions (English)](https://app.messagingme.fr/en/solutions/) : WhatsApp for insurance, higher education, transport, tourism, Shopify stores and SaaS: customer cases and use cases.
 - [SaaS et app builders](https://app.messagingme.fr/solutions/saas-et-app-builders/) : Branchez WhatsApp à votre app ou votre SaaS depuis Claude Code, en une session : le démarrage, puis chaque cas d’usage avec son film et son code.
 - [SaaS and app builders](https://app.messagingme.fr/en/solutions/saas-and-app-builders/) : the same page in English, with every use case below.
 - [Prise de rendez-vous](https://app.messagingme.fr/cas-d-usage/prise-de-rendez-vous/) : Le client demande sur WhatsApp, l’agent IA note le motif et la ville, votre app propose trois créneaux et réserve.

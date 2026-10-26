@@ -4,6 +4,15 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : la page Solutions de la vitrine, et `/industries/` redirigée (plan SEO, lot 5, N2)
+
+- **`/solutions/` et `/en/solutions/`**, générées par `npm run vitrine:cas` (`pagesSolutions`) depuis le registre : une
+  carte par secteur, par boutique et pour la page SaaS, puis une carte par cas d'usage, avec la vignette de leur film ;
+  JSON-LD `ItemList`. Le lien « Solutions » du pied de page y mène, `llms.txt` la cite en tête des cas.
+- **`/industries/`** (page « en construction » en `noindex`) supprimée dans les deux langues et redirigée en 301 vers la
+  page Solutions (`site/vercel.json`) ; ses entrées de dictionnaire mortes sortent de `attente.json`.
+- Julien a abandonné le glossaire et repoussé les pages par concurrent (`todo.md`).
+
 ## 2026-10-26 : aide:charger sur Scaleway, après la bascule (plan SEO, C6)
 
 - Lancé sur la machine des workers avec l'image en service `cecb243d` (origin au même commit, donc rien à défaire

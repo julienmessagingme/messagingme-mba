@@ -399,9 +399,133 @@ export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
   });
 }
 
+/**
+ * La page qui regroupe la rubrique Solutions (plan SEO, lot 5, N2) : une carte par secteur, par boutique et pour la page
+ * chapeau, puis une carte par cas d'usage, tout ce qui est EN LIGNE au registre. Elle remplace `/industries/`, redirigée
+ * vers elle (`site/vercel.json`).
+ */
+export const TEXTES_SOLUTIONS = {
+  fr: {
+    adresse: '/solutions/', fil: 'Solutions',
+    titre: 'Solutions WhatsApp par secteur et par usage · Messaging Me',
+    description: 'WhatsApp pour l’assurance, l’enseignement supérieur, le transport, le tourisme, les boutiques Shopify et les SaaS : cas clients et cas d’usage.',
+    h1: 'WhatsApp pour votre secteur et votre usage.',
+    chapeau: 'Les secteurs où des marques parlent déjà à leurs clients sur WhatsApp avec Messaging Me, et les cas d’usage qu’une application branche en une session Claude Code.',
+    demo: 'Demander une démo', voirCas: 'Voir les cas d’usage',
+    secteurs: { titre: 'Par secteur.', texte: 'Le cas d’un client, ses chiffres et les conversations qui comptent dans chaque métier.' },
+    cas: { titre: 'Par cas d’usage.', texte: 'Chaque cas avec son film et son code, branché depuis Claude Code.' },
+    appel: { titre: 'Parlons de votre cas.', texte: 'Une démo sur votre secteur : vos clients, vos conversations, vos premiers résultats.' },
+  },
+  en: {
+    adresse: '/en/solutions/', fil: 'Solutions',
+    titre: 'WhatsApp solutions by industry and use case · Messaging Me',
+    description: 'WhatsApp for insurance, higher education, transport, tourism, Shopify stores and SaaS: customer cases and use cases.',
+    h1: 'WhatsApp for your industry and your use case.',
+    chapeau: 'The industries where brands already talk to their customers on WhatsApp with Messaging Me, and the use cases an application plugs in during one Claude Code session.',
+    demo: 'Request a demo', voirCas: 'See the use cases',
+    secteurs: { titre: 'By industry.', texte: 'A customer case, its figures and the conversations that matter in each business.' },
+    cas: { titre: 'By use case.', texte: 'Each case with its film and its code, plugged in from Claude Code.' },
+    appel: { titre: 'Let’s talk about your case.', texte: 'A demo on your industry: your customers, your conversations, your first results.' },
+  },
+} as const;
+
+export function pagesSolutions(): Array<{ chemin: string; contenu: string }> {
+  return (['fr', 'en'] as const).map((langue) => {
+    const s = TEXTES_SOLUTIONS[langue];
+    const autre = TEXTES_SOLUTIONS[langue === 'fr' ? 'en' : 'fr'];
+    const suffixe = langue === 'fr' ? '' : '-en';
+    const contact = langue === 'fr' ? '/contact/#formulaire' : '/en/contact/#formulaire';
+    const fleche = '<svg class="ic hub-fleche" aria-hidden="true"><use href="#i-fleche"/></svg>';
+    const mini = (film: string) => `<video class="hub-mini" src="/films/${film}${suffixe}.mp4?v=1" poster="/films/${film}${suffixe}.webp?v=1" width="1280" height="720" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>`;
+    const icone = (nom: string) => `<span class="hub-mini hub-mini-icone" aria-hidden="true"><svg class="ic"><use href="#${nom}"/></svg></span>`;
+    const carte = (adresse: string, visuel: string, titre: string, texte: string) =>
+      `          <li><a class="hub-carte" href="${adresse}">${visuel}<span class="hub-texte"><strong>${echapper(titre)}</strong><small>${texte}</small></span>${fleche}</a></li>`;
+    const elements: Array<[string, string]> = [];
+    const secteurs = ENTREES.filter((e) => e.enLigne && e.nature === 'secteur' && !e.attente).map((e) => {
+      const t = TEXTES_SECTEURS[e.cle]![langue];
+      const p = langue === 'fr' ? e.fr : e.en;
+      elements.push([p.titre, p.adresse]);
+      return carte(p.adresse, mini(t.terrain.film.nom), p.titre, t.menu);
+    });
+    for (const e of ENTREES.filter((x) => x.enLigne && x.nature === 'boutique')) {
+      const t = TEXTES_BOUTIQUES[e.cle]![langue];
+      const p = langue === 'fr' ? e.fr : e.en;
+      elements.push([p.titre, p.adresse]);
+      secteurs.push(carte(p.adresse, icone(t.icone), p.titre, t.menu));
+    }
+    const c = TEXTES_CARREFOUR[langue];
+    elements.push([c.fil, c.adresse]);
+    secteurs.push(carte(c.adresse, mini(c.film.nom), c.fil, c.menu));
+    const cas = ENTREES.filter((e) => e.enLigne && e.nature === 'cas').map((e) => {
+      const p = langue === 'fr' ? e.fr : e.en;
+      elements.push([p.titre, p.adresse]);
+      return carte(p.adresse, mini(e.film!), p.titre, TEXTES_CAS[e.cle]![langue].resume);
+    });
+    const main = [
+      '<main>',
+      '  <section class="cadre f-une">',
+      '    <div>',
+      `      <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-buildings"/></svg>${s.fil}</span> ${s.h1}</h1>`,
+      `      <p class="chapeau">${s.chapeau}</p>`,
+      '      <div class="appels">',
+      `        <a class="bouton bouton-plein" href="${contact}">${s.demo}</a>`,
+      `        <a class="bouton bouton-texte" href="#cas">${s.voirCas} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`,
+      '      </div>',
+      '    </div>',
+      '  </section>',
+      '',
+      '  <section class="f-bloc hub hub-grille" id="secteurs">',
+      '    <div class="cadre">',
+      `      <h2 class="f-titre">${s.secteurs.titre}</h2>`,
+      `      <p class="f-texte">${s.secteurs.texte}</p>`,
+      '      <ul class="hub-liste">',
+      ...secteurs,
+      '      </ul>',
+      '    </div>',
+      '  </section>',
+      '',
+      '  <section class="f-bloc hub hub-grille" id="cas">',
+      '    <div class="cadre">',
+      `      <h2 class="f-titre">${s.cas.titre}</h2>`,
+      `      <p class="f-texte">${s.cas.texte}</p>`,
+      '      <ul class="hub-liste">',
+      ...cas,
+      '      </ul>',
+      '    </div>',
+      '  </section>',
+      '',
+      '  <section class="f-appel">',
+      '    <div class="cadre">',
+      `      <h2 class="f-titre">${s.appel.titre}</h2>`,
+      `      <p class="f-texte">${s.appel.texte}</p>`,
+      '      <div class="appels">',
+      `        <a class="bouton bouton-plein" href="${contact}">${s.demo} <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>`,
+      '      </div>',
+      '    </div>',
+      '  </section>',
+      '</main>',
+    ].join('\n');
+    const ld = {
+      '@context': 'https://schema.org',
+      '@graph': [
+        fil(langue, [ACCUEIL[langue], [s.fil, s.adresse]]),
+        {
+          '@type': 'ItemList', name: s.titre.replace(/ · Messaging Me$/, ''), inLanguage: langue === 'fr' ? 'fr-FR' : 'en-US',
+          itemListElement: elements.map(([nom, adresse], i) => ({ '@type': 'ListItem', position: i + 1, name: nom, url: ORIGINE + adresse })),
+        },
+      ],
+    };
+    return {
+      chemin: fichierDe(s.adresse),
+      contenu: page(langue, { adresse: s.adresse, jumelle: autre.adresse, titre: s.titre, description: s.description, ldJson: ld }, main,
+        'La page Solutions, qui regroupe secteurs, boutiques et cas d’usage, GÉNÉRÉE par npm run vitrine:cas depuis le registre : ne pas modifier à la main.'),
+    };
+  });
+}
+
 /** Tout ce que `npm run vitrine:cas` écrit. */
 export function pagesGenerees(): Array<{ chemin: string; contenu: string }> {
-  return [...pagesCarrefour(), ...ENTREES.filter((e) => e.enLigne && e.nature === 'cas').flatMap(pagesCas), ...pagesSecteurs(), ...pagesBoutiques()];
+  return [...pagesSolutions(), ...pagesCarrefour(), ...ENTREES.filter((e) => e.enLigne && e.nature === 'cas').flatMap(pagesCas), ...pagesSecteurs(), ...pagesBoutiques()];
 }
 
 /**
@@ -602,6 +726,8 @@ export function sectionLlms(): string {
   return [
     '## Cas d’usage',
     '',
+    `- [Solutions](${ORIGINE}${TEXTES_SOLUTIONS.fr.adresse}) : ${TEXTES_SOLUTIONS.fr.description}`,
+    `- [Solutions (English)](${ORIGINE}${TEXTES_SOLUTIONS.en.adresse}) : ${TEXTES_SOLUTIONS.en.description}`,
     `- [SaaS et app builders](${ORIGINE}${TEXTES_CARREFOUR.fr.adresse}) : ${TEXTES_CARREFOUR.fr.description}`,
     `- [SaaS and app builders](${ORIGINE}${TEXTES_CARREFOUR.en.adresse}) : the same page in English, with every use case below.`,
     ...enLigne.flatMap((e) => [
