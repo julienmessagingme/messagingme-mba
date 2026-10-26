@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { balayerAbonnements, type DepsBalayageAbonnements } from '../src/numero/balayage-abonnements';
 import { TACHES_PAR_ROLE } from '../src/worker/roles';
 import type { EtatDeLEspace } from '../src/stripe/abonnements.pg';
@@ -144,6 +144,18 @@ describe('balayerAbonnements : la libération', () => {
     await balayerAbonnements(m.d);
     expect(m.alertes.filter((a) => /libéré/.test(a))).toHaveLength(1);
     expect(m.mails.filter((x) => x === 't1:liberation_mail')).toHaveLength(1);
+  });
+
+  it('🔴 servir l’abonné suivant échoue : les avis de libération de l’espace partent quand même', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const m = monter({
+      etats: { t1: finiSuspendu() }, maintenant: new Date(LIBERATION.getTime() + 60_000),
+      liberer: async () => ({ fait: 'libre', numero: '441259797311' }),
+    });
+    m.d.servirAbonneEnAttente = async () => { throw new Error('base indisponible'); };
+    await balayerAbonnements(m.d);
+    expect(m.avis.has('sub_1:liberation_telegram')).toBe(true);
+    expect(m.mails).toContain('t1:liberation_mail');
   });
 
   it('jamais vu de Meta : rendu à la réserve, et le numéro sert d’abord un abonné qui attend', async () => {

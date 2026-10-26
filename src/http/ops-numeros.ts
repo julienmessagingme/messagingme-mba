@@ -4,6 +4,7 @@ import { auteurOps, type PreHandler } from '../auth/middleware';
 import { journaliser } from '../lib/journal';
 import { ErreurDidww, type ClientDidww } from '../didww/client';
 import { DidDejaDeclare, type PgNumerosFournisStore } from '../otp/store.pg';
+import { servirLAttente } from '../numero/reserve';
 // Le même seuil que les autres écritures de `/ops` : importé, pas recopié.
 import { MIN_NOTE } from './ops';
 
@@ -77,13 +78,11 @@ export function registerOpsNumeros(app: FastifyInstance, deps: OpsNumerosDeps, g
       const r = await deps.numeros.declarer(numero, did.id);
       journaliser('warn', 'ops_numero_declare', { numero, didId: did.id, cree: r.cree, par: auteurOps(req), note, at: new Date().toISOString() });
       // Un numéro NEUF revient d'abord à l'abonné qui l'attend le plus longtemps (la réserve s'était vidée entre son
-      // paiement et sa confirmation). Le webhook n'avait rien pu lui attribuer.
-      const attribueA = r.cree ? ((await deps.abonnes.enAttenteDeNumero())[0] ?? null) : null;
-      if (attribueA !== null) {
-        const n = await deps.numeros.attribuer(attribueA);
-        journaliser('warn', 'ops_numero_attribue_a_un_abonne', { tenantId: attribueA, numero: n?.numero ?? null, par: auteurOps(req) });
-      }
-      return reply.code(r.cree ? 201 : 200).send({ numero: r.numero, cree: r.cree, attribueA });
+      // paiement et sa confirmation). Le webhook n'avait rien pu lui attribuer. 🔴 Au mieux (`servirLAttente` ne lève
+      // pas) : le numéro est déclaré, un échec ici ne doit pas faire croire le contraire à l'opérateur par un 500.
+      const servi = r.cree ? await servirLAttente({ numeros: deps.numeros, abonnements: deps.abonnes }, null, 'declaration_ops', { par: auteurOps(req) }) : null;
+      // Un abonné dont l'attribution a rendu `null` (la réserve vidée entre-temps) n'a rien reçu : rien à annoncer.
+      return reply.code(r.cree ? 201 : 200).send({ numero: r.numero, cree: r.cree, attribueA: servi?.numero ? servi.tenantId : null });
     } catch (err) {
       if (err instanceof DidDejaDeclare) return reply.code(409).send({ error: err.message });
       throw err;

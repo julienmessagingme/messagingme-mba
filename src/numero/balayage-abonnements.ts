@@ -29,7 +29,11 @@ export interface DepsBalayageAbonnements {
   mails: AvisAbonnementMail;
   /** Libère l'abonnement s'il est dû (`PgLiberationStore.liberer`, DIDWW câblé). Lève sur un échec. */
   liberer(tenantId: string, abonnementId: string): Promise<IssueLiberation>;
-  /** Un numéro rendu à la réserve va d'abord à l'abonné qui attend le sien (jamais à `sauf`). */
+  /**
+   * Un numéro rendu à la réserve va d'abord à l'abonné qui attend le sien (jamais à `sauf`). Au mieux
+   * (`servirLAttente`, `src/numero/reserve.ts`, ne lève pas, et le balayage avale quand même un échec) : il ne doit
+   * jamais sauter les avis de libération de l'espace.
+   */
   servirAbonneEnAttente(sauf: string): Promise<void>;
   /** Les espaces qui ont une campagne en pause `numero_suspendu`. */
   espacesEnPauseSuspension(): Promise<string[]>;
@@ -104,7 +108,12 @@ export async function balayerAbonnements(d: DepsBalayageAbonnements): Promise<nu
           await d.noterAvis(e.abonnementId, 'liberation_mail');
         }
         if (issue.fait !== 'rien') gestes += 1;
-        if (issue.fait === 'libre') await d.servirAbonneEnAttente(tenantId);
+        if (issue.fait === 'libre') {
+          // Au mieux : le numéro est rendu, les avis de libération de l'espace ne dépendent pas de l'abonné suivant.
+          await d.servirAbonneEnAttente(tenantId).catch((err: unknown) => {
+            journaliser('error', 'numero_abonne_en_attente_non_servi', { tenantId, origine: 'liberation', err });
+          });
+        }
         e = (await d.etat(tenantId)) ?? e;
       }
       if (e.libereLe !== null) {

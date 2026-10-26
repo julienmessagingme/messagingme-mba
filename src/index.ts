@@ -166,6 +166,7 @@ import { PgSuppressionEspaceStore } from './ops/suppression-espace.pg';
 import { PgDeconnexionNumeroStore } from './account/deconnexion-numero.pg';
 import { deconnecterNumero } from './account/deconnexion-numero';
 import { programmerLaFinDuNumero } from './numero/fin-abonnement';
+import { servirLAttente } from './numero/reserve';
 import type { ContexteTiers } from './ops/suppression-espace';
 import type { OpsSuppressionDeps } from './http/ops-suppression';
 import { CompteChez360dialog, TokenInvalidError } from './meta/credentials';
@@ -1159,12 +1160,7 @@ async function main(): Promise<void> {
       sortirNumeroFourni: async (tenant) => {
         const r = await liberationsApi.sortirDeLEspaceSupprime(tenant, didwwApi ? (didId) => didwwApi.resilier(didId) : null);
         // Rendu à la réserve : il va d'abord à l'abonné qui attend le sien, comme une libération. Au mieux.
-        if (r.fait === 'libre') {
-          await tenter('suppression espace: abonné en attente non servi:', async () => {
-            const suivant = (await abonnementsNumero.enAttenteDeNumero()).find((t) => t !== tenant);
-            if (suivant !== undefined) await numerosFournis.attribuer(suivant);
-          });
-        }
+        if (r.fait === 'libre') await servirLAttente({ numeros: numerosFournis, abonnements: abonnementsNumero }, tenant, 'suppression_espace');
         return r;
       },
       purger: (tenant, trace) => magasinSuppression.purger(tenant, trace),

@@ -23,7 +23,7 @@ beforeAll(async () => {
   await s.close();
 });
 
-function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre'; enAttente?: string[] } = {}) {
+function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre'; enAttente?: string[]; attribuerLeve?: boolean } = {}) {
   const gestes: string[] = [];
   const inscrits: NumeroFourni[] = [];
   const client: ClientDidww = {
@@ -50,6 +50,7 @@ function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre
       ],
       attribuer: async (tenantId) => {
         gestes.push(`attribuer:${tenantId}`);
+        if (o.attribuerLeve) throw new Error('base indisponible');
         return { id: 'n1', numero: '442071234567', didwwDidId: 'did-1', statut: 'attribue', tenantId, attribueLe: new Date(), creeLe: new Date() };
       },
     },
@@ -99,11 +100,26 @@ describe('/ops/numeros-fournis', () => {
   });
 
   it('🔴 un abonné attend son numéro (la réserve s’était vidée) : le numéro déclaré lui revient, au plus ancien d’abord', async () => {
+    const avertis = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { server, gestes } = monter({ enAttente: ['t-ancien', 't-recent'] });
     const res = await server.inject(declarer('+44 20 7123 4567'));
+    // La trace de l'attribution est signée de son auteur, comme toute écriture de /ops.
+    const lignes = avertis.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>);
+    expect(lignes.find((l) => l.msg === 'numero_attribue_a_un_abonne_en_attente')).toMatchObject({ tenantId: 't-ancien', par: 'exploitant@exploitation.test' });
     expect(res.statusCode).toBe(201);
     expect(res.json()).toMatchObject({ attribueA: 't-ancien' });
     expect(gestes.at(-1)).toBe('attribuer:t-ancien');
+    await server.close();
+  });
+
+  it('🔴 l’attribution à l’abonné échoue : le numéro est déclaré, la réponse le dit (201), jamais un 500', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { server, inscrits, gestes } = monter({ enAttente: ['t-ancien'], attribuerLeve: true });
+    const res = await server.inject(declarer('+44 20 7123 4567'));
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ cree: true, attribueA: null });
+    expect(inscrits).toHaveLength(1);
+    expect(gestes.at(-1), 'l’attribution a bien été tentée').toBe('attribuer:t-ancien');
     await server.close();
   });
 

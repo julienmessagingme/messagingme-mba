@@ -1,5 +1,15 @@
 # todo.md : backlog
 
+## 🟡 Les restes de la relecture du lot B de l'audit de structure (réserve de numéros, 2026-10-26)
+
+- Une déconnexion par le client sort son numéro par `sortirNumeroFourni`, le geste de la suppression d'espace : sa trace
+  dit `origine: 'suppression_espace'`. Ajouter `'deconnexion'` à `OrigineRetour` (`src/numero/reserve.ts`) et passer
+  l'origine en paramètre (`src/index.ts`).
+- L'écran `/ops` ne lit que `cree` : après une déclaration, il ne dit pas à qui le numéro est allé (`attribueA`), ni qu'un
+  abonné en attente n'a pas pu être servi. L'abonné garde « Obtenir mon numéro », qui le sert seul.
+- « Abonnement vivant » reste recopié sous forme de garde de type dans `src/offres/numero-inclus.ts`.
+
+
 ## 🟡 Le Pro géré depuis la console : ce que la relecture du lot A laisse (2026-10-26)
 
 - **Un `customer.subscription.updated` périmé peut défaire un geste de la console.** Le webhook écrit la fin prévue lue

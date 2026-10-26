@@ -30,11 +30,12 @@ Tests : les existants restent verts ; un test par fonction nouvelle (1, 2) ; les
 
 ## Lot B : la réserve de numéros fournis
 
-`src/numero/reserve.ts` porte le droit au numéro, obtenir, remplacer, rendre, et `servirLAttente(sauf)`, qui ne lève
-jamais. Ses quatre copies (`http/numero-fourni.ts`, `index.ts`, `worker.ts`, `http/ops-numeros.ts`) l'appellent. Corrige
-le 500 de `/ops` quand l'attribution à l'abonné qui attend échoue APRÈS la déclaration du numéro. Invariants à garder :
-pas de numéro avant paiement, un Pro ne prend pas le numéro d'un abonné, le verrou de remplacement, `sauf`. Tests :
-ceux de `numero-fourni.test.ts` et `ops-numeros.test.ts` migrent vers le module, la route garde la traduction.
+`src/numero/reserve.ts` porte le droit au numéro, les numéros disponibles, et `servirLAttente(sauf)`, qui ne lève
+jamais. Ses quatre copies (`http/numero-fourni.ts`, `index.ts`, `worker.ts`, `http/ops-numeros.ts`) l'appellent.
+Obtenir, remplacer et rendre restent dans la route : un seul appelant chacun, les déplacer ne retirerait aucune copie.
+Corrige le 500 de `/ops` quand l'attribution à l'abonné qui attend échoue APRÈS la déclaration du numéro. Invariants à
+garder : pas de numéro avant paiement, un Pro ne prend pas le numéro d'un abonné, le verrou de remplacement, `sauf`.
+Tests : le module a les siens (`numero-reserve.test.ts`) ; ceux des routes restent, pour la traduction.
 
 ## Lot C : l'envoi d'un opérateur dans un fil, puis la recharge Stripe
 

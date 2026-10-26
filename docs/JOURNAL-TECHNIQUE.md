@@ -4,6 +4,29 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : la réserve de numéros fournis en un module (lot B de l'audit de structure), et le 500 de /ops
+
+Plan `docs/superpowers/plans/2026-10-26-audits-simplicite-structure.md`, lot B. « Un numéro revenu à la réserve va
+d'abord à l'abonné qui attend le sien depuis le plus longtemps, jamais à l'espace qui vient de le rendre » était écrit
+quatre fois (abandon dans la route du numéro fourni, suppression d'un espace, libération du worker, déclaration dans
+`/ops`), avec quatre façons d'échouer. `src/numero/reserve.ts` porte `servirLAttente`, qui ne lève jamais et journalise
+son origine, avec `droitAuNumero` et `numerosDisponibles` sortis de la route. Aucune migration.
+
+- **Deux défauts corrigés au passage.** `/ops` rendait 500 pour un numéro bien déclaré quand l'attribution à l'abonné
+  en attente échouait ensuite : l'opérateur croyait la déclaration ratée, et la refaire rendait 200 sans rien
+  attribuer (le numéro n'est plus neuf), donc l'abonné attendait la déclaration suivante. Il rend désormais 201
+  avec `attribueA: null`, et l'échec est journalisé (`numero_abonne_en_attente_non_servi`). Dans le balayage du worker,
+  une attribution qui levait faisait sauter les avis de libération de l'espace (Telegram et e-mail aux admins).
+- **Le test du 500 vérifié dans les deux sens** : 500 avec l'ancien code remis, 201 avec le correctif.
+- **Relecture indépendante, aucun 🔴.** Jaunes corrigés dans le lot : la trace de l'attribution dans `/ops` est de
+  nouveau signée de son auteur (`par`) ; la ligne d'erreur nomme l'abonné qui a payé et n'a pas été servi ; `attribueA`
+  n'annonce plus une attribution qui a rendu `null` ; le balayage avale lui-même un échec de l'abonné suivant (la
+  garantie ne vivait que dans le câblage), avec un test vérifié dans les deux sens. Restent au backlog (`todo.md`) :
+  l'origine d'une déconnexion, l'écran `/ops` qui ne dit pas à qui le numéro est allé, une dernière copie
+  d'« abonnement vivant ».
+- Le journal change de nom : `ops_numero_attribue_a_un_abonne` devient `numero_attribue_a_un_abonne_en_attente`, avec
+  `origine` (`abandon`, `suppression_espace`, `liberation`, `declaration_ops`).
+
 ## 2026-10-26 : le banc du conteneur serverless, la répétition sur la vraie instance, et `mba.` supprimé
 
 La veille de la bascule Scaleway, fixée par Julien au soir même (gel de `main` à 18 h, coupure à 21 h, heure de Paris).
@@ -62,6 +85,9 @@ comportement voulu, aucune migration :
 - **Vérifié** dans une extraction de `main` : typecheck racine et console, lint, suite racine, build de la console et
   e2e. Trois rouges locaux qui ne viennent pas du lot : `sdk-contrat` (le zod des `node_modules` du poste n'est pas celui
   du lockfile), `mcp-agent` et `latence-http`, instables sous la charge de la suite entière et verts seuls.
+- **Déployé** le 2026-10-26 au matin, annoncé aux cinq sessions actives et leurs accords reçus : `mba-api`, `mba-worker`
+  et `mba-worker-analyse` à `6ff97113` (aucune migration, base à 0253), fumée publique et fiches OAuth conformes. Les
+  quatre anciennes adresses de la console de production rendent 307 vers leurs pages, qui rendent 200.
 
 ## 2026-10-26 : la carte HubSpot lit le fil, répond et rend la main (lot 2 de la reprise humaine), déployé inerte
 

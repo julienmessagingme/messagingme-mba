@@ -3,7 +3,6 @@ import { gardeEtendue, type Guard, type PreHandler } from '../auth/middleware';
 import type { VerrousCourts } from '../db/verrous-courts';
 import { espaceVerifie } from './scope';
 import { texteDe } from '../lib/erreur';
-import { journaliser } from '../lib/journal';
 import type { PgNumerosFournisStore } from '../otp/store.pg';
 import { lireEtatConnexion, empreinteEtat } from '../otp/etat-connexion';
 import { z } from 'zod';
@@ -12,6 +11,7 @@ import type { RetourAbonnement } from '../stripe/abonnement';
 import { corpsDuRefus, type Issue } from '../lib/issue';
 import { programmerLaFinDuNumero } from '../numero/fin-abonnement';
 import { numeroFourniAGarder, qrApplication, relierApplication, servirLeCreditSiRelie, type DepsConnexionApplication } from '../application/connexion';
+import { abonnementVivant, droitAuNumero as droitDansLaReserve, numerosDisponibles, servirLAttente, type DroitAuNumero } from '../numero/reserve';
 
 /**
  * LE NUMÉRO FOURNI CÔTÉ CLIENT (lot 3b, spec `docs/superpowers/specs/2026-10-05-numero-fourni-design.md`).
@@ -78,9 +78,6 @@ export interface NumeroFourniRouteDeps {
 
 const saisieAbonnement = z.object({ retour: z.enum(['brancher', 'console']) });
 
-/** Un abonnement vivant : payé, ou en retard d'un renouvellement (rien n'est coupé avant le lot 4). */
-const vivant = (a: { statut: string } | null): boolean => a !== null && a.statut !== 'resilie';
-
 /** Le délai entre deux remplacements d'un même espace. Un numéro remplacé sort de la réserve pour de bon (`bloque`). */
 export const DELAI_ENTRE_REMPLACEMENTS_MS = 3_600_000;
 
@@ -138,10 +135,7 @@ export function registerNumeroFourni(
    * Les numéros libres que personne n'attend (jaune 7 de la relecture de la livraison B) : un abonné en attente a payé,
    * les libres lui sont dus d'abord. Ouvrir un paiement neuf sur un numéro déjà dû ferait payer pour rien.
    */
-  const disponibles = async (): Promise<number> => {
-    const [libres, attente] = await Promise.all([deps.numeros.compterLibres(), deps.abonnements.enAttenteDeNumero()]);
-    return Math.max(0, libres - attente.length);
-  };
+  const disponibles = (): Promise<number> => numerosDisponibles(deps);
 
   /** La réserve après une attribution : sous le seuil, Julien est prévenu. Jamais bloquant pour le client. */
   const surveillerReserve = async (): Promise<void> => {
@@ -159,17 +153,13 @@ export function registerNumeroFourni(
    * un abonnement du numéro vivant, ou un Pro vivant qui l'inclut (lot 6, B2b). La même garde pour obtenir et pour
    * remplacer. `null` : aucun droit.
    */
-  async function droitAuNumero(tenant: string): Promise<'attribue' | 'abonne' | 'pro' | null> {
-    if (await deps.numeros.numeroDeLEspace(tenant)) return 'attribue';
-    if (vivant(await deps.abonnements.deLEspace(tenant))) return 'abonne';
-    return (await deps.pro.vivant(tenant)) ? 'pro' : null;
-  }
+  const droitAuNumero = (tenant: string): Promise<DroitAuNumero | null> => droitDansLaReserve(deps, tenant);
 
   /**
    * J6 de la relecture de B2b : un Pro qui prend un numéro NEUF ne prend pas celui d'un abonné qui a payé et attend le
    * sien (`disponibles`), comme pour l'ouverture d'un paiement. `true` : la réserve n'a rien pour lui.
    */
-  async function reserveDueAuxAbonnes(droit: 'attribue' | 'abonne' | 'pro'): Promise<boolean> {
+  async function reserveDueAuxAbonnes(droit: DroitAuNumero): Promise<boolean> {
     if (droit !== 'pro' || (await disponibles()) > 0) return false;
     await surveillerReserve();
     return true;
@@ -212,7 +202,7 @@ export function registerNumeroFourni(
     if (connecte && !memeNumero) {
       return reply.code(409).send({ error: 'Cet espace a déjà un numéro WhatsApp.', cause: 'deja_un_numero' });
     }
-    if (vivant(abonnement)) {
+    if (abonnementVivant(abonnement)) {
       return reply.code(409).send({ error: 'Le numéro de cet espace est déjà payé.', cause: 'deja_abonne' });
     }
     // Un Pro vivant inclut le numéro (lot 6, B2b) : rien à payer, la page l'obtient directement.
@@ -331,7 +321,7 @@ export function registerNumeroFourni(
       return reply.code(200).send({ rendu: garde !== null, finProgrammee: await programmerLaFin(tenant) });
     }
     const rendu = await deps.numeros.rendre(tenant);
-    if (rendu !== null) await servirUnAbonneEnAttente(tenant);
+    if (rendu !== null) await servirLAttente(deps, tenant, 'abandon');
     return reply.code(200).send({ rendu: rendu !== null, finProgrammee: await programmerLaFin(tenant) });
   });
 
@@ -342,22 +332,5 @@ export function registerNumeroFourni(
       programmerFin: (id) => deps.abonnement.programmerFin(id),
       finNonProgrammee: (id, t) => deps.alertes.finNonProgrammee(id, t),
     }, tenant)) === 'programmee';
-  }
-
-  /**
-   * Un numéro rendu va d'abord à l'abonné qui attend le sien depuis le plus longtemps (jaune 7 de la relecture de la
-   * livraison B), comme une déclaration dans /ops, et jamais à l'espace qui vient de le rendre. Un échec ne change pas
-   * la réponse : le numéro est rendu, et /ops servira l'abonné à la prochaine déclaration.
-   */
-  async function servirUnAbonneEnAttente(sauf: string): Promise<void> {
-    try {
-      const suivant = (await deps.abonnements.enAttenteDeNumero()).find((t) => t !== sauf);
-      if (suivant === undefined) return;
-      const n = await deps.numeros.attribuer(suivant);
-      journaliser('warn', 'numero_rendu_attribue_a_un_abonne', { tenantId: suivant, numero: n?.numero ?? null, renduPar: sauf });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`numero-fourni : le numéro rendu n'a pas pu servir l'abonné en attente : ${texteDe(err)}`);
-    }
   }
 }

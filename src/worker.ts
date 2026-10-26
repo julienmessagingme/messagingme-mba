@@ -118,6 +118,7 @@ import { fileDuRole, minuterieDuRole, nomDuProcessus, superviseLesFiles, tachesD
 import { tenter } from './lib/tenter';
 import { messageDe, texteDe } from './lib/erreur';
 import { balayerAbonnements } from './numero/balayage-abonnements';
+import { servirLAttente } from './numero/reserve';
 import { PgAbonnementsNumeroStore } from './stripe/abonnements.pg';
 import { PgLiberationStore } from './numero/liberation.pg';
 import { creerAvisAbonnement } from './numero/avis-abonnement';
@@ -1345,10 +1346,10 @@ export async function demarrerWorker(): Promise<void> {
         if (!r.ok) throw new Error(`retrait de l’appareil lié refusé (${r.raison}) : la libération se rejouera`);
       },
     }),
-    // Un numéro rendu à la réserve va d'abord à l'abonné qui attend le sien, comme une déclaration dans /ops.
+    // Un numéro rendu à la réserve va d'abord à l'abonné qui attend le sien, comme une déclaration dans /ops. Au mieux :
+    // `servirLAttente` ne lève pas, la libération et les alertes de l'espace ne dépendent pas de lui.
     servirAbonneEnAttente: async (sauf) => {
-      const suivant = (await abonnementsDuNumero.enAttenteDeNumero()).find((t) => t !== sauf);
-      if (suivant !== undefined) await numerosFournisStore.attribuer(suivant);
+      await servirLAttente({ numeros: numerosFournisStore, abonnements: abonnementsDuNumero }, sauf, 'liberation');
     },
     espacesEnPauseSuspension: () => numeroDelieStore.espacesEnPauseSuspension(),
     leverPausesSuspension: (t) => numeroDelieStore.leverPausesSuspension(t),
