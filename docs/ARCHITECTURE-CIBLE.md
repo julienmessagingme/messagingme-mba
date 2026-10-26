@@ -776,6 +776,11 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
 
 ## 10. Le jour J : la séquence
 
+✅ **LA BASCULE EST FAITE LE 2026-10-26 AU SOIR** : le VPS arrêté à 18 h 56, `api.messagingme.app` servi par Scaleway
+à 19 h 08 (heure de Paris), douze minutes de coupure, la recette du § 11 passée sur un vrai message WhatsApp, l'Inbox,
+`/ops`, le MCP et la requête de 23 Mo à travers Cloudflare. Le récit est au journal technique du même jour ; les
+étapes ci-dessous restent la procédure, pour une prochaine migration et pour le retour arrière (`DEPLOY.md`).
+
 **Prérequis, à valider AVANT de commencer :**
 
 1. Les chantiers du §3 sont finis et déployés sur l'infrastructure actuelle. ✅ Fait au 2026-10-03 (§3.1, §3.3

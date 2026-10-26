@@ -259,6 +259,10 @@ La séquence du §10 et les tests d'acceptation du §11, dans une fenêtre chois
 pas au public avant les tests d'acceptation, et OVH ne se coupe qu'après une période d'observation et un retour
 arrière ÉPROUVÉ.
 
+✅ **Fait le 2026-10-26 au soir** : le VPS arrêté à 18 h 56, `api.messagingme.app` servi par Scaleway à 19 h 08 (heure
+de Paris), la recette passée avec un vrai message WhatsApp. Le récit, minute par minute, est au journal du même jour.
+Restent l'observation (VPS et Supabase arrêtés et intacts) et le ménage d'après (`wip.md`, `todo.md`).
+
 ## Méthode de livraison
 
 | Lot | Méthode | Pourquoi | Essai réel qui le clôt |

@@ -11,6 +11,47 @@
 - Vérifié en base, en lecture seule : aucun des dix morceaux de `construire-un-agent-ia` ne dit plus « commission », et le
   premier morceau de `envoyer-un-message-rcs` porte la nouvelle coupe de son chapeau.
 
+## 2026-10-26 (soir) : la bascule de la production vers Scaleway, douze minutes de coupure
+
+La production de Messaging Me quitte le VPS d'OVH et Supabase (Londres) pour Scaleway (Amsterdam). Plan
+`docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md` (le jour J), séquence `docs/ARCHITECTURE-CIBLE.md` § 10.
+Heures de Paris.
+
+- **18 h 47, le gel** de `main`, annoncé aux sessions ouvertes. Tête figée `cecb243d` ; la CI de son dernier code verte
+  job par job ; Supabase à 0254, la dernière migration du dossier ; entre ce que servait le VPS (`82137236`) et la
+  tête, aucun écart de code serveur (`src/`, `db/`, dépendances, Dockerfile), seul `mba-application` passant de
+  `d7565862` à la tête.
+- **Le déploiement d'essai de la tête** chez Scaleway (`migration=avant` sur la base jetable) : l'image en place sur le
+  conteneur et la machine, `mba-application` publié sur `172.16.0.4:8090`, sa santé à 200.
+- **18 h 56, la coupure** : l'API puis les workers du VPS arrêtés, en 3 s, tous en code 0.
+- **18 h 59, la copie** (`docs/prive/bascule/copier-donnees.sh`, hors dépôt) : 41 Mo extraits en 11 s, la source
+  immobile, restaurés dans `rdb` en 7 s. 🔴 **Une erreur de plus qu'à la répétition** : `must be owner of schema public`
+  sur `COMMENT ON SCHEMA public`, `rdb` appartenant au superadministrateur de Scaleway (la base de la répétition
+  appartenait à `mba_admin`). Sans effet, mais le script s'arrêtait avant ses vérifications, refaites par une reprise
+  aux mêmes contrôles : 135 tables identiques (68 712 lignes), 33 secrets sur 33 déchiffrés et 0 avec une fausse clé,
+  aucune migration en attente, et `statement_timeout` de `mba_admin` à 2 minutes, celle que portait le rôle chez
+  Supabase (le code n'en pose aucune ; Scaleway en donnait un jour).
+- **19 h 02, la configuration de production**, par le script de Julien (`docs/prive/bascule/poser-production.cjs`) : la
+  machine reçoit 66 variables, le conteneur 3 en clair et 62 en secret, puis redémarre. 🔴 Relu le matin contre le
+  schéma de l'API v1 : elle prend les secrets en OBJET ; la liste de paires `{ key, value }`, forme de la v1beta1 que le
+  script envoyait, aurait échoué en pleine coupure.
+- **19 h 04, les workers** recréés sur la production : démarrage annoncé, aucun redémarrage en 30 s, aucune erreur.
+- **19 h 08, `api.` servi par Scaleway** : la règle « Jeton d'origine api » déployée et `api` passé en CNAME vers le
+  conteneur (Julien), puis le domaine déclaré sur le conteneur, prêt en 30 s. À travers Cloudflare, `/live` et
+  `/health` à 200, le webhook à 403.
+- **La recette** : la fumée verte ; 23 Mo à travers Cloudflare jusqu'à l'application ; le MCP qui lit la nouvelle
+  base ; le conteneur qui refuse un appel sans jeton ; un vrai WhatsApp de Julien reçu, mis en file, traité,
+  enregistré, la réponse automatique partie et ses statuts revenus ; l'Inbox et `/ops` (Julien).
+- **Après** : `source.env` effacé de la machine ; les cinq conteneurs Messaging Me du VPS arrêtés SANS politique de
+  redémarrage (sinon la sonde `vps-watch` les compte en panne et le rappelle chaque jour), `mba-web` compris (lot 7) ;
+  `otp-asterisk`, le pont des codes, reste sur le VPS et poste à `api.` ; la veille d'éligibilité de l'agent de Meta
+  et la sauvegarde nocturne de Supabase tournent encore sur le VPS, sans toucher à la production. La clé
+  `cloudflare-origine`, apparue en clair dans une capture le matin, est remplacée par Julien le soir même.
+- **Appris** : une copie dans une base qui n'appartient pas au rôle qui restaure rend des refus de propriétaire sans
+  effet, qu'un script de copie doit connaître d'avance ; le schéma d'une API se relit au moment de s'en servir, pas sur
+  la foi d'un script qui passait par la CLI ; l'horloge du poste sous Git Bash est en UTC, et deux heures annoncées à
+  Julien étaient fausses d'une heure, corrigées le soir même.
+
 ## 2026-10-26 : les trois fiches d'aide longues sur la vitrine (plan SEO, C6)
 
 - **Publiques, en français et en anglais**, dans Parler aux clients : « Construire un agent IA » (10), « Le répondeur

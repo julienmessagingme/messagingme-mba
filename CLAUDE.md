@@ -28,7 +28,7 @@ npm run migrate          # applique db/migrations/*.sql (suivi schema_migrations
 npm run migrations       # dernier numéro pris, prochain libre, dernier appliqué, en attente (base en lecture seule)
 npm run seed             # compte/tenant démo (SEED_PASSWORD requis, ou SEED_DEMO=true)
 npm test                 # vitest unitaires (sans DB)
-npm run test:integration # vitest intégration (⚠️ le DATABASE_URL local = la PROD, cf. ci-dessous)
+npm run test:integration # vitest intégration (⚠️ jamais en local, cf. ci-dessous)
 npm run typecheck        # tsc --noEmit
 npm run auto-attaque     # sondes d'attaque sur les routes REELLES, inventoriees depuis le serveur (voir documentation.md)
 
@@ -38,9 +38,9 @@ npm run build            # build standalone
 ```
 
 ⚠️ **`npm test` en local ne prouve que la moitié des tests.** Les tests d'intégration
-(stores, pg-boss, e2e) ont besoin d'un Postgres, et le `DATABASE_URL` du `.env` local pointe
-sur la **base de production** : les lancer d'ici y crée et y supprime des tenants. Ne pas les
-lancer en local. La CI monte un Postgres jetable pour ça (job `integration`), donc **après un
+(stores, pg-boss, e2e) ont besoin d'un Postgres, et le `DATABASE_URL` du `.env` local pointe sur
+l'**ANCIENNE base de production** (Supabase, figée le 2026-10-26, le retour arrière de la bascule) : les lancer
+d'ici la salirait. La CI monte un Postgres jetable pour ça (job `integration`), donc **après un
 push, regarder le run GitHub** : un `npm test` vert en local n'a rien vérifié côté base. Vu le
 2026-07-21, quatre commits rouges d'affilée sur une attente de test périmée qu'aucun test
 unitaire ne pouvait voir.
@@ -61,7 +61,7 @@ local avant de pousser.
 | Nom | Sert | Où | Comment on déploie |
 |---|---|---|---|
 | `console.messagingme.app` (ex-`engageme.messagingme.app`, même projet) | la console | **Vercel** (projet `messagingme-mba`, Root Directory `web`) | automatique à chaque `git push` |
-| `api.messagingme.app` | l'API et le worker | VPS Docker (`mba-api`, `mba-worker`) | `git pull` + `compose up -d --build` |
+| `api.messagingme.app` | l'API, les workers, la base | **Scaleway, Amsterdam** (conteneur serverless `mba-api` derrière Cloudflare ; workers sur la machine `mm-workers` ; base `mm-prod-db`, adresse privée) | `gh workflow run deploy-scaleway.yml --ref main -f migration=<aucune\|avant\|apres>`, puis l'approbation de Julien dans GitHub |
 | `app.messagingme.fr` | la VITRINE publique (`site/`, HTML statique) | **Vercel** (projet `engageme-site`, Root Directory `site`, CNAME chez OVH) | automatique au `git push` qui touche `site/` (Ignored Build Step dans `site/vercel.json`, sur `VERCEL_GIT_PREVIOUS_SHA`) |
 
 ⚠️ **La vitrine n'a AUCUNE variable d'environnement, et elle ne doit pas en avoir.** À l'import, Vercel
@@ -123,16 +123,16 @@ le MCP appellent `api.` depuis le 2026-10-15 ; ses liens `/r/` et visuels `/m/` 
 SANDBOX avait des liens tracés). Une adresse distribuée se dérive de `PUBLIC_API_URL`, jamais de la console : ses relais `/r/`, `/m/`,
 `/mcp` et `/api/backend/*` ne mènent à rien chez Vercel (`DNS_HOSTNAME_RESOLVED_PRIVATE`, relevé le même jour).
 
-🔴 **LES RÉGLAGES DE CHARGE SONT PROVISOIRES JUSQU'À LA BASCULE SCALEWAY** (plafond global dans `.env.prod`, tailles de
-pools, concurrence des statuts) : mesurés sur le VPS et la base de Londres, ils se remesurent sur la cible avec
-`scripts/banc-api.sh` contre une base jetable de l'offre choisie, AVANT d'ouvrir le site. Le tableau et la méthode :
-`docs/ARCHITECTURE-CIBLE.md` § 7.8.
+🔴 **LA PRODUCTION EST CHEZ SCALEWAY DEPUIS LE 2026-10-26 AU SOIR** (12 minutes de coupure). Le VPS est ARRÊTÉ et
+Supabase FIGÉ : c'est le retour arrière, on n'y relance rien et on n'y écrit rien sans Julien. La base de production n'a
+qu'une adresse privée : elle se lit par la machine des workers, jamais d'un poste (`DEPLOY.md`). Les réglages de charge
+(copies, pools, plafond global) se déclarent dans `ops/scaleway/conteneur-api.json`, tenu par un test (§ 7.8).
 
 ⚠️ **`NEXT_PUBLIC_API_URL` est FIGÉE AU BUILD** côté Vercel : la changer sans redéployer ne fait rien, en
-silence. Même piège que `BACKEND_URL` sur l'image Docker.
+silence. Même piège pour toute variable `NEXT_PUBLIC_*`.
 
 🔴 **UN ÉCRAN QUI APPELLE UNE ROUTE NEUVE CASSE DÈS LE PUSH, PAS AU DÉPLOIEMENT** (2026-09-21). Vercel publie
-la console à chaque `git push`, l'API attend sa revue finale et son `up -d --build` : entre les deux, l'écran
+la console à chaque `git push`, l'API attend sa revue finale et son déploiement : entre les deux, l'écran
 appelle une route que la production n'a pas. Vécu avec l'onglet « Outils » de l'agent de Meta, en 404 en
 production pendant plus d'une heure, pour un espace qui avait des outils publiés et à qui l'écran disait
 « Aucun outil ». La parade : pousser l'écran APRÈS le déploiement de l'API qui porte sa route, ou le faire
@@ -143,28 +143,27 @@ déploiement dans la foulée).
 `~/.claude/hooks/deploiement-garde.js` (et sa configuration `.claude/deploy.json`) existe mais n'est branché
 dans AUCUN `settings.json` : il n'a jamais rien bloqué, et il reste débranché. Cette page a longtemps décrit ce
 qu'il « couvrait » ; c'était faux. Ce qui tient l'ordre, c'est la discipline : une relecture par lot (un rouge =
-ce qui casse la production), la CI lue avant le `up`, la migration AVANT le code qui la lit.
+ce qui casse la production), la CI lue avant le déploiement, la migration AVANT le code qui la lit.
 
 🔴 **TROIS PIÈGES DE LA RECHARGE STRIPE (2026-09-29).**
 - `STRIPE_SECRET_KEY` et `STRIPE_WEBHOOK_SECRET` se posent ENSEMBLE ou pas du tout : une seule des deux fait
-  REFUSER le démarrage de l'API. Les deux sont posées par Julien dans `.env.prod`, jamais par Claude.
+  REFUSER le démarrage de l'API. Les deux sont posées par Julien (conteneur ET `.env.prod` de la machine), jamais par Claude.
 - Une migration qui touche `agent_credit_mouvements` bloque TOUT mouvement de crédit, donc chaque débit de tour
-  d'agent dans le WORKER : elle passe AVANT le `up` des DEUX conteneurs (vécu avec 0193, colonne nommée par
+  d'agent dans le WORKER : elle part en `migration=avant`, avant l'API ET les workers (vécu avec 0193, colonne nommée par
   l'insertion commune `bouger`).
-- Un override dans `.env.prod` (`CREDIT_OFFERT_MICRO_EUR=0`) coupe une offre sans déployer de code : c'est ainsi
+- Un override (`CREDIT_OFFERT_MICRO_EUR=0`, dans le conteneur ET le `.env.prod` de la machine) coupe une offre sans déployer de code : c'est ainsi
   que les 5 € ont été éteints entre la relecture qui les a jugés récoltables et le correctif. Le retirer ensuite,
   sinon le défaut du code ne s'applique jamais.
 
-Runbook VPS complet + checklist live : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
+Runbook et retour arrière : [DEPLOY.md](DEPLOY.md). **LIVE (`DRY_RUN=false`)**, numéro Zadarma réel.
 Auth **JWT (login)** + **RBAC** (écritures réservées aux admins).
 
-⚠️ **Migrations NON auto-appliquées** : toute migration qui ajoute une colonne écrite par le code doit
-passer sur le VPS AVANT le déploiement (`sudo REVISION=$(git rev-parse --short HEAD) docker compose build mba-api` puis
-`sudo docker compose run --rm --no-deps mba-api npm run migrate`, PUIS `up -d --build` avec la même `REVISION`, `DEPLOY.md`).
+⚠️ **Migrations NON auto-appliquées** : chaque lancement du workflow CHOISIT (`aucune`, `avant`, `apres`), et une migration
+qui ajoute une colonne écrite par le code part en `avant` (`DEPLOY.md`).
 
 🔴 **LE NUMÉRO D'UNE MIGRATION SE LIT, IL NE S'ÉCRIT NULLE PART** (décision de Julien, 2026-10-10). **`npm run
 migrations`** dit le dernier numéro PRIS et le prochain libre (le DOSSIER `db/migrations/` tranche sur ce qui est pris),
-le dernier APPLIQUÉ et ce qui attend (la BASE, lue en lecture seule ; le `DATABASE_URL` d'un poste est la production).
+le dernier APPLIQUÉ et ce qui attend (la BASE, en lecture seule ; d'un poste, l'ANCIENNE base : la production se lit sur la machine, `DEPLOY.md`).
 Le compteur qu'on écrivait ici a dérivé onze fois, puis il est devenu le registre où chaque déploiement racontait sa
 migration : 820 lignes sur 1 391, parties au journal le 2026-10-10. Le dossier a deux trous voulus : 0153 (réservé,
 jamais écrit) et 0060 (appliquée sans fichier, ancien nom de `0062_email.sql`, même SQL, sans conséquence).
@@ -218,9 +217,9 @@ La seconde est REFUSÉE tout de suite, avec le message qui le dit. ⚠️ Et `db
 `tsconfig.include` : le runner n'était pas type-checké, une faute de syntaxe n'y devenait visible qu'à
 l'exécution, en plein déploiement.
 
-🔴 **Les migrations vivent DANS L'IMAGE, pas sur le disque du VPS** (`COPY db ./db`). Un `git pull` suivi de
-`compose run ... npm run migrate` rejoue donc les ANCIENNES migrations sans rien signaler : il faut
-`compose build` AVANT. C'est pour ça que la séquence commence par le build. (Vécu le 2026-08-21.)
+🔴 **Les migrations vivent DANS L'IMAGE** (`COPY db ./db`) : un `migrate` lancé à la main applique celles de l'image
+qu'on lui donne, jamais celles d'un dépôt, et répond « à jour » sans rien signaler sur une image ancienne. C'est pour ça
+que le workflow construit l'image du commit AVANT de migrer.
 
 🔴 **Les liens tracés sont une porte à SENS UNIQUE.** Dès qu'un template portant un lien `/r/<code>` est
 approuvé et **envoyé**, son adresse circule dans des messages livrés. Retirer la route `/r/:code`, la table
@@ -264,7 +263,7 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   `todo.md`). Le scaffold + le schéma DB sont posés en direct ; les briques déterministes
   (receiver, wrapper API, contacts, campagnes) passent par des boucles plan → exécute →
   vérifie → reviewer. L'UI (inbox/dashboard) n'est PAS pour feature-loop.
-- **On vérifie contre des mocks des contrats Meta + des tests** (unitaires + intégration Supabase), jamais
+- **On vérifie contre des mocks des contrats Meta + des tests** (unitaires + intégration sur le Postgres jetable de la CI), jamais
   contre le Meta live : la production ENVOIE VRAIMENT depuis le 2026-07-06 (`DRY_RUN=false`, numéro Zadarma).
   ⚠️ Cette ligne a dit « tant qu'on n'a pas de numéro branché » pendant deux mois après la mise en service.
 - **Pas de tirets longs** dans la doc : ni cadratin ni demi-cadratin, on met une virgule, deux-points,
@@ -491,7 +490,7 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
 ### Sécurité (deltas projet)
 
 🔴 **`scopeTenant` ÉCHOUE FERMÉ** (2026-09-03). C'est LE contrôle d'isolation entre clients, et la RLS est
-contournée (pooler superuser). Depuis le lot 3 de l'audit ponytail (2026-09-26), il n'est plus recopié dans les
+contournée (le rôle de l'application possède les tables). Depuis le lot 3 de l'audit ponytail (2026-09-26), il n'est plus recopié dans les
 handlers : `etapeEspace` (`src/http/scope.ts`) le pose AU MONTAGE, après la garde d'authentification, sur chaque
 route `:tenantId` d'un module `tenant` (jamais `session-ops`), et le handler lit l'espace par `espaceVerifie(req)`,
 qui échoue fermé si l'étape manque. La preuve est dynamique : `tests/scope-tenant.test.ts` appelle chaque route
@@ -579,7 +578,7 @@ est simplement contournée.
 `urlRecuperable` lit le texte de l'hôte (elle refuse `localhost`, les littéraux privés et leurs formes
 hexadécimale, entière, IPv6 et IPv4 mappée) ; `resolutionPublique` (`src/lib/adresse-privee.ts`) ferme ce
 qu'un texte ne peut pas voir, un nom public dont l'enregistrement A pointe sur les métadonnées du fournisseur
-ou sur le réseau Docker du VPS. Trois règles la rendent juste : **une seule adresse interdite condamne le
+ou sur le réseau privé de Scaleway. Trois règles la rendent juste : **une seule adresse interdite condamne le
 nom** ; **une résolution qui ÉCHOUE ou qui TRAÎNE est un REFUS** (plafond de 3 s, `dns.lookup` n'acceptant
 aucun signal d'abandon) ; et une **plage d'adresses se compare en ARITHMÉTIQUE, jamais en préfixe de chaîne**
 (le préfixe `fe80::/10` fait dix bits, pas quatre caractères).
@@ -639,7 +638,7 @@ sa raison. Chez 360dialog, seul un ENVOI juge la clé : une lecture de modèles 
 
 Conventions génériques (secrets serveur, `.env` non committé, Zod `safeParse` sur webhooks + JSON LLM, signature de webhook entrant, entrée LLM délimitée) : section « Conventions de code » du CLAUDE.md global. Spécifique à MBA :
 
-- **Isolation tenant = cas « accès médié par un serveur » du global** : `tenant_id=$1` sur CHAQUE requête. La connexion pooler est un rôle superuser, donc la RLS serait bypassée, le filtrage en code est le seul contrôle. IDOR = leçon convanalyzer.
+- **Isolation tenant = cas « accès médié par un serveur » du global** : `tenant_id=$1` sur CHAQUE requête. Le rôle de l'application (`mba_admin`) possède les tables, donc la RLS serait contournée, le filtrage en code est le seul contrôle. IDOR = leçon convanalyzer.
 - **Secrets serveur concrets** : `META_ACCESS_TOKEN`, `META_APP_SECRET` (signature webhook), `ENCRYPTION_KEY`, `AUTH_SECRET` (qui signe aussi les sessions d'exploitation), `service_role`, tous dans `src/`/worker/`.env.prod`, jamais dans le bundle `web/` ni en `NEXT_PUBLIC_*`.
 
 ### Gotchas et décisions

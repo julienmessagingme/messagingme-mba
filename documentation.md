@@ -68,46 +68,35 @@ main a dérivé jusque dans `CLAUDE.md` (onze fois), avant d'y être supprimé l
 
 ## 2. Le système en dix minutes
 
-### Trois noms, deux hébergeurs
+### Deux noms, deux hébergeurs
 
 ```
         navigateur, Meta, contacts, opérateur télécom
         |                                    |
-        | (en direct, SANS Cloudflare)   Cloudflare (Proxied : api. et mba.)
-        |                            /                        \
-console.messagingme.app   api.messagingme.app   mba.messagingme.app
-   la console                 l'API                l'ANCIENNE console
-     VERCEL             un NOM, pas une machine    + toutes les adresses
-  (root dir = web/)     -> VPS OVH aujourd'hui       déjà distribuées
-                          mba-api + mba-worker      mba-web + routage NPM
-                             |
-                        Supabase (Postgres)
+        | (en direct, SANS Cloudflare)   Cloudflare (Proxied, règle « Jeton d'origine api »)
+        |                                    |
+console.messagingme.app            api.messagingme.app
+   la console                      un NOM, pas une machine
+     VERCEL                   -> SCALEWAY, Amsterdam : conteneur serverless mba-api (privé)
+  (root dir = web/)                réseau privé mm-prive : mba-worker, mba-worker-analyse et
+                                   mba-application sur la machine mm-workers ; base mm-prod-db
 ```
 
 | Nom | Sert | Où | Déploiement |
 |---|---|---|---|
 | `console.messagingme.app` | la console | **Vercel**, projet `messagingme-mba`, Root Directory `web` | automatique à chaque `git push` |
-| `api.messagingme.app` | l'API et le worker | VPS OVH, Docker | `git pull` + `compose up -d --build` |
-| `mba.messagingme.app` | l'ancienne console, plus les adresses historiques | VPS, `mba-web` + routage NPM | idem |
+| `api.messagingme.app` | l'API, les workers, la base | **Scaleway**, région `nl-ams` (CNAME vers le conteneur, nuage orange) | `gh workflow run deploy-scaleway.yml`, approuvé par Julien (`DEPLOY.md`) |
 
 🔴 **`api.messagingme.app` est un NOM, pas une machine, et c'est tout l'intérêt.** Le front, les contacts qui
-cliquent un lien tracé et l'opérateur télécom ne connaissent que cette étiquette. Déménager l'API vers un
-autre hébergeur ne coûte qu'un enregistrement DNS.
+cliquent un lien tracé et l'opérateur télécom ne connaissent que cette étiquette. Le déménagement de l'API du VPS
+d'OVH vers Scaleway, le 2026-10-26, n'a coûté côté adresse qu'un CNAME chez Cloudflare et un domaine déclaré sur le
+conteneur (12 minutes de coupure, données comprises). Le conteneur est PRIVÉ : il refuse tout appel sans le jeton
+d'accès que pose la règle de Cloudflare, donc on ne le joint qu'à travers Cloudflare.
 
-🔴 **MAIS ÉTEINDRE OVH NE SE RÉSUME PAS À CE CHANGEMENT DE DNS.** `mba.` EST le VPS, et y répondent encore les
-anciens `/r/`, `/m/` et `/mcp` déjà distribués, plus l'ancienne console. Meta, lui, appelle
-`api.messagingme.app/webhooks/meta` depuis le 2026-10-15 (avant : `mba.messagingme.app/api/backend/webhooks/meta`).
-Le nom `mba.` est supprimé AVANT la bascule, une fois ses journaux muets (décision du 2026-10-14,
-`docs/ARCHITECTURE-CIBLE.md` § 13) : les liens `/r/` et `/m/` déjà envoyés sous ce nom cessent alors de répondre,
-ce que Julien a assumé en écartant la redirection. Changer l'URL de rappel chez Meta est sans perte : Meta vérifie
-la nouvelle adresse avant de l'enregistrer, et rejoue pendant 7 jours un envoi en échec.
-
-**Le routage par chemin de `mba.`** (`advanced_config` du proxy host NPM 21) : `/api/backend/*` va à
-`mba-api` **avec le préfixe retiré par nginx** (`rewrite`), `/r/`, `/m/` et `/mcp` y vont directement, tout le
-reste va à `mba-web`. 🔴 **Chaque route nomme `mba-api` par une VARIABLE** (`set $mba_api mba-api`), résolue à
-l'exécution par le résolveur de Docker que NPM déclare (`127.0.0.11`, relu toutes les 10 s), comme le fait déjà
-l'hôte `api.` : un nom écrit en dur dans un `proxy_pass` est figé au chargement de nginx. C'est ce qui a permis de migrer la console vers Vercel sans toucher à la configuration du webhook
-chez Meta, et ce qui a retiré un conteneur de FRONT du chemin critique de réception des messages clients.
+🔴 **`mba.messagingme.app` N'EXISTE PLUS** (supprimé chez Cloudflare le 2026-10-26, avant la bascule) : Meta, la
+sonde UptimeRobot et le MCP appellent `api.` depuis le 2026-10-15. Les liens `/r/` et `/m/` déjà envoyés sous ce nom
+ont cessé de répondre, ce que Julien a assumé en écartant la redirection. Changer l'URL de rappel chez Meta est sans
+perte : Meta vérifie la nouvelle adresse avant de l'enregistrer, et rejoue pendant 7 jours un envoi en échec.
 
 🔴 **`console.` NE RELAIE RIEN VERS L'API.** Les rewrites de `web/next.config` (`/api/backend/*`, `/r/`,
 `/m/`) visent `BACKEND_URL`, absente chez Vercel : elles retombent sur `localhost` et rendent
@@ -116,15 +105,18 @@ chez Meta, et ce qui a retiré un conteneur de FRONT du chemin critique de réce
 `adressesPubliques` (`src/lib/adresses-publiques.ts`), jamais sur `APP_URL`, qui est le nom du front. Le rappel
 smsmode et les boutons RCS l'ont oublié jusqu'au 2026-09-21 : `tests/rcs-adresses-cablage.test.ts` les garde.
 
-### Les trois conteneurs
+### Les conteneurs
 
-Sur le réseau Docker `mcp-robot_default` du VPS :
+Chez Scaleway, à Amsterdam, sur le réseau privé `mm-prive` (172.16.0.0/22) :
 
-| Conteneur | Ce que c'est | Adresse |
+| Conteneur | Ce que c'est | Où |
 |---|---|---|
-| `mba-api` | Fastify : webhooks, API console, API publique v1, `/ops`, `/r/`, `/m/`, `/w/`, `/mcp` | `:8095` |
-| `mba-worker` | pg-boss (les files) plus une quinzaine de balayeurs. **Aucune adresse, personne ne l'appelle** | |
-| `mba-web` | Next.js, l'ancienne console | `:3000` |
+| `mba-api` | Fastify : webhooks, API console, API publique v1, `/ops`, `/r/`, `/m/`, `/w/`, `/mcp` | conteneur serverless, port `:8095`, de 1 à 3 copies (`ops/scaleway/conteneur-api.json`) |
+| `mba-worker`, `mba-worker-analyse` | pg-boss (les files) plus une quinzaine de balayeurs. **Aucune adresse, personne ne les appelle** | machine `mm-workers` (`ops/scaleway/docker-compose.workers.yml`) |
+| `mba-application` | le service de la filière « application WhatsApp Business » | machine `mm-workers`, `:8090` sur son adresse privée, que l'API appelle |
+
+Le pont des codes des numéros fournis (`ops/otp-asterisk/`, § 8) reste sur le VPS d'OVH, seul morceau du produit
+qui n'a pas déménagé : il poste à `api.messagingme.app` comme n'importe quel appelant.
 
 Le worker voyage avec l'API : il lit la base et travaille. Son point d'entrée est `src/worker-cli.ts` (`npm run
 worker` et la commande des conteneurs `mba-worker*`), qui charge l'environnement puis appelle `demarrerWorker()`.
@@ -140,9 +132,11 @@ minuteries (`tests/worker-import.test.ts`). Lancer `src/worker.ts` directement n
 - **API** : Fastify 5. **Validation** : zod, toujours `safeParse`, jamais `parse`.
 - **File** : pg-boss, sur le même Postgres que les données (schéma `pgboss`). Pas de file en mémoire : elle
   perdrait les jobs au redémarrage.
-- **Base** : Postgres = **Supabase**, projet `messagingme-MBA` (ref `npdqnrirxhqsyyvtvtjz`). Organisation
-  distincte de leadgen et EDH, donc **invisible du MCP Supabase** : on y accède par `pg` en direct. L'hôte
-  direct `db.<ref>` est IPv6-only et injoignable depuis Docker, on passe par le **pooler**.
+- **Base** : PostgreSQL 17 managé chez **Scaleway** (`mm-prod-db`, DB-PRO2-XXS, Amsterdam), base `rdb`, une seule
+  adresse, PRIVÉE (172.16.0.8), TLS vérifié par son certificat dans l'image (`certs/scaleway-mm-prod.crt`). Connexions
+  directes, sans pooler : le budget de ses 200 connexions se tient dans `tests/deploy-scaleway.test.ts`. Elle ne se
+  lit pas d'un poste, seulement par la machine des workers (`DEPLOY.md`). Supabase (Londres) a été la base jusqu'au
+  2026-10-26 et reste figée, comme retour arrière : le `DATABASE_URL` d'un poste y pointe encore.
 - **Front** : Next.js 15 App Router (`web/`), **Tailwind pur** (pas de shadcn), tokens maison
   (brand/ink/mint/coral/gold/navy). Deux dépendances de production hors React et Next : `@xyflow/react`
   (l'éditeur de graphe) et `qrcode`. **Aucune bibliothèque de graphiques** : les courbes, donuts et nuages de
@@ -157,7 +151,7 @@ minuteries (`tests/worker-import.test.ts`). Lancer `src/worker.ts` directement n
 
 `web/lib/http.ts` lit `NEXT_PUBLIC_API_URL`, avec repli sur `/api/backend` (le proxy de même origine, donc
 zéro CORS). ⚠️ **`NEXT_PUBLIC_API_URL` est FIGÉE AU BUILD côté Vercel** : la changer sans redéployer ne fait
-rien, en silence. Même piège que `BACKEND_URL` sur l'image Docker.
+rien, en silence. Même piège pour toute variable `NEXT_PUBLIC_*`.
 
 ---
 
@@ -1445,7 +1439,7 @@ outils** (sinon il n'a pas une réponse dégradée, il en a une INVENTÉE) et il
 
 ### 🔴 L'isolation entre clients est en CODE, pas en base
 
-La connexion passe par un pooler dont le rôle est superuser : **la RLS serait contournée**. Le filtrage
+Le rôle de l'application (`mba_admin`) possède les tables : **la RLS serait contournée**. Le filtrage
 `tenant_id = $1` sur CHAQUE requête est donc le SEUL contrôle.
 
 `scopeTenant` (`src/http/scope.ts`) est la RÈGLE de ce contrôle pour toutes les routes `:tenantId` de la
@@ -2884,12 +2878,12 @@ boucle) ne joue donc pas ses passes les plus tardives, rétentions comprises : e
 
 ### Deux pools Postgres
 
-- **`DATABASE_URL`** = pooler en mode **SESSION** (port 5432). Sert le **pg-boss du worker** et **tous les
-  scripts CLI** (`db/migrate.ts`, `db/seed.ts`), qui lisent cette variable en direct.
-  🔴 Le pg-boss du worker ne peut PAS aller en mode transaction : son écoute (`LISTEN`), sa supervision et sa
-  migration ne survivent pas à la réassignation du backend entre transactions.
-- **`APP_DATABASE_URL`** = pooler en mode **TRANSACTION** (port 6543), pour le pool applicatif. Vide -> repli
-  sur `DATABASE_URL`, dégradation SÛRE.
+- **`DATABASE_URL`** = la base de production en connexion DIRECTE (Scaleway n'a pas de pooler). Sert le **pg-boss du
+  worker**, **tous les scripts CLI** (`db/migrate.ts`, `db/seed.ts`), qui lisent cette variable en direct, et le pool
+  applicatif. 🔴 Le pg-boss du worker exige une connexion de SESSION : son écoute (`LISTEN`), sa supervision et sa
+  migration ne survivent pas à un pooler en mode transaction, qui réassigne le backend entre transactions.
+- **`APP_DATABASE_URL`** : VIDE en production depuis la bascule, donc repli sur `DATABASE_URL`. Elle désignait le
+  mode TRANSACTION du pooler de Supabase ; le code la garde pour une base qui en aurait un.
 - 🔴 **L'API n'ouvre AUCUN pool pg-boss : elle PRÊTE son pool applicatif** (`new PgBossQueue(pool)`, le `db` de
   pg-boss). Elle ne fait qu'empiler, et chaque instruction de l'empilement est autonome (un `insert`, ou un bloc
   `BEGIN; ...; COMMIT;` envoyé d'un seul message), donc le mode transaction lui convient. Le prêt éteint tout le
@@ -2907,27 +2901,25 @@ boucle) ne joue donc pas ses passes les plus tardives, rétentions comprises : e
   inscrirait pas la tâche (comme avant) et prendrait une SECONDE connexion au même pool. Aucun code ne le fait
   (l'opt-out annonce après le `commit`).
 - 🔴 **LA RÉCEPTION DE META A SON PROPRE POOL** (lot 14, `creerPoolReception`, `src/db/pool.ts`) : une seconde
-  instance pg-boss, prêtée elle aussi, sur un pool de `DB_POOL_RECEPTION_MAX` connexions (4, fixé par service dans
-  `docker-compose.yml`), que seul le récepteur du webhook de Meta emprunte (`buildServer` reçoit cette file-là ; tout ce
+  instance pg-boss, prêtée elle aussi, sur un pool de `DB_POOL_RECEPTION_MAX` connexions (4, déclaré dans
+  `ops/scaleway/conteneur-api.json`), que seul le récepteur du webhook de Meta emprunte (`buildServer` reçoit cette file-là ; tout ce
   qui empile ailleurs dans l'API garde la file du pool applicatif). Une rafale sur `/v1`, `/mcp` ou la console peut
   prendre tout le pool applicatif sans faire attendre l'accusé d'un webhook. Son attente se mesure à part
   (`mesureAttenteReception`) et s'écrit dans `pool_attentes` sous `<NOM_API>-reception` : la carte du pool et l'alerte
-  « base saturée » le voient. Il compte dans le budget du pooler (`tests/budget-pooler.test.ts`), le worker ne l'ouvre
-  pas. ⚠️ Sa taille borne le débit d'accusés (environ une instruction par aller-retour vers la base et par connexion) :
+  « base saturée » le voient. Il compte dans le budget de la base (`tests/deploy-scaleway.test.ts`), le worker ne
+  l'ouvre pas. ⚠️ Sa taille borne le débit d'accusés (environ une instruction par aller-retour vers la base et par connexion) :
   sous une rafale qui le dépasse, l'attente approche le délai de connexion de 8 s, au-delà duquel la réception rend 500
   et Meta rejoue. Quatre au minimum, exigé par le test du budget (la mesure : `src/config.ts`).
-- **`DB_POOL_MAX`** est instancié **PAR PROCESS**, et **chaque service le fixe dans `docker-compose.yml`** (le
-  défaut de la configuration n'est qu'un repli). Ce qui mord n'est pas Postgres mais le pool du pooler de
-  Supabase, « Pool Size », par utilisateur, base et MODE : la somme des pools de tous les processus doit y
-  tenir, sinon l'attente passe de NOTRE pool, borné par `DB_CONN_TIMEOUT_MS` et visible dans `/ops`, à celle de
-  Supavisor, MUETTE (la latence double sans erreur). Ce budget, sa mesure et sa règle par copie vivent dans
-  `tests/budget-pooler.test.ts`, qui refuse un compose qui le dépasse : **ajouter une copie d'API, c'est ajouter
-  un service au compose, et le test exige alors de redimensionner chaque copie, ou de monter « Pool Size » dans
-  la limite qu'il calcule** (le pool plein, plus les sessions, plus ce que Supabase tient lui-même, sous 80 % des
-  connexions de Postgres).
-- **`PGBOSS_MAX`** (workers seuls) vit dans le budget des sessions du même pooler (le même « Pool Size »,
-  mode session), **partagé avec mm-hubspot**, plus la connexion d'écoute de CHAQUE worker : un conteneur de
-  worker de plus coûte `PGBOSS_MAX` + 1 sessions. Le même test en tient le compte.
+- **`DB_POOL_MAX`** est instancié **PAR PROCESS** : chaque worker le fixe dans `ops/scaleway/docker-compose.workers.yml`,
+  chaque copie de l'API le reçoit de `ops/scaleway/conteneur-api.json` (le défaut de la configuration n'est qu'un
+  repli). Ce qui mord est `max_connections` de la base, 200 dont 3 réservées : la somme des pools de tous les
+  processus, DEUX versions de l'API comptées pendant un déploiement (l'ancienne sert jusqu'à ce que la nouvelle soit
+  prête), plus une marge, doit y tenir. `tests/deploy-scaleway.test.ts` en fait le compte et refuse un réglage qui le
+  dépasse : **ajouter des copies d'API ou un worker, c'est repasser ce test.** Le banc du serverless l'a mesuré (au
+  plus 11 connexions par copie, 42 au total, 4 copies pendant une relève). Le budget du pooler de Supabase
+  (`tests/budget-pooler.test.ts`) n'a plus d'objet depuis la bascule.
+- **`PGBOSS_MAX`** (workers seuls) : les connexions de pg-boss de chaque worker, plus sa connexion d'écoute, dans le
+  même budget. Le connecteur HubSpot a sa propre base depuis le 2026-10-15 et n'y prend plus rien.
 - **`DB_CONN_TIMEOUT_MS`** : le défaut `pg` est une attente ILLIMITÉE, donc un pool saturé rend une requête
   HTTP qui ne répond jamais, sans erreur ni trace.
 
@@ -2942,7 +2934,7 @@ par défaut, `mmhs` TOUJOURS qualifié) et que toutes ses transactions passent p
 
 | Garde | Où | Ce qu'elle ferme |
 |---|---|---|
-| Filtre d'origine Cloudflare | NPM, hôtes `api.` et `mba.` (`DEPLOY.md`) | un appel direct sur l'IP du VPS qui contournerait Cloudflare |
+| Conteneur privé et jeton d'origine | le conteneur `mba-api` (privé chez Scaleway) et la règle « Jeton d'origine api » de Cloudflare, qui pose `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` § 7.3) | un appel direct sur l'adresse technique du conteneur, qui contournerait Cloudflare : refusé (403) |
 | Signature du webhook | avant de lire le corps | un tiers qui se ferait passer pour Meta |
 | `etapeEspace` (règle `scopeTenant`), posée au montage | toute route `:tenantId` d'un module `tenant` (§ 5) | l'accès aux données d'un autre client (IDOR) |
 | `requireAdmin` (`g.admin`, au montage) ; `forbidNonAdmin` dans le handler des modules sur `g.auth`, plus deux écarts délibérés sur `g.admin` (`contacts`, dont les lectures de conformité passent par `g.encadrement`, et `mbaAssistant`) | écritures | un opérateur d'inbox qui modifierait la configuration |
@@ -4274,11 +4266,11 @@ de l'ouvrir.
   écrite par le code passe **AVANT** (sinon le chemin chaud échoue en boucle : vécu, 1 h 30 sans enregistrer
   un seul message entrant). Une migration qui RETIRE une colonne encore lue par l'ancien code passe **APRÈS**.
   La question se pose à chaque fois plutôt que de suivre une routine.
-- 🔴 **Les migrations vivent DANS L'IMAGE** (`COPY db ./db`), pas sur le disque du VPS. Un `git pull` suivi de
-  `compose run ... npm run migrate` rejoue les ANCIENNES sans rien signaler : la séquence commence par
-  `compose build mba-api`.
-- **Une seule exécution de `migrate` à la fois** (verrou d'avis Postgres) : le conteneur du VPS et le poste de
-  Julien pointent la MÊME base. La seconde est refusée tout de suite, avec le message qui le dit.
+- 🔴 **Les migrations vivent DANS L'IMAGE** (`COPY db ./db`) : un `migrate` applique celles de l'image qu'on lui
+  donne, et répond « à jour » sans rien signaler sur une image ancienne. Le workflow de déploiement construit donc
+  l'image du commit, puis migre avec elle, sur la machine des workers (la base n'a qu'une adresse privée).
+- **Une seule exécution de `migrate` à la fois** (verrou d'avis Postgres) : deux lancements simultanés visent la
+  MÊME base. La seconde est refusée tout de suite, avec le message qui le dit.
 - **Une migration HORS TRANSACTION** (`-- migrate: no-transaction`, obligatoire pour `CREATE INDEX
   CONCURRENTLY`) n'a **aucun filet** : un échec à mi-parcours n'annule rien et la migration est rejouée depuis
   le début, donc chaque instruction doit être idempotente. `tests/migration-directives.test.ts` garde les deux
@@ -4553,7 +4545,7 @@ suit est la règle, en une formulation courte.
 
 ### Sur les données
 
-1. **`tenant_id = $1` sur CHAQUE requête.** La RLS est contournée par le pooler, c'est le seul contrôle.
+1. **`tenant_id = $1` sur CHAQUE requête.** La RLS est contournée (le rôle de l'application possède les tables), c'est le seul contrôle.
 2. **`null` n'est pas `0`.** Une mesure absente et une mesure nulle sont deux faits différents ; un
    `if (!valeur)` fait disparaître la seconde, et l'écran reste crédible sans elle.
 3. **Un merge jsonb n'écrase jamais une clé absente**, et un patch de fiche importe TOUJOURS

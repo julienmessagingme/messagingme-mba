@@ -1,4 +1,23 @@
-# Déploiement : l'API et les workers sur le VPS (OVH + NPM)
+# Déploiement : la production chez Scaleway (depuis le 2026-10-26), et l'ancien VPS
+
+🔴 **LA PRODUCTION TOURNE CHEZ SCALEWAY DEPUIS LE 2026-10-26 À 19 H 08** (Amsterdam, `nl-ams`) : le conteneur
+serverless `mba-api` derrière Cloudflare (`api.messagingme.app` en CNAME vers lui, la règle « Jeton d'origine api »
+pose son jeton d'accès), les workers et `mba-application` sur la machine `mm-workers`, la base `mm-prod-db` (base
+`rdb`, adresse privée seule). On déploie par le workflow (section « Scaleway », plus bas), et les gestes d'après sont
+les mêmes qu'avant (la fumée, les fiches OAuth, `aide:charger` sur la machine).
+- **Lire la production** : jamais d'un poste, dont le `DATABASE_URL` est l'ANCIENNE base (Supabase). Par la machine,
+  avec l'image en service : `ssh -J bastion@<ip de la passerelle>:61000 root@<ip privée> "docker run --rm --env-file
+  /opt/messagingme/.env.prod rg.nl-ams.scw.cloud/messagingme/mba:<sha> npm run migrations"`. Les journaux des workers
+  se lisent sur la machine (`docker logs`), ceux de l'API dans Cockpit, la console de Scaleway.
+- **Changer un secret** : Julien, dans le conteneur (variables secrètes, console de Scaleway) ET dans
+  `/opt/messagingme/.env.prod` de la machine, puis les workers redémarrés : les deux partagent `ENCRYPTION_KEY` et
+  `AUTH_SECRET`, et une différence casse le déchiffrement ou les sessions.
+- **Retour arrière, tant que le VPS existe** : chez Cloudflare, `api` repasse en A vers le VPS et la règle « Jeton
+  d'origine api » se désactive ; sur le VPS, `docker compose start` des quatre conteneurs. Ce qui a été écrit chez
+  Scaleway depuis 19 h 08 n'est PAS dans Supabase : le recopier d'abord, sinon il est perdu. Pendant l'observation, le
+  VPS et Supabase restent ARRÊTÉS et intacts : on n'y relance rien, on n'y écrit rien.
+
+Tout ce qui suit sur le VPS décrit l'ANCIEN hébergement, pour le retour arrière et pour l'histoire.
 
 Quatre conteneurs sur le réseau `mcp-robot_default` : `mba-api` (Fastify :8095), DEUX workers pg-boss
 (`mba-worker` au rôle `principal`, `mba-worker-analyse` au rôle `analyse`, depuis le 2026-10-03) et `mba-web`
@@ -441,7 +460,7 @@ téléchargement de l'image) ; restauration 4 s ; relecture et déchiffrement 2 
 tables comptées à l'identique, dernière migration et dernier message identiques à la microseconde. Hors données, le RTO
 réel se mesure à la bascule (création de la base cible, recréation des conteneurs).
 
-### Chez Scaleway (le connecteur depuis le 2026-10-15, Messaging Me au jour J)
+### Chez Scaleway (le connecteur depuis le 2026-10-15, Messaging Me depuis le 2026-10-26)
 
 La base managée porte ses propres sauvegardes : des sauvegardes LOGIQUES automatiques, une par jour, gardées 7 jours,
 dans la région (`backup_schedule` de l'instance, la première 24 h après sa création), et des sauvegardes manuelles
@@ -463,6 +482,11 @@ non éprouvés.
    l'image (`certs/`, `DB_SSL_CA_FILE`) : le committer et redéployer par le workflow, puis changer `DATABASE_URL` dans
    les variables secrètes du conteneur et dans le `.env.prod` de la machine, et recréer les workers.
 
+⚠️ **Une copie par `pg_restore` dans `rdb`** (celle du jour J) rend une erreur de plus que dans une base créée par
+`mba_admin` : `must be owner of schema public` sur `COMMENT ON SCHEMA public`, `rdb` appartenant au superadministrateur
+de Scaleway. Elle est sans effet, `pg_restore` restaure tout le reste ; un script qui n'attend que « schema public
+already exists » doit l'accepter aussi, sinon il s'arrête avant ses vérifications (vécu le 2026-10-26).
+
 **Dernière vérif DR chez Scaleway : 2026-10-15, réussie, sur la base du connecteur** (63 Ko). Sauvegarde manuelle
 14 s ; instance jetable prête en 250 s ; restauration 28 s ; vérification 3 s : 20 tables et 247 lignes identiques à
 la source, **2 jetons HubSpot sur 2** déchiffrés avec la clé du connecteur, **0 sur 2** avec une clé fausse. Le
@@ -479,7 +503,7 @@ la garde n'accepte qu'une base locale « exercice » : une copie dont la garde n
 Scaleway et un nom de base jetable, et dont le certificat se lit en clair (l'image de l'API tourne sous un
 utilisateur non root : un certificat en 600 rend EACCES).
 
-## Scaleway (cible de la bascule) : le socle et le bouton de déploiement
+## Scaleway : le socle et le bouton de déploiement
 
 La cible et ses raisons : `docs/ARCHITECTURE-CIBLE.md` (§7, §10, §10 bis). Le plan : lot 3 de
 `docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md`. Ici, la seule procédure.
@@ -531,10 +555,14 @@ workflow applique à chaque déploiement, et le jour J se termine donc par un la
 des deux côtés n'a pas de comportement documenté. ⚠️ La fusion est ADDITIVE : retirer une clé du fichier ne la retire
 pas du conteneur, il faut l'y effacer à la main.
 
-⚠️ **Jusqu'au jour J, les gestes 4 et 5 portent une configuration d'ESSAI**, posée par Claude le 2026-10-14 : la base
-jetable, des secrets JETABLES (générés pour l'occasion, jamais affichés) et `DRY_RUN=true`, sans aucune valeur de
-production. Au jour J, Julien la remplace par celle de production, sur la machine ET dans le conteneur : les deux
-partagent `ENCRYPTION_KEY` et `AUTH_SECRET`, et une différence entre eux casse le déchiffrement ou les sessions.
+⚠️ **Les gestes 4 et 5 portent la configuration de PRODUCTION depuis le 2026-10-26**, posée par le script de Julien
+(`docs/prive/bascule/poser-production.cjs`, hors dépôt), qui la construit depuis le `.env.prod` du VPS : la base neuve
+et son certificat, sans pooler (`APP_DATABASE_URL` retirée), `PORT` hors du conteneur (Scaleway le réserve), et
+`mba-application` jointe depuis le conteneur par l'adresse privée de la machine (`http://172.16.0.4:8090`). Trois
+variables en clair dans le conteneur (`NODE_ENV`, `DRY_RUN`, `DB_SSL_CA_FILE`), toutes les autres en secret ; l'API v1
+prend les secrets en OBJET (nom vers valeur), la liste de paires était la forme de la v1beta1. La configuration d'essai
+du 2026-10-14 reste sur la machine en `.env.prod.essai`. Le conteneur et la machine partagent `ENCRYPTION_KEY` et
+`AUTH_SECRET` : une différence entre eux casse le déchiffrement ou les sessions.
 6. Une application IAM `cloudflare-origine`, avec `ContainersPrivateAccess` pour seul droit : sa clé secrète va dans
    la règle Cloudflare qui écrase `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` §7.3).
 
@@ -558,7 +586,7 @@ celles du script, et le workflow la RELIT une fois prête : un écart avec le fi
 CE COMMIT ; un commit antérieur au 2026-10-15 n'a pas ce fichier, et la construction échoue franchement sur sa copie,
 avant de toucher à quoi que ce soit.
 
-**Après un déploiement, les gestes qui restent à la main** (ceux de la section du VPS) :
+**Après un déploiement, les gestes qui restent à la main** (les mêmes qu'au temps du VPS) :
 - le contrôle de fumée public, `node scripts/fumee.mjs`, depuis le poste ;
 - `npm run oauth:fiches`, depuis le poste ;
 - si un fichier de `docs/aide/fiches/` a bougé, `aide:charger` sur la machine, avec l'image déployée :

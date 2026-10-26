@@ -27,14 +27,13 @@ qui est en ligne se lit dans [features.md](features.md) (« Le centre d'aide pub
   console sont livrés (`~/engageme-motion/engageme-aide`) ;
 - l'essai réel de Julien (`docs/prive/ESSAIS-REELS.md`), qui clôt le plan.
 
-## LA BASCULE SCALEWAY (EN COURS)
+## LA BASCULE SCALEWAY : FAITE, EN OBSERVATION
 
-L'état de chaque lot se lit dans [le plan avant la bascule](docs/superpowers/plans/2026-10-14-avant-bascule-scaleway.md),
-la séquence du jour J dans [docs/ARCHITECTURE-CIBLE.md](docs/ARCHITECTURE-CIBLE.md) § 10, le récit dans le journal.
-🔴 **LE JOUR J EST LE LUNDI 26 OCTOBRE AU SOIR** (Julien) : `main` gelé dès 18 h (aucun push, déploiement ni
-migration), coupure à 21 h, heure de Paris, jusqu'au message de fin de la session de la bascule. Tout ce qui précède
-est fait le même jour : le déploiement d'essai et le banc du serverless, la répétition de la copie sur la vraie
-instance, la suppression de `mba.`, les scripts du jour J (`docs/prive/bascule/`, hors du dépôt).
+✅ **La production tourne chez Scaleway depuis le 2026-10-26 à 19 h 08** (douze minutes de coupure ; récit au journal,
+procédure et retour arrière dans `DEPLOY.md`). On déploie par `gh workflow run deploy-scaleway.yml`, approuvé par
+Julien. Pendant l'observation, le VPS (conteneurs Messaging Me arrêtés, sans redémarrage automatique) et Supabase
+(figé) restent intacts : c'est le retour arrière, on n'y relance rien et on n'y écrit rien. Le ménage d'après est dans
+`todo.md` (§ « Après la bascule Scaleway »).
 
 ## TOUT SUR LA FICHE (LOTS 1 À 3 DÉPLOYÉS ET ESSAYÉS ; LOT 4 EN COURS)
 

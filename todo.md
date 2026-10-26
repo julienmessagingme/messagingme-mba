@@ -592,6 +592,24 @@ d'un modèle par `waba-v2.360dialog.io/messages` ET par MM Lite (`/marketing_mes
 - **À demander à 360dialog avant le lot 2** : l'agent de Meta (MBA) sur leurs numéros, qu'aucune clé ne permet
   d'essayer ; et si la Multi-Partner Solution existe chez eux (elle garderait tout en direct chez Meta).
 
+## 🟠 Après la bascule Scaleway (2026-10-26) : le ménage
+
+- **La fin de l'observation** (quelques jours, décision de Julien) : alors seulement, Supabase mis en PAUSE (pas
+  supprimé), puis effacé plus tard ; la tâche planifiée `sauvegarde-base.sh` du VPS retirée (elle sauvegarde la copie
+  figée de Supabase) ; les conteneurs Messaging Me du VPS supprimés, avec l'hôte NPM 21 de `mba.` (lot 7).
+- **Le pont des codes reste sur le VPS** (`otp-asterisk`, `ops/otp-asterisk/`) : il poste à `api.` et marche, mais la
+  partie Messaging Me du VPS ne se retire pas sans lui trouver un hôte. Il lui faut une adresse publique pour le SIP de
+  DIDWW, que la machine des workers n'a pas : à cadrer (une machine dédiée, ou une redirection de port par la passerelle).
+- **La base jetable `mm-banc`** (DB-DEV-M) ne sert plus : la supprimer, avec l'accord de Julien.
+- **Le code d'avant la bascule** (un lot, CI comprise) : `tests/budget-pooler.test.ts` (le budget du pooler de Supabase)
+  et les mentions du pooler dans `src/config.ts` ; l'origine `mba.messagingme.app` des rapports CSP (`src/index.ts`) ;
+  les relais `/r/`, `/m/`, `/mcp` et `/api/backend/*` de la console, inertes chez Vercel (lot 7, tâche 5) ; l'erreur de
+  propriétaire du schéma `public` admise par la copie (`DEPLOY.md`, reprise après sinistre).
+- **Lire la production d'un poste** : le `DATABASE_URL` du `.env` local vise encore Supabase. Le pointer vers
+  l'ANCIENNE base est voulu tant qu'elle existe (rien ne casse la production par erreur) ; une sonde en lecture seule
+  de la vraie base passe par la machine (`DEPLOY.md`). `npm run migrations` d'un poste ne dit donc plus l'état de la
+  production.
+
 ## 🟡 Le conteneur serverless sous un pic : ce que le banc du 2026-10-26 laisse
 
 Mesuré sur le conteneur d'essai (`scripts/banc-serverless.mts`, journal du même jour), à 150 requêtes en parallèle,
