@@ -4,6 +4,13 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : aide:charger sur Scaleway, après la bascule (plan SEO, C6)
+
+- Lancé sur la machine des workers avec l'image en service `cecb243d` (origin au même commit, donc rien à défaire
+  d'une autre session) : 170 lignes chargées, 0 retirée.
+- Vérifié en base, en lecture seule : aucun des dix morceaux de `construire-un-agent-ia` ne dit plus « commission », et le
+  premier morceau de `envoyer-un-message-rcs` porte la nouvelle coupe de son chapeau.
+
 ## 2026-10-26 : les trois fiches d'aide longues sur la vitrine (plan SEO, C6)
 
 - **Publiques, en français et en anglais**, dans Parler aux clients : « Construire un agent IA » (10), « Le répondeur

@@ -8,15 +8,6 @@ pages par concurrent sous `/comparatif/` (N3 : Brevo et 360dialog exclus, chaque
 Julien), puis la page Intégrations (N4). Les lots 1 à 4 et les sept fiches d'aide sont en ligne ; le hors-site (Search
 Console, Bing, annuaires) est à Julien (`docs/prive/ESSAIS-REELS.md`).
 
-## 🟡 aide:charger en production, pour les sept fiches publiées le 2026-10-26 (plan SEO, C6)
-
-Les sept fiches choisies par Julien sont publiques sur la vitrine. Trois corps ont changé et le bot d'aide lit encore
-l'ancienne version tant que l'aide n'est pas rechargée : `construire-un-agent-ia` ne dit plus « notre commission
-comprise, celle de votre offre » (décision de Julien), et le premier paragraphe de `envoyer-un-message-rcs` et de
-`poser-une-bulle-whatsapp-sur-mon-site` est coupé en deux, mot pour mot (chapeau public limité à 320 caractères).
-Lancer `aide:charger` sur la production en service (VPS avant la bascule, Scaleway après : `DEPLOY.md`), avec une image
-ou des `docs/aide` de la révision qui porte ces fiches, après avoir comparé `docs/aide` à origin.
-
 ## 🟡 Deux réponses de l'Inbox jamais arrivées à l'API (essai réel du lot 2b HubSpot, 2026-10-26)
 
 Sur SANDBOX, conversation du +44 1555 479304, deux réponses tapées par Julien vers 15 h 55 et 16 h 25 (heure de Paris)
