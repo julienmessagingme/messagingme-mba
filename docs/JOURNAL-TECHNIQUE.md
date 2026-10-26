@@ -4,6 +4,17 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-26 : le plugin 0.3.12 publié, et la 0.3.13 (faire de la place en Free en le demandant à Claude)
+
+- **0.3.12 publié** (`plugin.yml`, depuis `3be9c325`, avant le gel de la bascule) : il emporte l'alignement du compte
+  Meta Business et le logo (`862f0294`), la relance Shopify sans question de consentement (`63fe87f9`) et la
+  suppression des contacts en trop par Claude (`783b4529`), tous déployés ; le contenu publié est identique à
+  `plugin/` de `3be9c325`, fichier par fichier.
+- **0.3.13** : l'entrée de FAQ « Que se passe-t-il quand mon espace Free atteint ses 100 contacts ? » disait de supprimer
+  par l'API, une fiche à la fois, avec une clé `contacts:admin`. Depuis `783b4529`, on le demande à Claude, en masse
+  (`prepare_contacts_deletion`, puis `delete_contacts` : le nombre et quelques fiches d'abord, 1 000 au plus par fois).
+  La FAQ des pages développeurs et son JSON-LD suivent (`npm run plugin:generer`).
+
 ## 2026-10-26 : la relance Shopify sans question de consentement, et la Free qui supprime ses contacts en trop par Claude
 
 Deux décisions de Julien du matin, deux lots déployés le même après-midi, avant le gel de main de 18 h (bascule vers
