@@ -9,7 +9,7 @@ import { Toggle } from '@/components/Toggle';
 import { Bouton } from '@/components/Bouton';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
 import { useOffre } from '@/lib/use-offre';
-import { etapeHubspot, fermeeParLOffre, choixParDefaut, choixActuel, corpsDuChoix } from '@/lib/hubspot-choix';
+import { etapeHubspot, fermeeParLOffre, phraseDeLOffre, choixParDefaut, choixActuel, corpsDuChoix } from '@/lib/hubspot-choix';
 
 /**
  * PARAMÈTRES > INTÉGRATIONS > HUBSPOT : le client choisit ce qu'il branche entre Messaging Me et HubSpot (lot 1bis de
@@ -20,13 +20,14 @@ import { etapeHubspot, fermeeParLOffre, choixParDefaut, choixActuel, corpsDuChoi
  * (défauts cochés, bouton « Valider ») ; choisi, un interrupteur par fonction, enregistré à chaque bascule. L'installation
  * se fait dans un AUTRE onglet : l'écran se relit quand la fenêtre reprend le focus, et l'étape de choix apparaît.
  *
- * « Répondre aux clients depuis HubSpot » n'est pas montré tant que le lot 2 ne l'a pas livré : un interrupteur qui ne
- * fait rien mentirait. Sa valeur est renvoyée telle quelle.
+ * « Répondre aux clients depuis HubSpot » (lot 3, décision D) : éteint par défaut, ouvert par l'offre qui ouvre l'Inbox.
+ * La raison d'une ligne fermée se lit dans la grille du serveur (`phraseInclusDans`) : la réponse vient avec Pro,
+ * l'analyse et les listes avec Entreprise.
  *
  * ⚠️ ADMIN SEULEMENT : cette carte ne vit que dans la page des administrateurs, et la route est gardée par `g.admin`.
  */
 
-type Champ = Exclude<keyof ChoixHubspot, 'reponse'>;
+type Champ = keyof ChoixHubspot;
 
 export function ReglageHubspot({ tenantId }: { tenantId: string }) {
   const t = useT();
@@ -104,7 +105,12 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
   // arriver après les réglages) : à l'étape de choix elle n'est pas proposée cochée, ensuite elle se lit éteinte.
   useEffect(() => {
     if (!fonctions) return;
-    setChoix((c) => (c ? { ...c, analyse: c.analyse && !fermeeParLOffre('analyse', fonctions), listes: c.listes && !fermeeParLOffre('listes', fonctions) } : c));
+    setChoix((c) => (c ? {
+      ...c,
+      analyse: c.analyse && !fermeeParLOffre('analyse', fonctions),
+      reponse: c.reponse && !fermeeParLOffre('reponse', fonctions),
+      listes: c.listes && !fermeeParLOffre('listes', fonctions),
+    } : c));
   }, [fonctions]);
 
   const etape = etapeHubspot({ lecture, relie, valideLe });
@@ -169,6 +175,11 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
       detail: t('La fiche est marquée quand un message ne peut plus parvenir au contact.', 'The record is flagged when messages can no longer reach the contact.'),
     },
     {
+      champ: 'reponse',
+      titre: t('Répondre aux clients depuis HubSpot', 'Reply to customers from HubSpot'),
+      detail: t('Toute personne du portail répond depuis la carte Messaging Me de la fiche contact, signée de son adresse, tant que la fenêtre de 24 heures est ouverte. Jamais à un contact qui a dit STOP.', 'Anyone on the portal replies from the Messaging Me card on the contact record, signed with their address, while the 24-hour window is open. Never to a contact who said STOP.'),
+    },
+    {
       champ: 'listes',
       titre: t('Vos listes HubSpot comme audience de campagne', 'Your HubSpot lists as a campaign audience'),
       detail: t('Importez une liste HubSpot comme destinataires d’une campagne.', 'Import a HubSpot list as campaign recipients.'),
@@ -228,8 +239,8 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
                     {l.champ === 'taches' && !modeConnu && (
                       <p className="mt-0.5 text-xs text-ink-500">{t('Réglage indisponible pour le moment : rechargez la page.', 'Setting unavailable right now: reload the page.')}</p>
                     )}
-                    {fermee && (
-                      <p className="mt-0.5 text-xs text-ink-500">{t('Compris dans l’offre Entreprise.', 'Included in the Enterprise plan.')}</p>
+                    {fermee && offre && (
+                      <p className="mt-0.5 text-xs text-ink-500" data-testid={`integration-hubspot-${l.champ}-offre`}>{phraseDeLOffre(offre, l.champ, t)}</p>
                     )}
                     {l.champ === 'listes' && choix.listes && !listesAutorisees && (
                       <button

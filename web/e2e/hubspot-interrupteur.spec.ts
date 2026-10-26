@@ -80,7 +80,7 @@ interface Trace { puts: Array<Record<string, unknown>> }
  * Monte Paramètres (admin) avec des réglages et un statut de compte donnés (lot 1bis : le choix des fonctions).
  * `refus` : le PUT du choix rend ce statut avec ce message.
  */
-async function parametres(page: Page, o: { reglages: Record<string, unknown>; compte?: Record<string, unknown>; refus?: { status: number; error: string } }): Promise<Trace> {
+async function parametres(page: Page, o: { reglages: Record<string, unknown>; compte?: Record<string, unknown>; refus?: { status: number; error: string }; offre?: Record<string, unknown> }): Promise<Trace> {
   const trace: Trace = { puts: [] };
   const session = { token: 'e2e-token', email: 'moi@e2e.test', role: 'admin', tenantId: 't-e2e' };
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), session);
@@ -99,6 +99,7 @@ async function parametres(page: Page, o: { reglages: Record<string, unknown>; co
         tachesAppliquees: true, premiereValidation: true,
       });
     }
+    if (chemin.endsWith('/offre') && o.offre) return json(o.offre);
     if (chemin.endsWith('/settings/agents-peuvent-prendre')) return json({ actif: false });
     if (chemin.endsWith('/settings')) return json({ mbaEnabled: false, timezone: 'Europe/Paris', businessHours: {}, ...o.reglages });
     if (chemin.endsWith('/account-status')) return json(o.compte ?? { hasNumber: false, hubspotPortal: { connected: false } });
@@ -159,5 +160,50 @@ test.describe('Paramètres > Intégrations > HubSpot : le choix des fonctions (l
     await expect(page.getByTestId('integration-hubspot-erreur')).toContainText('offre');
     await expect(listes).toHaveAttribute('aria-pressed', 'false');
     expect(trace.puts).toHaveLength(1);
+  });
+});
+
+// La grille du serveur, réduite à ce que l'écran lit : la réponse vient avec l'Inbox (Pro), l'analyse et les listes avec
+// Entreprise (`console-free.spec.ts` porte la grille complète).
+const limites = { utilisateurs: null, admins: null, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null, adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true };
+const GRILLE = {
+  free: { fonctions: ['aide'], limites },
+  pro: { fonctions: ['inbox', 'console'], limites },
+  entreprise: { fonctions: ['inbox', 'console', 'analyse', 'crm'], limites },
+};
+const offre = (o: 'pro' | 'entreprise', fonctions = GRILLE[o].fonctions) => ({
+  offre: o, fonctions, limites, usage: { envoisModelesMois: 0, contacts: 0, automations: 0, membres: 1 }, grille: GRILLE,
+  upgradeUrl: 'https://console.e2e.test/offre',
+});
+
+test.describe('Paramètres > Intégrations > HubSpot : « Répondre aux clients depuis HubSpot » (lot 3)', () => {
+  test('🔴 en Pro : la ligne est ouverte et s’allume, l’analyse dit l’offre qui l’ouvre (Entreprise)', async ({ page }) => {
+    const trace = await parametres(page, {
+      reglages: CHOIX_FAIT,
+      compte: { hasNumber: false, hubspotPortal: { ...PORTAIL, routingMode: 'mm_routing' } },
+      offre: offre('pro'),
+    });
+    const reponse = page.getByTestId('integration-hubspot-reponse-toggle');
+    await expect(page.getByTestId('integration-hubspot-reponse')).toContainText('Jamais à un contact qui a dit STOP');
+    await expect(reponse).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByTestId('integration-hubspot-analyse-offre')).toHaveText('Inclus dans l’offre Entreprise.');
+    await expect(page.getByTestId('integration-hubspot-reponse-offre')).toHaveCount(0);
+    await reponse.click();
+    await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(1);
+    expect(trace.puts[0]).toMatchObject({ reponse: true });
+    await expect(reponse).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('🔴 une offre sans l’Inbox : la ligne se lit éteinte, ne s’allume pas, et dit « Inclus dans l’offre Pro »', async ({ page }) => {
+    const trace = await parametres(page, {
+      reglages: { ...CHOIX_FAIT, hubspotReponse: true },
+      compte: { hasNumber: false, hubspotPortal: { ...PORTAIL, routingMode: 'mm_routing' } },
+      offre: offre('pro', ['console']),
+    });
+    const reponse = page.getByTestId('integration-hubspot-reponse-toggle');
+    await expect(page.getByTestId('integration-hubspot-reponse-offre')).toHaveText('Inclus dans l’offre Pro.');
+    await expect(reponse).toHaveAttribute('aria-pressed', 'false');
+    await expect(reponse).toBeDisabled();
+    expect(trace.puts).toHaveLength(0);
   });
 });

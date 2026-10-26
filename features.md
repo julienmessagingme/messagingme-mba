@@ -2202,11 +2202,15 @@ scénario, comment importer des contacts.
   connexion (faite dans un autre onglet, la carte se relit d'elle-même), elle demande **ce que vous branchez**, les
   défauts cochés : la fiche contact et l'analyse de chaque conversation, la tâche immédiate quand un client demande
   un humain, « Créer des tâches dans HubSpot » (éteint : les propriétés seulement, pour vos workflows HubSpot ; vaut
-  pour tout le portail), le contact injoignable sur WhatsApp, et vos listes HubSpot comme audience de campagne
+  pour tout le portail), le contact injoignable sur WhatsApp, **« Répondre aux clients depuis HubSpot »** (décochée :
+  toute personne du portail répond depuis la carte Messaging Me de la fiche contact, signée de son adresse, tant que
+  la fenêtre de 24 heures est ouverte, jamais à un contact qui a dit STOP ; au plus 20 réponses par minute et par
+  personne), et vos listes HubSpot comme audience de campagne
   (décochée ; un bouton **« Autoriser l'accès aux listes HubSpot »** demande ce droit au portail s'il manque).
   Valider allume aussi la synchronisation du numéro principal : avant, une installation ne branchait rien. Ensuite,
-  chaque choix se change d'un interrupteur. Ce que l'offre n'ouvre pas se lit « Compris dans l'offre Entreprise » et
-  ne s'allume pas (il s'éteint toujours). Si « Créer des tâches » n'a pas pu être appliqué chez HubSpot, la carte
+  chaque choix se change d'un interrupteur. Ce que l'offre n'ouvre pas dit l'offre qui l'ouvre (« Inclus dans
+  l'offre Pro » pour la réponse, « Inclus dans l'offre Entreprise » pour l'analyse et les listes) et ne s'allume pas
+  (il s'éteint toujours). Si « Créer des tâches » n'a pas pu être appliqué chez HubSpot, la carte
   le dit ; si son état n'a pas pu être lu, la ligne est grisée. Les espaces qui synchronisaient déjà un numéro avant
   ce jour gardent exactement ce qu'ils avaient, sans étape de choix. La carte
   renvoie aussi vers Automations (le déclencheur « étape de deal ») et dit où placer la carte Messaging Me dans

@@ -1,5 +1,5 @@
 import type { ChoixHubspot, TenantSettings } from './api';
-import type { FonctionOffre } from './offre';
+import { phraseInclusDans, type FonctionOffre, type VueOffre } from './offre';
 
 /**
  * LE CHOIX DES FONCTIONS HUBSPOT (lot 1bis, `components/ReglageHubspot.tsx`) : la logique de l'écran, en fonctions
@@ -31,6 +31,12 @@ export function fermeeParLOffre(champ: keyof ChoixHubspot, fonctions: ReadonlySe
   return f !== undefined && !!fonctions && !fonctions.has(f);
 }
 
+/** Pourquoi une ligne est fermée : l'offre qui l'ouvre, lue dans la grille du serveur (Pro pour la réponse). */
+export function phraseDeLOffre(vue: VueOffre, champ: keyof ChoixHubspot, t: (fr: string, en: string) => string): string {
+  const f = FONCTION_REQUISE[champ];
+  return f ? phraseInclusDans(vue, f, t) : t('Pas dans votre offre.', 'Not in your plan.');
+}
+
 /**
  * Le choix proposé à l'étape de choix : ce qui écrit dans HubSpot sans rien ouvrir est coché, ce qui ouvre une porte
  * est décoché (décision 2 du cadrage). Une fonction que l'offre n'ouvre pas est décochée (le serveur refuserait).
@@ -56,7 +62,7 @@ export function choixActuel(s: TenantSettings, routingMode: 'mm_routing' | 'hubs
     analyse: s.hubspotAnalyse !== false && !fermeeParLOffre('analyse', fonctions),
     passage: s.hubspotPassage !== false,
     injoignable: s.hubspotInjoignable !== false,
-    reponse: s.hubspotReponse === true,
+    reponse: s.hubspotReponse === true && !fermeeParLOffre('reponse', fonctions),
     listes: s.hubspotListsEnabled === true && !fermeeParLOffre('listes', fonctions),
     taches: routingMode !== 'hubspot_native',
   };

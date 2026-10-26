@@ -285,6 +285,8 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     repondre: inconnu('hubspotConversation.repondre'),
     idempotence: inconnu('hubspotConversation.idempotence'),
     fil: inconnu('hubspotConversation.fil'),
+    plafondReponses: inconnu('hubspotConversation.plafondReponses'),
+    lienConversation: inconnu('hubspotConversation.lienConversation'),
   } satisfies HubspotConversationDeps,
   // Le webhook de Stripe : un VRAI secret aussi, et un dépôt qui ne crédite personne. Une signature fausse ou absente
   // doit tomber avant le dépôt (sonde 12).

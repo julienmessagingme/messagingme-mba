@@ -6,7 +6,9 @@ import { journaliser } from '../lib/journal';
 import type { Fonction } from '../offres/offres';
 import { corpsRefusFonction } from '../offres/refus';
 import { peutEcrire, type ActeurConversation } from '../inbox/assignment';
-import { repondreDansLaFenetre, type DepsRepondre, type RefusReponse } from '../inbox/repondre';
+import { empreinte, repondreDansLaFenetre, type DepsRepondre, type RefusReponse } from '../inbox/repondre';
+import { refuserTropDeRequetes } from '../auth/rate-limit';
+import type { PlafondPartage } from '../auth/plafond-partage';
 import type { AuteurDuChangement } from '../inbox/evenements';
 import { MetaApiError } from '../meta/errors';
 import { AgentDeMetaGardeLeFil, type ControleDuFil } from '../inbox/fil';
@@ -64,6 +66,16 @@ export interface HubspotConversationDeps {
    * lui, refuse en plus ce geste hors du mode « équipe » pour le dire à un agent : la carte ne le fait pas (écart du lot 2).
    */
   fil: Pick<ControleDuFil, 'rendreLaMainSousConsentement'>;
+  /**
+   * Le plafond des réponses par personne et par espace (`HUBSPOT_REPONSES_PAR_MINUTE`, lot 3) : ces routes signées n'ont
+   * pas le plafond par utilisateur de la console. Compté au total des copies ; base muette : laisse passer.
+   */
+  plafondReponses: Pick<PlafondPartage, 'consommer'>;
+  /**
+   * L'adresse de la conversation dans l'Inbox (`lienConversation` du socle, celle de la tâche et de l'analyse) : le lien
+   * « Ouvrir dans la console » de la carte (lot 3), fenêtre fermée comprise, même sans analyse.
+   */
+  lienConversation: (conversationId: string) => string;
   now?: () => number;
   windowMs?: number;
 }
@@ -80,6 +92,11 @@ export const MESSAGES_PAR_PAGE = 20;
  * même espace, contre une clé de carte tirée au hasard, et ne ferait que refuser ou rejouer, jamais envoyer deux fois.
  */
 const PREFIXE_CLE = 'hubspot:';
+/** Les clés de « rendre la main » (lot 3) : un autre préfixe, une réponse et un geste ne partagent jamais une clé. */
+const PREFIXE_CLE_RENDRE = 'hubspot-rendre:';
+
+/** Une clé fabriquée par la carte pour UN geste ; ses caractères deviennent une clé de base. */
+const cleDeCarte = z.string().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/);
 
 const UUID = z.string().uuid();
 const adresse = z.string().trim().toLowerCase().email().max(320).nullable().default(null);
@@ -96,14 +113,15 @@ const corpsReponse = z.object({
   conversationId: UUID,
   auteurEmail: adresse,
   texte: z.string().trim().min(1).max(TEXTE_MAX_CARACTERES),
-  // Fabriquée par la carte pour CE message ; ses caractères deviennent une clé de base.
-  cle: z.string().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/),
+  cle: cleDeCarte,
 }).strict();
 
 const corpsRendre = z.object({
   tenantId: UUID,
   conversationId: UUID,
   auteurEmail: adresse,
+  // Une par clic (lot 3) : un rejeu après un 504 de la carte rend la réponse du premier geste au lieu de le refaire.
+  cle: cleDeCarte,
 }).strict();
 
 type WithRawBody = FastifyRequest & { rawBody?: Buffer };
@@ -176,7 +194,7 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
   /** Rend la clé. Un échec ne lève pas (la réponse part déjà), il se trace : sans lui, « en cours » durerait le bail sans raison dite. */
   const liberer = (tenantId: string, key: string, jeton: string, conversationId: string): Promise<void> =>
     deps.idempotence.release(tenantId, key, jeton).catch((err: unknown) => {
-      journaliser('error', 'hubspot_reponse_cle_non_liberee', { err, tenantId, conversationId });
+      journaliser('error', 'hubspot_cle_non_liberee', { err, tenantId, conversationId, cle: key.split(':')[0] });
     });
 
   app.post(`${PREFIXE_CONVERSATION_HUBSPOT}fil`, async (req, reply) => {
@@ -199,6 +217,7 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
     const rendus = lus.slice(-MESSAGES_PAR_PAGE);
     const premier = rendus[0];
     const affecte = g.assignee === null ? null : g.membres.find((m) => m.id === g.assignee);
+    const lien = deps.lienConversation(conversationId);
     return reply.code(200).send({
       conversationId,
       fenetreOuverte: g.ctx.windowOpen,
@@ -211,6 +230,8 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
       contactDesabonne: desabonne,
       // Ce que la carte propose à CETTE personne : les mêmes règles que la réponse, posées à nouveau à l'envoi.
       peutRepondre: !desabonne && peutEcrire(g.personne.acteur, g.assignee),
+      // Comme l'analyse poussée (`buildEvent`) : seulement une adresse https, celle qu'une carte peut ouvrir.
+      lien: lien.startsWith('https://') ? lien : null,
       messages: rendus.map((m) => ({
         id: m.id, direction: m.direction, type: m.type, texte: m.body, le: m.createdAt, auteur: m.senderName ?? null,
       })),
@@ -236,6 +257,13 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
      */
     if (await deps.repondre.estDesabonne(tenantId, g.ctx.waId)) {
       return reply.code(409).send({ error: 'Ce contact a demandé à ne plus recevoir de messages : on ne lui répond pas depuis HubSpot.', code: 'contact_desabonne' });
+    }
+    // Le plafond par personne (lot 3), avant la clé : une réponse refusée pour le débit ne réserve rien. La personne est
+    // désignée par l'EMPREINTE de son adresse, jamais l'adresse en clair (la clé du compteur vit en base).
+    const debit = await deps.plafondReponses.consommer(`${tenantId}:${empreinte(auteurEmail ?? 'personne')}`);
+    if (!debit.accepte) {
+      await refuserTropDeRequetes(reply, debit.attenteMs, 'Trop de réponses envoyées depuis HubSpot : patientez une minute.', 'rate_limited');
+      return reply;
     }
 
     /**
@@ -279,7 +307,7 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
       : { messageId: res.messageId, journal: res.journal };
     await deps.idempotence.complete(tenantId, key, pose.jeton, randomUUID(), corps).catch((err: unknown) => {
       // Le message est parti : un scellement raté ne doit pas faire croire l'inverse. Le bail de la clé la libérera.
-      journaliser('error', 'hubspot_reponse_cle_non_scellee', { err, tenantId, conversationId });
+      journaliser('error', 'hubspot_cle_non_scellee', { err, tenantId, conversationId, geste: 'repondre' });
     });
     return reply.code(200).send(corps);
   });
@@ -288,12 +316,25 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
     if (!signee(req)) return reply.code(401).send({ error: 'invalid signature' });
     const lu = corpsRendre.safeParse(req.body);
     if (!lu.success) return reply.code(400).send({ error: 'payload invalide' });
-    const { tenantId, conversationId, auteurEmail } = lu.data;
+    const { tenantId, conversationId, auteurEmail, cle } = lu.data;
 
     const g = await gardes(reply, tenantId, conversationId, auteurEmail);
     if (!g) return reply;
     // Rendre la main à un robot une conversation qu'un collègue tient, c'est la lui retirer : la règle de la réponse.
     if (!peutEcrire(g.personne.acteur, g.assignee)) return reply.code(403).send(refusAffectation);
+
+    /**
+     * 🔴 UNE CLÉ, UN GESTE (lot 3, relecture du lot 2). Au-delà de 8 s, le connecteur rend 504 et `hubspot.fetch` rejoue :
+     * le second appel trouvait l'agent de Meta et réécrivait le fil. Même clé : la réponse du premier geste. Un geste
+     * qui n'a rien changé (refusé par Meta, contact muet, aucun numéro) rend la clé.
+     */
+    const key = `${PREFIXE_CLE_RENDRE}${cle}`;
+    const pose = await deps.idempotence.claim(tenantId, key, empreinteCorps({ conversationId, auteurEmail }));
+    if (!pose.claimed) {
+      if ('reused' in pose) return reply.code(422).send({ error: 'cette clé a déjà servi pour une autre conversation', code: 'idempotency_key_reused' });
+      if ('pending' in pose) return reply.code(409).send({ error: 'ce geste est en cours : réessayez dans un instant', code: 'idempotency_key_in_progress' });
+      return reply.code(200).send(pose.response);
+    }
 
     // Comme la réponse : le membre, sinon personne, que la frise dit « par un accès sans compte collaborateur »
     // (`colonnesAuteur`). Jamais une cause « automatique » : c'est le geste d'une personne.
@@ -304,16 +345,24 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
     } catch (err) {
       // Comme la console : Meta a refusé le geste, et notre état n'a pas bougé.
       journaliser('error', 'hubspot_rendre_refuse_par_meta', { err, tenantId, conversationId });
+      await liberer(tenantId, key, pose.jeton, conversationId);
       return reply.code(409).send(err instanceof AgentDeMetaGardeLeFil
         ? { error: 'L’agent de Meta garde la conversation : Meta a refusé de la lui reprendre. Réessayez dans un instant.', code: 'meta_refused' }
         : { error: 'Meta n’a pas repris la conversation. Elle reste à l’équipe, réessayez dans un instant.', code: 'meta_refused' });
     }
     if (detenteur === 'contact_muet') {
+      await liberer(tenantId, key, pose.jeton, conversationId);
       return reply.code(409).send({ error: 'Ce contact a dit STOP ou est bloqué : la conversation n’est confiée à aucun robot.', code: 'contact_muet' });
     }
     if (detenteur === 'aucun_numero') {
+      await liberer(tenantId, key, pose.jeton, conversationId);
       return reply.code(409).send({ error: 'Aucun numéro WhatsApp n’est connecté : la conversation reste à l’équipe.', code: 'no_number' });
     }
-    return reply.code(200).send({ tenuPar: detenteur });
+    const corps = { tenuPar: detenteur };
+    await deps.idempotence.complete(tenantId, key, pose.jeton, randomUUID(), corps).catch((err: unknown) => {
+      // Le geste est fait : un scellement raté ne doit pas faire croire l'inverse. Le bail de la clé la libérera.
+      journaliser('error', 'hubspot_cle_non_scellee', { err, tenantId, conversationId, geste: 'rendre' });
+    });
+    return reply.code(200).send(corps);
   });
 }

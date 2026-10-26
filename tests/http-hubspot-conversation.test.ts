@@ -56,6 +56,10 @@ interface Options {
   envoiLeve?: Error;
   /** Le scellement de la clé lève : le message est déjà parti. */
   scellementLeve?: boolean;
+  /** Le plafond de réponses par personne (défaut : sans limite pratique). */
+  plafond?: number;
+  /** La racine de la console (`APP_URL`) : une instance sans https ne donne pas de lien à la carte. */
+  console?: string;
   /** L'envoi attend cette promesse : un premier appel reste EN COURS pendant que le second se présente. */
   envoiRetenu?: Promise<void>;
 }
@@ -69,6 +73,7 @@ function app(o: Options = {}) {
   const rendus: AuteurDuChangement[] = [];
   const cles = new Map<string, { empreinte: string; jeton: string; reponse?: unknown }>();
   const liberees: string[] = [];
+  const debits = new Map<string, number>();
   const contexte = async (conversationId: string, tenantId: string) => {
     lectures.push(tenantId);
     return conversationId === C1 && tenantId === T1 ? { waId: '33600000001', lastInboundAt: '2026-10-24T10:00:00.000Z', windowOpen: o.fenetre ?? true } : null;
@@ -137,10 +142,19 @@ function app(o: Options = {}) {
     fil: {
       rendreLaMainSousConsentement: o.rendre ?? (async (_t, _w, par) => { rendus.push(par); return 'mba'; }),
     },
+    plafondReponses: {
+      consommer: async (cle) => {
+        const n = (debits.get(cle) ?? 0) + 1;
+        debits.set(cle, n);
+        const max = o.plafond ?? 1000;
+        return { accepte: n <= max, indisponible: false, limite: max, restant: Math.max(0, max - n), resetAt: NOW + 60_000, attenteMs: 60_000 };
+      },
+    },
+    lienConversation: (id) => `${o.console ?? 'https://console.exemple.fr'}/inbox?c=${id}`,
     now: () => NOW,
   };
   const server = buildServer({ queue: new FakeQueue(), hubspotConversation: deps });
-  return { server, envois, traces, prises, lectures, rendus, cles, liberees };
+  return { server, envois, traces, prises, lectures, rendus, cles, liberees, debits };
 }
 
 /** Signe un corps comme le connecteur (même format canonique, même chemin). */
@@ -187,7 +201,7 @@ describe('les trois routes de la carte : la porte', () => {
   it('🔴 « Répondre depuis HubSpot » éteint : 403, rien n’est lu, sur les trois routes', async () => {
     const { server, envois, lectures, rendus } = app({ reponse: false });
     for (const route of ['fil', 'repondre', 'rendre'] as const) {
-      const res = await server.inject(envoi(route, route === 'repondre' ? REPONSE : { tenantId: T1, conversationId: C1, auteurEmail: null }));
+      const res = await server.inject(envoi(route, route === 'repondre' ? REPONSE : { tenantId: T1, conversationId: C1, auteurEmail: null, ...(route === 'rendre' ? { cle: 'r1' } : {}) }));
       expect(res.statusCode).toBe(403);
       expect(res.json<{ code: string }>().code).toBe('reponse_hubspot_eteinte');
     }
@@ -221,6 +235,7 @@ describe('lire le fil', () => {
     expect(res.json()).toEqual({
       conversationId: C1, fenetreOuverte: true, dernierEntrantLe: '2026-10-24T10:00:00.000Z', tenuPar: 'app_human',
       escaladeeLe: '2026-10-24T10:05:00.000Z', affecteA: { id: U_AFFECTE, nom: 'Bruno' }, contactDesabonne: false, peutRepondre: false,
+      lien: `https://console.exemple.fr/inbox?c=${C1}`,
       messages: [
         { id: message(1).id, direction: 'in', type: 'text', texte: 'message 1', le: message(1).createdAt, auteur: null },
         { id: message(2).id, direction: 'out', type: 'text', texte: 'message 2', le: message(2).createdAt, auteur: 'Alice' },
@@ -230,6 +245,13 @@ describe('lire le fil', () => {
     // L'affectataire, reconnu par son adresse quelle que soit la casse, peut répondre.
     const lui = await server.inject(envoi('fil', { tenantId: T1, conversationId: C1, auteurEmail: 'bruno@exemple.fr' }));
     expect(lui.json<{ peutRepondre: boolean }>().peutRepondre).toBe(true);
+    await server.close();
+  });
+
+  it('lot 3 : le lien « Ouvrir dans la console » ne part que s’il est en https', async () => {
+    const { server } = app({ console: 'http://localhost:3000' });
+    const res = await server.inject(envoi('fil', { tenantId: T1, conversationId: C1, auteurEmail: null }));
+    expect(res.json<{ lien: unknown }>().lien).toBeNull();
     await server.close();
   });
 
@@ -402,17 +424,17 @@ describe('répondre', () => {
 describe('rendre la main', () => {
   it('le geste sous consentement, signé du membre ; une personne sans compte n’est personne, jamais une cause « automatique »', async () => {
     const { server, rendus } = app();
-    const res = await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: 'alice@exemple.fr' }));
+    const res = await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: 'alice@exemple.fr', cle: 'r1' }));
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ tenuPar: 'mba' });
-    await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: 'inconnu@exemple.fr' }));
+    await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: 'inconnu@exemple.fr', cle: 'r2' }));
     expect(rendus).toEqual([{ collaborateur: U_AGENT }, { collaborateur: null }]);
     await server.close();
   });
 
   it('🔴 une conversation affectée à un autre : 403, rien n’est rendu', async () => {
     const { server, rendus } = app({ assignee: U_AFFECTE });
-    const res = await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: 'alice@exemple.fr' }));
+    const res = await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: 'alice@exemple.fr', cle: 'r1' }));
     expect(res.statusCode).toBe(403);
     expect(rendus).toEqual([]);
     await server.close();
@@ -425,9 +447,88 @@ describe('rendre la main', () => {
     ['Meta qui refuse', async (): Promise<never> => { throw new Error('Meta 500'); }, 'meta_refused'],
   ])('%s : 409 avec sa raison', async (_cas, rendre, code) => {
     const { server } = app({ rendre });
-    const res = await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: null }));
+    const res = await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: null, cle: 'r1' }));
     expect(res.statusCode).toBe(409);
     expect(res.json<{ code: string }>().code).toBe(code);
+    await server.close();
+  });
+});
+
+describe('lot 3 : les prérequis avant d’allumer la carte', () => {
+  it('🔴 le plafond par personne : au-delà, 429 avec son code, RIEN ne part et rien n’est réservé', async () => {
+    const { server, envois, cles } = app({ plafond: 2 });
+    const statuts: number[] = [];
+    for (let i = 1; i <= 3; i += 1) statuts.push((await server.inject(envoi('repondre', { ...REPONSE, cle: `carte-${i}` }))).statusCode);
+    expect(statuts).toEqual([200, 200, 429]);
+    const refus = await server.inject(envoi('repondre', { ...REPONSE, cle: 'carte-4' }));
+    expect(refus.json<{ code: string }>().code).toBe('rate_limited');
+    expect(refus.headers['retry-after']).toBeDefined();
+    expect(envois).toHaveLength(2);
+    expect([...cles.keys()].some((k) => k.endsWith('carte-3') || k.endsWith('carte-4'))).toBe(false);
+    await server.close();
+  });
+
+  it('le plafond est compté PAR PERSONNE, sous l’empreinte de son adresse, jamais l’adresse en clair', async () => {
+    const { server, envois, debits } = app({ plafond: 1 });
+    expect((await server.inject(envoi('repondre', { ...REPONSE, cle: 'a1' }))).statusCode).toBe(200);
+    expect((await server.inject(envoi('repondre', { ...REPONSE, auteurEmail: 'admin@exemple.fr', cle: 'b1' }))).statusCode).toBe(200);
+    expect(envois).toHaveLength(2);
+    const cleesDuCompteur = [...debits.keys()];
+    expect(cleesDuCompteur).toHaveLength(2);
+    expect(cleesDuCompteur.every((k) => k.startsWith(`${T1}:`) && !k.includes('@'))).toBe(true);
+    await server.close();
+  });
+
+  it('🔴 « rendre » rejoué avec la même clé : la main n’est rendue qu’UNE fois, le second appel rend la même réponse', async () => {
+    const { server, rendus } = app();
+    const corps = { tenantId: T1, conversationId: C1, auteurEmail: 'alice@exemple.fr', cle: 'rendre-1' };
+    const a = await server.inject(envoi('rendre', corps));
+    const b = await server.inject(envoi('rendre', corps));
+    expect([a.statusCode, b.statusCode]).toEqual([200, 200]);
+    expect(b.json()).toEqual(a.json());
+    expect(rendus).toHaveLength(1);
+    await server.close();
+  });
+
+  it('la même clé de « rendre » pour une autre personne : 422, rien n’est rendu une seconde fois', async () => {
+    const { server, rendus } = app();
+    await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: 'alice@exemple.fr', cle: 'rendre-1' }));
+    const autre = await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: 'admin@exemple.fr', cle: 'rendre-1' }));
+    expect(autre.statusCode).toBe(422);
+    expect(rendus).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 un « rendre » qui n’a rien changé (contact muet) rend sa clé : le même geste peut être retenté', async () => {
+    const { server, liberees, cles } = app({ rendre: async () => 'contact_muet' as const });
+    const res = await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: null, cle: 'rendre-2' }));
+    expect(res.statusCode).toBe(409);
+    expect(liberees).toEqual(['hubspot-rendre:rendre-2']);
+    expect(cles.size).toBe(0);
+    await server.close();
+  });
+
+  it('🟡 un « rendre » rejoué pendant que le premier attend Meta : « en cours » (409), la main n’est rendue qu’une fois', async () => {
+    let liberer!: () => void;
+    const retenu = new Promise<void>((ok) => { liberer = ok; });
+    let n = 0;
+    const { server } = app({ rendre: async () => { n += 1; await retenu; return 'mba' as const; } });
+    const corps = { tenantId: T1, conversationId: C1, auteurEmail: 'alice@exemple.fr', cle: 'rendre-3' };
+    const premier = server.inject(envoi('rendre', corps));
+    await new Promise((ok) => setTimeout(ok, 50));
+    const second = await server.inject(envoi('rendre', corps));
+    expect(second.statusCode).toBe(409);
+    expect(second.json<{ code: string }>().code).toBe('idempotency_key_in_progress');
+    liberer();
+    expect((await premier).statusCode).toBe(200);
+    expect(n).toBe(1);
+    await server.close();
+  });
+
+  it('« rendre » sans clé : 400, rien n’est rendu', async () => {
+    const { server, rendus } = app();
+    expect((await server.inject(envoi('rendre', { tenantId: T1, conversationId: C1, auteurEmail: null }))).statusCode).toBe(400);
+    expect(rendus).toEqual([]);
     await server.close();
   });
 });

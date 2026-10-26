@@ -2679,9 +2679,15 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   garde), car la signature se rejoue cinq minutes et `hubspot.fetch` rejoue sur un 5xx ; même clé et même texte rendent
   la réponse du premier envoi, un autre texte est un 422, un envoi en cours un 409. Un refus du chemin d'envoi, ou un
   refus EXPLICITE de Meta (`MetaApiError`, 422 `meta_rejected`), rend la clé ; une coupure (délai, réseau) la garde en
-  cours jusqu'à son bail, car Meta a peut-être pris le message. « Rendre la main » passe par
-  `rendreLaMainSousConsentement` (un contact STOP ou bloqué n'est jamais confié à l'agent de Meta). L'audit de latence
-  les range avec l'Inbox (`groupeDeRoute`).
+  cours jusqu'à son bail, car Meta a peut-être pris le message. 🔴 La réponse a un plafond par personne et par espace
+  (`HUBSPOT_REPONSES_PAR_MINUTE`, défaut 20, 0 le désactive ; `PlafondPartage` nommé `hubspot.reponses`, compté au
+  total des copies, base muette : laisse passer), parce que ces routes signées n'ont pas le plafond par utilisateur de
+  la console. La personne y est l'EMPREINTE de son adresse, jamais l'adresse en clair ; il passe après STOP et avant la
+  clé, donc un refus (429 `rate_limited`) ne réserve rien. « Rendre la main » passe par
+  `rendreLaMainSousConsentement` (un contact STOP ou bloqué n'est jamais confié à l'agent de Meta) et porte lui aussi
+  une clé, une par clic, sous le préfixe `hubspot-rendre:` : au-delà de 8 s le connecteur rend 504 et `hubspot.fetch`
+  rejoue, et le rejeu rend la réponse du premier geste au lieu de réécrire le fil. Un geste qui n'a rien changé (refus
+  de Meta, contact muet, aucun numéro) rend la clé. L'audit de latence les range avec l'Inbox (`groupeDeRoute`).
 - **L'accompagnement** (`src/emails-produit/accompagnement.ts`, balayage `emails-produit-accompagnement`, trente
   minutes, des modèles `commercial`) : la bienvenue (moins de 48 h après la création), puis trois relances à occasion
   fixe, donc une fois chacune : le numéro absent après 24 h, le répondeur effectif `equipe` (`modeEffectif` sous

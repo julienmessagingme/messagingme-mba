@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { etapeHubspot, fermeeParLOffre, choixParDefaut, choixActuel, corpsDuChoix } from './hubspot-choix';
+import { etapeHubspot, fermeeParLOffre, phraseDeLOffre, choixParDefaut, choixActuel, corpsDuChoix } from './hubspot-choix';
 import type { TenantSettings } from './api';
-import type { FonctionOffre } from './offre';
+import type { FonctionOffre, VueOffre } from './offre';
 
 const ENTREPRISE = new Set<FonctionOffre>(['analyse', 'crm', 'inbox']);
 const PRO = new Set<FonctionOffre>(['inbox']);
@@ -66,5 +66,28 @@ describe('les correctifs de la relecture du lot 1bis', () => {
     const s = { hubspotAnalyse: true, hubspotListsEnabled: true } as TenantSettings;
     expect(choixActuel(s, 'mm_routing', PRO)).toMatchObject({ analyse: false, listes: false });
     expect(choixActuel(s, 'mm_routing', ENTREPRISE)).toMatchObject({ analyse: true, listes: true });
+  });
+});
+
+describe('lot 3 : « Répondre aux clients depuis HubSpot » (décision D)', () => {
+  const FREE = new Set<FonctionOffre>(['aide']);
+  const vue = { grille: { free: { fonctions: FREE }, pro: { fonctions: PRO }, entreprise: { fonctions: ENTREPRISE } } } as unknown as VueOffre;
+  const t = (fr: string) => fr;
+  it('🔴 ouverte par l’offre qui ouvre l’Inbox : Pro suffit, Free la ferme', () => {
+    expect(fermeeParLOffre('reponse', PRO)).toBe(false);
+    expect(fermeeParLOffre('reponse', FREE)).toBe(true);
+  });
+  it('éteinte par défaut, même quand l’offre l’ouvre', () => {
+    expect(choixParDefaut({ routingMode: 'mm_routing', fonctions: ENTREPRISE }).reponse).toBe(false);
+  });
+  it('🔴 un espace descendu sous l’Inbox la lit éteinte', () => {
+    const s = { hubspotReponse: true } as TenantSettings;
+    expect(choixActuel(s, 'mm_routing', FREE).reponse).toBe(false);
+    expect(choixActuel(s, 'mm_routing', PRO).reponse).toBe(true);
+  });
+  it('la raison d’une ligne fermée nomme l’offre qui l’ouvre, d’après la grille du serveur', () => {
+    expect(phraseDeLOffre(vue, 'reponse', t)).toBe('Inclus dans l’offre Pro.');
+    expect(phraseDeLOffre(vue, 'analyse', t)).toBe('Inclus dans l’offre Entreprise.');
+    expect(phraseDeLOffre(vue, 'passage', t)).toBe('Pas dans votre offre.');
   });
 });

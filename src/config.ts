@@ -70,6 +70,12 @@ export const schema = z.object({
    */
   RATE_LIMIT_COUTEUX_PAR_MINUTE: z.coerce.number().int().min(0).default(10),
   /**
+   * Les réponses envoyées depuis la carte HubSpot (lot 3 de la reprise humaine), par personne (l'empreinte de son adresse
+   * signée) et par espace, et par minute. Ces routes signées n'ont pas le plafond par utilisateur de la console : 20 couvre
+   * largement une personne qui tape, et borne une rafale. Compté au TOTAL des copies (compteur partagé). 0 désactive.
+   */
+  HUBSPOT_REPONSES_PAR_MINUTE: z.coerce.number().int().min(0).default(20),
+  /**
    * Les deux bornes réglables des champs personnalisés, très au-dessus de l'usage réel mesuré.
    * `API_MAX_CHAMPS_PAR_ESPACE` ne borne que le webhook entrant et la création à la main (l'API publique ne
    * crée aucun champ) ; 0 le désactive. `API_MAX_CLE_CHAMP` borne la forme d'un corps : pas de sens à 0.

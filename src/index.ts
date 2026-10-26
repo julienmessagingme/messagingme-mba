@@ -96,6 +96,7 @@ import { plafondLePlusBas } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages, lireHubspotPortal, poserModeTaches } from './crm/hubspot-service';
 import type { HubspotChoixRouteDeps } from './http/hubspot-choix';
 import type { HubspotConversationDeps } from './http/hubspot-conversation';
+import { PlafondPartage } from './auth/plafond-partage';
 import { getEtatPassage } from './analysis/enrichment';
 import type { ChoixHubspotEcrit } from './settings/store.pg';
 import type { ModeTaches } from './account/types';
@@ -285,6 +286,7 @@ async function main(): Promise<void> {
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
     emailsProduit, envoisResend, paiementRefuse, emetteurEmails, envoiApplication, comptesApplication, clientApplication,
+    lienConversation,
   } = construireSocle({ pool, queue, config });
 
   /**
@@ -1751,6 +1753,12 @@ async function main(): Promise<void> {
         repondre: depsRepondre,
         idempotence: idempotencyStore,
         fil,
+        // Lot 3 : les réponses par personne et par espace, au total des copies. Base muette : laisse passer (la réponse
+        // elle-même a besoin de la base ; le plafond borne une rafale, il ne garde pas une porte d'attaque).
+        plafondReponses: new PlafondPartage(compteurDebit, {
+          nom: 'hubspot.reponses', max: config.HUBSPOT_REPONSES_PAR_MINUTE, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer',
+        }),
+        lienConversation,
       } satisfies HubspotConversationDeps,
     } : {}),
     /**
