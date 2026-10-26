@@ -462,11 +462,16 @@ réel se mesure à la bascule (création de la base cible, recréation des conte
 
 ### Chez Scaleway (le connecteur depuis le 2026-10-15, Messaging Me depuis le 2026-10-26)
 
-La base managée porte ses propres sauvegardes : des sauvegardes LOGIQUES automatiques, une par jour, gardées 7 jours,
-dans la région (`backup_schedule` de l'instance, la première 24 h après sa création), et des sauvegardes manuelles
-(`scaleway-cli rdb backup create instance-id=<base> database-name=rdb name=<nom> expires-at=<date> region=nl-ams`).
-Les instantanés de bloc (`rdb snapshot create`, puis `rdb snapshot restore` qui crée une instance) existent aussi,
-non éprouvés.
+La base managée porte ses propres sauvegardes. 🔴 **Les AUTOMATIQUES sont des INSTANTANÉS du volume** (disque SBS),
+nommés `<instance>_autobackup` : un par jour à l'heure de création de l'instance (12 h 40 UTC pour `mm-prod-db`, 20 h UTC
+pour `mm-hubspot-db`, `backup_schedule`), gardés 7 jours, dans la région. Ils se lisent par `scaleway-cli rdb snapshot
+list instance-id=<base> region=nl-ams` : **`rdb backup list` ne les montre PAS** (lue seule, elle a fait croire le
+2026-10-26 que les deux bases n'avaient aucune sauvegarde). Un instantané se restaure en une NOUVELLE instance
+(`rdb snapshot restore`), chemin NON ÉPROUVÉ. Les sauvegardes LOGIQUES sont manuelles (`scaleway-cli rdb backup create
+instance-id=<base> database-name=rdb name=<nom> expires-at=<date> region=nl-ams`, expiration à 7 jours au plus, § 7.2
+de l'architecture cible) et se restaurent dans une base existante, par la procédure éprouvée ci-dessous. ⚠️ Après une
+bascule ou une restauration vers une nouvelle instance, en faire une dans la foulée : le prochain instantané part à
+l'heure de l'instance, pas à celle de la mise en service.
 
 **Restaurer une sauvegarde logique**, la procédure éprouvée le 2026-10-15 sur la base du connecteur :
 1. Une instance de même moteur dans `mm-prive` (adresse privée seule), qui porte les MÊMES UTILISATEURS que la

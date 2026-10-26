@@ -138,7 +138,10 @@ Heures de Paris.
   redémarrage (sinon la sonde `vps-watch` les compte en panne et le rappelle chaque jour), `mba-web` compris (lot 7) ;
   `otp-asterisk`, le pont des codes, reste sur le VPS et poste à `api.` ; la veille d'éligibilité de l'agent de Meta
   et la sauvegarde nocturne de Supabase tournent encore sur le VPS, sans toucher à la production. La clé
-  `cloudflare-origine`, apparue en clair dans une capture le matin, est remplacée par Julien le soir même.
+  `cloudflare-origine`, apparue en clair dans une capture le matin, est remplacée par Julien le soir même. À 22 h 14,
+  une sauvegarde logique manuelle de la production (42 Mo, qui expire le 2 novembre) : les sauvegardes automatiques de
+  `mm-prod-db` sont des instantanés du volume pris vers 13 h 40, dont le dernier précède la bascule, et que
+  `rdb backup list` ne montre pas (lue seule, elle a d'abord fait croire qu'il n'y avait aucune sauvegarde).
 - **Appris** : une copie dans une base qui n'appartient pas au rôle qui restaure rend des refus de propriétaire sans
   effet, qu'un script de copie doit connaître d'avance ; le schéma d'une API se relit au moment de s'en servir, pas sur
   la foi d'un script qui passait par la CLI ; sous Git Bash, `date` seul rend l'heure de Paris et `TZ=Europe/Paris date`
