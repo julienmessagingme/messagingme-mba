@@ -21,6 +21,7 @@ import { registerRcsMedia } from './http/rcs-media';
 import { registerTemplates } from './http/templates';
 import { registerInbox } from './http/inbox';
 import { registerHubspotEvents, type HubspotEventRouteDeps } from './http/hubspot-events';
+import { registerHubspotConversation, type HubspotConversationDeps } from './http/hubspot-conversation';
 import {
   registerCreditPaiement, registerStripeWebhook, type CreditPaiementRouteDeps, type StripeWebhookRouteDeps,
 } from './http/credit-stripe';
@@ -284,6 +285,8 @@ export interface ServerDeps {
   /** Canal entrant depuis le connecteur HubSpot (changement d'étape d'un deal). Fourni si le secret partagé
    *  est configuré. Signé, pas authentifié par jeton utilisateur : l'appelant est un service, pas un humain. */
   hubspotEvents?: HubspotEventRouteDeps;
+  /** La conversation lue, répondue et rendue depuis la carte HubSpot (lot 2 de la reprise humaine). Même secret, même canal. */
+  hubspotConversation?: HubspotConversationDeps;
   /**
    * La recharge du crédit IA : ouvrir un paiement Stripe (admin). Toujours montée : Stripe non configuré, elle rend
    * 503, que la console lit comme « recharge pas encore disponible ».
@@ -793,6 +796,8 @@ export function modulesDeRoutes(
     // conversation est reserve aux administrateurs. Un operateur repond aux clients, il n'efface pas des traces.
     entree('inbox', 'tenant', deps.inbox, (app, d, g) => registerInbox(app, d, g.auth, g.admin, g.limiteCouteuse), toutes('inbox')),
     entree('hubspotEvents', 'signature-service', deps.hubspotEvents, (app, d) => registerHubspotEvents(app, d)),
+    // Autorité = la signature du connecteur ; l'offre et le réglage se lisent dans le module (l'étape d'offre ne s'y applique pas).
+    entree('hubspotConversation', 'signature-service', deps.hubspotConversation, (app, d) => registerHubspotConversation(app, d)),
     // Le webhook de Stripe : autorité = la signature du corps brut, vérifiée dans le module avant toute lecture.
     entree('stripeWebhook', 'signature-service', deps.stripeWebhook, (app, d) => registerStripeWebhook(app, d)),
     // Les webhooks Shopify : autorité = le HMAC du corps brut, avec le secret de la boutique de `X-Shopify-Shop-Domain`.

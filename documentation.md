@@ -2661,6 +2661,27 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   un numéro est synchronisé (l'ancien `hubspot_actif` ne prouvait rien) : les autres verront l'étape de choix à leur
   connexion. `GET /settings` rend le choix ; `lireHubspotPortal` rend
   `routingMode` quand le connecteur le donne.
+- **La conversation lue et répondue depuis la carte HubSpot** (lot 2 de la reprise humaine,
+  `src/http/hubspot-conversation.ts`, classe `signature-service`, montée avec `HUBSPOT_SERVICE_SECRET`). Trois routes
+  que seul le connecteur appelle, signées comme `POST /hubspot/deal-stage` : `POST /hubspot/conversation/fil` (les
+  derniers messages par pages de `MESSAGES_PAR_PAGE`, avec le curseur de l'API publique, la fenêtre, qui tient le fil,
+  l'escalade, l'affectataire et `peutRepondre` pour la personne), `.../repondre` et `.../rendre`. Chacune vérifie, dans
+  l'ordre : l'offre (`inbox`, 402), le réglage « Répondre depuis HubSpot » (`hubspot_reponse`, 403
+  `reponse_hubspot_eteinte`), la conversation DANS l'espace (404), puis la personne : l'adresse que HubSpot a signée
+  dans la carte désigne un membre ACTIF de l'espace (ni désactivé, ni en attente), sinon personne. Une conversation
+  affectée ne se répond et ne se rend que par son affectataire, un admin ou un manager (`peutEcrire`, 403
+  `assigned_to_other`). 🔴 HubSpot ne répond JAMAIS à un contact qui a dit STOP (409 `contact_desabonne`, décision de
+  Julien du 2026-10-26) : la console laisse un membre accuser réception d'un désabonnement, la carte non, puisque son
+  auteur peut être sans compte et que, sur la filière application, rien d'autre n'arrêterait une réponse tardive ; la
+  lecture le dit (`contactDesabonne`, `peutRepondre`). 🔴 La réponse passe par `repondreDansLaFenetre` avec
+  `depsRepondre`, en origine `humain` : la fenêtre, la prise du fil et la clôture d'escalade de la console ; elle est
+  signée du membre (sinon sans auteur). 🔴 Une clé par message : `api_idempotency` sous le préfixe `hubspot:` (pose atomique, bail, jeton de
+  garde), car la signature se rejoue cinq minutes et `hubspot.fetch` rejoue sur un 5xx ; même clé et même texte rendent
+  la réponse du premier envoi, un autre texte est un 422, un envoi en cours un 409. Un refus du chemin d'envoi, ou un
+  refus EXPLICITE de Meta (`MetaApiError`, 422 `meta_rejected`), rend la clé ; une coupure (délai, réseau) la garde en
+  cours jusqu'à son bail, car Meta a peut-être pris le message. « Rendre la main » passe par
+  `rendreLaMainSousConsentement` (un contact STOP ou bloqué n'est jamais confié à l'agent de Meta). L'audit de latence
+  les range avec l'Inbox (`groupeDeRoute`).
 - **L'accompagnement** (`src/emails-produit/accompagnement.ts`, balayage `emails-produit-accompagnement`, trente
   minutes, des modèles `commercial`) : la bienvenue (moins de 48 h après la création), puis trois relances à occasion
   fixe, donc une fois chacune : le numéro absent après 24 h, le répondeur effectif `equipe` (`modeEffectif` sous

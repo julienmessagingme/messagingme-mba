@@ -94,6 +94,8 @@ import { signalDeLAccuse, signalDuClic } from './signaux/emetteur';
 import { plafondLePlusBas } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages, lireHubspotPortal, poserModeTaches } from './crm/hubspot-service';
 import type { HubspotChoixRouteDeps } from './http/hubspot-choix';
+import type { HubspotConversationDeps } from './http/hubspot-conversation';
+import { getEtatPassage } from './analysis/enrichment';
 import type { ChoixHubspotEcrit } from './settings/store.pg';
 import type { ModeTaches } from './account/types';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
@@ -1717,6 +1719,19 @@ async function main(): Promise<void> {
           await enfilerEvenementAutomation(queue, { tenantId, event } satisfies AutomationEventJob);
         },
       },
+      // La carte HubSpot lit, répond et rend la main (lot 2 de la reprise humaine) : le chemin d'envoi de la console,
+      // tel quel (`depsRepondre`), et l'idempotence de `/v1/sends`.
+      hubspotConversation: {
+        secret: config.HUBSPOT_SERVICE_SECRET,
+        fonctions: async (t: string) => (await offres.offreDe(t)).droits.fonctions,
+        reponseBranchee: async (t: string) => (await settingsStore.lireChoixHubspot(t)).reponse,
+        inbox: inboxStore,
+        escaladeeLe: async (t: string, waId: string) => (await getEtatPassage(pool, t, waId))?.escaladeeLe ?? null,
+        membres: (t: string) => userStore.list(t),
+        repondre: depsRepondre,
+        idempotence: idempotencyStore,
+        fil,
+      } satisfies HubspotConversationDeps,
     } : {}),
     /**
      * La recharge du crédit IA par Stripe (`src/http/credit-stripe.ts`). Toujours montée : sans clé, elle rend 503,

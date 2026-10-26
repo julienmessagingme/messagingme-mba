@@ -64,6 +64,7 @@ import { SCRIPT_INERTE } from '../src/widgets/script';
 import type { PreHandler } from '../src/auth/middleware';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
+import type { HubspotConversationDeps } from '../src/http/hubspot-conversation';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { ResendWebhookRouteDeps } from '../src/http/webhook-resend';
 import type { Receiver360Deps } from '../src/webhooks/receiver-360dialog';
@@ -272,6 +273,19 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     findWaId: async () => null,
     publish: async () => undefined,
   } satisfies HubspotEventRouteDeps,
+  // La carte HubSpot (lot 2 de la reprise humaine) : le même vrai secret ; derrière lui, une offre sans l'Inbox et un
+  // réglage éteint, donc rien ne se lit ni ne part, même pour une sonde qui passerait la signature.
+  hubspotConversation: {
+    secret: SECRET_SERVICE,
+    fonctions: async () => new Set<never>(),
+    reponseBranchee: async () => false,
+    inbox: inconnu('hubspotConversation.inbox'),
+    escaladeeLe: async () => null,
+    membres: async () => [],
+    repondre: inconnu('hubspotConversation.repondre'),
+    idempotence: inconnu('hubspotConversation.idempotence'),
+    fil: inconnu('hubspotConversation.fil'),
+  } satisfies HubspotConversationDeps,
   // Le webhook de Stripe : un VRAI secret aussi, et un dépôt qui ne crédite personne. Une signature fausse ou absente
   // doit tomber avant le dépôt (sonde 12).
   stripeWebhook: {

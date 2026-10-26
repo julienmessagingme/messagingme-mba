@@ -123,7 +123,10 @@ const PREFIXES_WEBHOOKS = ['/webhooks/', '/w/', '/rcs/callback/', '/hubspot/deal
 
 export function groupeDeRoute(route: string): GroupeRoute {
   if (PREFIXES_WEBHOOKS.some((p) => route.startsWith(p))) return 'webhooks';
-  if (route.startsWith('/tenants/:tenantId/conversations')) return 'inbox';
+  // La carte HubSpot lit et répond dans une conversation : une personne attend, comme dans l'Inbox. Le préfixe est celui
+  // de `PREFIXE_CONVERSATION_HUBSPOT` (`src/http/hubspot-conversation.ts`), recopié pour ne pas tirer l'Inbox dans ce module
+  // et tenu égal par `tests/http-hubspot-conversation.test.ts`.
+  if (route.startsWith('/tenants/:tenantId/conversations') || route.startsWith('/hubspot/conversation/')) return 'inbox';
   if (route.startsWith('/v1/')) return 'v1';
   return 'autres';
 }
