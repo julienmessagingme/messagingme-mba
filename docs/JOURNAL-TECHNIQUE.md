@@ -33,6 +33,8 @@ même, confronté au site réel (une partie de ce qu'il demandait existait déj�
   par l'API, une fiche à la fois, avec une clé `contacts:admin`. Depuis `783b4529`, on le demande à Claude, en masse
   (`prepare_contacts_deletion`, puis `delete_contacts` : le nombre et quelques fiches d'abord, 1 000 au plus par fois).
   La FAQ des pages développeurs et son JSON-LD suivent (`npm run plugin:generer`).
+- **0.3.13 publié** (`0e4cf6b5`, CI verte, avant le gel) : le contenu publié est identique à `plugin/` de `0e4cf6b5`,
+  fichier par fichier, et les deux pages développeurs en ligne disent « demandez à Claude de supprimer les contacts ».
 
 ## 2026-10-26 : la relance Shopify sans question de consentement, et la Free qui supprime ses contacts en trop par Claude
 

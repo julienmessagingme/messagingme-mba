@@ -334,27 +334,17 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
 - **Le film de la page « Boutiques Shopify »** (lot 3 de la conception vitrine) : le parcours du client (le panier
   laissé, la relance, la question, la réponse de l'agent IA, la commande, l'expédition), à poser dans la section du
   scénario (`VideoObject`). La page est en ligne depuis le 2026-10-24 (plan `2026-10-24-boutiques-shopify.md`).
-- **La coexistence livrée : retirer « bientôt » partout où le parcours du numéro l'annonce** : la page « Boutiques
-  Shopify » (`scripts/vitrine/boutique-textes.ts` : le mot « Garder votre application (bientôt) » du lexique, l'issue
-  `garder-application`, la réponse `faq-numero`), puis
-  `npm run vitrine:cas` ; la skill `mise-en-service` (le choix de la filière), la skill `shopify`, le README du plugin
-  (« Which WhatsApp number? ») et les entrées `api-ou-application` et `numero-dans-l-application` de
-  `scripts/plugin/faq.ts`, puis `npm run plugin:generer` et une montée de version du plugin. Toujours sans le mot
-  « coexistence » face au client.
+- **Retirer « bientôt » de la page « Boutiques Shopify »** (`scripts/vitrine/boutique-textes.ts` : le mot « Garder
+  votre application (bientôt) » du lexique, l'issue `garder-application`, la réponse `faq-numero`, puis `npm run
+  vitrine:cas`) : le README, la FAQ et la skill `mise-en-service` du plugin ne le disent plus depuis `862f0294`
+  (plugin 0.3.12). La page suit avec le lot « arbre du numéro sans QR code » (plan
+  `docs/superpowers/plans/2026-10-26-numero-sans-qr-code.md`). Toujours sans le mot « coexistence » face au client.
 - **Le tutoriel de la fenêtre de Meta pour garder son application** (demandé par Julien le 2026-10-25), avec les dix
   captures réelles de l'essai 161 (`docs/prive/captures-coexistence-2026-10-25/`, son `LISEZMOI` liste ce qu'il faut
   masquer) : seulement après le lot 2 de la coexistence, qui corrige la fin du parcours (la page n'a pas reçu la
   réponse de Meta au premier passage).
 - **La carte Codex de `/integrations/`** mène aux pages développeurs, qui n'expliquent pas encore Codex (essai 121 pas
   fait ; Julien garde la carte telle quelle en attendant, 2026-10-24).
-- **Le logo de l'application WhatsApp Business** à côté de sa question dans le guide du numéro : l'icône actuelle (celle
-  de WhatsApp avec un « + », depuis mars 2025), fichier fourni par Julien (2026-10-25), sur fond transparent, à poser
-  dans `site/img/logos/`.
-- **Ce qui dit encore qu'un compte Meta Business est indispensable**, à aligner sur l'arbre du numéro avec l'accord de
-  Julien (face publique) : « le seul prérequis » de `site/developpeurs/index.html` (au-dessus de la FAQ qui répond
-  désormais « Oui, de deux façons ») et de la méta description de `site/developpeurs/compte-meta-business/`, l'étape 3
-  de `site/solutions/saas-et-app-builders/` et sa jumelle, « an official WhatsApp number » dans l'accroche du README du
-  plugin et la description de `plugin.json`.
 - **Remplacer un numéro relié par QR code par un numéro fourni** : `relierApplication` et `preparer` refusent un espace
   déjà relié (`deja_relie`), donc un marchand qui a relié le numéro de sa boutique ne peut pas passer à un numéro fourni
   pour le protéger (sort des conversations, des fiches, du cache `@lid` et du crédit offert à décider).

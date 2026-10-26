@@ -2988,7 +2988,9 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   (`contactsToutesOrigines`), et la phrase du refus aussi (« ceux qui vous écrivent compris » en Free). La vue porte
   aussi `contactsEnTrop` (2026-10-26), l'usage au-delà de la limite (0 sous elle, pile à elle, ou sans limite) : la
   page `/offre` le dit sous la jauge des contacts, avec la marche à suivre, et `get_plan` le rend ; la console le lit
-  en tolérant son absence (0), elle est publiée avant l'API.
+  en tolérant son absence (0), elle est publiée avant l'API. Les textes publics qui disent ce que compte cette limite
+  (Tarifs, pages développeurs, Shopify, cas d'usage, README et FAQ du plugin) la suivent, tenus par
+  `tests/vitrine-contacts-origines.test.ts`.
 - 🔴 **La porte d'une Free pleine** (`src/webhooks/espace-plein.ts`) : quand les fiches actives d'une Free remplissent sa
   limite, le message d'un inconnu (aucune fiche active ne porte son `wa_id`, numéro ou BSUID) n'entre pas, sur les trois
   portes : la file `webhook` (Meta et 360dialog), juste après l'écart des numéros déliés et avant le journal brut, et la
