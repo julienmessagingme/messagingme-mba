@@ -56,6 +56,10 @@ migration :
   module sans Fastify (`tests/inbox-envoi-operateur.test.ts`) et un test de route qui fige son corps, chacun vérifié
   dans les deux sens. Deux `toEqual` figent le corps du webhook (la clé `credite`), et trois textes devenus faux sont
   corrigés. Deux restes au backlog (`todo.md`).
+- **Déployé** le 2026-10-26 à 12 h 31, à la demande de Julien, après la fin de son essai réel du lot 3 HubSpot (la session
+  HubSpot avait demandé d'attendre) et les accords des sessions actives : `mba-api`, `mba-worker` et `mba-worker-analyse`
+  à `d23bb5b1` (aucune migration, base à 0253), aucune erreur dans les journaux, fumée publique et fiches OAuth
+  conformes, webhook Stripe en 401 sans signature. L’essai réel (n° 169 de la liste privée) reste à faire.
 
 ## 2026-10-26 : la carte HubSpot lit, répond et rend au robot (lot 3 de la reprise humaine), déployé avant la bascule
 
