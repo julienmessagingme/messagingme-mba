@@ -39,6 +39,36 @@ après « Connecter mon numéro » (« Me repérer dans la console » passe au r
   l'entrée commune « Tout le parcours en 30 secondes. » sort de `commun.json`, plus aucune page ne la dit.
 - `tests/vitrine-seo.test.ts` compare chaque réponse affichée à sa réponse balisée sur toutes les pages à FAQ, sauf
   les deux pages développeurs ; vérifié dans les deux sens.
+## 2026-10-26 : la tâche HubSpot se coche, la relance, aucune tâche après un STOP (lot 2b de la reprise humaine), déployé avant la bascule
+
+`41804171` (plan `~/mm-hubspot/docs/2026-10-26-lot2b-cloture-relance-plan.md`, décisions A à E validées par Julien ;
+connecteur `06bc7da`). Migration **0254** (`passages_hubspot`) appliquée avant le gel de 18 h et relue en base point par
+point (colonnes, CHECK de `nature`, clés en `ON DELETE CASCADE`, index partiel `WHERE (clos_le IS NULL)`), puis le
+balayage exécuté par le vrai code en lecture seule (rien à clore, aucune relance due : pas de rafale au premier tour).
+La base n'a plus rien en attente pour la bascule. Le connecteur a reçu sa migration 0010 par `deploy-scaleway.yml`.
+
+- **Une relecture, un 🔴** : `escaladee_le` est posée à la microseconde par `now()`, relue à la milliseconde en `Date`, et
+  le balayage comparait `escaladee_le > depuis` : 199 instants sur 200 voyaient l'escalade « plus récente » que son
+  propre passage, et chaque tâche se serait cochée la minute suivant sa création. On compare la valeur tronquée (0 sur
+  200, mesuré sur la base). Les 🟡 traités : la même troncature sur la relance, un refus qui reporte d'une heure au lieu
+  d'occuper la tête de file, `lock_timeout` sur la migration, la définition commune d'une réponse de l'équipe, le contact
+  bloqué, la demande qu'une analyse tardive ne rouvre plus ; le reste au `todo.md` du connecteur.
+- **Essai réel en production** (SANDBOX, portail cobaye) : une escalade de l'agent de Meta crée la tâche et inscrit son
+  passage à la milliseconde ; il reste ouvert tant que l'escalade l'est ; la réponse de l'équipe depuis l'Inbox clôt
+  l'escalade, et le balayage coche la tâche **16 s plus tard**, `mm_handoff_requested` repassé à false. Le client réécrit
+  sans réponse : la tâche « a réécrit, sans réponse » part 11 min plus tard (10 min et le tour du balayage), et se
+  coche 16 s après la réponse suivante. **Lot clos.** Le STOP (décision D) n'a pas été rejoué en réel, à dessein (voir
+  plus bas), il est tenu par les tests.
+- ⚠️ **Deux réponses tapées dans l'Inbox ne sont jamais arrivées à l'API**, sans erreur journalisée ni message en base ;
+  les deux suivantes sont passées. Cause non établie (clic non parti, ou envoi perdu côté console) : au `todo.md`.
+- ⚠️ **L'essai du lot 3 a figé l'agent de Meta sur le numéro de Julien, et c'est le STOP demandé par l'essai qui l'a
+  fait.** Après le STOP, l'agent confirme puis passe la main (`control_passed`) ; le réabonnement dans NOTRE base ne lui
+  dit rien, et chaque `release` est refusé (« An unknown error has occurred »). L'agent restait donc muet pour ce numéro,
+  alors que la liste, le contact et notre colonne disaient tout prêt. **Ce qui l'a débloqué** : un message envoyé DEPUIS
+  L'APP (on reprend le fil chez Meta), puis « Rendre au robot » ; l'agent a répondu au message suivant du client. La
+  leçon : un essai ne fait pas dire STOP au numéro de travail sans avoir le geste de déblocage prêt. Un nouveau contact,
+  lui, n'est jamais répondu à son PREMIER message en mode liste (`standby_hors_liste`, puis l'agent répond au suivant) :
+  vu ici sur un second téléphone, c'est le fonctionnement voulu.
 
 ## 2026-10-26 : les jaunes du Pro géré depuis la console (webhook relu chez Stripe, tarif réel, une seule lecture)
 

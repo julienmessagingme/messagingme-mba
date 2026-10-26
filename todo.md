@@ -1,5 +1,12 @@
 # todo.md : backlog
 
+## 🟡 Deux réponses de l'Inbox jamais arrivées à l'API (essai réel du lot 2b HubSpot, 2026-10-26)
+
+Sur SANDBOX, conversation du +44 1555 479304, deux réponses tapées dans l'Inbox par Julien (vers 15 h 55 et 16 h 25,
+heure de Paris) n'ont laissé AUCUNE trace : ni message en base, ni erreur dans les journaux de l'API ; la suivante,
+chaque fois, est passée. Soit le clic n'est pas parti, soit la console perd un envoi sans le dire. À reproduire (réseau
+de la console ouvert pendant l'envoi) avant de conclure ; une perte muette serait un 🔴.
+
 ## 🟡 Le Pro géré depuis la console : ce que la relecture des jaunes laisse (2026-10-26)
 
 - **Le jour où le tarif change** : `siegesChezStripe` ne compte que les sièges aux prix configurés MAINTENANT ; un
