@@ -16,21 +16,28 @@ const ESCALADEE = new Date('2026-10-23T09:15:30.123Z');
 const DERNIER_IN = new Date('2026-10-23T09:14:00.000Z');
 const etat = (over: Partial<EtatPassage> = {}): EtatPassage => ({
   conversationId: 'conv-1', contactE164: '+33600000001', nom: 'Camille', whatsappLine: '+33525680250',
-  dernierEntrantLe: DERNIER_IN, escaladeeLe: ESCALADEE, ...over,
+  dernierEntrantLe: DERNIER_IN, escaladeeLe: ESCALADEE, controlOwner: 'app_human', dernierSens: 'in', ...over,
 });
 
 function banc(over: Partial<PushHandoffDeps> = {}, e: EtatPassage | null = etat()) {
   const pousses: CorpsHandoff[] = [];
   const lus: string[][] = [];
+  const inscrits: Array<{ occasion: string; nature: string; depuis: Date; conversationId: string; tenantId: string }> = [];
+  const clos: string[] = [];
   const d: PushHandoffDeps = {
     passageBranche: async () => true,
     lireEtat: async (t, w) => { lus.push([t, w]); return e; },
     numeros: { getHubspotGateStatus: async () => ({ connected: true, pausedAt: null }) },
     lienConversation: (id) => `https://console.exemple.test/inbox?c=${encodeURIComponent(id)}`,
     pousser: async (c) => { pousses.push(c); return { issue: 'fait', created: true, taskId: 'task-1' }; },
+    estDesabonne: async () => false,
+    passages: {
+      inscrire: async (p) => { inscrits.push(p); return true; },
+      clore: async (o) => { clos.push(o); },
+    },
     ...over,
   };
-  return { d, pousses, lus };
+  return { d, pousses, lus, inscrits, clos };
 }
 
 describe('composerPassageEquipe : l’e-mail ET l’enfilement, sans jamais faire échouer l’appelant', () => {
@@ -245,5 +252,56 @@ describe('flagSelonLeChoix : le contact injoignable selon le choix du client (lo
     await flagSelonLeChoix(async () => true, async (t, e) => { flags.push([t, e]); })('t1', '+33600000001');
     expect(flags).toEqual([['t1', '+33600000001']]);
     await expect(flagSelonLeChoix(async () => true, async () => { throw new Error('connecteur 500'); })('t1', 'x')).rejects.toThrow('connecteur 500');
+  });
+});
+
+describe('pushHandoffJob : lot 2b (la clôture, la relance, STOP)', () => {
+  const RELANCE = { occasion: 'conv-1:relance:2026-10-23T09:14:00.000Z' };
+
+  it('🔴 décision A : une escalade poussée s’inscrit (son occasion, sa nature, l’instant de l’escalade), le corps du lot 1 inchangé', async () => {
+    const { d, pousses, inscrits } = banc();
+    await pushHandoffJob({ tenantId: 't1', waId: 'w' }, d);
+    expect(pousses[0]).not.toHaveProperty('nature');
+    expect(inscrits).toEqual([{ occasion: 'conv-1:2026-10-23T09:15:30.123Z', tenantId: 't1', conversationId: 'conv-1', nature: 'escalade', depuis: ESCALADEE }]);
+  });
+
+  it('🔴 décision D : un contact STOP n’ouvre aucune tâche, escalade comme relance (la relance inscrite se clôt)', async () => {
+    const a = banc({ estDesabonne: async () => true });
+    await pushHandoffJob({ tenantId: 't1', waId: 'w' }, a.d);
+    expect(a.pousses).toHaveLength(0);
+    expect(a.inscrits).toHaveLength(0);
+    const b = banc({ estDesabonne: async () => true }, etat({ escaladeeLe: null }));
+    await pushHandoffJob({ tenantId: 't1', waId: 'w', relance: RELANCE }, b.d);
+    expect(b.pousses).toHaveLength(0);
+    expect(b.clos).toEqual([RELANCE.occasion]);
+  });
+
+  it('🔴 décision C : une relance due part avec sa nature et SON occasion, et ne s’inscrit pas une seconde fois', async () => {
+    const { d, pousses, inscrits, clos } = banc({}, etat({ escaladeeLe: null }));
+    await pushHandoffJob({ tenantId: 't1', waId: 'w', relance: RELANCE }, d);
+    expect(pousses).toEqual([expect.objectContaining({ occasion: RELANCE.occasion, nature: 'relance', finFenetre: new Date(DERNIER_IN.getTime() + FENETRE_MS).toISOString() })]);
+    expect(inscrits).toHaveLength(0);
+    expect(clos).toHaveLength(0);
+  });
+
+  it('🔴 une relance qui n’est plus due (un robot tient le fil, une escalade s’est ouverte, l’équipe a répondu) : rien ne part, elle se clôt', async () => {
+    for (const e of [etat({ escaladeeLe: null, controlOwner: 'mba' }), etat({ escaladeeLe: ESCALADEE }), etat({ escaladeeLe: null, dernierSens: 'out' })]) {
+      const { d, pousses, clos } = banc({}, e);
+      await pushHandoffJob({ tenantId: 't1', waId: 'w', relance: RELANCE }, d);
+      expect(pousses).toHaveLength(0);
+      expect(clos).toEqual([RELANCE.occasion]);
+    }
+  });
+
+  it('une relance sur une ligne non reliée, un espace sans portail ou un refus : elle se clôt ; l’escalade, elle, ne s’inscrit pas', async () => {
+    const nonReliee = banc({ numeros: { getHubspotGateStatus: async () => ({ connected: false, pausedAt: null }) } }, etat({ escaladeeLe: null }));
+    await pushHandoffJob({ tenantId: 't1', waId: 'w', relance: RELANCE }, nonReliee.d);
+    expect(nonReliee.clos).toEqual([RELANCE.occasion]);
+    const refus = banc({ pousser: async () => ({ issue: 'refuse', status: 400, code: undefined }) }, etat({ escaladeeLe: null }));
+    await pushHandoffJob({ tenantId: 't1', waId: 'w', relance: RELANCE }, refus.d);
+    expect(refus.clos).toEqual([RELANCE.occasion]);
+    const sansPortail = banc({ pousser: async () => ({ issue: 'non_relie' }) });
+    await pushHandoffJob({ tenantId: 't1', waId: 'w' }, sansPortail.d);
+    expect(sansPortail.inscrits).toHaveLength(0);
   });
 });

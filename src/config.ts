@@ -76,6 +76,13 @@ export const schema = z.object({
    */
   HUBSPOT_REPONSES_PAR_MINUTE: z.coerce.number().int().min(0).default(20),
   /**
+   * La relance HubSpot (lot 2b de la reprise humaine, décision C) : l'équipe tient la conversation, aucune escalade n'est
+   * ouverte, et le dernier message du client attend une réponse depuis ce nombre de minutes ; une tâche « a réécrit,
+   * sans réponse » part chez le conseiller. Pas de tâche à chaque message : une conversation vive en ferait une par
+   * échange. 0 éteint la relance (la clôture des tâches, elle, continue).
+   */
+  HUBSPOT_RELANCE_EQUIPE_MINUTES: z.coerce.number().int().min(0).default(10),
+  /**
    * Les deux bornes réglables des champs personnalisés, très au-dessus de l'usage réel mesuré.
    * `API_MAX_CHAMPS_PAR_ESPACE` ne borne que le webhook entrant et la création à la main (l'API publique ne
    * crée aucun champ) ; 0 le désactive. `API_MAX_CLE_CHAMP` borne la forme d'un corps : pas de sens à 0.

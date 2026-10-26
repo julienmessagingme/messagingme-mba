@@ -2646,6 +2646,21 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   fusionné) revient en 503 du connecteur, qui a oublié le contact en cache : 429, 5xx et réseau sont rejoués par
   `withRetry` puis lèvent, et pg-boss rejoue le job.
   L'analyse poussée au connecteur (`EnrichedAnalyzedEvent`, `buildEvent`) porte le même lien (`lienConversation`).
+- **La tâche se coche, la relance, STOP** (lot 2b de la reprise humaine, migration 0254, `src/analysis/passages-hubspot.ts`).
+  🔴 Un contact désabonné n'ouvre aucune tâche : `push-handoff` lit `estDesabonne` (requise) avant tout, parce qu'après
+  un STOP l'agent de Meta passe la main à l'équipe. Une escalade poussée s'inscrit dans `passages_hubspot` (occasion,
+  instant de l'escalade). 🔴 La clôture se CONSTATE au lieu de s'écrire : trois écritures effacent une escalade
+  (`recordOutgoing` sur le chemin chaud, `basculerRangement`, `setControlOwner(effacerEscalade)` et sa dizaine
+  d'appelants), donc la minuterie `hubspot-clotures` (une minute, rôle `principal`) compare chaque passage ouvert à sa
+  conversation : escalade vidée ou remplacée par une plus récente ; pour une relance, une réponse d'une personne
+  (`origin = 'humain'` ou signée d'un membre), un robot, Traité, Archivé ou une escalade. Elle appelle
+  `POST /service/handoff-clos` (`cloreHandoff`) et pose `clos_le` sur un 2xx ou un 404 sans objet ; un refus laisse le
+  passage ouvert pour le tour suivant. Puis elle cherche les RELANCES : espace qui a choisi HubSpot avec la tâche
+  immédiate, équipe qui tient le fil, aucune escalade ni attente de fin de parcours, ni Traité ni Archivé, dernier
+  message du client entre `HUBSPOT_RELANCE_EQUIPE_MINUTES` (10, 0 éteint) et 24 h, aucun passage pour ce message. La
+  relance s'inscrit AVANT d'être enfilée (`push-handoff` avec `relance.occasion`), ce qui la rend unique par message ;
+  le job la clôt s'il ne la pousse pas (plus due, ligne non reliée, refus). Deux copies qui balaient ensemble ne
+  doublent rien.
 - **Le choix des fonctions HubSpot** (lot 1bis, migration 0251, `src/http/hubspot-choix.ts`). Le client branche ce
   qui lui plaît : quatre interrupteurs par espace dans `tenant_settings` (`hubspot_analyse`, `hubspot_passage`,
   `hubspot_injoignable` allumés par défaut, `hubspot_reponse` éteint) et la date `hubspot_choix_valide_le`, lus À PART

@@ -100,6 +100,8 @@ export interface CorpsHandoff {
   lienConversation: string;
   finFenetre: string | null;
   occasion: string;
+  /** Lot 2b (décision C) : `relance`, le client a réécrit sans réponse de l'équipe. Absente : une escalade. */
+  nature?: 'escalade' | 'relance';
 }
 
 /** La réponse 200 du connecteur, validée : `taskId` nul en mode `hubspot_native`, `created` faux sur un rejeu. */
@@ -138,6 +140,29 @@ export async function pousserHandoff(deps: ConnectorDeps, corps: CorpsHandoff): 
   }
   const r = reponseHandoff.safeParse(reponse);
   return r.success ? { issue: 'fait', created: r.data.created, taskId: r.data.taskId } : { issue: 'fait', created: null, taskId: null };
+}
+
+/**
+ * L'issue d'une clôture de passage (lot 2b, décision A). `clos` : le connecteur a coché la tâche et levé la demande.
+ * `sans_objet` : 404, l'occasion lui est inconnue ou l'espace n'a plus de portail, rien à cocher. `refuse` : un autre
+ * refus (portail à re-consentir, contrat décalé), le passage reste ouvert et le balayage suivant réessaie.
+ */
+export type IssueCloture = 'clos' | 'sans_objet' | { refuse: number; code: string | undefined };
+
+/** Clôt un passage chez le connecteur. 429, 5xx et réseau sont rejoués ici, puis LÈVENT. */
+export async function cloreHandoff(deps: ConnectorDeps, corps: { tenantId: string; occasion: string }): Promise<IssueCloture> {
+  try {
+    await callService<unknown>(deps, '/service/handoff-clos', corps);
+    return 'clos';
+  } catch (err) {
+    if (err instanceof ReconsentRequiredError) return { refuse: 409, code: 'reconsent_required' };
+    if (err instanceof HubspotServiceError && !err.retryable) {
+      return err.status === 404 && (err.code === 'occasion_inconnue' || err.code === 'tenant_not_connected')
+        ? 'sans_objet'
+        : { refuse: err.status, code: err.code };
+    }
+    throw err;
+  }
 }
 
 /**

@@ -74,6 +74,9 @@ export interface EtatPassage {
   whatsappLine: string;
   dernierEntrantLe: Date | null;
   escaladeeLe: Date | null;
+  /** Lot 2b (la relance) : qui tient le fil, et de quel côté est le dernier message. */
+  controlOwner: string;
+  dernierSens: 'in' | 'out' | null;
 }
 
 /**
@@ -84,8 +87,9 @@ export interface EtatPassage {
 export async function getEtatPassage(pool: Pool, tenantId: string, waId: string): Promise<EtatPassage | null> {
   const res = await pool.query<{
     id: string; wa_id: string; profile_name: string | null; whatsapp_line: string | null; dernier_in: Date | null; escaladee_le: Date | null;
+    control_owner: string; last_direction: 'in' | 'out' | null;
   }>(
-    `select c.id, c.wa_id, ct.profile_name, c.escaladee_le,
+    `select c.id, c.wa_id, ct.profile_name, c.escaladee_le, c.control_owner, c.last_direction,
             (select max(m.created_at) from conversation_messages m
               where m.conversation_id = c.id and m.direction = 'in' and m.channel = 'whatsapp') as dernier_in,
             (select pn.display_phone_number from phone_numbers pn
@@ -104,5 +108,7 @@ export async function getEtatPassage(pool: Pool, tenantId: string, waId: string)
     whatsappLine: r.whatsapp_line ?? 'unknown', // comme `getEnrichment` : aucune ligne ne passe la porte HubSpot
     dernierEntrantLe: r.dernier_in,
     escaladeeLe: r.escaladee_le,
+    controlOwner: r.control_owner,
+    dernierSens: r.last_direction,
   };
 }

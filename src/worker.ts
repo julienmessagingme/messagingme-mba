@@ -36,7 +36,7 @@ import { assignerReponse } from './inbox/assignation-campagne';
 import { arriveeParWidget } from './widgets/arrivee';
 import { relanceurDeCampagnes } from './campaign/enqueue';
 import { plafondDuCanal, plafondLePlusBas } from './campaign/pacing';
-import { flagContactUnreachable, flagSelonLeChoix, pousserHandoff } from './crm/hubspot-service';
+import { flagContactUnreachable, flagSelonLeChoix, pousserHandoff, cloreHandoff } from './crm/hubspot-service';
 import { DUREE_CLE_IDEMPOTENCE_MS } from './api/idempotence';
 import { PgArriveesPubStore } from './pubs/arrivees.pg';
 import { PgTarifsMetaStore } from './pubs/tarifs-meta.pg';
@@ -95,6 +95,7 @@ import { AnthropicClient } from './analysis/llm-client';
 import { getEnrichment, getEtatPassage } from './analysis/enrichment';
 import { pushAnalysisJob } from './analysis/push-job';
 import { pushHandoffJob } from './analysis/push-handoff';
+import { PgPassagesHubspot, balayerPassages } from './analysis/passages-hubspot';
 import { hubspotCatchupJob } from './analysis/catchup-job';
 import { makeOnAnalyzed, postAnalysis } from './analysis/connector-push';
 import { pullFromInfo, pullFromError } from './account/pull';
@@ -1075,6 +1076,7 @@ export async function demarrerWorker(): Promise<void> {
    */
   if (config.HUBSPOT_SERVICE_URL) {
     const connecteurHubspot = { baseUrl: config.HUBSPOT_SERVICE_URL, secret: config.HUBSPOT_SERVICE_SECRET, transport };
+    const passagesHubspot = new PgPassagesHubspot(pool);
     await queue.work('push-handoff', (data) =>
       pushHandoffJob(data, {
         passageBranche: async (t) => (await settingsStore.lireChoixHubspot(t)).passage,
@@ -1082,8 +1084,22 @@ export async function demarrerWorker(): Promise<void> {
         numeros: phoneStatusStore,
         lienConversation,
         pousser: (corps) => pousserHandoff(connecteurHubspot, corps),
+        // STOP ou bloqué : la machine se tait, et aucune tâche ne demande à un conseiller d'écrire (relecture du lot 2b).
+        estDesabonne: (t, waId) => contactStore.machineSeTaitParWaId(t, waId),
+        passages: passagesHubspot,
       }),
     );
+    /**
+     * Lot 2b de la reprise humaine : chaque minute, la tâche d'un passage clos se coche chez le connecteur, et une relance
+     * part pour le client qui attend l'équipe depuis `HUBSPOT_RELANCE_EQUIPE_MINUTES`. Deux copies qui balaient ensemble
+     * ne doublent rien : la clôture est idempotente des deux côtés, l'inscription d'une relance aussi.
+     */
+    taches.programmer('hubspot-clotures', 60_000, () => balayerPassages({
+      passages: passagesHubspot,
+      clore: (corps) => cloreHandoff(connecteurHubspot, corps),
+      enfilerRelance: (job) => queue.enqueue('push-handoff', job),
+      relanceMinutes: config.HUBSPOT_RELANCE_EQUIPE_MINUTES,
+    }), { enEchec: echecDeBalayage('hubspot-clotures', 'sweeper:hubspot-clotures') });
   }
 
   // File analyze-conversation : inerte tant que CONVERSATION_ANALYSIS_ENABLED != 'true' (aucun worker, aucun

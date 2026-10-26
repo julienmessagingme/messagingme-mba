@@ -3,6 +3,7 @@ import { journaliser } from '../lib/journal';
 import { ATTENTE_RECENTE_MS, FENETRE_MS } from '../emails-produit/alertes';
 import type { CorpsHandoff, IssueHandoff } from '../crm/hubspot-service';
 import type { EtatPassage } from './enrichment';
+import type { PassagesHubspot } from './passages-hubspot';
 
 /**
  * LE PASSAGE À L'ÉQUIPE POUSSÉ À HUBSPOT (lot 1 de la reprise humaine, plan du connecteur du 2026-10-23).
@@ -13,8 +14,15 @@ import type { EtatPassage } from './enrichment';
  * jamais une seconde tâche côté connecteur : aucune file de ce dépôt ne déduplique.
  */
 
-/** Le payload : une référence, jamais un instantané. */
-const payloadHandoff = z.object({ tenantId: z.string().min(1), waId: z.string().min(1) });
+/**
+ * Le payload : une référence, jamais un instantané. `relance` (lot 2b, décision C) : le balayage `hubspot-clotures` a
+ * inscrit cette relance (son occasion) avant de l'enfiler ; absente, c'est une escalade.
+ */
+const payloadHandoff = z.object({
+  tenantId: z.string().min(1),
+  waId: z.string().min(1),
+  relance: z.object({ occasion: z.string().min(1).max(200) }).optional(),
+});
 
 /**
  * `prevenirEquipe` devient la composition de l'e-mail aux admins (inchangé, avec son filtre « le contact vient
@@ -50,6 +58,14 @@ export interface PushHandoffDeps {
   lienConversation(conversationId: string): string;
   /** `pousserHandoff` : rend une issue, LÈVE sur 429, 5xx et réseau. */
   pousser(corps: CorpsHandoff): Promise<IssueHandoff>;
+  /**
+   * 🔴 Lot 2b (décision D) : un contact qui a dit STOP n'ouvre aucune tâche. Après son STOP, l'agent de Meta passe la
+   * main à l'équipe (vu à l'essai réel du 2026-10-26) : sans cette garde, un conseiller était invité à répondre à
+   * quelqu'un que la carte refuse, à raison, de lui écrire. Requise, comme partout où elle se pose.
+   */
+  estDesabonne(tenantId: string, waId: string): Promise<boolean>;
+  /** Lot 2b : les passages poussés, que le balayage `hubspot-clotures` clôt (`src/analysis/passages-hubspot.ts`). */
+  passages: Pick<PassagesHubspot, 'inscrire' | 'clore'>;
 }
 
 /**
@@ -65,30 +81,64 @@ export interface PushHandoffDeps {
  *   faire dans HubSpot à la reprise.
  * Sinon il pousse. 2xx et 404 (espace sans portail) finissent le job ; un autre refus est journalisé et le finit
  * aussi (le rejouer rendrait le même refus) ; 429, 5xx et réseau lèvent, et pg-boss rejoue.
+ *
+ * Lot 2b : un contact STOP ou bloqué ne pousse rien (décision D) ; une escalade poussée s'inscrit dans
+ * `passages_hubspot`, que le balayage `hubspot-clotures` clôt ; une RELANCE (payload `relance`) se rejuge à l'exécution
+ * (l'équipe tient le fil, aucune escalade, le dernier message vient du client) et se clôt si elle ne part pas.
  */
 export async function pushHandoffJob(data: unknown, deps: PushHandoffDeps): Promise<void> {
   const p = payloadHandoff.safeParse(data);
   if (!p.success) throw new Error('push-handoff : payload invalide (tenantId/waId manquant)');
-  const { tenantId, waId } = p.data;
+  const { tenantId, waId, relance } = p.data;
+  // Une relance inscrite mais pas poussée se clôt aussitôt : rien ne l'attend chez HubSpot, et le balayage n'a pas à
+  // lui demander d'y cocher quoi que ce soit.
+  const abandonner = async (): Promise<void> => { if (relance) await deps.passages.clore(relance.occasion); };
 
   // Lot 1bis : le client a éteint la tâche immédiate. Lu au moment d'agir, comme le reste de l'état.
   if (!(await deps.passageBranche(tenantId))) {
     journaliser('info', 'push_handoff_non_branche', { tenantId });
+    await abandonner();
+    return;
+  }
+  if (await deps.estDesabonne(tenantId, waId)) {
+    journaliser('info', 'push_handoff_contact_desabonne', { tenantId });
+    await abandonner();
     return;
   }
 
   const etat = await deps.lireEtat(tenantId, waId);
-  if (etat === null || etat.escaladeeLe === null) {
+  if (etat === null) {
     journaliser('info', 'push_handoff_sans_escalade', { tenantId });
+    await abandonner();
     return;
   }
-  if (etat.dernierEntrantLe === null || etat.dernierEntrantLe.getTime() < etat.escaladeeLe.getTime() - ATTENTE_RECENTE_MS) {
-    journaliser('info', 'push_handoff_sans_attente', { tenantId, conversationId: etat.conversationId });
-    return;
+  let occasion: string;
+  let depuisEscalade: Date | null = null;
+  if (relance) {
+    // Toujours due ? L'équipe tient le fil, aucune escalade n'est ouverte (elle a son propre passage), et le dernier
+    // message est encore celui du client.
+    if (etat.controlOwner !== 'app_human' || etat.escaladeeLe !== null || etat.dernierSens !== 'in') {
+      journaliser('info', 'push_handoff_relance_plus_due', { tenantId, conversationId: etat.conversationId });
+      await abandonner();
+      return;
+    }
+    occasion = relance.occasion;
+  } else {
+    if (etat.escaladeeLe === null) {
+      journaliser('info', 'push_handoff_sans_escalade', { tenantId });
+      return;
+    }
+    if (etat.dernierEntrantLe === null || etat.dernierEntrantLe.getTime() < etat.escaladeeLe.getTime() - ATTENTE_RECENTE_MS) {
+      journaliser('info', 'push_handoff_sans_attente', { tenantId, conversationId: etat.conversationId });
+      return;
+    }
+    occasion = `${etat.conversationId}:${etat.escaladeeLe.toISOString()}`;
+    depuisEscalade = etat.escaladeeLe;
   }
   const porte = await deps.numeros.getHubspotGateStatus(tenantId, etat.whatsappLine);
   if (!porte.connected) {
     journaliser('info', 'push_handoff_ligne_non_reliee', { tenantId, conversationId: etat.conversationId });
+    await abandonner();
     return;
   }
 
@@ -98,14 +148,23 @@ export async function pushHandoffJob(data: unknown, deps: PushHandoffDeps): Prom
     nom: etat.nom?.trim() || null,
     conversationId: etat.conversationId,
     lienConversation: deps.lienConversation(etat.conversationId),
-    finFenetre: new Date(etat.dernierEntrantLe.getTime() + FENETRE_MS).toISOString(),
-    occasion: `${etat.conversationId}:${etat.escaladeeLe.toISOString()}`,
+    finFenetre: etat.dernierEntrantLe ? new Date(etat.dernierEntrantLe.getTime() + FENETRE_MS).toISOString() : null,
+    occasion,
+    // L'escalade garde le corps du lot 1 au bit près (un connecteur antérieur au lot 2b le lit tel quel).
+    ...(relance ? { nature: 'relance' as const } : {}),
   });
   if (issue.issue === 'fait') {
-    journaliser('info', 'push_handoff_fait', { tenantId, conversationId: etat.conversationId, created: issue.created, taskId: issue.taskId });
+    journaliser('info', 'push_handoff_fait', { tenantId, conversationId: etat.conversationId, created: issue.created, taskId: issue.taskId, relance: relance !== undefined });
+    // Lot 2b (décision A) : le passage poussé s'inscrit, pour que le balayage coche sa tâche à la clôture. Une relance
+    // l'est déjà ; une escalade rejouée retrouve sa ligne (`on conflict do nothing`).
+    if (depuisEscalade) {
+      await deps.passages.inscrire({ occasion, tenantId, conversationId: etat.conversationId, nature: 'escalade', depuis: depuisEscalade });
+    }
   } else if (issue.issue === 'non_relie') {
     journaliser('info', 'push_handoff_espace_sans_portail', { tenantId, conversationId: etat.conversationId });
+    await abandonner();
   } else {
     journaliser('error', 'push_handoff_refuse', { tenantId, conversationId: etat.conversationId, status: issue.status, code: issue.code });
+    await abandonner();
   }
 }
