@@ -4,6 +4,30 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+
+## 2026-10-26 : la carte HubSpot lit, répond et rend au robot (lot 3 de la reprise humaine), déployé avant la bascule
+
+`cd274ff2` (plan `~/mm-hubspot/docs/2026-10-26-lot3-carte-mini-chat-plan.md`, décisions A à D validées par Julien ;
+connecteur `bd71fb9`, carte HubSpot build #10). Ici : l'interrupteur « Répondre aux clients depuis HubSpot » visible dans
+Paramètres > Intégrations > HubSpot (éteint, ouvert par l'Inbox, la raison d'une ligne fermée lue dans la grille du
+serveur), le plafond `HUBSPOT_REPONSES_PAR_MINUTE` (20, sous l'empreinte de l'adresse, avant la clé), la clé de
+« rendre » (`hubspot-rendre:`) et le lien de la conversation dans le fil.
+
+- **Une relecture indépendante, un 🔴** : HubSpot donne `context.crm.objectId` en NOMBRE, et le connecteur exigeait une
+  chaîne dans les corps : chaque réponse et chaque « rendre » serait parti en 400 alors que le fil s'affichait (les
+  tests envoyaient `'42'`). Corrigé des deux côtés, test vérifié dans les deux sens. Les 🟡 aussi : un 429 garde la clé du
+  message (le rejeu d'un envoi lent peut tomber sur le plafond), la forme du fil vérifiée avant le rendu, la relecture
+  toutes les 10 s arrêtée sur un écran qui ne changera pas seul, la saisie suivie par `onInput` (le `onChange` de HubSpot
+  ne part qu'à la perte du focus : « Envoyer » serait resté grisé pendant la frappe).
+- **Déployé avant la bascule, à la demande de Julien** : annoncé aux sessions actives, CI verte (unit, integration,
+  securite, les deux topologies du front) ; `mba-api`, `mba-worker` et `mba-worker-analyse` à `cd274ff2`, aucune
+  migration, garde de révision, fumée publique OK, la route du fil en 401 sans signature ; le connecteur chez Scaleway ;
+  la carte envoyée (elle remplace celle de TOUS les portails où l'app est installée) ; `aide:charger` (157 lignes, 0
+  retirée), avec le certificat du pooler (`certs/supabase-pooler-ca.crt`), pas `DB_SSL_INSECURE`.
+- ⚠️ **La suite locale d'un clone Windows** : 25 fichiers rouges sur `origin/main` seul (la vitrine relue en CRLF, des
+  délais sous charge), sans rapport avec le lot ; la CI fait foi.
+- **Reste l'essai réel** du plan : placer la carte d'aperçu sur le portail cobaye, allumer l'interrupteur sur l'espace
+  de test, répondre et rendre depuis la carte.
 ## 2026-10-26 : le compte Meta Business n'est plus « le seul prérequis », et le logo de l'application WhatsApp Business
 
 Accord de Julien (2026-10-26) : les endroits publics qui disaient le compte Meta Business « le seul prérequis » disent
