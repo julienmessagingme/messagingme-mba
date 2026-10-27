@@ -905,6 +905,11 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    déploiement, avec l'image) : de 1 à 3 copies (Julien), 1 120 mvCPU et 2 Go, sonde de vie HTTP sur `/live` (et non
    plus TCP), `API_COPIE=auto`, pools 10 et 4, plafond global à 3 500. Les variables déclarées COMPLÈTENT celles du
    script de Julien, sans les remplacer.
+   🔴 **Petite copie depuis le 2026-10-27** (option A de Julien, `docs/superpowers/plans/2026-10-27-option-a-infrastructure.md`) :
+   560 mvCPU et 1 Go, environ 20 € par mois au lieu de 40. Au banc du même jour, sur la DB-DEV-M, elle tient au moins
+   150 appels/s (p95 269 ms, près de son plafond de processeur) contre 200 pour la copie de 1 120 mvCPU, la base limitant
+   les deux. Seuil de montée (`concurrent_requests_threshold`) à 35 au lieu de 50 : à 150 appels/s elle tient environ 40
+   requêtes simultanées, donc une 2e copie s'allume vers 120 appels/s, une quinzaine de fois le pic réel.
 8. **Supprimer l'endpoint public de la base.**
 9. Brancher Cloudflare : pendant la validation du certificat chez Scaleway, l'enregistrement peut rester en
    « DNS only » ; ensuite, proxy activé, règle du jeton d'origine posée, et **vérifier que l'appel direct au

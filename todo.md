@@ -916,7 +916,8 @@ l'écran et en Telegram, boucle de purge bornée. Restent :
 - **Le téléchargement d'un fichier reçu n'a pas de borne de concurrence** (`GET /v1/messages/{id}/media`, comme la
   route de l'Inbox) : chaque appel charge le fichier entier en mémoire, jusqu'à `MEDIA_ENTRANT_TAILLE_MAX_KO` (25 Mo),
   et ne compte qu'une unité. Soixante téléchargements parallèles pèsent 1,5 à 3 Go dans la copie de l'API. Le compter
-  comme une opération lourde, ou poser un sémaphore par copie.
+  comme une opération lourde, ou poser un sémaphore par copie. ⚠️ Plus pressant depuis le 2026-10-27 : la copie est
+  passée à 1 Go (option A), donc une trentaine de téléchargements de 25 Mo à la fois suffisent à la faire tuer.
 - **Le fil d'un contact bloqué se lit par Claude, pas par l'API** : `get_conversation` et `get_messages` passent par
   `getConversationContext`, sans filtre `blocked_at`. Déjà vrai en Pro, étendu au Free ; même espace, aucune fuite.
   Aligner sur l'API (et l'Inbox), ou l'écrire.

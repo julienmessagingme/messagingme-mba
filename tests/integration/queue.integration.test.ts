@@ -1,7 +1,7 @@
 import '../../src/charger-env';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
-import { PgBossQueue } from '../../src/queue/pgboss';
+import { INDEX_DE_PRISE, PgBossQueue } from '../../src/queue/pgboss';
 import { BATTEMENT_SECONDES } from '../../src/queue/names';
 import { PgEventStore } from '../../src/webhooks/store';
 import { handleWebhookJob } from '../../src/webhooks/handler';
@@ -44,6 +44,33 @@ describe.skipIf(!url)('intégration pg-boss + PgEventStore (Supabase)', () => {
     // Le dernier maillon, du handler à la colonne, que le faux store des tests unitaires ne voit pas : la colonne est
     // restée vide en production de 0093 au 2026-10-08, chaque maillon testé seul (journal technique).
     expect(res.rows[0]?.pn).toBe('itest-pn-queue');
+  });
+
+  it('🔴 pg-boss : l’instance qui supervise pose l’index de prise, valide, et la prise de pg-boss le prend (2026-10-27)', async () => {
+    await queue.indexDePrise;
+    const { rows } = await pool.query<{ indisvalid: boolean; def: string }>(
+      `select i.indisvalid, pg_get_indexdef(i.indexrelid) as def from pg_index i join pg_class c on c.oid = i.indexrelid
+         join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'pgboss_test' and c.relname = $1`,
+      [INDEX_DE_PRISE],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.indisvalid).toBe(true);
+    expect(rows[0]!.def).toContain('(name, priority DESC, created_on, id)');
+    expect(rows[0]!.def).toMatch(/state < 'active'.*NOT blocked/);
+    // Le plan de la requête de prise de pg-boss, sur une file qui a des tâches : l'index sert, pas un tri de la file.
+    const client = await pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('set local enable_seqscan = off');
+      const plan = await client.query<{ 'QUERY PLAN': string }>(
+        `explain select j.id from pgboss_test.job_common j where j.name = 'itest-prise' and j.state < 'active' and not j.blocked
+           and j.start_after < now() order by j.priority desc, j.created_on, j.id limit 1 for update of j skip locked`,
+      );
+      expect(plan.rows.map((r) => r['QUERY PLAN']).join('\n')).toContain(INDEX_DE_PRISE);
+    } finally {
+      await client.query('rollback');
+      client.release();
+    }
   });
 
   it('pg-boss : enqueue -> work délivre le job', async () => {

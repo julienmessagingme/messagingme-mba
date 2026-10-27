@@ -174,6 +174,19 @@ export function estEchecEcoute(avertissement: unknown): boolean {
 
 type OptsPoolPropre = PgBossPoolOpts & PgBossMaintenanceOpts & PgBossNotifyOpts & { retryLimit?: number };
 
+/**
+ * L'INDEX DE PRISE (bancs du 2026-10-27, `docs/JOURNAL-TECHNIQUE.md`). pg-boss prend chaque tâche par
+ * `order by priority desc, created_on, id limit 1 for update skip locked`, et aucun de ses index ne suit cet ordre
+ * (`job_common_i5` est `(name, start_after)`) : avec une file pleine, chaque prise relit et trie toute la file (330 ms
+ * pour 28 000 accusés en attente sur une DB-DEV-M), donc une file en retard ralentit sa propre résorption. Cet index
+ * partiel rend la prise indépendante de la longueur de la file (au banc, le vidage des accusés passe de 12-14 à 37-40
+ * par seconde). Posé au démarrage et pas par une migration : la table appartient à pg-boss, qui la crée à son premier
+ * démarrage, et une migration échouerait sur une base neuve. `concurrently`, donc sans bloquer les écritures ; un index
+ * laissé invalide par une construction interrompue est refait. Seule l'instance qui supervise le pose, une par service ;
+ * un échec se journalise sans arrêter le démarrage, l'index n'étant qu'une accélération.
+ */
+export const INDEX_DE_PRISE = 'job_common_prise_ordonnee';
+
 /** Implémentation durable via pg-boss. Chaque file a une dead-letter queue `<name>-dlq` et un retryLimit. */
 export class PgBossQueue implements Queue {
   private readonly boss: PgBoss;
@@ -195,6 +208,11 @@ export class PgBossQueue implements Queue {
   private ecouteRatee = false;
   /** Tant qu'une tentative suit, l'échec de l'écouteur n'est pas remis aux observateurs (`onWarning`). */
   private taireEchecEcoute = false;
+  private readonly schema: string;
+  /** L'instance pose-t-elle l'index de prise (`INDEX_DE_PRISE`) ? Celle qui a son pool et supervise. */
+  private readonly poseIndexDePrise: boolean;
+  /** La pose de l'index de prise, lancée au démarrage sans l'attendre : les tests l'attendent. */
+  indexDePrise: Promise<void> | undefined;
 
   /**
    * Sur une chaîne de connexion, pg-boss ouvre SON pool (le worker : il dépile, supervise, écoute, et migre).
@@ -214,6 +232,8 @@ export class PgBossQueue implements Queue {
   constructor(connexion: string | PoolPrete, schema = 'pgboss', opts: OptsPoolPropre = {}) {
     this.retryLimit = opts.retryLimit ?? 5;
     this.migre = typeof connexion === 'string';
+    this.schema = schema;
+    this.poseIndexDePrise = typeof connexion === 'string' && opts.supervise !== false;
     this.ecoute = typeof connexion === 'string' && opts.ecouteNotifications === true;
     this.boss = new PgBoss(
       typeof connexion === 'string'
@@ -289,6 +309,27 @@ export class PgBossQueue implements Queue {
       this.taireEchecEcoute = false;
     }
     this.started = true;
+    if (this.poseIndexDePrise) {
+      this.indexDePrise = this.poserIndexDePrise().catch((err: unknown) => journaliser('warn', 'pgboss_index_de_prise_echec', { err }));
+    }
+  }
+
+  /** Pose `INDEX_DE_PRISE` s'il manque, le refait s'il est resté invalide. Chaque instruction est autonome. */
+  private async poserIndexDePrise(): Promise<void> {
+    const db = this.boss.getDb();
+    const lu = await db.executeSql(
+      `select i.indisvalid from pg_index i join pg_class c on c.oid = i.indexrelid
+         join pg_namespace n on n.oid = c.relnamespace where n.nspname = $1 and c.relname = $2`,
+      [this.schema, INDEX_DE_PRISE],
+    );
+    const ligne = (lu.rows as Array<{ indisvalid: boolean }>)[0];
+    if (ligne?.indisvalid === true) return;
+    if (ligne) await db.executeSql(`drop index concurrently if exists "${this.schema}".${INDEX_DE_PRISE}`);
+    await db.executeSql(
+      `create index concurrently if not exists ${INDEX_DE_PRISE} on "${this.schema}".job_common
+         (name, priority desc, created_on, id) where state < 'active' and not blocked`,
+    );
+    journaliser('info', 'pgboss_index_de_prise_pose', { schema: this.schema });
   }
 
   /**

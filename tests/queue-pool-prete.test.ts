@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import type { Db } from 'pg-boss';
-import { PgBossQueue, type PoolPrete } from '../src/queue/pgboss';
+import { INDEX_DE_PRISE, PgBossQueue, type PoolPrete } from '../src/queue/pgboss';
 import {
   BATTEMENT_SECONDES, DELAI_REJEU_VIDAGE_SECONDES, MONITEUR_FILES_SECONDES, RAFRAICHISSEMENT_BATTEMENT_SECONDES, SURVEILLANCE_FILES_SECONDES,
 } from '../src/queue/names';
@@ -21,6 +21,10 @@ const etat = vi.hoisted(() => ({
   reglages: [] as Array<[string, Record<string, unknown>]>,
   travaux: [] as Array<[string, Record<string, unknown>, (jobs: Array<{ data: unknown }>) => Promise<void>]>,
   reveils: [] as string[],
+  /** Ce que la file envoie à la base par `getDb()` (l'index de prise), et ce que la base y répond. */
+  sql: [] as string[],
+  indexValide: undefined as boolean | undefined,
+  echecSql: null as Error | null,
 }));
 
 vi.mock('pg-boss', () => ({
@@ -37,6 +41,15 @@ vi.mock('pg-boss', () => ({
       return `boucle-${etat.travaux.length}`;
     }
     notifyWorker(id: string): void { etat.reveils.push(id); }
+    getDb(): { executeSql: (t: string) => Promise<{ rows: unknown[] }> } {
+      return {
+        executeSql: async (t: string) => {
+          if (etat.echecSql) throw etat.echecSql;
+          etat.sql.push(t.replace(/\s+/g, ' '));
+          return { rows: /^\s*select/.test(t) && etat.indexValide !== undefined ? [{ indisvalid: etat.indexValide }] : [] };
+        },
+      };
+    }
     async start(): Promise<void> {
       if (etat.echecDemarrage) throw etat.echecDemarrage;
     }
@@ -50,6 +63,9 @@ beforeEach(() => {
   etat.reglages.length = 0;
   etat.travaux.length = 0;
   etat.reveils.length = 0;
+  etat.sql.length = 0;
+  etat.indexValide = undefined;
+  etat.echecSql = null;
 });
 
 /** Un pool qui note chaque appel et rend un résultat reconnaissable. */
@@ -280,5 +296,51 @@ describe('câblage des deux processus', () => {
     // L'écoute suit le rôle : le principal écoute, l'analyse non (`ecouteLesFiles`, `tests/worker-roles.test.ts`).
     expect(src).toMatch(/ecouteNotifications: ecouteLesFiles\(config\.WORKER_ROLE\),/);
     expect(src.match(/new PgBossQueue\(/g)).toHaveLength(1);
+  });
+});
+
+describe('🔴 l’index de prise (bancs du 2026-10-27) : posé par l’instance qui supervise, jamais bloquant', () => {
+  const creation = () => etat.sql.filter((q) => /create index/.test(q));
+
+  it('le worker qui supervise le pose sans bloquer les écritures, sur l’ordre exact de la prise de pg-boss', async () => {
+    const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q.start();
+    await q.indexDePrise;
+    expect(creation()).toHaveLength(1);
+    expect(creation()[0]).toContain(`create index concurrently if not exists ${INDEX_DE_PRISE} on "pgboss".job_common`);
+    // Le même ordre que la requête de prise de pg-boss, et la même partie de la file : sinon le planificateur l’ignore.
+    expect(creation()[0]).toContain(`(name, priority desc, created_on, id) where state < 'active' and not blocked`);
+  });
+
+  it('déjà là et valide : rien n’est reconstruit ; resté invalide (construction interrompue) : refait', async () => {
+    etat.indexValide = true;
+    const q1 = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q1.start();
+    await q1.indexDePrise;
+    expect(creation()).toHaveLength(0);
+    etat.sql.length = 0;
+    etat.indexValide = false;
+    const q2 = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q2.start();
+    await q2.indexDePrise;
+    expect(etat.sql.filter((q) => /drop index concurrently/.test(q))).toHaveLength(1);
+    expect(creation()).toHaveLength(1);
+  });
+
+  it('une instance qui ne supervise pas (le worker d’analyse) ni un pool prêté (l’API) n’y touchent', async () => {
+    const analyse = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2, supervise: false });
+    await analyse.start();
+    expect(analyse.indexDePrise).toBeUndefined();
+    const api = new PgBossQueue(faux(), 'pgboss');
+    await api.start();
+    expect(api.indexDePrise).toBeUndefined();
+    expect(etat.sql).toHaveLength(0);
+  });
+
+  it('un échec ne casse pas le démarrage : l’index n’est qu’une accélération', async () => {
+    etat.echecSql = new Error('relation "pgboss.job_common" does not exist');
+    const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await expect(q.start()).resolves.toBeUndefined();
+    await expect(q.indexDePrise).resolves.toBeUndefined();
   });
 });
