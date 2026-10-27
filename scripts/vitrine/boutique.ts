@@ -55,13 +55,28 @@ const etapes = (liste: readonly Etape[]) => [
 ];
 
 /**
- * Le guide du numéro : d'abord les cinq mots qu'il emploie, puis l'arbre de Julien (2026-10-24, précisé le 25). Sans
- * script, les questions restent cachées et ses issues se lisent l'une sous l'autre, chacune précédée de la situation
- * qu'elle sert ; avec `site.js`, la première question s'affiche, chaque réponse montre la question suivante (`data-vers`)
- * ou une issue (`data-chemin`), et une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa question. Une
- * question peut montrer, avant ses réponses, les deux voies entre lesquelles elle fait choisir (`voies`).
+ * Le guide du numéro : l'arbre de Julien (2026-10-24, précisé le 25), en tunnel depuis le 2026-10-27 (« c'est le début
+ * de l'onboarding ») : une carte, la question en cours en grand et l'étape au-dessus (`{n}` sur le plus long parcours de
+ * l'arbre), puis les mots qu'il emploie, repliés dessous. Sans script, les questions restent cachées et ses issues se
+ * lisent l'une sous l'autre, chacune précédée de la situation qu'elle sert ; avec `site.js`, la première question
+ * s'affiche, chaque réponse montre la question suivante (`data-vers`) ou une issue (`data-chemin`), la question répondue
+ * se replie en une ligne que « Modifier » rouvre, et une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de
+ * sa question. Une question peut montrer, avant ses réponses, les deux voies entre lesquelles elle fait choisir (`voies`).
  */
-function guide(n: TexteBoutique['numero']): string[] {
+function guide(t: TexteBoutique, langue: Langue): string[] {
+  const n = t.numero;
+  // Le plus long parcours, en questions : la jauge et « Question n sur … » le lisent dans l'arbre, jamais écrit à la main.
+  const profondeur = (id: string): number => {
+    const q = n.questions.find((x) => x.id === id);
+    return q ? 1 + Math.max(...q.reponses.map((r) => (r.vers ? profondeur(r.vers) : 0))) : 0;
+  };
+  const max = profondeur(n.questions[0]!.id);
+  const progression = n.progression.replace('{max}', String(max));
+  // Le bout du tunnel : chaque issue mène à un geste. Le QR code ne se fait que par Claude Code (`/brancher`).
+  const portes = (id: string) => [
+    `<a class="bouton bouton-plein" href="#commencer">${t.boutonClaude}</a>`,
+    ...(id === 'qr' ? [] : [`<a class="bouton bouton-trait" href="${CONSOLE}/signup${langue === 'en' ? '?lang=en' : ''}">${t.boutonConsole}</a>`]),
+  ];
   const question = (q: Question, i: number) => [
     `          <fieldset class="bt-question" data-question="${q.id}"${q.voies ? ` aria-describedby="voies-${q.id}"` : ''}${i > 0 ? ' hidden' : ''}>`,
     `            <legend${q.logo ? ' class="bt-avec-logo"' : ''}>${q.logo ? `<img class="bt-logo" src="${q.logo}" alt="" width="40" height="40">` : ''}${q.texte}${q.precision ? `<span class="bt-precision">${q.precision}</span>` : ''}</legend>`,
@@ -70,6 +85,7 @@ function guide(n: TexteBoutique['numero']): string[] {
     `            <div class="bt-reponses">${q.reponses.map((r, k) => r.vers
       ? `<button type="button" class="bouton bouton-trait" data-vers="${r.vers}"${r.note ? ` data-note="note-${q.id}-${k}"` : ''} aria-pressed="false">${r.libelle}</button>`
       : `<button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">${r.libelle}</button>`).join('')}</div>`,
+    `            <button type="button" class="bt-modifier" data-modifier>${n.modifier}</button>`,
     ...(q.aide ? [`            <p class="bt-aide" hidden>${q.aide}</p>`] : []),
     ...q.reponses.flatMap((r, k) => (r.note ? [`            <p class="bt-note-reponse" id="note-${q.id}-${k}" role="status" hidden>${r.note}</p>`] : [])),
     '          </fieldset>',
@@ -91,23 +107,30 @@ function guide(n: TexteBoutique['numero']): string[] {
     `          <h3>${x.titre}</h3>`,
     ...x.textes.map((p) => `          <p>${p}</p>`),
     ...(x.voies ? ['          <div class="bt-voies">', ...x.voies.flatMap(voie), '          </div>'] : []),
+    `          <div class="bt-appels">${portes(x.id).join('')}</div>`,
     '        </article>',
   ];
   return [
-    '      <div class="bt-lexique">',
-    `        <h3>${n.lexique.titre}</h3>`,
-    '        <dl>',
-    ...n.lexique.termes.map((t) => `          <div><dt>${t.terme}</dt><dd>${t.definition}</dd></div>`),
-    '        </dl>',
-    '      </div>',
     '      <div class="bt-guide" data-guide-numero>',
-    '        <div class="bt-questions" hidden>',
+    '        <div class="bt-tunnel">',
+    `          <div class="bt-progression" data-progression="${progression}" data-max="${max}" data-fin="${n.fin}" hidden>`,
+    `            <p class="bt-etape" data-etape>${progression.replace('{n}', '1')}</p>`,
+    '            <div class="bt-piste" aria-hidden="true"><span class="bt-jauge" data-jauge></span></div>',
+    '          </div>',
+    '          <div class="bt-questions" hidden>',
     ...n.questions.flatMap(question),
-    `          <button type="button" class="bt-recommencer" data-recommencer hidden>${n.recommencer}</button>`,
-    '        </div>',
-    '        <div class="bt-chemins" aria-live="polite">',
+    `            <button type="button" class="bt-recommencer" data-recommencer hidden>${n.recommencer}</button>`,
+    '          </div>',
+    '          <div class="bt-chemins" aria-live="polite">',
     ...n.issues.flatMap(issue),
+    '          </div>',
     '        </div>',
+    '        <details class="bt-lexique">',
+    `          <summary>${n.lexique.titre}<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>`,
+    '          <dl>',
+    ...n.lexique.termes.map((x) => `            <div><dt>${x.terme}</dt><dd>${x.definition}</dd></div>`),
+    '          </dl>',
+    '        </details>',
     '      </div>',
   ];
 }
@@ -170,7 +193,7 @@ function mainBoutique(t: TexteBoutique, langue: Langue): string {
     `      <p class="f-surtitre">${t.numero.surtitre}</p>`,
     `      <h2 class="f-titre">${deux(t.numero.titre)}</h2>`,
     `      <p class="f-texte">${t.numero.chapeau}</p>`,
-    ...guide(t.numero),
+    ...guide(t, langue),
     '    </div>',
     '  </section>',
     '',

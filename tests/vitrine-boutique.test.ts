@@ -83,14 +83,19 @@ describe('la page Boutiques Shopify', () => {
     expect(forme('en')).toEqual(forme('fr'));
   });
 
-  it('le chapeau du guide annonce le nombre de questions du plus long parcours de l’arbre', () => {
+  it('le chapeau et l’étape du guide annoncent le nombre de questions du plus long parcours de l’arbre', () => {
     for (const [langue, mots] of [['fr', ['', 'une', 'deux', 'trois', 'quatre', 'cinq']], ['en', ['', 'one', 'two', 'three', 'four', 'five']]] as const) {
       const { questions, chapeau } = TEXTES_BOUTIQUES.shopify![langue].numero;
       const profondeur = (id: string): number => {
         const q = questions.find((x) => x.id === id);
         return q ? 1 + Math.max(...q.reponses.map((r) => (r.vers ? profondeur(r.vers) : 0))) : 0;
       };
-      expect(chapeau, langue).toContain(`${mots[profondeur(questions[0]!.id)]} question`);
+      const max = profondeur(questions[0]!.id);
+      expect(chapeau, langue).toContain(`${mots[max]} question`);
+      // « Question n sur … » et la jauge lisent le même maximum, calculé par la génération (`data-max`).
+      const html = lire(fichierDe(langue === 'fr' ? boutiques[0]!.fr.adresse : boutiques[0]!.en.adresse));
+      expect(html, langue).toContain(`data-max="${max}"`);
+      expect(html, langue).toContain(langue === 'fr' ? `Question 1 sur ${max} au plus` : `Question 1 of ${max} at most`);
     }
   });
 
@@ -176,14 +181,37 @@ describe('la page Boutiques Shopify', () => {
       for (const [langue, adresse] of [['fr', e.fr.adresse], ['en', e.en.adresse]] as const) {
         const html = lire(fichierDe(adresse));
         expect(html).toContain('data-guide-numero');
-        expect(html).toContain('<div class="bt-lexique">');
+        // Les mots du guide se déplient sous le tunnel, sans script aussi.
+        expect(html).toContain('<details class="bt-lexique">');
         expect(html).toMatch(/<div class="bt-questions" hidden>/);
+        // L'étape et sa jauge n'ont de sens qu'avec le script : cachées sans lui (`.bt-guide [hidden]` dans site.css).
+        expect(html).toMatch(/<div class="bt-progression"[^>]*\shidden>/);
         for (const x of TEXTES_BOUTIQUES.shopify![langue].numero.issues) {
           expect(html).toMatch(new RegExp(`data-chemin="${x.id}"[^>]*>\\s*<p class="bt-situation">`));
         }
       }
     }
     expect(lire('site.js')).toContain("querySelectorAll('[data-guide-numero]')");
+    expect(lire('site.css')).toContain('.bt-guide [hidden]{display:none}');
+  });
+
+  it('chaque issue du guide finit sur ses boutons : Claude Code partout, la console sauf pour le QR code', () => {
+    for (const e of boutiques) {
+      for (const [langue, adresse] of [['fr', e.fr.adresse], ['en', e.en.adresse]] as const) {
+        const html = lire(fichierDe(adresse));
+        const { issues } = TEXTES_BOUTIQUES.shopify![langue].numero;
+        // L'exception porte sur l'identifiant `qr` : qu'il change, et le test le dit au lieu de passer en silence.
+        expect(issues.map((x) => x.id), langue).toContain('qr');
+        for (const x of issues) {
+          const article = html.match(new RegExp(`<article class="bt-chemin" data-chemin="${x.id}"[\\s\\S]*?</article>`))?.[0] ?? '';
+          const appels = article.match(/<div class="bt-appels">([\s\S]*?)<\/div>/)?.[1] ?? '';
+          expect(appels, `${langue} : ${x.id}`).toContain('href="#commencer"');
+          // Le QR code ne se relie que par Claude Code (la page `/brancher` de son lien) : la console n'a pas ce chemin.
+          if (x.id === 'qr') expect(appels, `${langue} : ${x.id}`).not.toContain('console.messagingme.app');
+          else expect(appels, `${langue} : ${x.id}`).toContain('console.messagingme.app/signup');
+        }
+      }
+    }
   });
 
   it('les textes des deux langues ont la même forme', () => {

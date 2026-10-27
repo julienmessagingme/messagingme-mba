@@ -290,9 +290,10 @@
   });
 })();
 
-// Le guide du numéro de la page Boutiques Shopify : l'arbre de questions de Julien. Sans script, les questions restent
-// cachées et toutes les issues se lisent en liste, chacune avec la situation qu'elle sert. Avec lui, chaque réponse
-// (`data-vers`) montre la question suivante ou une issue ; changer une réponse plus haut efface tout ce qui la suivait ;
+// Le guide du numéro de la page Boutiques Shopify : l'arbre de questions de Julien, en tunnel (2026-10-27). Sans script,
+// les questions restent cachées et toutes les issues se lisent en liste, chacune avec la situation qu'elle sert. Avec
+// lui, la question en cours s'affiche en grand sous l'étape et sa jauge ; chaque réponse (`data-vers`) replie sa question
+// en une ligne et montre la suivante ou une issue ; « Modifier » rouvre une question et efface tout ce qui la suivait ;
 // une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa question.
 (function () {
   [].slice.call(document.querySelectorAll('[data-guide-numero]')).forEach(function (g) {
@@ -300,12 +301,26 @@
     var recommencer = g.querySelector('[data-recommencer]');
     var premiere = g.querySelector('[data-question]');
     var chemins = [].slice.call(g.querySelectorAll('.bt-chemin'));
+    var progression = g.querySelector('[data-progression]');
     if (!questions || !recommencer || !premiere) return;
     var parcours = [premiere];
+    // Le tunnel : « Question n », sa jauge sur le plus long parcours (`data-max`, calculé depuis l'arbre), l'issue en
+    // dernière étape ; puis « Votre chemin » et la jauge pleine.
+    var avancer = function (fin) {
+      if (!progression) return;
+      var max = Number(progression.getAttribute('data-max')) || 1;
+      progression.hidden = false;
+      progression.querySelector('[data-etape]').textContent = fin
+        ? progression.getAttribute('data-fin')
+        : progression.getAttribute('data-progression').replace('{n}', String(parcours.length));
+      progression.querySelector('[data-jauge]').style.width = (fin ? 100 : Math.min(parcours.length, max) / (max + 1) * 100) + '%';
+    };
     var montrer = function (cle) {
       chemins.forEach(function (c) { c.classList.toggle('actif', c.getAttribute('data-chemin') === cle); });
     };
     var effacer = function (q) {
+      q.classList.remove('repondue');
+      [].slice.call(q.querySelectorAll('[data-vers], [data-aide]')).forEach(function (b) { b.removeAttribute('tabindex'); });
       [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
       var aide = q.querySelector('.bt-aide');
       var bouton = q.querySelector('[data-aide]');
@@ -320,7 +335,19 @@
     };
     questions.hidden = false;
     g.setAttribute('data-pret', '');
+    avancer(false);
     g.addEventListener('click', function (e) {
+      // « Modifier » rouvre une réponse donnée : tout ce qui la suivait s'efface, le tunnel revient à cette question.
+      var modifier = e.target.closest && e.target.closest('[data-modifier]');
+      if (modifier) {
+        var rouverte = modifier.closest('[data-question]');
+        couper(rouverte);
+        effacer(rouverte);
+        if (rouverte === premiere) recommencer.hidden = true;
+        avancer(false);
+        rouverte.querySelector('[data-vers]').focus();
+        return;
+      }
       var aide = e.target.closest && e.target.closest('[data-aide]');
       if (aide) {
         var texte = aide.closest('[data-question]').querySelector('.bt-aide');
@@ -331,11 +358,18 @@
       var b = e.target.closest && e.target.closest('[data-vers]');
       if (b) {
         var q = b.closest('[data-question]');
+        // Une question répondue ne se rouvre que par « Modifier » : sa réponse repliée est inerte, au clavier aussi.
+        if (q.classList.contains('repondue')) return;
         var vers = b.getAttribute('data-vers');
         couper(q);
         [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
         // Une réponse peut porter une note (le « Non » au compte Meta Business n'arrête rien) : seule la sienne s'affiche.
         [].slice.call(q.querySelectorAll('.bt-note-reponse')).forEach(function (n) { n.hidden = n.id !== b.getAttribute('data-note'); });
+        // La question répondue se replie en une ligne (la question, la réponse, « Modifier ») : la suivante prend la place.
+        q.classList.add('repondue');
+        [].slice.call(q.querySelectorAll('[data-vers], [data-aide]')).forEach(function (x) { x.setAttribute('tabindex', '-1'); });
+        var aideOuverte = q.querySelector('.bt-aide');
+        if (aideOuverte) aideOuverte.hidden = true;
         recommencer.hidden = false;
         var suivante = g.querySelector('[data-question="' + vers + '"]');
         if (suivante) {
@@ -344,10 +378,18 @@
           questions.insertBefore(suivante, recommencer);
           suivante.hidden = false;
           parcours.push(suivante);
+          avancer(false);
           // La question suivante apparaît : le focus va à sa première réponse, qu'un lecteur d'écran l'entende.
           suivante.querySelector('[data-vers]').focus();
         } else {
           montrer(vers);
+          avancer(true);
+          // L'issue est la fin du tunnel : le focus va à son premier bouton, et elle se montre en entier.
+          var issue = g.querySelector('[data-chemin="' + vers + '"]');
+          var bouton = issue && issue.querySelector('.bt-appels a');
+          if (bouton) bouton.focus({ preventScroll: true });
+          var doux = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+          if (issue) issue.scrollIntoView({ block: 'nearest', behavior: doux ? 'smooth' : 'auto' });
         }
         return;
       }
@@ -355,6 +397,7 @@
         couper(premiere);
         effacer(premiere);
         recommencer.hidden = true;
+        avancer(false);
         // « Recommencer » se cache : le focus revient à la première question plutôt que de se perdre.
         premiere.querySelector('[data-vers]').focus();
       }

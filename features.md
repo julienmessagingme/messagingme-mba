@@ -121,11 +121,14 @@ dans le Pro. Shopify n'y apparaît qu'en compatibilité (Messaging Me n'est pas 
 les messages de commande sur WhatsApp, branchés en le demandant à Claude Code avec l'offre Free (0 € d'abonnement), ou
 depuis la console avec le Pro. Le scénario du panier abandonné en cinq temps, ce qui se branche, ce que la conversation
 rend possible (chaque carte étiquetée de son offre), puis le guide du numéro, l'arbre de Julien (2026-10-24, revu le
-2026-10-25 après l'essai 161) : les mots expliqués d'abord (compte Meta Business, application WhatsApp Business, API
-officielle, garder son application, QR code), puis des questions une à une (un compte Meta Business ? un « Non »
-n'arrête rien ; l'application WhatsApp Business sur le numéro de l'entreprise ? la garder, ou un numéro à part ? un
-numéro libre ?) qui mènent à garder son application (annoncé « bientôt »), à son numéro libre ou à un numéro fourni,
-par Meta. Le QR code ne se propose que sans compte Meta Business, pour un numéro à part ou un nouveau numéro : un choix
+2026-10-25 après l'essai 161), en tunnel depuis le 2026-10-27 : « Votre branchement commence ici. », et une carte qui
+pose une question à la fois, en grand, sous l'étape (« Question 1 sur 5 au plus ») et sa jauge. Une réponse donnée se
+replie en une ligne que « Modifier » rouvre. Les questions (un compte Meta Business ? un « Non » n'arrête rien ;
+l'application WhatsApp Business sur le numéro de l'entreprise ? la garder, ou un numéro à part ? un numéro libre ?)
+mènent à garder son application, à son numéro libre ou à un numéro fourni, par Meta, et chaque issue finit sur ses
+boutons : Claude Code, et la console sauf pour le QR code, qui ne se relie que par Claude Code. Les mots employés
+(compte Meta Business, application WhatsApp Business, API officielle, garder son application, QR code) se déplient
+sous la carte. Le QR code ne se propose que sans compte Meta Business, pour un numéro à part ou un nouveau numéro : un choix
 « QR code ou compte Meta ? » y montre ce que chaque voie apporte et coûte. Le mot « coexistence » n'y apparaît
 jamais : face au client, c'est « garder votre application WhatsApp Business ». Suivent les quatre étapes depuis Claude Code,
 le prix et une FAQ. Un numéro relié par QR code n'y sert qu'à répondre aux clients qui écrivent. Le même arbre guide

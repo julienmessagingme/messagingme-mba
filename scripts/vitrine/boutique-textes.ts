@@ -71,6 +71,11 @@ export interface TexteBoutique {
     /** L'arbre de Julien (2026-10-24) : la première question ouvre, chaque réponse mène plus loin. */
     readonly questions: readonly Question[]; readonly issues: readonly Issue[];
     readonly plus: string; readonly moins: string; readonly recommencer: string;
+    /**
+     * Le tunnel (Julien, 2026-10-27 : « c'est le début de l'onboarding ») : l'étape en cours (`{n}` son rang, `{max}` le
+     * plus long parcours de l'arbre, que `boutique.ts` calcule), le mot de l'issue, et le lien qui rouvre une réponse.
+     */
+    readonly progression: string; readonly fin: string; readonly modifier: string;
   };
   readonly commencer: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly etapes: readonly Etape[]; readonly bouton: string; readonly aide: string };
   readonly prix: {
@@ -169,10 +174,10 @@ const fr = (): TexteBoutique => {
     },
     numero: {
       surtitre: 'Votre numéro WhatsApp',
-      titre: ['Le bon numéro,', 'en quelques questions.'],
-      chapeau: 'Selon votre compte Meta Business, votre application WhatsApp Business et votre numéro, voici votre chemin, en cinq questions au plus.',
+      titre: ['Votre branchement', 'commence ici.'],
+      chapeau: 'En cinq questions au plus sur votre compte Meta Business, votre application WhatsApp Business et votre numéro, vous savez quoi faire.',
       lexique: {
-        titre: 'Avant de répondre, cinq mots à connaître',
+        titre: 'Les cinq mots employés ici',
         termes: [
           { terme: 'Le compte Meta Business', definition: 'Le compte de votre entreprise chez Meta (un «&nbsp;portefeuille&nbsp;», l’ancien Business Manager). Si vous faites de la publicité sur Facebook ou Instagram, vous en avez sans doute un. Sinon, rien à préparer : il est gratuit, et la fenêtre de Meta vous le fait créer en chemin, avec votre profil Facebook.' },
           { terme: 'L’application WhatsApp Business', definition: 'L’application gratuite des professionnels, sur votre téléphone : le numéro de la boutique, son profil, les réponses que vous tapez. Elle n’envoie pas seule les messages de votre boutique.' },
@@ -255,6 +260,7 @@ const fr = (): TexteBoutique => {
       ],
       plus: 'Pour :', moins: 'Contre :',
       recommencer: 'Recommencer',
+      progression: 'Question {n} sur {max} au plus', fin: 'Votre chemin', modifier: 'Modifier',
     },
     commencer: {
       surtitre: 'Commencer avec Claude Code',
@@ -394,10 +400,10 @@ const en = (): TexteBoutique => {
     },
     numero: {
       surtitre: 'Your WhatsApp number',
-      titre: ['The right number,', 'in a few questions.'],
-      chapeau: 'Depending on your Meta Business account, your WhatsApp Business app and your number, here is your path, in five questions at most.',
+      titre: ['Your setup', 'starts here.'],
+      chapeau: 'In five questions at most about your Meta Business account, your WhatsApp Business app and your number, you know what to do.',
       lexique: {
-        titre: 'Before you answer, five words to know',
+        titre: 'The five words used here',
         termes: [
           { terme: 'The Meta Business account', definition: 'Your business’s account at Meta (a “portfolio”, formerly Business Manager). If you advertise on Facebook or Instagram, you probably have one. Otherwise, nothing to prepare: it is free, and Meta’s window has you create it along the way, with your Facebook profile.' },
           { terme: 'The WhatsApp Business app', definition: 'The free app for businesses, on your phone: your store’s number, its profile, the replies you type. It does not send your store’s messages on its own.' },
@@ -477,6 +483,7 @@ const en = (): TexteBoutique => {
       ],
       plus: 'For:', moins: 'Against:',
       recommencer: 'Start again',
+      progression: 'Question {n} of {max} at most', fin: 'Your path', modifier: 'Change',
     },
     commencer: {
       surtitre: 'Start with Claude Code',

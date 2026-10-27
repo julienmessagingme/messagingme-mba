@@ -347,41 +347,41 @@
   <section class="f-bloc bt-numero" id="numero">
     <div class="cadre">
       <p class="f-surtitre">Votre numéro WhatsApp</p>
-      <h2 class="f-titre">Le bon numéro, <span class="sec-accent">en quelques questions.</span></h2>
-      <p class="f-texte">Selon votre compte Meta Business, votre application WhatsApp Business et votre numéro, voici votre chemin, en cinq questions au plus.</p>
-      <div class="bt-lexique">
-        <h3>Avant de répondre, cinq mots à connaître</h3>
-        <dl>
-          <div><dt>Le compte Meta Business</dt><dd>Le compte de votre entreprise chez Meta (un «&nbsp;portefeuille&nbsp;», l’ancien Business Manager). Si vous faites de la publicité sur Facebook ou Instagram, vous en avez sans doute un. Sinon, rien à préparer&nbsp;: il est gratuit, et la fenêtre de Meta vous le fait créer en chemin, avec votre profil Facebook.</dd></div>
-          <div><dt>L’application WhatsApp Business</dt><dd>L’application gratuite des professionnels, sur votre téléphone&nbsp;: le numéro de la boutique, son profil, les réponses que vous tapez. Elle n’envoie pas seule les messages de votre boutique.</dd></div>
-          <div><dt>L’API officielle</dt><dd>Le même WhatsApp, piloté par un logiciel, sur un numéro relié par Meta&nbsp;: c’est elle qui envoie la confirmation, l’expédition et la relance, et Meta facture ses messages. Il faut un compte Meta Business, et le numéro quitte l’application, sauf si vous la gardez.</dd></div>
-          <div><dt>Garder votre application</dt><dd>Votre numéro reste dans l’application WhatsApp Business et passe en même temps par Meta&nbsp;: vous répondez toujours depuis votre téléphone, et les messages de votre boutique partent de Messaging Me.</dd></div>
-          <div><dt>Le QR code</dt><dd>Votre application WhatsApp Business reliée à Messaging Me comme un ordinateur («&nbsp;Appareils liés&nbsp;»), sans aucun compte (ni profil Facebook, ni carte chez Meta)&nbsp;: votre agent IA répond à ceux qui vous écrivent sans que Meta facture ses réponses, mais rien ne part en premier, et WhatsApp peut couper le numéro. Plus tard, le même numéro peut garder l’application et passer par Meta, pour écrire en premier.</dd></div>
-        </dl>
-      </div>
+      <h2 class="f-titre">Votre branchement <span class="sec-accent">commence ici.</span></h2>
+      <p class="f-texte">En cinq questions au plus sur votre compte Meta Business, votre application WhatsApp Business et votre numéro, vous savez quoi faire.</p>
       <div class="bt-guide" data-guide-numero>
-        <div class="bt-questions" hidden>
+        <div class="bt-tunnel">
+          <div class="bt-progression" data-progression="Question {n} sur 5 au plus" data-max="5" data-fin="Votre chemin" hidden>
+            <p class="bt-etape" data-etape>Question 1 sur 5 au plus</p>
+            <div class="bt-piste" aria-hidden="true"><span class="bt-jauge" data-jauge></span></div>
+          </div>
+          <div class="bt-questions" hidden>
           <fieldset class="bt-question" data-question="compte">
             <legend>Avez-vous un compte Meta Business&nbsp;?<span class="bt-precision">Un portefeuille d’entreprise, l’ancien Business Manager.</span></legend>
             <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="application-compte" aria-pressed="false">Oui</button><button type="button" class="bouton bouton-trait" data-vers="application" data-note="note-compte-1" aria-pressed="false">Non</button><button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">Je ne sais pas</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
             <p class="bt-aide" hidden>Connectez-vous sur business.facebook.com avec votre profil Facebook&nbsp;: le menu sous «&nbsp;Accueil&nbsp;», en haut à gauche, liste vos portefeuilles. Aucun&nbsp;? Répondez «&nbsp;Non&nbsp;», ce n’est pas un problème.</p>
             <p class="bt-note-reponse" id="note-compte-1" role="status" hidden>Pas de souci&nbsp;: la fenêtre de Meta vous le fera créer en chemin, avec votre profil Facebook. Et pour un numéro à part, le QR code s’en passe, mais il ne fait que répondre.</p>
           </fieldset>
           <fieldset class="bt-question" data-question="application-compte" hidden>
             <legend class="bt-avec-logo"><img class="bt-logo" src="/img/logos/whatsapp-business.png" alt="" width="40" height="40">Avez-vous l’application WhatsApp Business sur le numéro de votre entreprise&nbsp;?<span class="bt-precision">L’application des professionnels, distincte de WhatsApp.</span></legend>
             <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="garder-compte" aria-pressed="false">Oui</button><button type="button" class="bouton bouton-trait" data-vers="numero" aria-pressed="false">Non</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
           </fieldset>
           <fieldset class="bt-question" data-question="garder-compte" hidden>
             <legend>Voulez-vous garder ce numéro dans l’application, ou prendre un numéro à part&nbsp;?</legend>
             <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="garder-application" aria-pressed="false">Le garder dans l’application</button><button type="button" class="bouton bouton-trait" data-vers="numero" aria-pressed="false">Un numéro à part</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
           </fieldset>
           <fieldset class="bt-question" data-question="application" hidden>
             <legend class="bt-avec-logo"><img class="bt-logo" src="/img/logos/whatsapp-business.png" alt="" width="40" height="40">Avez-vous l’application WhatsApp Business sur le numéro de votre entreprise&nbsp;?<span class="bt-precision">L’application des professionnels, distincte de WhatsApp.</span></legend>
             <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="garder" aria-pressed="false">Oui</button><button type="button" class="bouton bouton-trait" data-vers="choix" aria-pressed="false">Non</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
           </fieldset>
           <fieldset class="bt-question" data-question="garder" hidden>
             <legend>Voulez-vous garder ce numéro dans l’application, ou prendre un numéro à part&nbsp;?</legend>
             <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="garder-application" aria-pressed="false">Le garder dans l’application</button><button type="button" class="bouton bouton-trait" data-vers="choix" aria-pressed="false">Un numéro à part</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
           </fieldset>
           <fieldset class="bt-question" data-question="choix" aria-describedby="voies-choix" hidden>
             <legend>Par QR code, pour répondre, ou avec un compte Meta Business créé en chemin&nbsp;?<span class="bt-precision">Sans compte Meta Business, pour un numéro à part ou un nouveau numéro, deux voies&nbsp;:</span></legend>
@@ -407,14 +407,16 @@
             </section>
             </div>
             <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="qr" aria-pressed="false">Le QR code, pour répondre</button><button type="button" class="bouton bouton-trait" data-vers="numero" aria-pressed="false">Créer le compte</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
           </fieldset>
           <fieldset class="bt-question" data-question="numero" hidden>
             <legend>Avez-vous un numéro libre&nbsp;?<span class="bt-precision">Un numéro qui ne sert pas dans WhatsApp, ni dans l’application WhatsApp Business.</span></legend>
             <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="api" aria-pressed="false">Oui</button><button type="button" class="bouton bouton-trait" data-vers="api-fourni" aria-pressed="false">Non</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
           </fieldset>
-          <button type="button" class="bt-recommencer" data-recommencer hidden>Recommencer</button>
-        </div>
-        <div class="bt-chemins" aria-live="polite">
+            <button type="button" class="bt-recommencer" data-recommencer hidden>Recommencer</button>
+          </div>
+          <div class="bt-chemins" aria-live="polite">
         <article class="bt-chemin" data-chemin="garder-application" id="numero-garder-application">
           <p class="bt-situation">Avec l’application WhatsApp Business, que vous voulez garder</p>
           <h3>Gardez votre application WhatsApp Business</h3>
@@ -422,18 +424,21 @@
           <p>La fenêtre de Meta prend votre compte Meta Business, ou vous le fait créer en chemin avec votre profil Facebook, puis vous propose un moyen de paiement. Meta facture les messages partis de Messaging Me, réponses comprises au-delà d’une franchise mensuelle&nbsp;; ceux que vous tapez dans l’application restent gratuits.</p>
           <p>Quelques fonctions de l’application s’arrêtent, comme les listes de diffusion et le message d’absence, et il faut l’ouvrir au moins toutes les deux semaines. Ce que vous y tapez n’apparaît pas encore dans Messaging Me&nbsp;: votre agent IA ne voit pas vos réponses.</p>
           <p>Demandez à Claude de garder votre application, ou cliquez «&nbsp;Garder mon application WhatsApp Business&nbsp;» sur l’Accueil de la console. Le pas-à-pas, écran par écran&nbsp;: <a href="/aide/garder-mon-application-whatsapp-business/">Garder mon application WhatsApp Business</a>.</p>
+          <div class="bt-appels"><a class="bouton bouton-plein" href="#commencer">Brancher gratuitement avec Claude Code</a><a class="bouton bouton-trait" href="https://console.messagingme.app/signup">Tout faire depuis la console</a></div>
         </article>
         <article class="bt-chemin" data-chemin="api" id="numero-api">
           <p class="bt-situation">Avec un numéro libre, relié par Meta</p>
           <h3>Votre numéro, relié par Meta</h3>
           <p>Claude ouvre la fenêtre de Meta&nbsp;: vous y prenez votre compte Meta Business, ou vous le créez en chemin avec votre profil Facebook, puis vous reliez votre numéro.</p>
           <p>Les trois messages de votre boutique partent, et votre agent IA répond. Meta facture les messages de votre boutique, et les réponses au-delà d’une franchise mensuelle&nbsp;: un moyen de paiement s’ajoute chez Meta.</p>
+          <div class="bt-appels"><a class="bouton bouton-plein" href="#commencer">Brancher gratuitement avec Claude Code</a><a class="bouton bouton-trait" href="https://console.messagingme.app/signup">Tout faire depuis la console</a></div>
         </article>
         <article class="bt-chemin" data-chemin="api-fourni" id="numero-api-fourni">
           <p class="bt-situation">Sans numéro libre, avec un numéro fourni relié par Meta</p>
           <h3>Un numéro fourni, relié par Meta</h3>
           <p>Prenez un numéro fourni, à 3,50&nbsp;€ HT par mois avec l’offre Free, inclus dans le Pro&nbsp;: Claude le relie à votre compte Meta Business, que la fenêtre de Meta vous fait créer en chemin s’il vous manque.</p>
           <p>Les trois messages de votre boutique partent, et votre agent IA répond. Meta facture les messages de votre boutique, et les réponses au-delà d’une franchise mensuelle&nbsp;: un moyen de paiement s’ajoute chez Meta.</p>
+          <div class="bt-appels"><a class="bouton bouton-plein" href="#commencer">Brancher gratuitement avec Claude Code</a><a class="bouton bouton-trait" href="https://console.messagingme.app/signup">Tout faire depuis la console</a></div>
         </article>
         <article class="bt-chemin" data-chemin="qr" id="numero-qr">
           <p class="bt-situation">Sans compte Meta Business, par QR code, pour répondre</p>
@@ -441,8 +446,20 @@
           <p>Reliez votre numéro, ou un numéro fourni à 3,50&nbsp;€ HT par mois, par QR code et sans aucun compte&nbsp;: votre agent IA répond aux clients qui vous écrivent, et Meta ne facture pas ces réponses.</p>
           <p>Mais rien ne part en premier, ni confirmation, ni expédition, ni relance&nbsp;: WhatsApp peut couper un numéro relié ainsi qui écrit à des inconnus. Le numéro doit être dans l’application WhatsApp Business d’un téléphone, et un numéro fourni garde le vôtre à l’abri. L’offre Pro demande un compte Meta Business.</p>
           <p>Plus tard, pour écrire en premier (les messages de votre boutique), vous garderez votre application et relierez le même numéro par Meta («&nbsp;Garder mon application WhatsApp Business&nbsp;», depuis Claude ou l’Accueil de la console)&nbsp;: la fenêtre de Meta vous fera créer le compte Meta Business, et vos conversations restent.</p>
+          <div class="bt-appels"><a class="bouton bouton-plein" href="#commencer">Brancher gratuitement avec Claude Code</a></div>
         </article>
+          </div>
         </div>
+        <details class="bt-lexique">
+          <summary>Les cinq mots employés ici<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+          <dl>
+            <div><dt>Le compte Meta Business</dt><dd>Le compte de votre entreprise chez Meta (un «&nbsp;portefeuille&nbsp;», l’ancien Business Manager). Si vous faites de la publicité sur Facebook ou Instagram, vous en avez sans doute un. Sinon, rien à préparer&nbsp;: il est gratuit, et la fenêtre de Meta vous le fait créer en chemin, avec votre profil Facebook.</dd></div>
+            <div><dt>L’application WhatsApp Business</dt><dd>L’application gratuite des professionnels, sur votre téléphone&nbsp;: le numéro de la boutique, son profil, les réponses que vous tapez. Elle n’envoie pas seule les messages de votre boutique.</dd></div>
+            <div><dt>L’API officielle</dt><dd>Le même WhatsApp, piloté par un logiciel, sur un numéro relié par Meta&nbsp;: c’est elle qui envoie la confirmation, l’expédition et la relance, et Meta facture ses messages. Il faut un compte Meta Business, et le numéro quitte l’application, sauf si vous la gardez.</dd></div>
+            <div><dt>Garder votre application</dt><dd>Votre numéro reste dans l’application WhatsApp Business et passe en même temps par Meta&nbsp;: vous répondez toujours depuis votre téléphone, et les messages de votre boutique partent de Messaging Me.</dd></div>
+            <div><dt>Le QR code</dt><dd>Votre application WhatsApp Business reliée à Messaging Me comme un ordinateur («&nbsp;Appareils liés&nbsp;»), sans aucun compte (ni profil Facebook, ni carte chez Meta)&nbsp;: votre agent IA répond à ceux qui vous écrivent sans que Meta facture ses réponses, mais rien ne part en premier, et WhatsApp peut couper le numéro. Plus tard, le même numéro peut garder l’application et passer par Meta, pour écrire en premier.</dd></div>
+          </dl>
+        </details>
       </div>
     </div>
   </section>

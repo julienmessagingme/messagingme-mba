@@ -754,31 +754,64 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .bt-cartes h3{margin:14px 0 6px;font-size:1.08rem}
 .bt-cartes p{margin:0;color:var(--muted)}
 .bt-offre{display:inline-block;margin-left:4px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);font-size:.72rem;font-weight:700;color:var(--muted);vertical-align:middle;white-space:nowrap}
-.bt-guide{margin:28px 0 0;max-width:820px}
-.bt-question{margin:0 0 20px;padding:0;border:0;min-width:0}
-.bt-question legend{margin:0 0 10px;padding:0;font-weight:700;font-size:1.05rem}
-.bt-question legend.bt-avec-logo{position:relative;padding-left:52px;min-height:42px}
-.bt-logo{position:absolute;left:0;top:2px;width:40px;height:40px}
-.bt-reponses{display:flex;flex-wrap:wrap;gap:10px}
-.bt-reponses .bouton{padding:.7em 1.2em;font-family:inherit;font-size:.95rem;cursor:pointer}
-.bt-reponses .bouton-texte{background:none;border:0;font:inherit;font-weight:600;font-size:.95rem;text-decoration:underline;color:var(--action-ink);cursor:pointer}
+/* Le guide du numéro en tunnel : une seule question en grand, les réponses données repliées au-dessus, une jauge. */
+.bt-guide{margin:32px 0 0;max-width:880px}
+.bt-tunnel{padding:clamp(22px,4.5vw,44px);border:1px solid rgb(111 194 254 / .38);border-radius:26px;background:radial-gradient(120% 90% at 0% 0%,rgb(16 30 138 / .95),var(--surface) 62%);box-shadow:0 0 0 6px rgb(51 171 254 / .07),0 34px 80px -34px var(--ombre)}
+.bt-progression{display:flex;align-items:center;gap:18px;margin:0 0 30px}
+.bt-etape{margin:0;font-size:.95rem;font-weight:700;color:var(--action-ink);white-space:nowrap}
+.bt-piste{flex:1;height:8px;border-radius:999px;background:rgb(255 255 255 / .1);overflow:hidden}
+.bt-jauge{display:block;width:20%;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--action),#25d366);transition:width .45s cubic-bezier(.2,.7,.2,1)}
+.bt-question{margin:0;padding:0;border:0;min-width:0}
+.bt-question legend{float:left;width:100%;margin:0 0 22px;padding:0;font-weight:800;font-size:clamp(1.55rem,3.6vw,2.35rem);line-height:1.12;letter-spacing:-.025em;text-wrap:balance}
+.bt-question legend.bt-avec-logo{position:relative;padding-left:66px;min-height:52px}
+.bt-logo{position:absolute;left:0;top:0;width:52px;height:52px}
+.bt-reponses{clear:both;display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.bt-reponses .bouton{font-family:inherit;cursor:pointer}
+.bt-reponses .bouton-trait{min-width:9em;justify-content:center;padding:1em 1.8em;border-color:rgb(255 255 255 / .34);background:rgb(255 255 255 / .06);font-size:1.08rem;font-weight:700}
+.bt-reponses .bouton-trait:hover{border-color:var(--action-ink);background:var(--action-wash);color:var(--ink)}
+.bt-reponses .bouton:focus-visible,.bt-modifier:focus-visible,.bt-recommencer:focus-visible{outline:3px solid var(--action-ink);outline-offset:3px}
+.bt-reponses .bouton-texte{margin-left:6px;background:none;border:0;font:inherit;font-weight:600;font-size:1rem;text-decoration:underline;color:var(--action-ink)}
 .bt-reponses [aria-pressed="true"]{background:var(--action);border-color:transparent;color:var(--on-action)}
-.bt-recommencer{margin:0 0 20px;padding:0;border:0;background:none;color:var(--action-ink);font:inherit;font-weight:600;text-decoration:underline;cursor:pointer}
+.bt-modifier{display:none;margin-left:auto;padding:0;border:0;background:none;color:var(--action-ink);font:inherit;font-size:.92rem;font-weight:600;text-decoration:underline;cursor:pointer}
+/* Une question répondue : une ligne, sa réponse en pastille, « Modifier » au bout, et la note de la réponse si elle en a une. */
+.bt-question.repondue{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 18px;padding:0 0 18px;border-bottom:1px solid var(--line)}
+.bt-question.repondue legend{float:none;width:auto;margin:0;font-size:1rem;font-weight:600;letter-spacing:0;color:var(--muted)}
+.bt-question.repondue legend.bt-avec-logo{padding-left:0;min-height:0}
+.bt-question.repondue :is(.bt-logo,.bt-precision,.bt-aide,.bt-voies,[data-aide],[aria-pressed="false"]){display:none}
+.bt-question.repondue .bt-reponses{clear:none}
+.bt-question.repondue [aria-pressed="true"]{min-width:0;padding:.3em .95em;font-size:.9rem;pointer-events:none}
+.bt-question.repondue .bt-modifier{display:inline}
+.bt-question.repondue .bt-note-reponse{flex-basis:100%;margin:2px 0 0}
+/* `hidden` doit gagner sur les `display` du guide : sans script, l'étape et sa jauge ne s'affichent pas. */
+.bt-guide [hidden]{display:none}
+.bt-recommencer{margin:26px 0 0;padding:0;border:0;background:none;color:var(--muted);font:inherit;font-size:.92rem;font-weight:600;text-decoration:underline;cursor:pointer}
 .bt-chemin{margin:0 0 16px;padding:22px;border:1px solid var(--line);border-radius:18px;background:rgb(255 255 255 / .04)}
 .bt-chemin h3{margin:4px 0 8px;font-size:1.15rem}
 .bt-chemin p{margin:0 0 8px;color:var(--muted)}
 .bt-chemin .bt-situation{margin:0;font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--action-ink)}
+.bt-appels{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:22px 0 0}
+.js .bt-guide[data-pret] .bt-chemins{margin:0}
 .js .bt-guide[data-pret] .bt-chemin{display:none}
-.js .bt-guide[data-pret] .bt-chemin.actif{display:block}
+.js .bt-guide[data-pret] .bt-chemin.actif{display:block;margin:26px 0 0;padding:clamp(20px,3.5vw,30px);border-color:rgb(37 211 102 / .5);background:rgb(37 211 102 / .07)}
+.js .bt-guide[data-pret] .bt-chemin.actif h3{margin:0 0 12px;font-size:clamp(1.35rem,2.8vw,1.8rem);font-weight:800;letter-spacing:-.02em}
 .js .bt-guide[data-pret] .bt-situation{display:none}
-.bt-lexique{margin:28px 0 0;max-width:900px;padding:22px;border:1px solid var(--line);border-radius:18px;background:rgb(255 255 255 / .04)}
-.bt-lexique h3{margin:0 0 14px;font-size:1.1rem}
-.bt-lexique dl{margin:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px 24px}
+.bt-lexique{margin:18px 0 0;border:1px solid var(--line);border-radius:18px;background:rgb(255 255 255 / .03)}
+.bt-lexique summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 22px;font-weight:700;cursor:pointer;list-style:none}
+.bt-lexique summary::-webkit-details-marker{display:none}
+.bt-lexique summary .ic{color:var(--action-ink);transition:transform .2s}
+.bt-lexique[open] summary .ic{transform:rotate(180deg)}
+.bt-lexique dl{margin:0;padding:0 22px 22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px 24px}
 .bt-lexique dt{font-weight:700;color:var(--action-ink)}
 .bt-lexique dd{margin:4px 0 0;color:var(--muted);font-size:.95rem}
-.bt-precision{display:block;margin-top:2px;font-weight:400;font-size:.9rem;color:var(--muted)}
-.bt-aide{margin:12px 0 0;max-width:640px;padding:12px 16px;border-left:3px solid var(--action-ink);color:var(--muted);font-size:.95rem}
-.bt-note-reponse{margin:12px 0 0;max-width:640px;padding:12px 16px;border-left:3px solid #25d366;color:var(--muted);font-size:.95rem}
+.bt-precision{display:block;margin-top:10px;font-weight:400;font-size:1.02rem;letter-spacing:0;color:var(--muted)}
+.bt-aide{margin:16px 0 0;max-width:640px;padding:12px 16px;border-left:3px solid var(--action-ink);color:var(--muted);font-size:.95rem}
+.bt-note-reponse{margin:16px 0 0;max-width:640px;padding:12px 16px;border-left:3px solid #25d366;color:var(--muted);font-size:.95rem}
+@media (prefers-reduced-motion:no-preference){
+  @keyframes bt-entree{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .js .bt-guide[data-pret] .bt-question:not(.repondue):not([hidden]),.js .bt-guide[data-pret] .bt-chemin.actif{animation:bt-entree .35s cubic-bezier(.2,.7,.2,1) both}
+}
+@media (prefers-reduced-motion:reduce){.bt-jauge{transition:none}}
+@media (max-width:520px){.bt-reponses .bouton-trait{flex:1 1 40%;min-width:0;padding:.95em 1em}.bt-progression{gap:12px;margin-bottom:22px}}
 .bt-voies{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin:12px 0 0}
 .bt-voie{padding:16px;border:1px solid var(--line);border-radius:14px}
 .bt-voie h4{margin:0 0 10px;font-size:1rem}
