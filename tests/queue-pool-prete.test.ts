@@ -24,6 +24,7 @@ const etat = vi.hoisted(() => ({
   /** Ce que la file envoie à la base par `getDb()` (l'index de prise), et ce que la base y répond. */
   sql: [] as string[],
   indexValide: undefined as boolean | undefined,
+  constructionEnCours: false,
   echecSql: null as Error | null,
 }));
 
@@ -46,6 +47,7 @@ vi.mock('pg-boss', () => ({
         executeSql: async (t: string) => {
           if (etat.echecSql) throw etat.echecSql;
           etat.sql.push(t.replace(/\s+/g, ' '));
+          if (/pg_stat_progress_create_index/.test(t)) return { rows: etat.constructionEnCours ? [{ '?column?': 1 }] : [] };
           return { rows: /^\s*select/.test(t) && etat.indexValide !== undefined ? [{ indisvalid: etat.indexValide }] : [] };
         },
       };
@@ -65,6 +67,7 @@ beforeEach(() => {
   etat.reveils.length = 0;
   etat.sql.length = 0;
   etat.indexValide = undefined;
+  etat.constructionEnCours = false;
   etat.echecSql = null;
 });
 
@@ -325,6 +328,16 @@ describe('🔴 l’index de prise (bancs du 2026-10-27) : posé par l’instance
     await q2.indexDePrise;
     expect(etat.sql.filter((q) => /drop index concurrently/.test(q))).toHaveLength(1);
     expect(creation()).toHaveLength(1);
+  });
+
+  it('🔴 invalide mais EN COURS de construction (un worker tué l’a lancée) : on ne le défait pas', async () => {
+    etat.indexValide = false;
+    etat.constructionEnCours = true;
+    const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q.start();
+    await q.indexDePrise;
+    expect(etat.sql.filter((q2) => /drop index/.test(q2))).toHaveLength(0);
+    expect(creation()).toHaveLength(0);
   });
 
   it('une instance qui ne supervise pas (le worker d’analyse) ni un pool prêté (l’API) n’y touchent', async () => {

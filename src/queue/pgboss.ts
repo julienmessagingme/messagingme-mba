@@ -324,7 +324,16 @@ export class PgBossQueue implements Queue {
     );
     const ligne = (lu.rows as Array<{ indisvalid: boolean }>)[0];
     if (ligne?.indisvalid === true) return;
-    if (ligne) await db.executeSql(`drop index concurrently if exists "${this.schema}".${INDEX_DE_PRISE}`);
+    if (ligne) {
+      // Invalide peut vouloir dire EN COURS : une construction lancée par un worker tué continue côté serveur. On ne
+      // supprime que ce qu'aucune construction ne tient, sinon on défairait un index sur le point d'être valide.
+      const enCours = await db.executeSql(
+        `select 1 from pg_stat_progress_create_index p join pg_class c on c.oid = p.index_relid where c.relname = $1`,
+        [INDEX_DE_PRISE],
+      );
+      if (enCours.rows.length > 0) return;
+      await db.executeSql(`drop index concurrently if exists "${this.schema}".${INDEX_DE_PRISE}`);
+    }
     await db.executeSql(
       `create index concurrently if not exists ${INDEX_DE_PRISE} on "${this.schema}".job_common
          (name, priority desc, created_on, id) where state < 'active' and not blocked`,

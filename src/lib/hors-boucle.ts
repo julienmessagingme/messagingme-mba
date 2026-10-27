@@ -34,7 +34,12 @@ export interface OptionsLecture {
    * fois pour un seul aperçu de site.
    */
   delaiMs?: number;
-  /** Le tas du worker. Défaut 1 024 Mo : le plus gros vrai CSV en demande 440. ⚠️ `--max-old-space-size` l'emporte. */
+  /**
+   * Le tas du worker. Défaut 512 Mo : le plus gros vrai CSV en demande 440. 1 024 jusqu'au 2026-10-27, quand la copie
+   * de l'API est passée à 1 Go en tout (`ops/scaleway/conteneur-api.json`) : le worker vit dans le même processus, et
+   * un fichier piégé (un CSV forgé de 8 Mo monte à 1,2 Go) doit échouer seul, pas faire tuer la copie qui reçoit les
+   * messages de Meta. ⚠️ `--max-old-space-size` l'emporte.
+   */
   memoireMo?: number;
   /** Ce qu'on lit, pour que le refus parle de ce que le client a donné. Défaut : un fichier. */
   nature?: 'fichier' | 'pages';
@@ -105,7 +110,7 @@ interface LectureEnCours {
  * après `REPOS_MS` sans lecture.
  */
 export async function avecLecteur<T>(options: OptionsLecture, travail: (lecteur: Lecteur) => Promise<T>): Promise<T> {
-  const { delaiMs = 10_000, memoireMo = 1_024, nature = 'fichier', reposMs = REPOS_MS } = options;
+  const { delaiMs = 10_000, memoireMo = 512, nature = 'fichier', reposMs = REPOS_MS } = options;
   let worker: Worker | null = null;
   /** Pourquoi le lecteur ne lit plus (échéance, mémoire, worker sorti, travail fini), ou `null` tant qu'il lit. */
   let mort: Error | null = null;

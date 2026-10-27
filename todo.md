@@ -1,5 +1,17 @@
 # todo.md : backlog
 
+## 🟡 Les restes de la relecture de l'option A (index de prise de pg-boss, petite copie d'API, 2026-10-27)
+
+- **Une file pleine de tâches DIFFÉRÉES** (`start_after` dans le futur : un « attendre 24 h » d'automation sur 30 000
+  contacts, les premiers messages de la filière application, les rejeux des webhooks sortants) : l'index de prise ne
+  porte pas `start_after`, donc une prise parcourt les différées qui la précèdent dans l'ordre avant de trouver une
+  prête. Aucune tâche différée en production le 2026-10-27 (849 lignes dans `job_common`). Déclencheur : une
+  automation à délai sur une grosse audience ; alors, `EXPLAIN (ANALYZE)` de la prise sur cette file et lire
+  `Rows Removed by Filter`.
+- **Une construction d'index longue** (seulement si `job_common` grossit beaucoup) : elle occupe une des deux
+  connexions de pg-boss du worker (`PGBOSS_MAX`) et retient son arrêt (`pool.end()` attend, puis le SIGKILL de compose
+  à 30 s). Aujourd'hui, 1 Mo : instantané. Parade si besoin : la poser par un client dédié.
+
 ## 🟡 Les restes de la relecture du parallélisme du worker principal (pool à 20, accusés à 4, 2026-10-27)
 
 - **Un événement de nœud compté deux fois** : `recordStatusForMessage` (`src/workflow/node-events.pg.ts`) s'appuie sur
