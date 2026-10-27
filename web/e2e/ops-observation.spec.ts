@@ -38,7 +38,7 @@ test.describe('Ops : observer un espace', () => {
       return json({});
     });
     // La confirmation est volontaire : entrer chez un client remplace la session en cours.
-    await page.goto('/ops');
+    await page.goto('/ops?tab=clients');
     await page.getByTestId('observe-t-client').click();
     await repondre(page, true);
     await expect.poll(() => appels.length, { timeout: 15_000 }).toBeGreaterThan(0);

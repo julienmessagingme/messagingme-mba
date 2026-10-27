@@ -4507,6 +4507,27 @@ charge qu'elle observe. Aucun seuil n'est posé à ce jour, ces compteurs OBSERV
 `/ops/overview` (session d'exploitation) : rollup par tenant, charge des files, battement de chaque rôle de worker. Les DLQ non
 vides déclenchent une alerte Telegram. Le SLO vit dans [docs/SLO-2026-09-01.md](docs/SLO-2026-09-01.md).
 
+**L'écran `/ops` a quatre onglets** (refonte, [spec](docs/superpowers/specs/2026-10-27-ops-refonte-design.md)) : Santé
+(par défaut, lisible au téléphone), Capacité, Clients (la table des espaces et ses fenêtres : observation, offre, quotas,
+suppression) et Réglages (grille de prix, numéros fournis, adresses d'exploitation). L'onglet vit dans l'adresse
+(`/ops?tab=capacite`). Santé et Capacité lisent leurs propres routes et disent « au prochain déploiement de l'API » sur
+un 404, parce que la console part au push et l'API plus tard.
+- `GET /ops/sante` : une pastille par brique (API, workers, base, entrants, accusés), une jauge de marge, les derniers
+  signaux de Meta (dernier message, dernier accusé reçus, sur 7 jours) et les incidents des 24 h. Le SERVEUR juge
+  (`evaluerSante`, `src/ops/sante.ts`) et rend ses seuils (`SEUILS_SANTE`) : l'écran ne fait que mettre en mots. Une
+  brique sans trafic est verte, pas inconnue. Chaque lecture est au mieux : une lecture en échec rend la brique sans
+  mesure, jamais une 500.
+- `GET /ops/capacite?jours=` (1 à 30, 30 par défaut) : par heure, les copies d'API allumées (`pool_attentes`, une ligne
+  par processus et par minute, la réception exclue) et les attentes du pool ; par file et par heure, le retard
+  (`mesures_files_heures`). L'écran en tire un point par jour de Paris et compte les montées à deux copies sur 7 jours
+  (`web/lib/ops-capacite.ts`).
+- `mesures_files_heures` (migration 0258) : le worker principal relève toutes les 15 minutes, depuis la table `job` de
+  pg-boss, les jobs TERMINÉS de l'heure en cours et de la précédente (p95 d'attente, p95 et maximum de bout en bout) ;
+  `on conflict` réécrit l'heure, donc une heure se complète d'une passe à l'autre. pg-boss efface ses jobs terminés
+  au bout de sept jours (son défaut, `deleteAfterSeconds`) : cette table est ce qui donne les 30 jours.
+- Les rétentions des mesures que lit l'onglet (`pool_attentes`, `http_latences`, `taches_mesures`,
+  `mesures_files_heures`) sont de 30 jours ; leurs constantes font foi.
+
 **La veille de charge** (`src/ops/veille-charge.ts`, worker principal, chaque minute) lit les mesures que seul `/ops`
 lisait, et alerte sur Telegram au plus une fois par clé toutes les 30 minutes :
 - une **file en retard** : le plus vieux job qui ATTEND (créé ou à rejouer, `start_after` passé, `PgOpsStore.agesDAttente` ;

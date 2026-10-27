@@ -293,10 +293,11 @@ export const schema = z.object({
    */
   AVANCE_ECHECS_RETENTION_DAYS: z.coerce.number().int().min(1).default(90),
   /**
-   * Suppression des agrégats d'attente du pool. Courte : une ligne par minute et par process,
-   * et on regarde une courbe de quelques heures, jamais de quelques mois.
+   * Suppression des agrégats d'attente du pool : une ligne par minute et par process. Trente jours depuis le
+   * 2026-10-27 (sept avant) : l'onglet Capacité de `/ops` y lit un mois de copies d'API et d'attentes (40 000 lignes
+   * et 7 Mo par semaine, relevé le même jour).
    */
-  POOL_ATTENTES_RETENTION_DAYS: z.coerce.number().int().min(1).default(7),
+  POOL_ATTENTES_RETENTION_DAYS: z.coerce.number().int().min(1).default(30),
   /**
    * Plafond d'envois par minute et par numéro, tous chemins confondus (campagne, scénario, automation,
    * réponse d'inbox), cf. `src/meta/arbitre-debit.ts`. 80 = le débit maximum qu'une campagne peut choisir à

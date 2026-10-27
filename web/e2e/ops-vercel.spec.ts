@@ -31,7 +31,7 @@ const jauge = (part: number, o: Record<string, unknown> = {}) => ({
 test.describe('Ops : le budget d’équipe Vercel', () => {
   test('🔴 la jauge, lue une fois, orange à 80 %, rouge à 95 %', async ({ page }) => {
     const appels = await monter(page, { status: 200, body: jauge(0.82) });
-    await page.goto('/ops');
+    await page.goto('/ops?tab=capacite');
     const carte = page.getByTestId('vercel-budget');
     await expect(carte).toContainText('82 %');
     await expect(carte).toContainText('82,00 $');
@@ -42,13 +42,13 @@ test.describe('Ops : le budget d’équipe Vercel', () => {
 
   test('à 96 %, rouge', async ({ page }) => {
     await monter(page, { status: 200, body: jauge(0.96) });
-    await page.goto('/ops');
+    await page.goto('/ops?tab=capacite');
     await expect(page.getByTestId('vercel-part')).toHaveClass(/text-danger/);
   });
 
   test('🔴 le compteur de l’équipe en retard sur les clés : la carte dit les deux chiffres', async ({ page }) => {
     await monter(page, { status: 200, body: jauge(0.0796, { depenseEquipeDollars: 0, depenseClesMensuellesDollars: 7.96 }) });
-    await page.goto('/ops');
+    await page.goto('/ops?tab=capacite');
     const carte = page.getByTestId('vercel-budget');
     await expect(carte).toContainText('8 %');
     await expect(carte).toContainText('7,96 $');
@@ -57,19 +57,19 @@ test.describe('Ops : le budget d’équipe Vercel', () => {
 
   test('sans jeton de compte, la carte le dit', async ({ page }) => {
     await monter(page, { status: 200, body: { configure: false } });
-    await page.goto('/ops');
+    await page.goto('/ops?tab=capacite');
     await expect(page.getByTestId('vercel-budget')).toContainText('non configuré');
   });
 
   test('🔴 aucun budget d’équipe chez Vercel : rouge, rien ne borne la dépense', async ({ page }) => {
     await monter(page, { status: 200, body: jauge(0, { limiteDollars: null, part: null, depenseRetenueDollars: 3 }) });
-    await page.goto('/ops');
+    await page.goto('/ops?tab=capacite');
     await expect(page.getByTestId('vercel-budget')).toContainText('Aucun budget d’équipe');
   });
 
   test('🔴 une API sans la route (404) ou une lecture en échec (502) ne casse pas l’écran', async ({ page }) => {
     await monter(page, { status: 404, body: { error: 'Not Found' } });
-    await page.goto('/ops');
+    await page.goto('/ops?tab=capacite');
     await expect(page.getByTestId('vercel-budget')).toContainText('indisponible');
     await expect(page.getByTestId('stockage-base')).toBeVisible();
   });

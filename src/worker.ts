@@ -9,6 +9,7 @@ import { PgRcsMediaStore, GRACE_SUPPRESSION_JOURS } from './rcs/media-store.pg';
 import { RETENTION_LATENCES_JOURS } from './ops/latence-http';
 import { RETENTION_REFUS_ANS } from './crm/refus-effaces';
 import { MesureTaches, RETENTION_TACHES_JOURS } from './ops/mesure-taches';
+import { RETENTION_FILES_HEURES_JOURS } from './ops/mesures-files.pg';
 import { viderMesuresTachesVersLaBase } from './ops/mesure-taches.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
 import { todayParis, addDays } from './stats/range';
@@ -221,7 +222,7 @@ export async function demarrerWorker(): Promise<void> {
     dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     adressesEvenements, envoisEvenements,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
+    poolAttentesStore, httpLatencesStore, mesuresTachesStore, mesuresFilesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
@@ -299,6 +300,15 @@ export async function demarrerWorker(): Promise<void> {
       console.error('mesures-taches: écriture impossible:', messageDe(err));
     });
   });
+
+  // La latence des files heure par heure, pour les trente jours de l'onglet Capacité de `/ops` (refonte, lot 1) :
+  // pg-boss efface ses tâches terminées bien avant. Chaque passage recalcule l'heure en cours et la précédente.
+  taches.programmer('mesures-files', 15 * 60_000, async () => {
+    await mesuresFilesStore.relever(new Date(Date.now() - 60 * 60_000)).catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error('mesures-files: relevé impossible:', messageDe(err));
+    });
+  }, { immediat: true });
 
   // File webhook : le PgRecipientStore applique les statuts de livraison, le PgInboxStore enregistre les
   // entrants en conversations ; le report Flow -> champs du contact est isolé dans handleWebhookJob (il ne
@@ -1678,6 +1688,8 @@ export async function demarrerWorker(): Promise<void> {
       () => httpLatencesStore.purgeOlderThan(RETENTION_LATENCES_JOURS));
     await etape('taches', `heure(s) de mesure des tâches effacée(s) (au-delà de ${RETENTION_TACHES_JOURS} j)`,
       () => mesuresTachesStore.purgeOlderThan(RETENTION_TACHES_JOURS));
+    await etape('files', `heure(s) de latence des files effacée(s) (au-delà de ${RETENTION_FILES_HEURES_JOURS} j)`,
+      () => mesuresFilesStore.purgeOlderThan(RETENTION_FILES_HEURES_JOURS));
     // Les essais du bac à sable : rétention courte et en dur (14 j), ce ne sont pas des conversations de
     // clients (ni contact ni `wa_id`, seulement ce que l'administrateur a tapé).
     await etape('essais', `essai(s) d’agent effacé(s) (au-delà de ${RETENTION_ESSAIS_JOURS} j)`,

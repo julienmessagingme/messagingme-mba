@@ -11,7 +11,11 @@ import type { MesureStockage } from '../ops/stockage.pg';
 import type { ConsommationEquipe } from '../agent/llm/consommation-equipe';
 import type { LatenceHttpRow } from '../ops/latence-http';
 import type { BilanRisque } from '../engagement/balayage';
-import { seuilLatenceSecondes } from '../queue/names';
+import { dlqName, seuilLatenceSecondes } from '../queue/names';
+import { z } from 'zod';
+import { evaluerSante, SEUILS_SANTE } from '../ops/sante';
+import type { PointCapaciteHeure } from '../ops/pool-attentes.pg';
+import type { PointFileHeure } from '../ops/mesures-files.pg';
 import { messageDe } from '../lib/erreur';
 import { makeTraceOps, type AuditSink } from '../audit/journal';
 
@@ -136,6 +140,16 @@ export interface OpsRouteDeps {
   latencesHttp: { lire(heures: number): Promise<LatenceHttpRow[]> };
   /** La durée et les lignes des tâches de fond des workers (migration 0207). Au mieux, comme la latence. */
   mesuresTaches: { lire(heures: number): Promise<TacheMesureRow[]> };
+  /** Les deux lectures propres à l'onglet Santé (refonte de /ops, lot 1). Au mieux, comme le pool. */
+  sante: {
+    connexionsBase(): Promise<{ utilisees: number; max: number }>;
+    signauxMeta(): Promise<{ dernierMessage: string | null; dernierAccuse: string | null }>;
+  };
+  /** L'onglet Capacité : l'historique heure par heure du pool, des copies d'API et des files. Au mieux. */
+  capacite: {
+    parHeure(jours: number): Promise<PointCapaciteHeure[]>;
+    files(jours: number): Promise<PointFileHeure[]>;
+  };
   /**
    * Les octets en base, fichiers compris. Coûteux (le catalogue entier) : servi par sa propre route, jamais par
    * la vue d'ensemble, que l'écran recharge à chaque ouverture et sur demande.
@@ -253,6 +267,54 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
       // La révision de CETTE copie de l'API, posée à la construction de l'image (`Dockerfile`, `ARG REVISION`).
       revision: process.env.REVISION || 'inconnue',
     });
+  });
+
+  /**
+   * L'onglet Santé (refonte de /ops, lot 1) : une pastille par brique, jugée par `evaluerSante`, la jauge de capacité,
+   * les derniers signaux de Meta et les incidents des 24 h. Chaque lecture est au mieux : une mesure en échec laisse
+   * sa brique sans valeur, jamais l'écran vide. Les seuils partent avec la réponse : l'écran n'en tient aucun.
+   */
+  app.get('/ops/sante', opts, async (_req, reply) => {
+    const [workers, latencesFiles, chargeFiles, latencesHeure, latences24h, connexions, meta] = await Promise.all([
+      deps.heartbeat.lister().catch(() => []),
+      deps.exploitation.getQueueLatence(1).catch(() => []),
+      deps.exploitation.getQueueLoad().catch(() => []),
+      deps.latencesHttp.lire(1).catch(() => []),
+      deps.latencesHttp.lire(24).catch(() => []),
+      deps.sante.connexionsBase().catch(() => null),
+      deps.sante.signauxMeta().catch(() => ({ dernierMessage: null, dernierAccuse: null })),
+    ]);
+    const bilan = evaluerSante({ workers, latencesFiles, chargeFiles, latencesHttp: latencesHeure, connexions });
+    const ilYa24h = Date.now() - 24 * 3600 * 1000;
+    const estDlq = (q: string): boolean => chargeFiles.some((c) => dlqName(c.queue) === q);
+    return reply.code(200).send({
+      ...bilan,
+      connexions,
+      meta,
+      incidents: {
+        erreurs5xx: latences24h.filter((l) => l.code >= 500).reduce((s, l) => s + l.requetes, 0),
+        tachesEnEchec: chargeFiles.filter((c) => !estDlq(c.queue)).reduce((s, c) => s + c.failed, 0),
+        fileEchec: chargeFiles.filter((c) => estDlq(c.queue)).reduce((s, c) => s + c.backlog, 0),
+        // Un démarrage récent : un déploiement ou un redémarrage, que l'écran ne sait pas distinguer.
+        demarrages: workers
+          .filter((w) => w.bootedAt !== null && Date.parse(w.bootedAt) > ilYa24h)
+          .map((w) => ({ role: w.role, demarreLe: w.bootedAt })),
+      },
+      seuils: SEUILS_SANTE,
+    });
+  });
+
+  /** L'onglet Capacité : trente jours au plus (la rétention des mesures), heure par heure. */
+  const requeteCapacite = z.object({ jours: z.coerce.number().int().min(1).max(30).default(30) });
+  app.get('/ops/capacite', opts, async (req, reply) => {
+    const lu = requeteCapacite.safeParse(req.query ?? {});
+    if (!lu.success) return reply.code(400).send({ error: 'jours : un entier de 1 à 30' });
+    const { jours } = lu.data;
+    const [heures, files] = await Promise.all([
+      deps.capacite.parHeure(jours).catch(() => []),
+      deps.capacite.files(jours).catch(() => []),
+    ]);
+    return reply.code(200).send({ jours, heures, files, seuils: SEUILS_SANTE });
   });
 
   /** Les octets en base : lus une fois à l'ouverture de l'écran, pas à chaque chargement de la vue d'ensemble (voir `PgStockageStore`). */

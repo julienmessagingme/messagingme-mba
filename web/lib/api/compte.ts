@@ -401,6 +401,53 @@ export function getOpsOverview(sessionOps: string): Promise<OpsOverview> {
   return appelOps(sessionOps, '/ops/overview');
 }
 
+/** Un seuil de la refonte de `/ops` (lot 1) : orange, puis rouge, dans l'unité de son signal. */
+export interface SeuilOps { orange: number; rouge: number }
+export interface SeuilsSanteOps { accuses: SeuilOps; entrants: SeuilOps; connexions: SeuilOps; erreurs: SeuilOps; battement: SeuilOps }
+export type CleBriqueOps = 'api' | 'workers' | 'base' | 'entrants' | 'accuses';
+/** Une pastille de l'onglet Santé, jugée par le serveur (`src/ops/sante.ts`) ; l'écran ne fait que la mettre en mots. */
+export interface BriqueSanteOps {
+  cle: CleBriqueOps;
+  etat: 'vert' | 'orange' | 'rouge';
+  /** Dans l'unité du seuil de la brique ; `null` = rien à mesurer (aucun trafic). */
+  mesure: number | null;
+  detail?: string;
+}
+export interface SanteOps {
+  briques: BriqueSanteOps[];
+  jauge: { margePourcent: number; signal: 'base' | 'entrants' | 'accuses' };
+  connexions: { utilisees: number; max: number } | null;
+  meta: { dernierMessage: string | null; dernierAccuse: string | null };
+  incidents: { erreurs5xx: number; tachesEnEchec: number; fileEchec: number; demarrages: Array<{ role: string; demarreLe: string }> };
+  seuils: SeuilsSanteOps;
+}
+
+export function getOpsSante(sessionOps: string): Promise<SanteOps> {
+  return appelOps(sessionOps, '/ops/sante');
+}
+
+export interface PointCapaciteHeureOps {
+  heure: string;
+  copiesMax: number;
+  minutesDeuxCopiesOuPlus: number;
+  attentesApi: number;
+  attentesWorkers: number;
+  maxAttenteMs: number;
+}
+export interface PointFileHeureOps {
+  file: string;
+  heure: string;
+  echantillons: number;
+  attenteP95Secondes: number;
+  boutEnBoutP95Secondes: number;
+  boutEnBoutMaxSecondes: number;
+}
+export interface CapaciteOps { jours: number; heures: PointCapaciteHeureOps[]; files: PointFileHeureOps[]; seuils: SeuilsSanteOps }
+
+export function getOpsCapacite(sessionOps: string, jours = 30): Promise<CapaciteOps> {
+  return appelOps(sessionOps, `/ops/capacite?jours=${jours}`);
+}
+
 /**
  * La jauge du budget d'équipe Vercel (lot 14), en dollars. `configure: false` = jeton de compte non configuré ;
  * `limiteDollars: null` = aucun budget d'équipe chez Vercel. Les autres champs suivent `configure: true`.

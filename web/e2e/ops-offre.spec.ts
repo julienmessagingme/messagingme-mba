@@ -31,7 +31,7 @@ async function ouvrir(page: import('@playwright/test').Page, offre: Record<strin
     }
     return json({});
   });
-  await page.goto('/ops');
+  await page.goto('/ops?tab=clients');
   await page.getByTestId('offre-t-essai').click();
   const modale = page.getByTestId('offre-modale');
   await expect(modale).toBeVisible();

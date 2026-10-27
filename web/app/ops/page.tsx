@@ -30,6 +30,17 @@ import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
 import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise } from '@/lib/ops-offre';
 import { OpsEmailsCard } from '@/components/OpsEmailsCard';
+import { MbaTabs } from '@/components/MbaTabs';
+import { OpsSante } from '@/components/OpsSante';
+import { OpsCapacite } from '@/components/OpsCapacite';
+
+/**
+ * Les quatre onglets (refonte, `docs/superpowers/specs/2026-10-27-ops-refonte-design.md`). Santé d'abord : c'est
+ * l'écran du téléphone. L'onglet vit dans l'adresse (`?tab=`), lu au montage et réécrit sans recharger.
+ */
+const ONGLETS = ['sante', 'capacite', 'clients', 'reglages'] as const;
+type Onglet = (typeof ONGLETS)[number];
+const ongletDe = (valeur: string | null): Onglet => (ONGLETS as readonly string[]).includes(valeur ?? '') ? valeur as Onglet : 'sante';
 
 /**
  * LA CONSOLE D'EXPLOITATION, NOMINATIVE (plan `docs/superpowers/plans/2026-09-28-ops-nominatif.md`).
@@ -53,13 +64,21 @@ export default function OpsPage() {
   const [aSupprimer, setASupprimer] = useState<{ id: string; nom: string } | null>(null);
   const [quotasDe, setQuotasDe] = useState<{ id: string; nom: string } | null>(null);
   const [offreDe, setOffreDe] = useState<{ id: string; nom: string; membres: number } | null>(null);
+  const [onglet, setOnglet] = useState<Onglet>('sante');
 
   useEffect(() => {
     // Relue ici et pas au rendu : le stockage du navigateur n'existe pas côté serveur. `getSessionOps` efface au
     // passage l'ancien jeton partagé, qui n'ouvre plus rien.
     setSession(getSessionOps());
+    setOnglet(ongletDe(new URLSearchParams(window.location.search).get('tab')));
     setPret(true);
   }, []);
+
+  function choisirOnglet(cle: string): void {
+    const suivant = ongletDe(cle);
+    setOnglet(suivant);
+    window.history.replaceState(null, '', suivant === 'sante' ? '/ops' : `/ops?tab=${suivant}`);
+  }
 
   /** La session d'exploitation est tombée (expirée, adresse retirée de la liste, facteur retiré) : on la quitte. */
   const perdue = useCallback(() => {
@@ -164,52 +183,73 @@ export default function OpsPage() {
         </div>
 
         {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
+        <MbaTabs
+          tabs={[
+            { key: 'sante', label: t('Santé', 'Health') },
+            { key: 'capacite', label: t('Capacité', 'Capacity') },
+            { key: 'clients', label: t('Clients', 'Clients') },
+            { key: 'reglages', label: t('Réglages', 'Settings') },
+          ]}
+          active={onglet}
+          onSelect={choisirOnglet}
+        />
+        {/* Santé et Capacité lisent leurs propres routes : elles n'attendent pas la vue d'ensemble. */}
+        {onglet === 'sante' && <OpsSante jeton={session.token} onPerdue={perdue} />}
+        {onglet === 'capacite' && <OpsCapacite jeton={session.token} onPerdue={perdue} />}
         {loading && !data ? (
           <Squelette forme="carte" />
         ) : data ? (
           <>
-            <div className="grid grid-cols-3 gap-4">
-              <Stat label={t('Clients', 'Clients')} value={fmtNum(data.tenants.length, locale)} />
-              <Stat label={t('Messages', 'Messages')} value={fmtNum(totalMessages, locale)} />
-              <Stat label={t('Contacts', 'Contacts')} value={fmtNum(totalContacts, locale)} />
-            </div>
+            {onglet === 'sante' && <WorkerCard workers={data.workers ?? (data.worker ? [data.worker] : [])} />}
 
-            <WorkerCard workers={data.workers ?? (data.worker ? [data.worker] : [])} />
-
-            <QueueCard queues={data.queues} />
-            <LatenceCard lignes={data.latences ?? []} />
-            <LatenceHttpCard lignes={data.latencesHttp ?? []} />
-            <TachesFondCard taches={data.tachesFond ?? []} />
-            <StockageCard jeton={session.token} />
-            <VercelCard jeton={session.token} />
-            <PoolCard instantane={data.poolInstantane ?? null} points={data.attentesPool ?? []} />
-            <EquiteCard groupes={data.queuesParGroupe ?? []} />
-
-            {dailyFrom && dailyTo && data.daily.length > 0 && (
-              <div className="rounded-carte border border-ink-200 bg-white p-5">
-                <DailyChart
-                  title={t('Messages échangés (tous clients)', 'Messages exchanged (all clients)')}
-                  subtitle={t('par jour, 14 derniers jours', 'per day, last 14 days')}
-                  from={dailyFrom}
-                  to={dailyTo}
-                  series={[{ label: t('Messages', 'Messages'), color: brand[400], points: data.daily }]}
-                />
-              </div>
+            {onglet === 'capacite' && (
+              <>
+                <QueueCard queues={data.queues} />
+                <LatenceCard lignes={data.latences ?? []} />
+                <LatenceHttpCard lignes={data.latencesHttp ?? []} />
+                <TachesFondCard taches={data.tachesFond ?? []} />
+                <PoolCard instantane={data.poolInstantane ?? null} points={data.attentesPool ?? []} />
+                <EquiteCard groupes={data.queuesParGroupe ?? []} />
+                <StockageCard jeton={session.token} />
+                <VercelCard jeton={session.token} />
+              </>
             )}
 
-            <GrillePrixCard token={session.token} />
+            {onglet === 'clients' && (
+              <>
+                <div className="grid grid-cols-3 gap-4">
+                  <Stat label={t('Clients', 'Clients')} value={fmtNum(data.tenants.length, locale)} />
+                  <Stat label={t('Messages', 'Messages')} value={fmtNum(totalMessages, locale)} />
+                  <Stat label={t('Contacts', 'Contacts')} value={fmtNum(totalContacts, locale)} />
+                </div>
 
-            <NumerosFournisCard token={session.token} />
+                {dailyFrom && dailyTo && data.daily.length > 0 && (
+                  <DailyChart
+                    title={t('Messages échangés (tous clients)', 'Messages exchanged (all clients)')}
+                    subtitle={t('par jour, 14 derniers jours', 'per day, last 14 days')}
+                    from={dailyFrom}
+                    to={dailyTo}
+                    series={[{ label: t('Messages', 'Messages'), color: brand[400], points: data.daily }]}
+                  />
+                )}
 
-            <OpsEmailsCard token={session.token} />
+                <TenantTable
+                  onObserver={(id, nom) => { void observer(id, nom); }}
+                  onSupprimer={(id, nom) => setASupprimer({ id, nom })}
+                  onQuotas={(id, nom) => setQuotasDe({ id, nom })}
+                  onOffre={(id, nom, membres) => setOffreDe({ id, nom, membres })}
+                  tenants={data.tenants}
+                />
+              </>
+            )}
 
-            <TenantTable
-              onObserver={(id, nom) => { void observer(id, nom); }}
-              onSupprimer={(id, nom) => setASupprimer({ id, nom })}
-              onQuotas={(id, nom) => setQuotasDe({ id, nom })}
-              onOffre={(id, nom, membres) => setOffreDe({ id, nom, membres })}
-              tenants={data.tenants}
-            />
+            {onglet === 'reglages' && (
+              <>
+                <GrillePrixCard token={session.token} />
+                <NumerosFournisCard token={session.token} />
+                <OpsEmailsCard token={session.token} />
+              </>
+            )}
           </>
         ) : null}
         {quotasDe && <QuotasApi jeton={session.token} tenantId={quotasDe.id} nom={quotasDe.nom} onFermer={() => setQuotasDe(null)} />}

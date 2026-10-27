@@ -283,7 +283,7 @@ async function main(): Promise<void> {
     transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore, inboxStore,
     adressesEvenements, envoisEvenements, espacesEvenements,
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
-    httpLatencesStore, mesuresTachesStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
+    httpLatencesStore, mesuresTachesStore, mesuresFilesStore, santeStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
@@ -2881,6 +2881,12 @@ async function main(): Promise<void> {
       attentesPool: poolAttentesStore,
       latencesHttp: httpLatencesStore,
       mesuresTaches: mesuresTachesStore,
+      sante: santeStore,
+      // L'onglet Capacité : la méthode est appelée sur son store, jamais détachée (elle lit `this.pool`).
+      capacite: {
+        parHeure: (jours) => poolAttentesStore.lireParHeure(jours),
+        files: (jours) => mesuresFilesStore.lire(jours),
+      },
       stockage: new PgStockageStore(pool),
       vercel: {
         lire: () => (config.VERCEL_API_TOKEN !== '' && config.VERCEL_TEAM_ID !== ''

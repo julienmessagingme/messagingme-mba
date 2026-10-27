@@ -29,7 +29,7 @@ async function ouvrir(page: import('@playwright/test').Page, aujourdhui: unknown
     if (chemin.endsWith('/ops/plafond-api/t-essai')) return json({ tenantId: 't-essai', aujourdhui, ...etat });
     return json({});
   });
-  await page.goto('/ops');
+  await page.goto('/ops?tab=clients');
   await page.getByTestId('quotas-t-essai').click();
   const modale = page.getByTestId('quotas-api-modale');
   await expect(modale).toBeVisible();

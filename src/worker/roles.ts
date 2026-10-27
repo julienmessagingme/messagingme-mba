@@ -105,6 +105,8 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'files-echec': 'principal',
   'handoff-mba': 'principal',
   'idempotence-api': 'principal',
+  // La latence des files heure par heure (refonte de /ops, lot 1) : une seule copie la relève.
+  'mesures-files': 'principal',
   reclaim: 'principal',
   'reprise-controle': 'principal',
   'retention-evenements-meta': 'principal',

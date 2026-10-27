@@ -49,7 +49,7 @@ async function monter(page: Page, fichiersRcsOctets: number): Promise<{ stockage
 test.describe('Ops : tâches de fond et stockage', () => {
   test('🔴 la tâche au-delà de cinq minutes passe en rouge, la normale non ; les lignes seulement si comptées', async ({ page }) => {
     await monter(page, 10 * MO);
-    await page.goto('/ops');
+    await page.goto('/ops?tab=capacite');
     const carte = page.getByTestId('taches-fond');
     await expect(carte).toContainText('agregats-analyse');
     await expect(page.getByTestId('tache-max-worker-principal-agregats-analyse')).toHaveClass(/text-danger/);
@@ -61,7 +61,7 @@ test.describe('Ops : tâches de fond et stockage', () => {
 
   test('🔴 le stockage est lu une fois, et ses fichiers ne sont rouges qu’au-delà du seuil', async ({ page }) => {
     const appels = await monter(page, 10 * MO);
-    await page.goto('/ops');
+    await page.goto('/ops?tab=capacite');
     const carte = page.getByTestId('stockage-base');
     await expect(carte).toContainText('Images RCS');
     await expect(page.getByTestId('stockage-fichiers')).not.toHaveClass(/text-danger/);
@@ -71,7 +71,7 @@ test.describe('Ops : tâches de fond et stockage', () => {
 
   test('au-delà de 500 Mo de fichiers, rouge', async ({ page }) => {
     await monter(page, 600 * MO);
-    await page.goto('/ops');
+    await page.goto('/ops?tab=capacite');
     await expect(page.getByTestId('stockage-fichiers')).toHaveClass(/text-danger/);
   });
 });

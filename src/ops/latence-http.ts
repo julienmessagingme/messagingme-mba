@@ -25,8 +25,11 @@ export const ROUTE_AU_DELA = '(au-delà du plafond)';
 /** Le code d'une requête abandonnée par le client avant sa réponse (la convention de nginx). */
 export const CODE_ABANDON = 499;
 
-/** Rétention en base : de l'exploitation, pas une preuve. */
-export const RETENTION_LATENCES_JOURS = 7;
+/**
+ * Rétention en base : de l'exploitation, pas une preuve. Trente jours depuis le 2026-10-27 (sept avant) : l'onglet
+ * Capacité de `/ops` trace un mois (cadrage de Julien), quelques Mo de plus (11 000 lignes et 3 Mo par semaine, relevé).
+ */
+export const RETENTION_LATENCES_JOURS = 30;
 
 /** Une ligne de la mesure : une méthode, une route, un code, et ce qu'on a vu passer. */
 export interface LigneLatence {

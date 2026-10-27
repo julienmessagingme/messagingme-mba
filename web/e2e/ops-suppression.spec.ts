@@ -57,7 +57,7 @@ test.describe('Ops : supprimer un espace', () => {
       return json({});
     });
 
-    await page.goto('/ops');
+    await page.goto('/ops?tab=clients');
     await page.getByTestId('supprimer-t-essai').click();
     const modale = page.getByTestId('suppression-modale');
     await expect(modale).toBeVisible();
@@ -115,7 +115,7 @@ test.describe('Ops : supprimer un espace', () => {
       return json({});
     });
 
-    await page.goto('/ops');
+    await page.goto('/ops?tab=clients');
     await page.getByTestId('supprimer-t-essai').click();
     const modale = page.getByTestId('suppression-modale');
     await modale.getByTestId('suppression-nom').fill('Essai Dupont');

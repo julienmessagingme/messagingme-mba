@@ -19,6 +19,18 @@ export interface PointAttente {
   moyenneMs: number;
 }
 
+/** Une heure de l'onglet Capacité (`lireParHeure`). */
+export interface PointCapaciteHeure {
+  heure: string;
+  /** Le plus grand nombre de copies d'API qui tournaient en même temps dans l'heure. */
+  copiesMax: number;
+  minutesDeuxCopiesOuPlus: number;
+  /** Acquisitions faites sur un pool saturé, API et workers séparés : c'est le signal, pas la durée. */
+  attentesApi: number;
+  attentesWorkers: number;
+  maxAttenteMs: number;
+}
+
 export class PgPoolAttentesStore {
   constructor(private readonly pool: Pool) {}
 
@@ -69,6 +81,41 @@ export class PgPoolAttentesStore {
         moyenneMs: echantillons === 0 ? 0 : Number(r.somme_ms) / echantillons,
       };
     });
+  }
+
+  /**
+   * L'onglet Capacité (refonte de /ops, lot 1) : heure par heure, le nombre de copies d'API qui tournaient (chaque
+   * copie écrit sa ligne chaque minute sous son nom, `API_COPIE`, et sa jumelle `-reception` ne compte pas), les
+   * minutes passées à deux copies ou plus, et les attentes sur pool saturé de l'API et des workers.
+   */
+  async lireParHeure(jours: number): Promise<PointCapaciteHeure[]> {
+    const res = await this.pool.query<{
+      heure: Date; copies_max: number; minutes_multi: number; attentes_api: string; attentes_workers: string; max_attente_ms: number;
+    }>(
+      `with m as (
+         select minute,
+                count(*) filter (where process like 'api%' and process not like '%-reception') as copies,
+                coalesce(sum(attentes) filter (where process like 'api%'), 0) as attentes_api,
+                coalesce(sum(attentes) filter (where process like 'worker%'), 0) as attentes_workers,
+                max(max_attente_ms) as max_attente_ms
+           from pool_attentes
+          where minute > now() - make_interval(days => $1::int)
+          group by minute)
+       select date_trunc('hour', minute) as heure, max(copies)::int as copies_max,
+              count(*) filter (where copies >= 2)::int as minutes_multi,
+              sum(attentes_api)::text as attentes_api, sum(attentes_workers)::text as attentes_workers,
+              max(max_attente_ms)::int as max_attente_ms
+         from m group by 1 order by 1`,
+      [Math.max(1, Math.min(Math.floor(jours), 31))],
+    );
+    return res.rows.map((r) => ({
+      heure: r.heure.toISOString(),
+      copiesMax: r.copies_max,
+      minutesDeuxCopiesOuPlus: r.minutes_multi,
+      attentesApi: Number(r.attentes_api),
+      attentesWorkers: Number(r.attentes_workers),
+      maxAttenteMs: r.max_attente_ms,
+    }));
   }
 
   /** Purge de rétention. De l'exploitation, pas une preuve : ça ne se garde pas indéfiniment. */

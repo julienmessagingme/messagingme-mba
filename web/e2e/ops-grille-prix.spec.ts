@@ -53,7 +53,7 @@ async function monter(page: import('@playwright/test').Page, prix: typeof GRILLE
     if (chemin.endsWith('/ops/overview')) return json(OVERVIEW);
     return json({});
   });
-  await page.goto('/ops');
+  await page.goto('/ops?tab=reglages');
   return patches;
 }
 

@@ -22,7 +22,7 @@ test('la révision de l’API, et la couleur de latence selon le seuil de la fil
     }
     return json({});
   });
-  await page.goto('/ops');
+  await page.goto('/ops?tab=capacite');
   await expect(page.getByTestId('ops-revision')).toContainText('abc1234');
 
   for (const mesure of ['p95', 'bout-en-bout']) {

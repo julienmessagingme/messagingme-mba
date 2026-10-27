@@ -27,8 +27,8 @@ export interface TacheMesureRow extends LigneTache {
   derniere: string;
 }
 
-/** Au-delà de sept jours, on efface : `/ops` regarde 24 h, la semaine sert à comparer à la veille. */
-export const RETENTION_TACHES_JOURS = 7;
+/** Au-delà de trente jours, on efface : l'onglet Capacité de `/ops` trace un mois (sept jours jusqu'au 2026-10-27). */
+export const RETENTION_TACHES_JOURS = 30;
 
 /**
  * Une passe plus longue que ceci est signalée en rouge dans `/ops` : c'est le déclencheur de l'audit pour les
