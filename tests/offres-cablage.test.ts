@@ -70,7 +70,12 @@ describe('le câblage de l’offre', () => {
     // La clé d'API créée par Claude bute sur le MÊME plafond de l'offre que la console.
     expect(api.match(/limiteCles: limiteClesDeLOffre/g)).toHaveLength(2);
     // L'exploitation vide le cache de CE process : sans quoi un espace ramené en Base garderait l'Entreprise 30 s.
-    expect(api).toMatch(/opsOffre: \{ store: offresStore, invalider: \(tenant\) => offres\.invalider\(tenant\), audit: auditSink \},/);
+    expect(api).toMatch(/opsOffre: \{\s+store: offresStore, invalider: \(tenant\) => offres\.invalider\(tenant\), audit: auditSink,/);
+    // Les gestes après la pose ou le retrait du Business (spec du 2026-10-27) : les VRAIES fonctions, sur les mêmes
+    // dépendances que le webhook du Pro (`numeroInclus`), et le complément par le magasin qui tient les montants.
+    expect(api).toMatch(/passageBusiness: \(tenant\) => surPassageEnPro\(numeroInclus, tenant, \{ arreterLeNumeroSeul: false \}\),/);
+    expect(api).toMatch(/const offert = await esCredentialsStore\.completerCreditBusiness\(tenant\);/);
+    expect(api).toMatch(/finOffreManuelle: \(tenant, finiLe\) => surFinDeLOffreManuelle\(numeroInclus, \{ tenantId: tenant, finiLe \}\),/);
     expect(api).toMatch(/badgeDeLOffre: async \(tenant\) => \(await offres\.offreDe\(tenant\)\)\.droits\.limites\.badge,/);
   });
 

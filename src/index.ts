@@ -234,7 +234,7 @@ import type { Origine } from './reglages/historique';
 import { creerOffreDeBienvenue } from './account/offre-bienvenue';
 import { creerGelMembres } from './offres/membres';
 import { commissionPour } from './offres/commission';
-import { surFinDuPro, surPassageEnPro, type DepsNumeroInclus } from './offres/numero-inclus';
+import { surFinDeLOffreManuelle, surFinDuPro, surPassageEnPro, type DepsNumeroInclus } from './offres/numero-inclus';
 import { contratOpenapi } from './api/openapi';
 
 /**
@@ -1551,7 +1551,25 @@ async function main(): Promise<void> {
     offres,
     // La vue de l'offre pour la console, et l'Entreprise posée par l'exploitation (lot 6).
     offre: { vue: vueOffre },
-    opsOffre: { store: offresStore, invalider: (tenant) => offres.invalider(tenant), audit: auditSink },
+    opsOffre: {
+      store: offresStore, invalider: (tenant) => offres.invalider(tenant), audit: auditSink,
+      // Les gestes après la pose ou le retrait d'une offre à la main (spec Business) : aucun n'écrit chez Stripe.
+      gestes: {
+        passageBusiness: (tenant) => surPassageEnPro(numeroInclus, tenant, { arreterLeNumeroSeul: false }),
+        // Le complément d'abord, puis le plafond de la clé de l'espace en arrière-plan, comme le crédit offert au premier
+        // numéro (`creerOffreDeBienvenue`) : Vercel peut prendre 30 s, l'écran de /ops ne l'attend pas.
+        completerCredit: async (tenant) => {
+          const offert = await esCredentialsStore.completerCreditBusiness(tenant);
+          if (offert > 0 && provisionCle) {
+            void travauxEnVol.suivre(remonterPlafondApresRecharge(provisionCle, tenant)).catch((err: unknown) => {
+              journaliser('error', 'plafond gateway non remonte apres le complement du Business', { err, tenantId: tenant });
+            });
+          }
+          return offert;
+        },
+        finOffreManuelle: (tenant, finiLe) => surFinDeLOffreManuelle(numeroInclus, { tenantId: tenant, finiLe }),
+      },
+    },
     // Rattacher un numéro 360dialog (lot 2, livraison A) : les gardes de l'Embedded Signup, la clé chiffrée comme un
     // jeton, et notre webhook posé à côté des destinations existantes.
     ops360dialog: {

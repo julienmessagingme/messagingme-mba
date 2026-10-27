@@ -141,6 +141,45 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     expect((await offres.offreDe(t)).droits.limites.utilisateurs).toBe(7);
   });
 
+  it('🔴 l’exploitation pose puis retire le Business : sortie datée, absent = inchangé, l’Entreprise le fait tomber (spec Business)', async () => {
+    const t = await espace('itest-offre-ops-business');
+    const etat = async () => (await pool.query<{ q: Date | null; b: boolean }>(
+      'select business_quitte_le as q, offre_business as b from tenants where id = $1', [t],
+    )).rows[0]!;
+    expect(await offres.ecrireEntreprise(t, { entreprise: false, utilisateurs: null, business: true, utilisateursBusiness: 6 })).toBe(true);
+    expect(await offres.lireEntreprise(t)).toMatchObject({ entreprise: false, business: true, utilisateursBusiness: 6 });
+    expect((await offres.offreDe(t)).droits.limites.utilisateurs).toBe(6);
+    expect((await etat()).q).toBeNull();
+    await offres.ecrireEntreprise(t, { entreprise: false, utilisateurs: null });
+    expect((await etat()).b).toBe(true);
+    await offres.ecrireEntreprise(t, { entreprise: false, utilisateurs: null, business: false });
+    const sortie = await etat();
+    expect(sortie.b).toBe(false);
+    expect(sortie.q).toBeInstanceOf(Date);
+    await offres.ecrireEntreprise(t, { entreprise: false, utilisateurs: null, business: true });
+    await offres.ecrireEntreprise(t, { entreprise: true, utilisateurs: null });
+    expect(await offres.lireEntreprise(t)).toMatchObject({ entreprise: true, business: false });
+    expect((await offres.offreDe(t)).offre).toBe('entreprise');
+  });
+
+  it('🔴 les alertes de /ops : un Pro payé vivant, un numéro payé à part, un numéro fourni que plus rien ne couvrirait', async () => {
+    const t = await espace('itest-offre-alertes');
+    expect(await offres.alertes(t)).toEqual({ proPayeVivant: false, numeroSeulVivant: false, numeroFourniSansCouverture: false });
+    const numero = `3399${String(Date.now()).slice(-7)}`;
+    await pool.query(
+      `insert into numeros_fournis (numero, didww_did_id, statut, tenant_id, attribue_le) values ($1, $2, 'attribue', $3, now())`,
+      [numero, `did-itest-${numero}`, t],
+    );
+    try {
+      expect(await offres.alertes(t)).toEqual({ proPayeVivant: false, numeroSeulVivant: false, numeroFourniSansCouverture: true });
+      await pro(t, 'sub_itestalertespro', null);
+      await pool.query("insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut) values ('sub_itestalertesnum', $1, true, 'actif')", [t]);
+      expect(await offres.alertes(t)).toEqual({ proPayeVivant: true, numeroSeulVivant: true, numeroFourniSansCouverture: false });
+    } finally {
+      await pool.query('delete from numeros_fournis where numero = $1', [numero]);
+    }
+  });
+
   it('🔴 0257 : la limite d’utilisateurs du Business est positive, ou vide', async () => {
     const t = await espace('itest-offre-business-util');
     await expect(pool.query('update tenants set business_utilisateurs = 0 where id = $1', [t])).rejects.toThrow(/tenants_business_utilisateurs_chk/);

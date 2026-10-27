@@ -90,14 +90,18 @@ export class PgOffresStore implements SourceOffres {
     return { contacts: contactsToutesOrigines(offre) ? l.toutes_origines : l.creees, automations: l.automations, membres: l.membres };
   }
 
-  /** L'Entreprise d'un espace telle que l'exploitation l'a posée, `null` pour un espace inconnu. */
+  /**
+   * L'offre posée à la main d'un espace telle que l'exploitation l'a réglée (l'Entreprise, et depuis le 2026-10-27 le
+   * Business), `null` pour un espace inconnu.
+   */
   async lireEntreprise(tenantId: string): Promise<ReglageEntreprise | null> {
     const r = await this.pool.query<{
       offre_entreprise: boolean; entreprise_utilisateurs: number | null; conversation_retention_days: number | null;
       entreprise_contacts: number | null; entreprise_commission_pct: number | null;
+      offre_business: boolean; business_utilisateurs: number | null;
     }>(
       `select t.offre_entreprise, t.entreprise_utilisateurs, s.conversation_retention_days,
-              t.entreprise_contacts, t.entreprise_commission_pct
+              t.entreprise_contacts, t.entreprise_commission_pct, t.offre_business, t.business_utilisateurs
          from tenants t left join tenant_settings s on s.tenant_id = t.id
         where t.id = $1`,
       [tenantId],
@@ -107,8 +111,25 @@ export class PgOffresStore implements SourceOffres {
       ? {
         entreprise: l.offre_entreprise, utilisateurs: l.entreprise_utilisateurs, conservationJours: l.conversation_retention_days,
         contacts: l.entreprise_contacts, commissionPct: l.entreprise_commission_pct,
+        business: l.offre_business, utilisateursBusiness: l.business_utilisateurs,
       }
       : null;
+  }
+
+  /**
+   * Ce que l'exploitant doit savoir avant de poser ou de retirer une offre à la main (spec Business) : un Pro payé encore
+   * vivant chez Stripe (poser le Business sans le résilier ferait payer deux fois), un numéro payé à part (inclus en
+   * Business, à arrêter quand le Business est confirmé), un numéro fourni que plus rien ne couvrirait au retrait.
+   */
+  async alertes(tenantId: string): Promise<AlertesOffreManuelle> {
+    const r = await this.pool.query<{ pro: boolean; numero_seul: boolean; fourni: boolean }>(
+      `select exists (select 1 from abonnements_offre where tenant_id = $1 and fini_le is null) as pro,
+              exists (select 1 from abonnements_numero where tenant_id = $1 and statut <> 'resilie') as numero_seul,
+              exists (select 1 from numeros_fournis where tenant_id = $1 and statut = 'attribue') as fourni`,
+      [tenantId],
+    );
+    const l = r.rows[0] ?? { pro: false, numero_seul: false, fourni: false };
+    return { proPayeVivant: l.pro, numeroSeulVivant: l.numero_seul, numeroFourniSansCouverture: l.fourni && !l.pro && !l.numero_seul };
   }
 
   /**
@@ -122,14 +143,24 @@ export class PgOffresStore implements SourceOffres {
       // La sortie de l'Entreprise est datée (migration 0221, lot 6, C) : la conservation de la Base n'y mord qu'après
       // 30 jours de grâce. Seulement au passage de l'Entreprise à la Base ; y rester ne repousse pas la date.
       // Les contacts et la commission (spec offres v2) ne s'écrivent que DONNÉS : absents, ils restent tels quels.
+      // Le Business (spec du 2026-10-27) : une seule offre posée à la main, l'Entreprise le fait tomber ; absent, il reste
+      // tel quel. Sa sortie est datée comme celle de l'Entreprise (la grâce de la conservation, la couverture du numéro).
+      // Les deux colonnes de date relisent l'état AVANT la mise à jour (Postgres évalue tout `set` sur l'ancienne ligne).
       const maj = await client.query(
         `update tenants
             set offre_entreprise = $2, entreprise_utilisateurs = $3,
                 entreprise_quittee_le = case when offre_entreprise and not $2 then now() else entreprise_quittee_le end,
                 entreprise_contacts = case when $4 then $5::int else entreprise_contacts end,
-                entreprise_commission_pct = case when $6 then $7::int else entreprise_commission_pct end
+                entreprise_commission_pct = case when $6 then $7::int else entreprise_commission_pct end,
+                offre_business = case when $2 then false when $8::boolean is null then offre_business else $8::boolean end,
+                business_quitte_le = case
+                  when offre_business and ($2 or $8::boolean = false) then now() else business_quitte_le end,
+                business_utilisateurs = case when $9 then $10::int else business_utilisateurs end
           where id = $1`,
-        [tenantId, r.entreprise, r.utilisateurs, r.contacts !== undefined, r.contacts ?? null, r.commissionPct !== undefined, r.commissionPct ?? null],
+        [
+          tenantId, r.entreprise, r.utilisateurs, r.contacts !== undefined, r.contacts ?? null, r.commissionPct !== undefined,
+          r.commissionPct ?? null, r.business ?? null, r.utilisateursBusiness !== undefined, r.utilisateursBusiness ?? null,
+        ],
       );
       if ((maj.rowCount ?? 0) === 0) return false;
       if (r.conservationJours === undefined) return true;
@@ -155,6 +186,17 @@ export interface EcritureEntreprise {
   contacts?: number | null;
   /** Absent = inchangée, `null` = le défaut (10 %). */
   commissionPct?: number | null;
+  /** Le Business posé à la main (spec du 2026-10-27). Absent = inchangé ; l'Entreprise posée le fait tomber. */
+  business?: boolean;
+  /** La limite d'utilisateurs du Business : absente = inchangée, `null` = les 5 de la grille. */
+  utilisateursBusiness?: number | null;
+}
+
+/** Ce que l'exploitant doit voir avant de poser ou de retirer une offre à la main (`PgOffresStore.alertes`). */
+export interface AlertesOffreManuelle {
+  proPayeVivant: boolean;
+  numeroSeulVivant: boolean;
+  numeroFourniSansCouverture: boolean;
 }
 
 /** Ce que l'exploitation règle sur un espace (`/ops/offre/:tenantId`). `null` = sans limite, ou le défaut de l'instance. */
@@ -164,4 +206,7 @@ export interface ReglageEntreprise {
   conservationJours: number | null;
   contacts: number | null;
   commissionPct: number | null;
+  /** Le Business posé à la main, et sa limite d'utilisateurs (`null` = les 5 de la grille). */
+  business: boolean;
+  utilisateursBusiness: number | null;
 }

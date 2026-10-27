@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { auteurOps, type PreHandler } from '../auth/middleware';
 import { estUuid } from './scope';
 import { journaliser } from '../lib/journal';
-import type { EcritureEntreprise, ReglageEntreprise } from '../offres/offre.pg';
+import type { AlertesOffreManuelle, EcritureEntreprise, ReglageEntreprise } from '../offres/offre.pg';
+import { texteDe } from '../lib/erreur';
 // Le même seuil que les autres écritures de `/ops` : importé, pas recopié.
 import { MIN_NOTE } from './ops';
 import { makeTraceOps, type AuditSink } from '../audit/journal';
@@ -13,17 +14,39 @@ import { makeTraceOps, type AuditSink } from '../audit/journal';
  * s'achète pas en ligne, elle se pose ici après signature, avec sa limite d'utilisateurs et sa conservation des
  * conversations. 🔴 Dans `/ops` et nulle part ailleurs, avec la même autorité (la session d'exploitation), la même note
  * obligatoire et la ligne de journal signée de son auteur que le plafond de l'API. Sert aussi à ramener un espace
- * d'essai en Base.
+ * d'essai en Base. Depuis le 2026-10-27, elle pose aussi le Business, vendu sur démo et facturé hors Stripe, avec sa
+ * limite d'utilisateurs (spec `docs/superpowers/specs/2026-10-27-offre-business-design.md`).
  */
 export interface OpsOffreDeps {
   store: {
     lireEntreprise(tenantId: string): Promise<ReglageEntreprise | null>;
     ecrireEntreprise(tenantId: string, r: EcritureEntreprise): Promise<boolean>;
+    /** Ce que l'exploitant doit voir avant de poser ou de retirer (`PgOffresStore.alertes`). */
+    alertes(tenantId: string): Promise<AlertesOffreManuelle>;
   };
   /** Le cache de l'offre de CE process : l'espace change d'offre tout de suite ici, en moins de 30 s ailleurs. */
   invalider(tenantId: string): void;
   /** Le journal des actions de l'espace (lot 5) : l'offre posée, avant et après, l'exploitant pour acteur. */
   audit: AuditSink;
+  /**
+   * Les gestes qui suivent la pose ou le retrait d'une offre à la main (spec Business), après l'écriture : aucun ne la
+   * défait, un échec se journalise et la réponse le dit. Aucun n'écrit chez Stripe (aucun objet Stripe pour le Business).
+   */
+  gestes: {
+    /** L'entrée en Business : les avis du numéro oubliés, les campagnes `numero_suspendu` reprises (`surPassageEnPro`). */
+    passageBusiness(tenantId: string): Promise<void>;
+    /** Le complément du crédit offert jusqu'au montant du Business, plafond de la clé remonté ; rend le montant crédité. */
+    completerCredit(tenantId: string): Promise<number>;
+    /** La sortie de toute offre posée à la main : la fin du numéro fourni que plus rien ne couvre (`surFinDeLOffreManuelle`). */
+    finOffreManuelle(tenantId: string, finiLe: Date): Promise<string>;
+  };
+}
+
+/** Ce que les gestes ont fait, rendu à l'écran de /ops : `null` = le geste n'était pas dû. */
+interface BilanGestes {
+  creditOffert: number | null;
+  finDuNumero: string | null;
+  echecs: Array<'passage' | 'credit' | 'fin'>;
 }
 
 /** 10 utilisateurs proposés à l'écran ; la route accepte toute limite positive, ou `null` (sans limite). */
@@ -44,6 +67,9 @@ const corpsSchema = z.object({
   // décimale, et une vue illisible ouvre tout.
   contacts: z.number().int().min(1).max(100_000_000).nullable().optional(),
   commissionPct: z.number().int().min(0).max(100).nullable().optional(),
+  // Le Business (spec du 2026-10-27) : absent = inchangé ; sa limite d'utilisateurs, absente = inchangée, `null` = les 5.
+  business: z.boolean().optional(),
+  utilisateursBusiness: z.number().int().min(1).max(10_000).nullable().optional(),
   note: z.string(),
 }).strict();
 
@@ -57,7 +83,8 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
     if (!estUuid(tenantId)) return reply.code(404).send({ error: 'espace inconnu' });
     const r = await deps.store.lireEntreprise(tenantId);
     if (r === null) return reply.code(404).send({ error: 'espace inconnu' });
-    return reply.code(200).send({ tenantId, ...r, utilisateursProposes: UTILISATEURS_ENTREPRISE_PROPOSES });
+    const alertes = await deps.store.alertes(tenantId);
+    return reply.code(200).send({ tenantId, ...r, alertes, utilisateursProposes: UTILISATEURS_ENTREPRISE_PROPOSES });
   });
 
   app.put('/ops/offre/:tenantId', opts, async (req, reply) => {
@@ -69,6 +96,9 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
         error: 'entreprise (booléen) et utilisateurs (entier positif ou null) requis, avec une note ; facultatifs, absents = inchangés : conservationJours (0 à 3650, ou null), contacts (entier positif, ou null), commissionPct (entier de 0 à 100, ou null)',
       });
     }
+    if (lu.data.entreprise && lu.data.business === true) {
+      return reply.code(400).send({ error: 'une seule offre posée à la main : l’Entreprise ou le Business, pas les deux' });
+    }
     const note = lu.data.note.trim().slice(0, 500);
     if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi cette offre' });
 
@@ -79,6 +109,8 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
       ...(lu.data.conservationJours !== undefined ? { conservationJours: lu.data.conservationJours } : {}),
       ...(lu.data.contacts !== undefined ? { contacts: lu.data.contacts } : {}),
       ...(lu.data.commissionPct !== undefined ? { commissionPct: lu.data.commissionPct } : {}),
+      ...(lu.data.business !== undefined ? { business: lu.data.business } : {}),
+      ...(lu.data.utilisateursBusiness !== undefined ? { utilisateursBusiness: lu.data.utilisateursBusiness } : {}),
     };
     if (!(await deps.store.ecrireEntreprise(tenantId, ecriture))) return reply.code(404).send({ error: 'espace inconnu' });
     // L'état RELU, pour la réponse et la trace : un réglage absent n'a pas été écrit.
@@ -90,7 +122,38 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
       contacts: apres.contacts, commissionPct: apres.commissionPct,
       entrepriseAvant: avant.entreprise, utilisateursAvant: avant.utilisateurs, conservationJoursAvant: avant.conservationJours,
       contactsAvant: avant.contacts, commissionPctAvant: avant.commissionPct,
+      business: apres.business, utilisateursBusiness: apres.utilisateursBusiness,
+      businessAvant: avant.business, utilisateursBusinessAvant: avant.utilisateursBusiness,
     });
-    return reply.code(200).send({ tenantId, ...apres, utilisateursProposes: UTILISATEURS_ENTREPRISE_PROPOSES });
+    const gestes = await jouerLesGestes(deps, tenantId, avant, apres);
+    const alertes = await deps.store.alertes(tenantId);
+    return reply.code(200).send({ tenantId, ...apres, alertes, gestes, utilisateursProposes: UTILISATEURS_ENTREPRISE_PROPOSES });
   });
+}
+
+/**
+ * LES GESTES APRÈS LA POSE OU LE RETRAIT (spec Business), sur l'état RELU. Entrer en Business : les avis du numéro, puis le
+ * complément du crédit. Quitter toute offre posée à la main (ni Entreprise ni Business après) : la fin du numéro fourni.
+ * Passer de l'une à l'autre ne quitte rien : l'offre d'arrivée couvre le numéro. Chaque geste joue même si le précédent a
+ * échoué : un échec se journalise, l'offre posée reste posée.
+ */
+async function jouerLesGestes(deps: OpsOffreDeps, tenantId: string, avant: ReglageEntreprise, apres: ReglageEntreprise): Promise<BilanGestes> {
+  const bilan: BilanGestes = { creditOffert: null, finDuNumero: null, echecs: [] };
+  const tenter = async <T>(geste: BilanGestes['echecs'][number], f: () => Promise<T>): Promise<T | null> => {
+    try {
+      return await f();
+    } catch (err) {
+      journaliser('error', 'ops_offre_geste_echoue', { tenantId, geste, err: texteDe(err) });
+      bilan.echecs.push(geste);
+      return null;
+    }
+  };
+  const entreEnBusiness = !avant.business && apres.business && !apres.entreprise;
+  const quitteLaMain = (avant.entreprise || avant.business) && !apres.entreprise && !apres.business;
+  if (entreEnBusiness) {
+    await tenter('passage', () => deps.gestes.passageBusiness(tenantId));
+    bilan.creditOffert = await tenter('credit', () => deps.gestes.completerCredit(tenantId));
+  }
+  if (quitteLaMain) bilan.finDuNumero = await tenter('fin', () => deps.gestes.finOffreManuelle(tenantId, new Date()));
+  return bilan;
 }

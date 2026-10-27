@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { ReponseStripe, TransportStripe } from '../src/stripe/client';
 import { ouvrirPro, ouvrirPortailPro, PRO_INDISPONIBLE, type DepsPro } from '../src/stripe/pro';
+import type { Offre } from '../src/offres/offres';
 
 /**
  * OUVRIR LE PAIEMENT DU PRO, ET SON PORTAIL (lot 6, livraison B1, tâche 10). Le prix configuré est relu chez Stripe AVANT
@@ -36,7 +37,7 @@ const AN = { id: 'price_pro_an', unit_amount: 49000, currency: 'eur', recurring:
 const SESSION = { status: 200, json: { id: 'cs_test_pro', url: 'https://checkout.stripe.com/c/pay/cs_test_pro' } };
 const PORTAIL = { status: 200, json: { id: 'bps_1', url: 'https://billing.stripe.com/p/session/pro' } };
 
-function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; vivant?: boolean; prixVides?: boolean; offre?: 'base' | 'pro' | 'entreprise'; dejaEu?: boolean; filiere?: 'api' | 'application' | null } = {}) {
+function deps(o: { prix?: Record<string, unknown>; reponses?: ReponseStripe[]; client?: string | null; autorise?: boolean; vivant?: boolean; prixVides?: boolean; offre?: Offre; dejaEu?: boolean; filiere?: 'api' | 'application' | null } = {}) {
   const transport = new FauxStripe(o.prix ?? { price_pro_mois: MOIS, price_pro_an: AN }, o.reponses ?? [{ status: 200, json: { id: 'cus_A' } }, SESSION]);
   const d: DepsPro = {
     stripe: { cle: 'rk_test_fausse', livemode: false, prix: { refill_5: '', refill_10: '', refill_50: '', refill_100: '' }, transport, pageCredit: 'https://x', pageClaude: 'https://x' },
@@ -72,6 +73,12 @@ describe('ouvrirPro', () => {
   it('🟡 une Entreprise sans Pro : 409, rien n’est créé chez Stripe (le Pro ne lui ajouterait rien)', async () => {
     const { d, transport } = deps({ offre: 'entreprise' });
     expect(await ouvrirPro(d, T1, 'mois', 'u1', 'offre')).toMatchObject({ ok: false, statut: 409, details: { code: 'deja_entreprise' } });
+    expect([transport.posts, transport.lus]).toEqual([[], []]);
+  });
+
+  it('🔴 un Business sans Pro : 409, rien n’est créé chez Stripe (Julien le facture déjà, un Pro le ferait payer deux fois)', async () => {
+    const { d, transport } = deps({ offre: 'business' });
+    expect(await ouvrirPro(d, T1, 'mois', 'u1', 'offre')).toMatchObject({ ok: false, statut: 409, details: { code: 'deja_business' } });
     expect([transport.posts, transport.lus]).toEqual([[], []]);
   });
 

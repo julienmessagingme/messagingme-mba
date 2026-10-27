@@ -62,8 +62,13 @@ export async function ouvrirPro(
     const portail = await ouvrirPortail(d, tenantId, 'offre', payeur);
     return portail.ok ? { ok: true, valeur: { url: portail.valeur.url, portail: true } } : portail;
   }
-  if ((await d.offreDe(tenantId)) === 'entreprise') {
+  const offre = await d.offreDe(tenantId);
+  if (offre === 'entreprise') {
     return refus(409, 'Votre espace est en offre Entreprise : le Pro ne lui ajouterait rien.', { code: 'deja_entreprise' });
+  }
+  // Le Business (spec du 2026-10-27) est facturé par Messaging Me, hors Stripe : un Pro le ferait payer deux fois.
+  if (offre === 'business') {
+    return refus(409, 'Votre espace est en offre Business : le Pro ne lui ajouterait rien.', { code: 'deja_business' });
   }
   if ((await d.filiereDe(tenantId)) === 'application') {
     // La coexistence (plan 2026-10-24, tâche 4) : le même numéro passe sur l'API, l'application WhatsApp Business gardée.
