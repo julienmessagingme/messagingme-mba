@@ -71,8 +71,8 @@ export function adresseOffre(): string {
 }
 
 /** Les offres, de la moins chère à la plus chère, et leur nom public. */
-const ORDRE: readonly Offre[] = ['base', 'pro', 'entreprise'];
-const NOM_OFFRE: Record<Offre, string> = { base: 'Free', pro: 'Pro', entreprise: 'Entreprise' };
+const ORDRE: readonly Offre[] = ['base', 'pro', 'business', 'entreprise'];
+const NOM_OFFRE: Record<Offre, string> = { base: 'Free', pro: 'Pro', business: 'Business', entreprise: 'Entreprise' };
 
 /** L'offre dont c'est la limite dans la grille, la moins chère d'abord ; `null` pour une valeur hors grille (un devis). */
 function offreDeLaLimite(limite: NomLimite, max: number): Offre | null {

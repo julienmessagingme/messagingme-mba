@@ -83,11 +83,11 @@ describe('routes api-keys (admin)', () => {
     await server.close();
   });
 
-  it('la 11e clé d’un Pro -> 402 qui renvoie à l’Entreprise', async () => {
+  it('la 11e clé d’un Pro -> 402 qui renvoie au Business, l’offre suivante (spec Business)', async () => {
     const { server } = plafondAtteint(10, []);
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/api-keys', ...h(adminTok), payload: { name: 'X', scopes: ['contacts:write'] } });
     expect(res.statusCode).toBe(402);
-    expect(res.json<{ error: string }>().error).toMatch(/10 clés d’API actives.*Passez en Entreprise/);
+    expect(res.json<{ error: string }>().error).toMatch(/10 clés d’API actives.*Passez en Business/);
     await server.close();
   });
 

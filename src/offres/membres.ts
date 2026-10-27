@@ -62,7 +62,8 @@ export interface GelMembres {
  * Le gel des membres, sur l'offre en cache : le rang n'est lu que pour un espace limité (Base, Pro), une seule requête
  * de plus par appel de ces espaces. Un membre introuvable n'est pas gelé ici : la garde le refuse déjà (session révoquée).
  * 🔴 En Entreprise, jamais (décision de Julien du 2026-10-07) : une limite posée depuis `/ops` est un contrat négocié,
- * elle ne bloque que les invitations (`verifierPlaceMembre`) et ne coupe personne sur un chiffre tapé.
+ * elle ne bloque que les invitations (`verifierPlaceMembre`) et ne coupe personne sur un chiffre tapé. Le Business, posé
+ * à la main comme elle (spec du 2026-10-27), suit la même règle.
  */
 export function creerGelMembres(d: {
   offres: SourceOffres;
@@ -71,7 +72,7 @@ export function creerGelMembres(d: {
   return {
     async horsOffre(tenantId, userId) {
       const { offre, droits } = await d.offres.offreDe(tenantId);
-      if (offre === 'entreprise') return null;
+      if (offre === 'entreprise' || offre === 'business') return null;
       const { limites } = droits;
       const l: LimitesMembres = { utilisateurs: limites.utilisateurs, admins: limites.admins };
       if (l.utilisateurs === null && l.admins === null) return null;

@@ -20,6 +20,12 @@ const GRILLE: Record<Offre, Limites> = {
     adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 20, badge: false, numeroInclus: true,
     stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
   },
+  // Le Business (spec du 2026-10-27) : posé à la main dans /ops ; ses limites invisibles sont un choix de Claude relu.
+  business: {
+    utilisateurs: 5, admins: null, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+    adressesWebhook: 10, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 15, badge: false, numeroInclus: true,
+    stockageOctets: 250 * MO, clesApi: 20, appelsMinute: 120, appelsHeure: 3000, modelesJour: 5000, reponsesJour: 5000,
+  },
   entreprise: {
     utilisateurs: null, admins: null, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
     adressesWebhook: null, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 10, badge: false, numeroInclus: true,
@@ -32,8 +38,30 @@ const PRO: Fonction[] = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'ai
 const ENTREPRISE_SEULE: Fonction[] = ['analyse', 'publicites', 'chaines', 'crm', 'rcs', 'performance_lab'];
 
 describe('la grille des offres', () => {
-  it.each(['base', 'pro', 'entreprise'] as const)('les limites de %s sont celles de la spec', (offre) => {
+  it.each(['base', 'pro', 'business', 'entreprise'] as const)('les limites de %s sont celles de la spec', (offre) => {
     expect(DROITS[offre].limites).toEqual(GRILLE[offre]);
+  });
+
+  it('🔴 le Business ouvre ce qu’ouvre le Pro, et rien de ce qui reste à l’Entreprise (sous-lot A : le Pro garde tout)', () => {
+    expect([...DROITS.business.fonctions].sort()).toEqual([...PRO].sort());
+    for (const f of ENTREPRISE_SEULE) expect(DROITS.business.fonctions.has(f)).toBe(false);
+  });
+
+  it('🔴 les utilisateurs d’un Business : les 5 de la grille, ou la limite posée dans /ops (jamais « sans limite »)', () => {
+    expect(droitsDe('business', null).limites.utilisateurs).toBe(5);
+    expect(droitsDe('business', { utilisateurs: null, conservationJours: null }).limites.utilisateurs).toBe(5);
+    expect(droitsDe('business', { utilisateurs: 7, conservationJours: null }).limites.utilisateurs).toBe(7);
+    // La conservation, les contacts et la commission d'un Business ne se règlent pas dans /ops : la grille, toujours.
+    const d = droitsDe('business', { utilisateurs: 7, conservationJours: 365, contacts: 99, commissionPct: 0 });
+    expect(d.limites.conservationJours).toBe(90);
+    expect(d.limites.contacts).toBe(5000);
+    expect(d.limites.commissionPct).toBe(15);
+  });
+
+  it('🔴 la purge du journal des webhooks range le Business avec l’Entreprise : leurs durées doivent rester égales', () => {
+    // `PgEvenementsStore.purger` ne connaît que base, pro et « le reste » : le Business y lit la durée de l'Entreprise.
+    // Une durée propre au Business demandera d'ouvrir la purge à quatre offres (elle se câble dans src/worker.ts).
+    expect(DROITS.business.limites.journalWebhooksJours).toBe(DROITS.entreprise.limites.journalWebhooksJours);
   });
 
   it('la Base n\'ouvre aucune fonction gardée', () => {
@@ -63,16 +91,17 @@ describe('les refus nomment l’offre qui lève la limite ou ouvre la fonction (
     expect(phraseLimite('utilisateurs', DROITS.base.limites.utilisateurs!)).toMatch(/Passez en Pro/);
   });
 
-  it('🔴 une limite du Pro renvoie à l’Entreprise, jamais au Pro', () => {
-    const p = phraseLimite('utilisateurs', DROITS.pro.limites.utilisateurs!);
-    expect(p).toMatch(/Entreprise/);
+  it('🔴 une limite du Pro renvoie au Business, l’offre suivante (spec Business), jamais au Pro', () => {
+    const p = phraseLimite('adressesWebhook', DROITS.pro.limites.adressesWebhook!);
+    expect(p).toMatch(/Passez en Business/);
     expect(p).not.toMatch(/Passez en Pro/);
   });
 
-  it('les clés d’API : 2 en Free renvoient au Pro, 10 en Pro à l’Entreprise ; la phrase dit de révoquer', () => {
+  it('les clés d’API : 2 en Free renvoient au Pro, 10 en Pro au Business, 20 en Business à l’Entreprise ; la phrase dit de révoquer', () => {
     const free = phraseLimite('clesApi', DROITS.base.limites.clesApi!);
     expect(free).toMatch(/2 clés d’API actives.*révoquez-en une.*Passez en Pro/);
-    expect(phraseLimite('clesApi', DROITS.pro.limites.clesApi!)).toMatch(/10 clés d’API actives.*Passez en Entreprise/);
+    expect(phraseLimite('clesApi', DROITS.pro.limites.clesApi!)).toMatch(/10 clés d’API actives.*Passez en Business/);
+    expect(phraseLimite('clesApi', DROITS.business.limites.clesApi!)).toMatch(/20 clés d’API actives.*Passez en Entreprise/);
   });
 
   it('une limite réglée sur devis (absente de la grille) renvoie à un échange, jamais au Pro', () => {

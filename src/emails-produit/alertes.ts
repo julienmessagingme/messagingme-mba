@@ -1,6 +1,6 @@
 import { journaliser } from '../lib/journal';
 import type { EmetteurEmails } from './emission';
-import { DROITS } from '../offres/offres';
+import { DROITS, type Offre } from '../offres/offres';
 import { jourDans } from '../repondeur/alerte-credit';
 
 /**
@@ -126,10 +126,11 @@ export interface LimitesAlertables {
  * Les limites que surveille le balayage, selon l'offre (spec offres v2, livraison 5) : celles de la Free, dont les textes
  * disent « Passez en Pro », et les contacts du Pro, dont les textes renvoient à l'Entreprise (le Pro n'a pas de limite de
  * modèles). L'Entreprise, dont la limite de contacts se règle sur devis par /ops, n'en reçoit aucune : un texte la dirait
- * dans une offre qui n'est pas la sienne. `null` = rien à surveiller.
+ * dans une offre qui n'est pas la sienne. Le Business non plus, tant que ses textes n'existent pas (lot 1, sous-lot B) :
+ * ceux du Pro le diraient en Pro. `null` = rien à surveiller.
  */
 export function limitesAlertables(
-  offre: 'base' | 'pro' | 'entreprise', l: { envoisModelesMois: number | null; contacts: number | null },
+  offre: Offre, l: { envoisModelesMois: number | null; contacts: number | null },
 ): LimitesAlertables {
   if (offre === 'base') return { modelesMois: l.envoisModelesMois, contacts: l.contacts, offre: 'free' };
   if (offre === 'pro') return { modelesMois: null, contacts: l.contacts, offre: 'pro' };

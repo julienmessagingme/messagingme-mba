@@ -98,7 +98,7 @@ function fonctionDemandee(): FonctionOffre | null {
 /** Les limites montrées dans la grille, dans cet ordre. Les webhooks sortants y entrent avec leur écran (lot 12). */
 const LIGNES_LIMITES = [
   'utilisateurs', 'contacts', 'envoisModelesMois', 'automations', 'adressesWebhook', 'journalWebhooksJours',
-  'stockageOctets', 'conservationJours', 'commissionPct', 'numeroInclus', 'badge',
+  'stockageOctets', 'conservationJours', 'numeroInclus', 'badge',
 ] as const satisfies ReadonlyArray<keyof LimitesOffre>;
 
 /**
@@ -200,7 +200,6 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
     journalWebhooksJours: t('Journal des webhooks sortants', 'Outgoing webhook log'),
     stockageOctets: t('Fichiers de la médiathèque', 'Media library files'),
     conservationJours: t('Conservation des conversations', 'Conversation retention'),
-    commissionPct: t('Commission sur le crédit IA', 'Commission on AI credit'),
     numeroInclus: t('Numéro WhatsApp inclus', 'WhatsApp number included'),
     badge: t('Mention « Messaging Me » sur le widget', '“Messaging Me” mention on the widget'),
   })[k];
@@ -213,7 +212,6 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
     if (k === 'stockageOctets') return v === 0 ? t('Aucun', 'None') : `${Math.round(v / (1024 * 1024))} Mo`;
     if (k === 'conservationJours') return v === 0 ? t('Sans limite', 'Unlimited') : t(`${v} jours`, `${v} days`);
     if (k === 'journalWebhooksJours') return t(`${v} jours`, `${v} days`);
-    if (k === 'commissionPct') return `${v} %`;
     return v.toLocaleString('fr-FR');
   };
 
@@ -227,6 +225,8 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
 
   const suivante: NomOffre | null = vue.offre === 'free' ? 'pro' : vue.offre === 'pro' ? 'entreprise' : null;
   const offreDemandee = demandee ? offreQuiOuvre(vue, demandee) : null;
+  /** Les colonnes de la grille : les offres que l'API connaît (le Business manque à une API d'avant lui). */
+  const colonnes = NOMS_OFFRES.filter((o) => vue.grille[o] !== undefined);
   /**
    * Les contacts au-delà de la limite (2026-10-26), comptés par le serveur : la marche à suivre sous la jauge. En Free, par
    * Claude, la seule voie sans console, et sans plafond du jour tant que l'espace dépasse ; ailleurs, la liste des contacts
@@ -466,7 +466,7 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
           <thead>
             <tr className="border-b border-ink-100 text-left">
               <th className="px-4 py-3 font-medium text-ink-500" />
-              {NOMS_OFFRES.map((o) => (
+              {colonnes.map((o) => (
                 <th key={o} className={`px-4 py-3 text-center font-semibold ${o === vue.offre ? 'bg-brand-50 text-brand-700' : 'text-ink-900'}`} data-testid={`offre-colonne-${o}`}>
                   {nomDeLOffre(o, t)}
                   {o === vue.offre && <span className="ml-1.5 text-xs font-medium">{t('(la vôtre)', '(yours)')}</span>}
@@ -478,9 +478,9 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
             {FONCTIONS_OFFRE.map((f) => (
               <tr key={f} className="border-b border-ink-100 last:border-0">
                 <td className="px-4 py-2 text-ink-900">{libelleFonction(f, t)}</td>
-                {NOMS_OFFRES.map((o) => (
+                {colonnes.map((o) => (
                   <td key={o} className={`px-4 py-2 text-center ${o === vue.offre ? 'bg-brand-50' : ''}`}>
-                    {vue.grille[o].fonctions.has(f)
+                    {vue.grille[o]!.fonctions.has(f)
                       ? <Icone nom="valide" taille="ligne" className="inline text-succes" titre={t('Inclus', 'Included')} />
                       : <Icone nom="cadenas" taille="ligne" className="inline text-ink-300" titre={t('Non inclus', 'Not included')} />}
                   </td>
@@ -490,9 +490,9 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
             {LIGNES_LIMITES.filter((k) => vue.grille.free.limites[k] !== undefined).map((k) => (
               <tr key={k} className="border-b border-ink-100 last:border-0">
                 <td className="px-4 py-2 text-ink-900">{libelleLimite(k)}</td>
-                {NOMS_OFFRES.map((o) => (
+                {colonnes.map((o) => (
                   <td key={o} className={`px-4 py-2 text-center tabular-nums text-ink-700 ${o === vue.offre ? 'bg-brand-50' : ''}`}>
-                    {valeurLimite(vue.grille[o].limites, k)}
+                    {valeurLimite(vue.grille[o]!.limites, k)}
                   </td>
                 ))}
               </tr>

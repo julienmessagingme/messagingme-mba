@@ -22,10 +22,16 @@ beforeAll(async () => {
 });
 const personne: UserAuthStore = { findIdentity: async (): Promise<EmailIdentity | null> => null };
 
+/** Les limites telles que la vue les montre : sans la commission (spec Business). */
+function sansMarge(l: typeof DROITS.base.limites): VueOffre['limites'] {
+  const { commissionPct: _marge, ...vue } = l;
+  return vue;
+}
+
 const VUE_BASE: VueOffre = {
-  offre: 'free', fonctions: [], limites: { ...DROITS.base.limites },
+  offre: 'free', fonctions: [], limites: sansMarge(DROITS.base.limites),
   usage: { envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 }, contactsToutesOrigines: true, contactsEnTrop: 0,
-  grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 },
+  grille: grilleDesOffres(), prixPro: { moisCentimes: 4900, anCentimes: 49000 }, prixBusiness: { moisCentimes: 34900, siegeMoisCentimes: 1000 },
   suiteDuNumero: null, essai: { jours: 14, possible: true, finLe: null }, sieges: null, prixSiege: { moisCentimes: 1500, anCentimes: 15000 },
   abonnement: null, upgradeUrl: 'https://console.test/offre',
 };

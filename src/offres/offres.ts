@@ -7,11 +7,11 @@
  * L'offre d'un espace ne se décide pas ici : elle se CALCULE en SQL (`offre_de_l_espace`, lue par `src/offres/offre.pg.ts`),
  * sur des dates, comme l'état du numéro au lot 4. Ce module dit seulement ce que chaque offre ouvre et permet.
  */
-export type Offre = 'base' | 'pro' | 'entreprise';
+export type Offre = 'base' | 'pro' | 'business' | 'entreprise';
 
 /** Une valeur lue en base (le résultat d'`offre_de_l_espace`) est-elle une offre connue ? */
 export function estOffre(v: unknown): v is Offre {
-  return v === 'base' || v === 'pro' || v === 'entreprise';
+  return v === 'base' || v === 'pro' || v === 'business' || v === 'entreprise';
 }
 
 /** Les fonctions qu'une offre ouvre ou ferme. Tout ce qui n'est pas nommé ici est ouvert à toutes les offres. */
@@ -121,6 +121,18 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
       stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
     },
   },
+  /**
+   * Le Business (spec `docs/superpowers/specs/2026-10-27-offre-business-design.md`) : posé par Julien dans `/ops`, jamais
+   * vendu en ligne. Ses limites invisibles (clés, appels, quotas, médiathèque) sont un choix relu de la spec.
+   */
+  business: {
+    fonctions: new Set<Fonction>(FONCTIONS_PRO),
+    limites: {
+      utilisateurs: 5, admins: null, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+      adressesWebhook: 10, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 15, badge: false, numeroInclus: true,
+      stockageOctets: 250 * MO, clesApi: 20, appelsMinute: 120, appelsHeure: 3000, modelesJour: 5000, reponsesJour: 5000,
+    },
+  },
   entreprise: {
     fonctions: new Set<Fonction>(FONCTIONS),
     limites: {
@@ -185,14 +197,26 @@ export const ESSAI_PRO_JOURS = 14;
 export const PRIX_SIEGE_HT_CENTIMES: Readonly<{ mois: number; an: number }> = { mois: 1500, an: 15000 };
 
 /**
- * Les droits d'un espace : ceux de son offre, et pour l'Entreprise la surcharge de l'exploitation. Copie neuve.
+ * Les prix HT du Business, en centimes (spec du 2026-10-27) : 349 € par mois, et 10 € par mois l'utilisateur au-delà des 5
+ * inclus. Aucun prix Stripe : Julien pose le Business dans `/ops` et le facture lui-même. La vue de l'offre les montre, la
+ * vitrine les recopie sous le contrôle de `tests/vitrine-pages.test.ts` : jamais écrits ailleurs.
+ */
+export const PRIX_BUSINESS_HT_CENTIMES: Readonly<{ mois: number }> = { mois: 34900 };
+export const PRIX_SIEGE_BUSINESS_HT_CENTIMES: Readonly<{ mois: number }> = { mois: 1000 };
+
+/**
+ * Les droits d'un espace : ceux de son offre, et pour l'Entreprise ou le Business la surcharge de l'exploitation. Copie
+ * neuve.
  * 🔴 `sieges` : les sièges payés du Pro vivant (`abonnements_offre.sieges`, livraison 7), ajoutés aux utilisateurs du Pro
  * ICI SEULEMENT, pour que l'invitation et le gel lisent la même limite (un membre payé n'est jamais gelé).
+ * 🔴 Le Business ne prend de `/ops` que sa limite d'utilisateurs, et `null` y veut dire « les 5 de la grille », jamais
+ * « sans limite » comme pour l'Entreprise : le reste de sa grille ne se négocie pas.
  */
 export function droitsDe(offre: Offre, surcharge: SurchargeEntreprise | null, sieges = 0): Droits {
   const d = DROITS[offre];
   const limites: Limites = { ...d.limites };
   if (offre === 'pro' && limites.utilisateurs !== null) limites.utilisateurs += Math.max(0, sieges);
+  if (offre === 'business' && surcharge?.utilisateurs != null) limites.utilisateurs = surcharge.utilisateurs;
   if (offre === 'entreprise' && surcharge !== null) {
     limites.utilisateurs = surcharge.utilisateurs;
     if (surcharge.conservationJours !== null) limites.conservationJours = surcharge.conservationJours;

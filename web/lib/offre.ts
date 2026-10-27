@@ -18,9 +18,10 @@ export type FonctionOffre = (typeof FONCTIONS_OFFRE)[number];
 
 /**
  * Les noms PUBLICS (`offrePublique`, `src/offres/vue.ts`) : l'offre gratuite s'appelle `free` depuis le 2026-10-08. Une
- * API d'avant ce renommage rend encore `base` : `lireVueOffre` le ramène à `free` (`NOM_D_AVANT`).
+ * API d'avant ce renommage rend encore `base` : `lireVueOffre` le ramène à `free` (`NOM_D_AVANT`). Le Business (spec du
+ * 2026-10-27) manque à la grille d'une API d'avant lui : sa ligne est alors absente (`GrilleOffre`), jamais illisible.
  */
-export const NOMS_OFFRES = ['free', 'pro', 'entreprise'] as const;
+export const NOMS_OFFRES = ['free', 'pro', 'business', 'entreprise'] as const;
 export type NomOffre = (typeof NOMS_OFFRES)[number];
 
 /** Les clés des limites (`Limites`, `src/offres/offres.ts`). `null` = sans limite. */
@@ -39,9 +40,12 @@ export type LimiteNombre = (typeof LIMITES_NOMBRE)[number];
 export const LIMITES_TOLERANTES = ['stockageOctets', 'clesApi', 'appelsMinute', 'appelsHeure', 'modelesJour', 'reponsesJour'] as const;
 type LimiteTolerante = (typeof LIMITES_TOLERANTES)[number];
 
+/**
+ * 🔴 Sans la commission sur le crédit IA : la vue du serveur ne la montre plus (décision de Julien du 2026-10-27, « on ne
+ * parle jamais de notre marge »). Une API d'avant la porte encore : elle est ignorée.
+ */
 export interface LimitesOffre extends Record<LimiteNombre, number | null>, Partial<Record<LimiteTolerante, number | null>> {
   conservationJours: number;
-  commissionPct: number;
   badge: boolean;
   numeroInclus: boolean;
   /** En octets. `undefined` : une API qui ne le porte pas encore. */
@@ -49,6 +53,15 @@ export interface LimitesOffre extends Record<LimiteNombre, number | null>, Parti
   /** Les clés d'API actives que l'offre permet, `null` sans limite. `undefined` : une API qui ne le porte pas encore. */
   clesApi?: number | null;
 }
+
+/** Une ligne de la grille : ce qu'une offre ouvre et permet. */
+export interface LigneOffre {
+  fonctions: ReadonlySet<FonctionOffre>;
+  limites: LimitesOffre;
+}
+
+/** La grille : le Business y manque sur une API d'avant lui (la console est publiée avant l'API). */
+export type GrilleOffre = Record<Exclude<NomOffre, 'business'>, LigneOffre> & { business?: LigneOffre };
 
 export interface UsageOffre {
   envoisModelesMois: number | null;
@@ -72,7 +85,7 @@ export interface VueOffre {
    * y revenir. 0 sous la limite, et sur une API plus ancienne qui ne le porte pas (la page n'en dit alors rien).
    */
   contactsEnTrop: number;
-  grille: Record<NomOffre, { fonctions: ReadonlySet<FonctionOffre>; limites: LimitesOffre }>;
+  grille: GrilleOffre;
   /** Les prix HT du Pro, en centimes (lot 6, B1). `null` : une API plus ancienne qui ne les porte pas encore. */
   prixPro: { moisCentimes: number; anCentimes: number } | null;
   /**
@@ -133,11 +146,11 @@ function lireFonctions(v: unknown): ReadonlySet<FonctionOffre> | null {
 function lireLimites(v: unknown): LimitesOffre | null {
   if (!estObjet(v)) return null;
   if (!LIMITES_NOMBRE.every((k) => entierOuNul(v[k]))) return null;
-  if (!entier(v.conservationJours) || !entier(v.commissionPct)) return null;
+  if (!entier(v.conservationJours)) return null;
   if (typeof v.badge !== 'boolean' || typeof v.numeroInclus !== 'boolean') return null;
   return {
     ...(Object.fromEntries(LIMITES_NOMBRE.map((k) => [k, v[k]])) as Record<LimiteNombre, number | null>),
-    conservationJours: v.conservationJours, commissionPct: v.commissionPct, badge: v.badge, numeroInclus: v.numeroInclus,
+    conservationJours: v.conservationJours, badge: v.badge, numeroInclus: v.numeroInclus,
     ...Object.fromEntries(LIMITES_TOLERANTES.filter((k) => entierOuNul(v[k])).map((k) => [k, v[k]])),
   };
 }
@@ -158,8 +171,10 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
   if (!estObjet(u) || !entierOuNul(u.envoisModelesMois) || !entier(u.contacts) || !entier(u.automations) || !entier(u.membres)) return null;
   const g = brut.grille;
   if (!estObjet(g)) return null;
-  const grille: Partial<VueOffre['grille']> = {};
+  const grille: Partial<Record<NomOffre, LigneOffre>> = {};
   for (const o of NOMS_OFFRES) {
+    // Une API d'avant le Business n'a pas sa ligne : elle reste absente, la vue reste lisible (`GrilleOffre`).
+    if (o === 'business' && g.business === undefined) continue;
     const ligne = o === 'free' && g.free === undefined ? g[NOM_D_AVANT] : g[o];
     if (!estObjet(ligne)) return null;
     const f = lireFonctions(ligne.fonctions);
@@ -167,11 +182,12 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     if (f === null || l === null) return null;
     grille[o] = { fonctions: f, limites: l };
   }
+  const presentes = NOMS_OFFRES.filter((o) => grille[o] !== undefined);
   // 🔴 Une API qui ne connaît pas encore la fonction `console` (aucune offre de sa grille ne la porte) : la console est
   // publiée avant l'API, et sans cette parade elle se fermerait à tout le monde, Pro et Entreprise compris.
-  const apiSansConsole = !NOMS_OFFRES.some((o) => grille[o]!.fonctions.has('console'));
+  const apiSansConsole = !presentes.some((o) => grille[o]!.fonctions.has('console'));
   const ouvrir = (f: ReadonlySet<FonctionOffre>): ReadonlySet<FonctionOffre> => (apiSansConsole ? new Set([...f, 'console' as const]) : f);
-  for (const o of NOMS_OFFRES) grille[o] = { ...grille[o]!, fonctions: ouvrir(grille[o]!.fonctions) };
+  for (const o of presentes) grille[o] = { ...grille[o]!, fonctions: ouvrir(grille[o]!.fonctions) };
   return {
     offre, fonctions: ouvrir(fonctions), limites,
     usage: { envoisModelesMois: u.envoisModelesMois, contacts: u.contacts, automations: u.automations, membres: u.membres },
@@ -250,9 +266,9 @@ function lirePrixPro(v: unknown): VueOffre['prixPro'] {
   return { moisCentimes: v.moisCentimes, anCentimes: v.anCentimes };
 }
 
-/** L'offre la moins chère de la grille qui ouvre cette fonction (« Pro » ou « Entreprise »), `null` si aucune. */
+/** L'offre la moins chère de la grille qui ouvre cette fonction (« Pro », « Business »...), `null` si aucune. */
 export function offreQuiOuvre(vue: VueOffre, f: FonctionOffre): NomOffre | null {
-  return NOMS_OFFRES.find((o) => vue.grille[o].fonctions.has(f)) ?? null;
+  return NOMS_OFFRES.find((o) => vue.grille[o]?.fonctions.has(f)) ?? null;
 }
 
 /** La raison d'un écran ou d'une carte fermés : « Inclus dans l'offre Pro. », d'après la grille du serveur. */
@@ -265,7 +281,7 @@ export function phraseInclusDans(vue: VueOffre, f: FonctionOffre, t: (fr: string
 
 /** Le nom de l'offre, tel que l'écran le montre. */
 export function nomDeLOffre(o: NomOffre, t: (fr: string, en: string) => string): string {
-  return o === 'free' ? t('Free', 'Free') : o === 'pro' ? t('Pro', 'Pro') : t('Entreprise', 'Enterprise');
+  return o === 'free' ? t('Free', 'Free') : o === 'pro' ? t('Pro', 'Pro') : o === 'business' ? t('Business', 'Business') : t('Entreprise', 'Enterprise');
 }
 
 /** Ce que la fonction ouvre, tel que l'écran le montre (la grille de `/offre`, la raison d'un menu grisé). */

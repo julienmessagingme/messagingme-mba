@@ -26,7 +26,7 @@ export interface SourceOffres {
   offreDe(tenantId: string): Promise<OffreEspace>;
 }
 
-const OFFRES: ReadonlySet<string> = new Set<Offre>(['base', 'pro', 'entreprise']);
+const OFFRES: ReadonlySet<string> = new Set<Offre>(['base', 'pro', 'business', 'entreprise']);
 
 export class PgOffresStore implements SourceOffres {
   constructor(private readonly pool: Pool) {}
@@ -36,10 +36,11 @@ export class PgOffresStore implements SourceOffres {
     const r = await this.pool.query<{
       offre: string; entreprise_utilisateurs: number | null; entreprise_contacts: number | null;
       entreprise_commission_pct: number | null; conservation: number | null; dernier_fini: Date | null;
-      sieges: number | null; periodicite: 'mois' | 'an' | null;
+      sieges: number | null; periodicite: 'mois' | 'an' | null; business_utilisateurs: number | null;
     }>(
       `select offre_de_l_espace($1::uuid) as offre,
               (select t.entreprise_utilisateurs from tenants t where t.id = $1::uuid) as entreprise_utilisateurs,
+              (select t.business_utilisateurs from tenants t where t.id = $1::uuid) as business_utilisateurs,
               (select t.entreprise_contacts from tenants t where t.id = $1::uuid) as entreprise_contacts,
               (select t.entreprise_commission_pct from tenants t where t.id = $1::uuid) as entreprise_commission_pct,
               (select s.conversation_retention_days from tenant_settings s where s.tenant_id = $1::uuid) as conservation,
@@ -59,7 +60,8 @@ export class PgOffresStore implements SourceOffres {
           utilisateurs: l?.entreprise_utilisateurs ?? null, conservationJours: l?.conservation ?? null,
           contacts: l?.entreprise_contacts ?? null, commissionPct: l?.entreprise_commission_pct ?? null,
         }
-        : null, pro?.sieges ?? 0),
+        // Le Business ne prend de /ops que sa limite d'utilisateurs (`droitsDe`) : vide, les 5 de la grille.
+        : offre === 'business' ? { utilisateurs: l?.business_utilisateurs ?? null, conservationJours: null } : null, pro?.sieges ?? 0),
       retourEnBaseLe: offre === 'base' ? (l?.dernier_fini ?? null) : null,
       pro,
     };

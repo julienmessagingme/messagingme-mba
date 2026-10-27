@@ -8,10 +8,10 @@ import { DROITS, type Offre } from '../src/offres/offres';
  * la fonction `analyse` dans la GRILLE, pas un nom d'offre écrit en dur dans le SQL. Si la grille change, la réclamation suit.
  */
 describe('les offres sans analyse', () => {
-  it('🔴 dérivées de la grille : aujourd’hui la Base et le Pro (le Pro resserré, spec offres v2, livraison 5)', () => {
+  it('🔴 dérivées de la grille : aujourd’hui la Base, le Pro et le Business (son analyse arrive au lot 2, payée sur son crédit)', () => {
     const attendues = (Object.keys(DROITS) as Offre[]).filter((o) => !DROITS[o].fonctions.has('analyse'));
     expect([...OFFRES_SANS_ANALYSE]).toEqual(attendues);
-    expect([...OFFRES_SANS_ANALYSE]).toEqual(['base', 'pro']);
+    expect([...OFFRES_SANS_ANALYSE]).toEqual(['base', 'pro', 'business']);
   });
 
   it('🔴 la réclamation les lit en paramètre, sans nom d’offre en dur', () => {

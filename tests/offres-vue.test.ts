@@ -1,12 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { creerVueOffre, statutDuPro } from '../src/offres/vue';
 import type { ResumePro } from '../src/offres/abonnements-offre.pg';
-import { DROITS, FONCTIONS, PRIX_PRO_HT_CENTIMES, droitsDe, type Offre } from '../src/offres/offres';
+import {
+  DROITS, FONCTIONS, PRIX_BUSINESS_HT_CENTIMES, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_BUSINESS_HT_CENTIMES, droitsDe, type Limites, type Offre,
+} from '../src/offres/offres';
 
 /**
  * LA VUE DE L'OFFRE (lot 6, tâche 6) : la même pour la console et pour Claude. Les fonctions dans l'ordre de la grille,
  * les limites telles quelles, l'usage, et le lien vers l'offre.
  */
+
+/** Les limites telles que la vue les montre : toutes, sauf la commission, que personne ne voit (spec Business). */
+function sansMarge(l: Limites): Omit<Limites, 'commissionPct'> {
+  const { commissionPct: _marge, ...publiques } = l;
+  return publiques;
+}
 function vue(
   offre: Offre, mois: { max: number; reste: number } | null, proEnVente = true, suite: { finPrevueLe: Date | null; rendreNumero: boolean } | null = null,
   abonnement: ResumePro | null = null,
@@ -42,7 +50,7 @@ describe('creerVueOffre', () => {
     // Le nom PUBLIC (décision du 2026-10-08) : « Free », la base et le code serveur gardant `base`.
     expect(v.offre).toBe('free');
     expect(v.fonctions).toEqual([]);
-    expect(v.limites).toEqual(DROITS.base.limites);
+    expect(v.limites).toEqual(sansMarge(DROITS.base.limites));
     expect(v.usage).toEqual({ envoisModelesMois: 250, contacts: 42, automations: 3, membres: 1 });
     expect(v.upgradeUrl).toMatch(/\/offre$/);
   });
@@ -76,16 +84,35 @@ describe('creerVueOffre', () => {
     expect(v.usage.envoisModelesMois).toBeNull();
   });
 
-  it('🔴 la vue porte la GRILLE des trois offres, lue dans la seule définition : la console ne la recopie jamais', async () => {
+  it('🔴 la vue porte la GRILLE des quatre offres, lue dans la seule définition : la console ne la recopie jamais', async () => {
     const v = await vue('base', null)('t1');
-    expect(Object.keys(v.grille)).toEqual(['free', 'pro', 'entreprise']);
-    for (const [publique, o] of [['free', 'base'], ['pro', 'pro'], ['entreprise', 'entreprise']] as const) {
-      expect(v.grille[publique].limites).toEqual(DROITS[o].limites);
+    expect(Object.keys(v.grille)).toEqual(['free', 'pro', 'business', 'entreprise']);
+    for (const [publique, o] of [['free', 'base'], ['pro', 'pro'], ['business', 'business'], ['entreprise', 'entreprise']] as const) {
+      expect(v.grille[publique].limites).toEqual(sansMarge(DROITS[o].limites));
       expect(v.grille[publique].fonctions).toEqual(FONCTIONS.filter((f) => DROITS[o].fonctions.has(f)));
     }
     expect(v.grille.entreprise.fonctions).toEqual([...FONCTIONS]);
     v.grille.pro.limites.utilisateurs = 9999;
     expect(DROITS.pro.limites.utilisateurs).toBe(3);
+  });
+
+  it('🔴 la marge IA n’apparaît nulle part dans la vue : ni dans les limites de l’espace, ni dans la grille (spec Business)', async () => {
+    for (const o of ['base', 'pro', 'business', 'entreprise'] as const) {
+      const v = await vue(o, null)('t1');
+      expect('commissionPct' in v.limites).toBe(false);
+      for (const ligne of Object.values(v.grille)) expect('commissionPct' in ligne.limites).toBe(false);
+    }
+  });
+
+  it('🔴 un Business : son nom public, ses prix HT (349 € par mois, 10 € l’utilisateur en plus), ni essai ni siège Stripe', async () => {
+    const v = await vue('business', null)('t1');
+    expect(v.offre).toBe('business');
+    expect(v.prixBusiness).toEqual({ moisCentimes: 34900, siegeMoisCentimes: 1000 });
+    expect(v.prixBusiness).toEqual({ moisCentimes: PRIX_BUSINESS_HT_CENTIMES.mois, siegeMoisCentimes: PRIX_SIEGE_BUSINESS_HT_CENTIMES.mois });
+    expect(v.essai.possible).toBe(false);
+    expect(v.sieges).toBeNull();
+    // Le prix se dit même quand le Pro n'est pas en vente : le Business ne s'achète pas en ligne, il se pose dans /ops.
+    expect((await vue('base', null, false)('t1')).prixBusiness).toEqual({ moisCentimes: 34900, siegeMoisCentimes: 1000 });
   });
 
   it('🔴 la vue porte les prix HT du Pro, lus dans la grille : 49 € par mois, 490 € par an (lot 6, B1)', async () => {

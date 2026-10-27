@@ -115,6 +115,50 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     expect((await offres.offreDe(inconnu)).offre).toBe('base');
   });
 
+  it('🔴 0257 : le drapeau seul fait le Business, qui l’emporte sur un Pro payé ; l’Entreprise l’emporte sur lui', async () => {
+    const sql = async (id: string) => (await pool.query<{ o: string }>('select offre_de_l_espace($1) as o', [id])).rows[0]!.o;
+    const business = async (id: string) => { await pool.query('update tenants set offre_business = true where id = $1', [id]); };
+    const seul = await espace('itest-offre-business');
+    await business(seul);
+    expect(await sql(seul)).toBe('business');
+    const surPro = await espace('itest-offre-business-pro');
+    await pro(surPro, 'sub_itestoffrebizpro', null);
+    expect(await sql(surPro)).toBe('pro');
+    await business(surPro);
+    expect(await sql(surPro)).toBe('business');
+    const sousEntreprise = await espace('itest-offre-business-ent', true);
+    await business(sousEntreprise);
+    expect(await sql(sousEntreprise)).toBe('entreprise');
+  });
+
+  it('🔴 un Business se lit par le store : les 5 utilisateurs de la grille, ou la limite posée dans /ops', async () => {
+    const t = await espace('itest-offre-business-store');
+    await pool.query('update tenants set offre_business = true where id = $1', [t]);
+    const o = await offres.offreDe(t);
+    expect(o.offre).toBe('business');
+    expect(o.droits.limites.utilisateurs).toBe(5);
+    await pool.query('update tenants set business_utilisateurs = 7 where id = $1', [t]);
+    expect((await offres.offreDe(t)).droits.limites.utilisateurs).toBe(7);
+  });
+
+  it('🔴 0257 : la limite d’utilisateurs du Business est positive, ou vide', async () => {
+    const t = await espace('itest-offre-business-util');
+    await expect(pool.query('update tenants set business_utilisateurs = 0 where id = $1', [t])).rejects.toThrow(/tenants_business_utilisateurs_chk/);
+    await pool.query('update tenants set business_utilisateurs = 6 where id = $1', [t]);
+  });
+
+  it('🔴 0257 : la fin du numéro portée par /ops s’écrit ops_…, un identifiant quelconque reste refusé', async () => {
+    const t = await espace('itest-offre-ops-numero');
+    await pool.query(
+      "insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, fini_le) values ('ops_itestfinparops', $1, true, 'resilie', now())",
+      [t],
+    );
+    await expect(pool.query(
+      "insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut) values ('cus_itestinvalide', $1, true, 'actif')",
+      [t],
+    )).rejects.toThrow(/abonnements_numero_id_chk/);
+  });
+
   it('une fin sans raison connue est refusée, une raison sans fin aussi', async () => {
     const t = await espace('itest-offre-raison');
     await expect(pool.query(
