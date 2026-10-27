@@ -4,6 +4,38 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-27 : la reprise humaine dans HubSpot, sous-lot « relancer » (un modèle depuis la carte, fenêtre fermée)
+
+Plan `mm-hubspot/docs/2026-10-26-sous-lot-relancer-modele-plan.md`, décisions A à H validées par Julien ; un
+implémenteur, une relecture, et tous les jaunes corrigés avant le déploiement, à la demande de Julien.
+
+- **Migration 0255** (`tenant_settings.hubspot_modeles`, booléen non nul, faux par défaut : instantané), en `avant`
+  avec le serveur `f7f901ce` (run 40476747134) : le code neuf l'ÉCRIT (`poserChoixHubspot`), l'ancien la lit par
+  `select *` et survit. Appliquée à 10:06:09Z, seule en attente dans l'image. Relue après, en lecture seule
+  (`default_transaction_read_only`), par un script monté dans l'image déployée, lancé par Julien depuis son poste : le
+  mode auto de Claude refuse une lecture de production, et ce refus ne se contourne pas. Colonne `boolean`, non nulle,
+  défaut `false`, inscrite ; 5 lignes, aucune allumée ni nulle ; le chemin chaud par le vrai code (`lireChoixHubspot`)
+  rend `modeles: false`. Fumée publique et fiches OAuth conformes.
+- **Console et aide** (`354cadfe`), poussées APRÈS le déploiement de l'API qui porte leur réglage. `aide:charger` a tourné
+  sur l'image `060e6461` avec le dossier des fiches de `1e7cb398` monté à sa place : aucune image déployée ne portait
+  encore les fiches retouchées, et le chargeur est identique entre les deux. 171 lignes, 1 retirée : la clé entière
+  `hubspot-sur-l-accueil`, devenue assez longue pour se découper en `#1` et `#2` (calculé hors production en comparant
+  les clés des deux jeux de fiches, aucune autre ne bouge).
+- **Deux rouges de CI de notre fait, rattrapés avant tout déploiement** : la prise du fil passée détachée au câblage,
+  au-delà du quota gelé de `unbound-method` (une flèche) ; côté connecteur, un test d'intégration neuf qui avançait
+  l'horloge d'analyse de la conversation du test du double clic (une conversation à lui).
+- **Un test instable, vu sur la CI d'un pair** (`tests/email-smtp.test.ts`) : le Message-ID aléatoire `<uuid@ex.fr>`
+  finissait par « b1@ex.fr », que l'assertion de la copie cachée refusait, environ une fois sur 128 sans aucune fuite.
+  Les adresses sortent de l'alphabet hexadécimal (`1e7cb398`), l'assertion reste aussi stricte ; vérifié dans les deux
+  sens (copie cachée passée en `cc` : le test tombe).
+- **Connecteur** `1506707`, déploiement épinglé (run 40489732652). Il tournait déjà sur `c8e319a` depuis le 2026-10-26
+  à 21:31Z : le déploiement du bastion, NON épinglé, avait pris la tête de `main`. Sans effet (la route `relancer` de
+  l'ancienne carte passait de 501 à 400, la lecture ajoutée ne touche qu'une colonne existante, les routes neuves
+  n'avaient aucun appelant) ; c'est la règle « épingler le commit » de `DEPLOY.md`, qui vaut aussi pour ce dépôt.
+  Carte uploadée (build #11).
+- **Reste l'essai réel du plan** : le réglage allumé, une conversation sans message du client depuis plus de 24 h, un
+  modèle envoyé depuis la carte.
+
 ## 2026-10-26 (nuit) : audit sécurité de la prod, durcissement de la vitrine, HSTS activé
 
 Première passe de sécurité sur la prod depuis la bascule Scaleway, à la demande de Julien.
