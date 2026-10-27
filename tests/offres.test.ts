@@ -16,7 +16,7 @@ const GRILLE: Record<Offre, Limites> = {
     stockageOctets: 0, clesApi: 2, appelsMinute: 30, appelsHeure: 500, modelesJour: 500, reponsesJour: 2000,
   },
   pro: {
-    utilisateurs: 3, admins: 2, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+    utilisateurs: 3, admins: null, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
     adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 20, badge: false, numeroInclus: true,
     stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
   },

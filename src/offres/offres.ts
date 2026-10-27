@@ -116,7 +116,8 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
   pro: {
     fonctions: new Set<Fonction>(FONCTIONS_PRO),
     limites: {
-      utilisateurs: 3, admins: 2, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+      // Tous administrateurs (spec du 2026-10-27, `roleEffectif`) : plus de limite d'administrateurs à part.
+      utilisateurs: 3, admins: null, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
       adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 20, badge: false, numeroInclus: true,
       stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
     },

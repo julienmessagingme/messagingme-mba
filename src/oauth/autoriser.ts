@@ -4,6 +4,8 @@ import { makeJournal, type AuditSink } from '../audit/journal';
 import type { PgOauthStore } from './store.pg';
 import { clientConnu } from './clients';
 import { nouveauJeton, PREFIXE_CODE } from './jetons';
+import { roleEffectif } from '../offres/membres';
+import type { Offre } from '../offres/offres';
 
 /**
  * LE CLIC « AUTORISER », QUELLE QUE SOIT LA PREUVE D'IDENTITÉ (tâche 6 du plan `2026-10-03-oauth-mcp.md`).
@@ -22,6 +24,8 @@ export interface DepsAutoriser {
   comptes: Required<Pick<ComptesAuthDep, 'getByEmail'>>;
   /** `oauth.autorise`, sans jeton, code ni empreinte : le client et les droits. */
   audit: AuditSink;
+  /** L'offre de l'espace (sans cache) : en Pro, tout membre est administrateur (`roleEffectif`, spec du 2026-10-27). */
+  offreDe(tenantId: string): Promise<Offre>;
 }
 
 export type ResultatAutorisation = { ok: true; adresse: string } | { ok: false; erreur: string };
@@ -55,7 +59,9 @@ export async function autoriser(
 ): Promise<ResultatAutorisation> {
   const compte = (await deps.comptes.getByEmail(personne.email)).find((c) => c.tenantId === espace && !c.disabled);
   if (!compte) return { ok: false, erreur: 'vous n’avez pas de compte actif dans cet espace' };
-  if (compte.role !== 'admin') return { ok: false, erreur: 'seul un administrateur de l’espace peut autoriser une application' };
+  if (roleEffectif(await deps.offreDe(espace), compte.role) !== 'admin') {
+    return { ok: false, erreur: 'seul un administrateur de l’espace peut autoriser une application' };
+  }
   const code = nouveauJeton(PREFIXE_CODE);
   const { autorisationId } = await deps.store.creerAutorisation({
     tenantId: espace,

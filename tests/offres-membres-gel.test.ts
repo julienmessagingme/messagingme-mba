@@ -23,12 +23,12 @@ describe('limiteDepassee', () => {
     expect(limiteDepassee(rang({ estAdmin: false, autresAvant: 1, admins: 0 }), L('base'))).toBe('utilisateurs');
   });
 
-  it('en Pro (3 utilisateurs, 2 administrateurs) : deux administrateurs, puis les membres jusqu’à trois', () => {
-    expect(limiteDepassee(rang({ estAdmin: true, adminsAvant: 1, admins: 3 }), L('pro'))).toBeNull();
-    expect(limiteDepassee(rang({ estAdmin: true, adminsAvant: 2, admins: 3 }), L('pro'))).toBe('admins');
-    // Le 3e administrateur, refusé, ne prend pas la place d'un membre : 2 administrateurs gardés + 1 membre.
-    expect(limiteDepassee(rang({ autresAvant: 0, admins: 3 }), L('pro'))).toBeNull();
-    expect(limiteDepassee(rang({ autresAvant: 1, admins: 3 }), L('pro'))).toBe('utilisateurs');
+  it('en Pro (3 utilisateurs, tous administrateurs : spec du 2026-10-27) : les administrateurs par ancienneté, puis les membres, trois en tout', () => {
+    // Plus de limite d'administrateurs à part : seule celle des utilisateurs compte, administrateurs d'abord.
+    expect(limiteDepassee(rang({ estAdmin: true, adminsAvant: 2, admins: 3 }), L('pro'))).toBeNull();
+    expect(limiteDepassee(rang({ estAdmin: true, adminsAvant: 3, admins: 4 }), L('pro'))).toBe('utilisateurs');
+    expect(limiteDepassee(rang({ autresAvant: 1, admins: 1 }), L('pro'))).toBeNull();
+    expect(limiteDepassee(rang({ autresAvant: 0, admins: 3 }), L('pro'))).toBe('utilisateurs');
   });
 
   it('en Entreprise (sans limite) : personne n’est hors de l’offre', () => {

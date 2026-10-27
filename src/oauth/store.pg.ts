@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { DUREE_CODE_S } from './jetons';
-import type { HorsOffreMembre } from '../offres/membres';
+import { roleAdminEffectifSql, type HorsOffreMembre } from '../offres/membres';
 
 /**
  * Les autorisations OAuth et leurs codes (migration 0204).
@@ -207,7 +207,7 @@ export class PgOauthStore {
       `with a as (
          select a.id, a.tenant_id, a.user_id, a.scopes, t.status as tenant_status, a.dernier_usage_le,
                 coalesce(a.revoque_le is null and a.acces_expire_le > now()
-                         and u.disabled_at is null and u.role = 'admin', false) as valide
+                         and u.disabled_at is null and ${roleAdminEffectifSql('u')}, false) as valide
            from oauth_autorisations a
            join users u on u.id = a.user_id and u.tenant_id = a.tenant_id
            join tenants t on t.id = a.tenant_id

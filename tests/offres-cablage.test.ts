@@ -94,7 +94,8 @@ describe('le câblage de l’offre', () => {
     const api = lire('index.ts');
     expect(api).toMatch(/const gelMembres = creerGelMembres\(\{ offres, rang: \(tenant, user\) => userStore\.rangMembre\(tenant, user\) \}\);/);
     // En parallèle de l'état du compte : chaque requête d'un espace limité n'attend pas un aller-retour de plus.
-    expect(api).toMatch(/const \[s, horsOffre\] = await Promise\.all\(\[userStore\.getAuthState\(userId\), gelMembres\.horsOffre\(tenant, userId\)\]\);\s*return s && \{ \.\.\.s, horsOffre \};/);
+    // Le rôle EFFECTIF y est posé aussi (spec du 2026-10-27) : en Pro, tout membre est administrateur.
+    expect(api).toMatch(/const \[s, horsOffre, o\] = await Promise\.all\(\[\s*userStore\.getAuthState\(userId\), gelMembres\.horsOffre\(tenant, userId\), offres\.offreDe\(tenant\),\s*\]\);\s*return s && \{ \.\.\.s, role: roleEffectif\(o\.offre, s\.role\), horsOffre \};/);
     expect(api).toMatch(/return a && \{ \.\.\.a, horsOffre: a\.valide \? await gelMembres\.horsOffre\(a\.tenantId, a\.userId\) : null \};/);
   });
 

@@ -3,6 +3,24 @@ import { LimiteOffreError, type ContexteLimite } from './refus';
 import { PRIX_SIEGE_HT_CENTIMES, type Offre } from './offres';
 import type { SourceOffres } from './offre.pg';
 
+/**
+ * 🔴 LE RÔLE EFFECTIF D'UN MEMBRE (spec du 2026-10-27, décision de Julien : « en Pro, tout le monde administrateur »,
+ * promus d'office, même un membre restreint d'un Business qui redescend). Appliqué là où le rôle se relit à chaque
+ * requête (la session, le jeton OAuth), donc par toutes les gardes et par l'Inbox. Le rôle ENREGISTRÉ ne bouge pas :
+ * il reprend effet si l'espace remonte en Business.
+ */
+export function roleEffectif(offre: Offre, role: string): string {
+  return offre === 'pro' ? 'admin' : role;
+}
+
+/**
+ * Sa jumelle SQL, pour les lectures qui comparent le rôle en base (la validité d'un jeton OAuth, les destinataires des
+ * e-mails du produit) : `u` est l'alias de `users`. Une seule définition, sur l'offre calculée (`offre_de_l_espace`).
+ */
+export function roleAdminEffectifSql(u: string): string {
+  return `(${u}.role = 'admin' or offre_de_l_espace(${u}.tenant_id) = 'pro')`;
+}
+
 /** Les limites de membres d'une offre (`droits.limites`) : `null` = sans limite. */
 export interface LimitesMembres {
   utilisateurs: number | null;

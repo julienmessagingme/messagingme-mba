@@ -175,6 +175,8 @@ function monter(o: { publicApiUrl?: string; fiches?: Record<string, ClientResolu
     secret: SECRET,
     appUrl: `${APP}/`,
     audit: async (tenant, acteur, action, cible, detail = {}) => { audits.push({ tenant, acteur: acteur.userId, action, cible: cible.id, detail }); },
+    // Hors Pro : seul un administrateur enregistré autorise (en Pro, tout membre l'est, `tests/offres-tous-admins.test.ts`).
+    offreDe: async () => 'base' as const,
     clients: {
       fiches: { lire: async (id) => { fichesLues.push(id); return o.fiches?.[id] ?? null; } },
       enregistres: {

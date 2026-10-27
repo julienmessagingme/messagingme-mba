@@ -383,6 +383,7 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     secret: SECRET,
     appUrl: 'https://console.exemple.test',
     audit: async () => undefined,
+    offreDe: async () => 'base' as const,
     // Lot 15 : aucune fiche ne se récupère (aucune requête sortante d'une sonde), aucun client enregistré n'est connu ;
     // un enregistrement valide rend un client factice, compté comme une interrogation.
     clients: {

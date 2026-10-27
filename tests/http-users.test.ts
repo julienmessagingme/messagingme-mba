@@ -174,6 +174,14 @@ describe('users route — changement de rôle', () => {
     await server.close();
   });
 
+  it('🔴 PATCH un rôle en Pro -> 409 qui dit que les rôles se règlent en Business (spec du 2026-10-27)', async () => {
+    const { server } = app({ users: { setRole: async () => 'roles_en_business' } });
+    const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/role', ...h(adminTok), payload: { role: 'agent' } });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'roles_en_business', error: expect.stringMatching(/Business/) });
+    await server.close();
+  });
+
   it('PATCH role agent -> 403 (ne modifie rien)', async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'PATCH', url: '/tenants/t1/users/known/role', ...h(agentTok), payload: { role: 'admin' } });

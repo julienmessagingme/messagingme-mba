@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { BOUNDS_CTE, STATS_TZ } from '../stats/range';
 import { TYPES_OUVERTURE } from '../stats/performance';
 import { FENETRE_JOURS } from './accompagnement';
+import { roleAdminEffectifSql } from '../offres/membres';
 import { CLES_TRANSFERT, type CategorieCoupable, type Langue, type TexteEmail } from './catalogue';
 
 /**
@@ -70,7 +71,7 @@ export class PgEmailsProduitStore {
   async adminsConnectes(tenantId: string): Promise<string[]> {
     const res = await this.pool.query<{ identity_id: string }>(
       `select distinct u.identity_id from users u
-        where u.tenant_id = $1 and u.role = 'admin' and u.disabled_at is null
+        where u.tenant_id = $1 and ${roleAdminEffectifSql('u')} and u.disabled_at is null
           and u.last_login_at is not null and u.identity_id is not null`,
       [tenantId],
     );

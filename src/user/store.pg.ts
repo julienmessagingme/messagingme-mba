@@ -238,7 +238,11 @@ export class PgUserStore {
     // que l'insertion refuserait ensuite. La même règle que l'index `users_tenant_email_unique` (espace, adresse sans casse).
     const deja = await this.pool.query(`select 1 from users where tenant_id = $1 and lower(email) = lower($2)`, [tenantId, email]);
     if (deja.rows.length > 0) throw new DuplicateEmailError();
-    if (this.limitesMembres) await verifierPlaceMembre(this.pool, tenantId, await this.limitesMembres(tenantId), role, null);
+    const limites = this.limitesMembres ? await this.limitesMembres(tenantId) : null;
+    // En Pro, tout le monde est administrateur (spec du 2026-10-27) : l'invité l'est aussi en base, quel que soit le rôle
+    // demandé, et le reste s'il remonte en Business.
+    const roleEnregistre = limites?.offre === 'pro' ? 'admin' : role;
+    if (limites) await verifierPlaceMembre(this.pool, tenantId, limites, roleEnregistre, null);
     const code = makeCode('usr', await resolveTenantCode(this.pool, tenantId));
     try {
       // Identité créée si l'adresse est nouvelle, réutilisée sinon : l'invité garde le mot de passe qu'il connaît.
@@ -249,7 +253,7 @@ export class PgUserStore {
         `insert into users (tenant_id, email, name, role, password_hash, code, identity_id)
          values ($1, $2, $6, $3, null, $4, $5)
          returning id, email, name, role, created_at`,
-        [tenantId, email, role, code, identityId, name?.trim() === '' ? null : (name?.trim() ?? null)],
+        [tenantId, email, roleEnregistre, code, identityId, name?.trim() === '' ? null : (name?.trim() ?? null)],
       );
       const r = res.rows[0]!;
       return { id: r.id, email: r.email, name: r.name, role: r.role, code, disabled: false, pending: true, createdAt: r.created_at.toISOString(), lastLoginAt: null };
@@ -329,10 +333,13 @@ export class PgUserStore {
    * 'last_admin' (dernier admin rétrogradé) ou 'not_found' (id inconnu ou autre espace).
    * Course théorique : deux rétrogradations croisées simultanées pourraient toutes deux voir count > 1.
    */
-  async setRole(tenantId: string, userId: string, role: string): Promise<UserMutation> {
+  async setRole(tenantId: string, userId: string, role: string): Promise<UserMutation | 'roles_en_business'> {
+    const limites = this.limitesMembres ? await this.limitesMembres(tenantId) : null;
+    // En Pro, tout le monde est administrateur (spec du 2026-10-27, `roleEffectif`) : un rôle n'y changerait rien.
+    if (limites?.offre === 'pro') return 'roles_en_business';
     // Passer administrateur compte dans la limite des administrateurs de l'offre (lot 6) ; le compte ne se compte pas.
-    if (role === 'admin' && this.limitesMembres) {
-      await verifierPlaceMembre(this.pool, tenantId, { utilisateurs: null, admins: (await this.limitesMembres(tenantId)).admins }, role, userId);
+    if (role === 'admin' && limites) {
+      await verifierPlaceMembre(this.pool, tenantId, { utilisateurs: null, admins: limites.admins }, role, userId);
     }
     const upd = await this.pool.query(
       // `role <> 'admin'` et non `role = 'agent'` : un compte non admin peut changer de rôle sans toucher au nombre

@@ -41,7 +41,7 @@ export interface UsersRouteDeps {
 export interface MembresDep {
   list(tenantId: string): Promise<UserRow[]>;
   /** 'ok' | 'last_admin' (refusé : dernier admin actif) | 'not_found' (inconnu/hors tenant). */
-  setRole(tenantId: string, userId: string, role: string): Promise<UserMutation>;
+  setRole(tenantId: string, userId: string, role: string): Promise<UserMutation | 'roles_en_business'>;
   /** Révoque (true) ou réactive (false) un compte. Mêmes garde-fous que le rôle. */
   setDisabled(tenantId: string, userId: string, disabled: boolean): Promise<UserMutation>;
   /** Supprime définitivement un compte. Refusé si dernier admin actif. */
@@ -219,6 +219,9 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
     const result = await deps.users.setRole(tenant, userId, role);
     if (result === 'not_found') return reply.code(404).send({ error: 'utilisateur inconnu' });
     if (result === 'last_admin') return reply.code(409).send({ error: 'au moins un administrateur est requis' });
+    if (result === 'roles_en_business') {
+      return reply.code(409).send({ error: 'En Pro, tous les membres sont administrateurs : les rôles se règlent en Business.', code: 'roles_en_business' });
+    }
     // Après le succès, jamais avant : une intention refusée (404, 409) ferait du journal un registre de tentatives.
     await journal(tenant, req, 'utilisateur.role_change', { kind: 'user', id: userId }, { role });
     return reply.code(200).send({ id: userId, role });

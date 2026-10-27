@@ -232,7 +232,7 @@ import type { AgentKnowledgeRouteDeps } from './http/agent-knowledge';
 import { importerLeSiteDeLEntretien, type DepsConnaissance } from './agent/connaissance';
 import type { Origine } from './reglages/historique';
 import { creerOffreDeBienvenue } from './account/offre-bienvenue';
-import { creerGelMembres } from './offres/membres';
+import { creerGelMembres, roleEffectif } from './offres/membres';
 import { commissionPour } from './offres/commission';
 import { surFinDeLOffreManuelle, surFinDuPro, surPassageEnPro, type DepsNumeroInclus } from './offres/numero-inclus';
 import { contratOpenapi } from './api/openapi';
@@ -1634,8 +1634,11 @@ async function main(): Promise<void> {
       // 🔴 Le gel des membres en trop (lot 6, B2a) : la garde refuse en 402 un membre au-delà des limites de l'offre.
       // Les deux lectures en parallèle : la base est loin, et l'Inbox relit toutes les 4 s.
       getUserState: async (userId, tenant) => {
-        const [s, horsOffre] = await Promise.all([userStore.getAuthState(userId), gelMembres.horsOffre(tenant, userId)]);
-        return s && { ...s, horsOffre };
+        // Le rôle EFFECTIF (spec du 2026-10-27) : en Pro, tout membre est administrateur ; l'offre en cache, déjà lue par le gel.
+        const [s, horsOffre, o] = await Promise.all([
+          userStore.getAuthState(userId), gelMembres.horsOffre(tenant, userId), offres.offreDe(tenant),
+        ]);
+        return s && { ...s, role: roleEffectif(o.offre, s.role), horsOffre };
       },
       // Inscription libre, reset et changement de mot de passe, liaison Google par adresse.
       comptes: userStore,
@@ -3062,6 +3065,8 @@ async function main(): Promise<void> {
     oauth: {
       store: oauthStore,
       comptes: userStore,
+      // En Pro, tout membre est administrateur, donc peut autoriser Claude (spec du 2026-10-27) : l'offre sans cache.
+      offreDe: async (tenant) => (await offresSansCache.offreDe(tenant)).offre,
       verifyGoogle: (idToken) => verifyGoogleIdToken(idToken, config.GOOGLE_CLIENT_ID),
       secret: config.AUTH_SECRET,
       appUrl: config.APP_URL,
@@ -3069,7 +3074,10 @@ async function main(): Promise<void> {
       // Lot 15 : les autres clients MCP, par leur fiche d'identité (requête sortante gardée) ou par l'enregistrement.
       clients: { fiches: lecteurDeFichesProduction(), enregistres: new PgOauthClientsStore(pool) },
     },
-    oauthConsentement: { store: oauthStore, comptes: userStore, secret: config.AUTH_SECRET, audit: auditSink },
+    oauthConsentement: {
+      store: oauthStore, comptes: userStore, secret: config.AUTH_SECRET, audit: auditSink,
+      offreDe: async (tenant) => (await offresSansCache.offreDe(tenant)).offre,
+    },
     v1: {
       apiKeys: apiKeyStore,
       /**
