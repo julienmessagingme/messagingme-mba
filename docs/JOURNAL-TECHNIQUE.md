@@ -4,6 +4,36 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-27 : le coût de Scaleway, la machine et la base redescendues, le worker principal élargi
+
+Julien a demandé le coût réel de Scaleway après la bascule. Estimé sur les ressources en service et le catalogue public
+(la clé `claude-code` n'a pas la facturation) : environ 225 € HT par mois, mba et mm-hubspot compris, quand les chiffres
+annoncés avant la bascule faisaient croire à beaucoup moins. 🔴 La cause principale : une base managée se paie DEUX
+lignes chez Scaleway, le nœud et sa « gestion » (`/storage/rdb/instance/<type>`), et le prix de la DB-PRO2-XXS n'en
+comptait qu'une (43 € annoncés, environ 80 € réels) ; s'y ajoutaient les montées de gamme, jamais rapportées à un total.
+Leçon : `brain/LEARNINGS.md`, même date.
+
+Ce qui a été fait le même jour, sur décision de Julien :
+- **Sauvegardes** des deux bases gardées 3 jours au lieu de 7 (`backup-schedule-retention=3`).
+- **Machine des workers** en DEV1-M (3 vCPU partagés, 4 Go, environ 15 € au lieu de 41) : arrêt de 21 s, démarrage relancé
+  28 s après, adresse privée gardée, les quatre conteneurs repartis seuls, sans un redémarrage depuis. Mesuré dessus :
+  130 à 180 Mo et moins de 0,5 % de processeur par conteneur. Plafonds de processeur : 2 cœurs au principal, 0,5 aux
+  autres (`b728bf3d`). Une priorité de processeur a été écartée : les plafonds additionnés restent sous les 3 cœurs, la
+  machine ne peut pas saturer.
+- **Base de production** en DB-DEV-M (environ 28 € au lieu de 80) : `rdb instance upgrade`, 7 minutes d'opération,
+  `/health` en 503 de 10:02:19 à 10:02:53, même adresse, même certificat (comparé à celui de l'image), sauvegarde
+  logique prise avant. Scaleway a refait les réglages selon la gamme : `max_connections` à 150 (`95805243`).
+- **Le worker principal élargi** (`1077d386`, `a2d7cfc6`, jaunes `823ce57d`, déployé en `823ce57d`) : ses
+  parallélismes étaient calés sur le pool de 8 du pooler de Supabase. Pool à 20, entrants à 8, campagnes et automations à
+  6, accusés de 1 à 4 avec un plafond de un par contact (la clé de groupe était déjà posée par les receveurs). L'index
+  des accusés, que l'on croyait à faire, était en production depuis le 2026-10-17 (0242). Budget de connexions : 125
+  sur 147. Une relecture indépendante, aucun rouge, cinq jaunes, corrigés ou au `todo.md`.
+- **La porte du connecteur HubSpot** (`mm-hubspot-api`) à 0 copie minimum ; sa base reste séparée (Julien). Son temps
+  de réveil reste à mesurer : la console l'interroge sous 3 s (`DELAI_PORTAIL_MS`).
+
+Après tout cela, environ 145 € HT par mois, 125 € avec la porte HubSpot endormie et les anciennes sauvegardes expirées.
+Reste l'essai réel (`docs/prive/ESSAIS-REELS.md`), puis des bancs sur la nouvelle infra et une refonte de `/ops`.
+
 ## 2026-10-27 : le lot A des médias, les fichiers sortent de Postgres vers le bucket mm-medias-prod
 
 Plan `docs/superpowers/plans/2026-10-14-medias-message-rapide.md` (section « Lot A » et sa révision du jour), avancé
