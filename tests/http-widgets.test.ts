@@ -169,7 +169,7 @@ describe('lister, et ce qu’il faut pour poser la bulle', () => {
       numero: async () => NUMERO_COMPLET,
       qrSvg: async () => '<svg/>',
       budgetInconnus: new RateLimiter(0, 60_000),
-      badgeDeLOffre: async () => true,
+      presentationDeLOffre: async () => ({ badge: true, apparencePersonnalisee: true }),
     });
     const res = await publique.inject({ method: 'GET', url: new URL(vue.adresseScript).pathname });
     expect(res.statusCode).toBe(200);
@@ -279,6 +279,50 @@ describe('créer', () => {
     expect((await patch({ actif: false })).statusCode).toBe(200);
     expect((await patch({ devenir: null })).statusCode).toBe(200);
     await server.close();
+  });
+
+  it('🔴 spec Business : en Free et en Pro, une apparence personnalisée est refusée (402, widget_personnalise), à la création comme à la modification', async () => {
+    for (const offre of ['base', 'pro'] as const) {
+      const { server, cap } = monter({ offre });
+      const res = await creer(server, { nom: 'Blog', phrase: 'Je viens du blog', couleur: '#ff0000' });
+      expect(res.statusCode, offre).toBe(402);
+      expect(res.json()).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'widget_personnalise' });
+      expect(erreur(res)).toContain('Passez en Business');
+      expect(cap.creations).toEqual([]);
+      await server.close();
+    }
+    const w = ligne();
+    const { server, cap } = monter({ widgets: [w], offre: 'pro' });
+    const patch = (payload: Record<string, unknown>) => server.inject({ method: 'PATCH', url: `${URL_WIDGETS}/${w.id}`, ...h(adminTok), payload });
+    for (const p of [{ couleur: '#ff0000' }, { position: 'bas_gauche' }, { libelle: 'Écrivez-nous' }, { avatarUrl: 'https://exemple.fr/a.png' }]) {
+      expect((await patch(p)).statusCode, JSON.stringify(p)).toBe(402);
+    }
+    expect(cap.modifications).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 spec Business : hors offre, un enregistrement aux valeurs standard (le formulaire envoie tout) passe, et l’apparence déjà enregistrée n’est pas effacée', async () => {
+    const perso = { couleur: '#123456', position: 'bas_gauche' as const, libelle: 'Parlons', avatarUrl: 'https://exemple.fr/a.png' };
+    const w = ligne(perso);
+    const { server, cap } = monter({ widgets: [w], offre: 'base' });
+    const patch = (payload: Record<string, unknown>) => server.inject({ method: 'PATCH', url: `${URL_WIDGETS}/${w.id}`, ...h(adminTok), payload });
+    const res = await patch({ nom: 'Nouveau nom', couleur: '#25d366', position: 'bas_droite', libelle: null, avatarUrl: null });
+    expect(res.statusCode).toBe(200);
+    expect(cap.modifications[0]!.w).toMatchObject({ nom: 'Nouveau nom', ...perso });
+    // Relire puis réécrire l'apparence enregistrée telle quelle (un outil qui renvoie tout) passe aussi, sans rien changer.
+    expect((await patch({ ...perso, actif: false })).statusCode).toBe(200);
+    expect(cap.modifications[1]!.w).toMatchObject({ actif: false, ...perso });
+    await server.close();
+  });
+
+  it('en Business et en Entreprise, l’apparence se personnalise', async () => {
+    for (const offre of ['business', 'entreprise'] as const) {
+      const { server, cap } = monter({ offre });
+      const res = await creer(server, { nom: 'Blog', phrase: 'Je viens du blog', couleur: '#ff0000', position: 'bas_gauche', libelle: 'Une question ?' });
+      expect(res.statusCode, offre).toBe(201);
+      expect(cap.creations[0]).toMatchObject({ couleur: '#ff0000', position: 'bas_gauche', libelle: 'Une question ?' });
+      await server.close();
+    }
   });
 
   it('🔴 le sixième widget est refusé (409), et rien n’est écrit', async () => {

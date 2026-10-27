@@ -53,7 +53,7 @@ export function AccountMenu({ session, onLogout }: { session: Session; onLogout:
   const [erreurBascule, setErreurBascule] = useState<string | null>(null);
   const demande = useRef(false);
   /**
-   * L'offre de l'espace (Free, Pro ou Entreprise), affichée à côté de « Abonnement » (demande de Julien du 2026-10-13).
+   * L'offre de l'espace (Free, Pro, Business ou Entreprise), affichée à côté de « Abonnement » (demande de Julien du 2026-10-13).
    * La même lecture que la barre (`useOffre`, une par minute au plus) : ouvrir le menu ne coûte aucun appel de plus.
    * Admins seuls, comme l'entrée. Inconnue (API plus ancienne, panne) : l'entrée reste, sans nom d'offre.
    */

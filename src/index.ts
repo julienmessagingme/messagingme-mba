@@ -1700,8 +1700,12 @@ async function main(): Promise<void> {
       numero: (tenant) => phoneStatusStore.getPhoneNumber(tenant),
       qrSvg,
       budgetInconnus: new RateLimiter(config.CODES_INCONNUS_PAR_MINUTE, 60_000),
-      // Le badge suit l'offre (lot 6) : affiché en Base, retiré en Pro et en Entreprise.
-      badgeDeLOffre: async (tenant) => (await offres.offreDe(tenant)).droits.limites.badge,
+      // Le badge et l'apparence suivent l'offre : le badge en Base (lot 6) ; l'apparence personnalisée en Business et en
+      // Entreprise (spec Business, `widget_personnalise`).
+      presentationDeLOffre: async (tenant) => {
+        const { droits } = await offres.offreDe(tenant);
+        return { badge: droits.limites.badge, apparencePersonnalisee: droits.fonctions.has('widget_personnalise') };
+      },
     },
     // Les mêmes widgets, côté console : l'objet que les outils MCP reçoivent aussi (`v1.mcp`).
     widgets: widgetsDeLaConsole,
@@ -1928,6 +1932,7 @@ async function main(): Promise<void> {
           // Lot 4 : la résiliation programmée, et les campagnes en pause sur la suspension reprises au paiement.
           noterFinPrevue: (abonnementId, fin) => abonnementsNumero.noterFinPrevue(abonnementId, fin),
           reprendreCampagnes: async (tenant) => { await numeroDelieStore.leverPausesSuspension(tenant); },
+          inclusDansLOffre: (tenant) => offreQuiInclutLeNumero.numeroInclus(tenant),
           alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
         },
         // Le Pro (lot 6, livraison B1) : son magasin, le cache de l'offre de CETTE copie vidé à chaque écriture (les autres
@@ -3019,6 +3024,8 @@ async function main(): Promise<void> {
     support: {
       enabled: envoisResend !== null && !!config.SUPPORT_TO,
       getUserEmail: async (userId) => (await userStore.getById(userId))?.email ?? null,
+      // Le support d'un Business est prioritaire (spec Business) : l'offre en cache suffit, le sujet le dit à l'équipe.
+      prioritaire: async (tenant) => (await offres.offreDe(tenant)).offre === 'business',
       sendSupport: async ({ tenantId, userId, email, subject, message }) => {
         const text = [
           'Nouveau message de support (console MBA)',

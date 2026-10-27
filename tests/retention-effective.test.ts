@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { BASE_DEPUIS_SQL, retentionEffective } from '../src/inbox/retention';
+import { BASE_DEPUIS_SQL, descenteDepuisSql, retentionEffective } from '../src/inbox/retention';
 import { DROITS, GRACE_RETOUR_BASE_JOURS } from '../src/offres/offres';
 
 const RACINE = resolve(__dirname, '..');
@@ -144,7 +144,15 @@ describe('la purge porte la MEME regle que retentionEffective', () => {
     // Spec Business : la grille vaut pour la Free, le Pro et le Business, chacun depuis sa descente.
     expect(RETENTION).toContain("in ('base', 'pro', 'business')");
     expect(RETENTION).toContain('${BASE_DEPUIS_SQL}');
-    expect(RETENTION).toContain('greatest(t.entreprise_quittee_le, t.business_quitte_le)');
+    expect(RETENTION).toContain('greatest(t.entreprise_quittee_le, t.business_quitte_le');
+  });
+
+  it('🔴 relecture de B : la descente du Pro compte la fin de son dernier Pro, sinon un Pro qui revient d une Free en grace est purge sans grace', () => {
+    // Rouge 2 de la relecture du sous-lot B (2026-10-27) : une Free en grace garde le defaut de l'instance (90 jours), plus
+    // que les 60 du Pro ; sans la fin du dernier Pro, le reabonnement appliquait les 60 jours sur le coup.
+    const pro = descenteDepuisSql('o').split("when 'pro' then")[1]!.split("when 'business'")[0]!;
+    expect(pro).toContain('max(a.fini_le) from abonnements_offre a where a.tenant_id = t.id');
+    expect(pro).toContain('t.business_quitte_le');
   });
 
   it('🔴 relecture de A : l entree en Free compte la sortie du Business, sinon un Business retire est purge sans grace', () => {

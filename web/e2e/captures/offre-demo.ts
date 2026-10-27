@@ -8,11 +8,14 @@
  */
 export const PRIX_DEMO = {
   pro: { moisCentimes: 4900, anCentimes: 49000 }, siege: { moisCentimes: 1500, anCentimes: 15000 }, essaiJours: 14,
+  business: { moisCentimes: 34900, siegeMoisCentimes: 1000 },
 };
 
 const MO = 1024 * 1024;
-/** Le Pro : la console complète, comme la voit un client qui lit l'aide (les pages disent l'offre demandée). */
-const PRO = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console'];
+/** Le Pro : la console, comme la voit un client qui lit l'aide (les pages disent l'offre demandée). */
+const PRO = ['inbox', 'scenarios', 'statistiques', 'email', 'console'];
+/** Le Business : le Pro, plus l'agent de Meta, les assistants, l'aide et le widget personnalisable (spec Business). */
+const BUSINESS = [...PRO, 'agent_meta', 'aide', 'assistants', 'widget_personnalise'];
 export const LIMITES_DEMO = {
   free: {
     utilisateurs: 1, admins: 1, contacts: 100, envoisModelesMois: 1000, automations: 10, suppressionsJour: 10,
@@ -20,9 +23,14 @@ export const LIMITES_DEMO = {
     stockageOctets: 0, clesApi: 2, appelsMinute: 30, appelsHeure: 500, modelesJour: 500, reponsesJour: 2000,
   },
   pro: {
-    utilisateurs: 3, admins: null, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
-    adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 20, badge: false, numeroInclus: true,
+    utilisateurs: 3, admins: null, contacts: 1000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+    adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 60, commissionPct: 20, badge: false, numeroInclus: true,
     stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
+  },
+  business: {
+    utilisateurs: 5, admins: null, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+    adressesWebhook: 10, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 15, badge: false, numeroInclus: true,
+    stockageOctets: 250 * MO, clesApi: 20, appelsMinute: 120, appelsHeure: 3000, modelesJour: 5000, reponsesJour: 5000,
   },
   entreprise: {
     utilisateurs: null, admins: null, contacts: null, envoisModelesMois: null, automations: null, suppressionsJour: null,
@@ -37,7 +45,8 @@ export const OFFRE_PRO = {
   grille: {
     free: { fonctions: [] as string[], limites: LIMITES_DEMO.free },
     pro: { fonctions: PRO, limites: LIMITES_DEMO.pro },
-    entreprise: { fonctions: [...PRO, 'analyse', 'publicites', 'chaines', 'crm', 'rcs', 'performance_lab'], limites: LIMITES_DEMO.entreprise },
+    business: { fonctions: BUSINESS, limites: LIMITES_DEMO.business },
+    entreprise: { fonctions: [...BUSINESS, 'analyse', 'publicites', 'chaines', 'crm', 'rcs', 'performance_lab'], limites: LIMITES_DEMO.entreprise },
   },
   upgradeUrl: 'https://console.messagingme.app/offre',
 };

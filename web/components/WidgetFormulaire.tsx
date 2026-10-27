@@ -9,7 +9,8 @@ import { WidgetApercu } from '@/components/WidgetApercu';
 import type { WorkflowSummary } from '@/lib/api';
 import type { SaisieWidget, Widget } from '@/lib/widgets';
 import {
-  COULEUR_PAR_DEFAUT, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PHRASE_WIDGET, POSITIONS_WIDGET, type PositionWidget,
+  APPARENCE_STANDARD, COULEUR_PAR_DEFAUT, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PHRASE_WIDGET, POSITIONS_WIDGET,
+  type PositionWidget,
 } from '@/lib/partage/widgets';
 
 /**
@@ -39,16 +40,22 @@ interface Brouillon {
   maxParHeure: string;
 }
 
-function brouillonDe(w: Widget | null): Brouillon {
+/**
+ * Hors offre (`personnalisable` faux, spec Business), l'apparence du brouillon est la standard : l'aperçu montre la bulle
+ * telle que le site la sert, et l'envoi des valeurs standard laisse intact ce que la ligne a enregistré (le serveur l'accepte
+ * sans rien effacer).
+ */
+function brouillonDe(w: Widget | null, personnalisable: boolean): Brouillon {
+  const a = personnalisable ? null : APPARENCE_STANDARD;
   return {
     nom: w?.nom ?? '',
     phrase: w?.phrase ?? '',
     devenir: w?.devenir === 'mba' || w?.devenir === 'scenario' ? w.devenir : 'espace',
     workflowId: w?.workflowId ?? '',
-    couleur: w?.couleur ?? COULEUR_PAR_DEFAUT,
-    position: w?.position ?? 'bas_droite',
-    libelle: w?.libelle ?? '',
-    avatarUrl: w?.avatarUrl ?? '',
+    couleur: a?.couleur ?? w?.couleur ?? COULEUR_PAR_DEFAUT,
+    position: a?.position ?? w?.position ?? 'bas_droite',
+    libelle: a ? '' : (w?.libelle ?? ''),
+    avatarUrl: a ? '' : (w?.avatarUrl ?? ''),
     actif: w?.actif ?? true,
     maxParHeure: w?.maxParHeure === null || w?.maxParHeure === undefined ? '' : String(w.maxParHeure),
   };
@@ -73,16 +80,18 @@ function saisieDe(b: Brouillon): SaisieWidget {
   };
 }
 
-export function WidgetFormulaire({ initial, scenarios, enCours, onAnnuler, onEnregistrer }: {
+export function WidgetFormulaire({ initial, scenarios, personnalisable, enCours, onAnnuler, onEnregistrer }: {
   /** null = un widget neuf. */
   initial: Widget | null;
+  /** L'offre ouvre-t-elle `widget_personnalise` (Business, Entreprise) ? Sinon l'apparence est grisée, standard. */
+  personnalisable: boolean;
   scenarios: WorkflowSummary[];
   enCours: boolean;
   onAnnuler: () => void;
   onEnregistrer: (saisie: SaisieWidget) => void | Promise<void>;
 }) {
   const t = useT();
-  const [b, setB] = useState<Brouillon>(() => brouillonDe(initial));
+  const [b, setB] = useState<Brouillon>(() => brouillonDe(initial, personnalisable));
   const maj = (p: Partial<Brouillon>): void => setB((courant) => ({ ...courant, ...p }));
 
   const libellesPositions: Record<PositionWidget, string> = {
@@ -177,13 +186,20 @@ export function WidgetFormulaire({ initial, scenarios, enCours, onAnnuler, onEnr
           </div>
         </fieldset>
 
+        {!personnalisable && (
+          <p className="mt-4 text-xs text-ink-500" data-testid="widget-apparence-business">
+            {t('Couleur, position, libellé et avatar : personnalisables en Business.', 'Colour, position, label and avatar: customisable with Business.')}{' '}
+            <a href="/offre" className="font-medium text-brand-600 underline underline-offset-2">{t('Voir les offres', 'See the plans')}</a>
+          </p>
+        )}
+        <fieldset disabled={!personnalisable} className="contents">
         <div className="mt-4 grid gap-x-4 sm:grid-cols-2">
           <Field label={t('Couleur de la bulle', 'Bubble colour')}>
             <input
               type="color"
               value={b.couleur}
               onChange={(e) => maj({ couleur: e.target.value })}
-              className="h-10 w-full cursor-pointer rounded-controle border border-ink-300 bg-white px-1"
+              className="h-10 w-full cursor-pointer rounded-controle border border-ink-300 bg-white px-1 disabled:cursor-not-allowed disabled:opacity-50"
               data-testid="widget-couleur"
             />
           </Field>
@@ -222,6 +238,7 @@ export function WidgetFormulaire({ initial, scenarios, enCours, onAnnuler, onEnr
           />
         </Field>
         <p className="mt-1 text-xs text-ink-500">{t('L’adresse d’une image, en https.', 'The address of an image, over https.')}</p>
+        </fieldset>
 
         <Field label={t('Démarrages par heure au plus (facultatif)', 'Starts per hour at most (optional)')}>
           <input

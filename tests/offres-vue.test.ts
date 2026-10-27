@@ -74,13 +74,13 @@ describe('creerVueOffre', () => {
     expect((await avecContacts('base', 101)).contactsEnTrop).toBe(1);
     expect((await avecContacts('base', 100)).contactsEnTrop).toBe(0);
     expect((await avecContacts('base', 42)).contactsEnTrop).toBe(0);
-    expect((await avecContacts('pro', 5200)).contactsEnTrop).toBe(200);
+    expect((await avecContacts('pro', 1200)).contactsEnTrop).toBe(200);
     expect((await avecContacts('entreprise', 1_000_000)).contactsEnTrop).toBe(0);
   });
 
   it('un Pro : ses fonctions dans l’ordre de la grille, et les modèles du mois non comptés (sans limite)', async () => {
     const v = await vue('pro', null)('t1');
-    expect(v.fonctions).toEqual(['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console']);
+    expect(v.fonctions).toEqual(['inbox', 'scenarios', 'statistiques', 'email', 'console']);
     expect(v.usage.envoisModelesMois).toBeNull();
   });
 

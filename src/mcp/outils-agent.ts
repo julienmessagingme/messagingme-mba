@@ -671,7 +671,7 @@ export const OUTILS_AGENT: OutilMcp[] = [
       + '(an id = mode "agent"; null = "mba" if the Meta Business Agent is on, otherwise "equipe"). Response: mode, '
       + 'agent_id, workflow_id, delai_heures, agent_de_meta_allume (this call turned it on), liste_meta ({ retires, '
       + 'refuses }), and repondeur_agent_id (the AI agent responder, or null). list_agents tells which AI agent is the '
-      + 'responder. Modes "mba" and "scenario" require a plan that includes them (Pro): outside the plan, they are '
+      + 'responder. Mode "mba" requires the Business plan (or Entreprise), mode "scenario" the Pro plan: outside the plan, they are '
       + 'refused with the plan link, and nothing is written.',
     // Ouverte : elle peut allumer l'agent de Meta chez Meta, ou le faire taire pour tous ses contacts.
     annotations: ecriture('Choose who answers the customer', true, true),

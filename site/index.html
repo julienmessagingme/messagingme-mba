@@ -140,6 +140,20 @@
       "billingDuration": "P1Y",
       "valueAddedTaxIncluded": false
      }
+    },
+    {
+     "@type": "Offer",
+     "name": "Business",
+     "price": "349",
+     "priceCurrency": "EUR",
+     "url": "https://app.messagingme.fr/tarifs/",
+     "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "price": "349",
+      "priceCurrency": "EUR",
+      "billingDuration": "P1M",
+      "valueAddedTaxIncluded": false
+     }
     }
    ],
    "publisher": {
@@ -195,7 +209,7 @@
      "name": "Combien coûte Messaging Me ?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "La Free est gratuite : 1 000 messages envoyés par mois, l’API et le serveur MCP compris, pilotée depuis votre application ou votre assistant IA. Le Pro, pour une équipe dans la console, coûte 49 € HT par mois. L’Entreprise est sur devis. Meta facture ses messages directement à votre entreprise, selon sa grille, sans commission de Messaging Me."
+      "text": "La Free est gratuite : 1 000 messages envoyés par mois, l’API et le serveur MCP compris, pilotée depuis votre application ou votre assistant IA. Le Pro, pour une équipe dans la console, coûte 49 € HT par mois, le Business, pour une équipe qui grandit, 349 € HT par mois. L’Entreprise est sur devis. Meta facture ses messages directement à votre entreprise, selon sa grille, sans commission de Messaging Me."
      }
     }
    ]
@@ -792,7 +806,7 @@ curl -X POST https://api.messagingme.app/v1/messages/whatsapp \
         <details><summary>Qu’est-ce que le fallback entre WhatsApp et le RCS ?</summary><p>À la création d’une campagne, l’option « WhatsApp et RCS, avec repli » envoie d’abord sur le canal choisi. Si l’envoi échoue, le message repart aussitôt sur l’autre canal : personne ne reçoit deux fois le même message.</p></details>
         <details><summary>Qui répond à mes clients ?</summary><p>Vous choisissez : votre équipe dans une Inbox partagée, un agent IA qui suit vos règles et connaît vos contenus, ou le Meta Business Agent sur WhatsApp. Chacun peut passer la main à l’autre.</p></details>
         <details><summary>Comment relier WhatsApp à HubSpot ou à mon CRM ?</summary><p>HubSpot et Salesforce ont leur connecteur. Avec HubSpot, une campagne cible une liste HubSpot, un scénario part quand un deal atteint une étape, et l’analyse de chaque conversation remonte dans HubSpot. Brevo, Pipedrive et les autres CRM se relient par les webhooks ou l’API de Messaging Me.</p></details>
-        <details><summary>Combien coûte Messaging Me ?</summary><p>La Free est gratuite : <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois, l’API et le serveur MCP compris, pilotée depuis votre application ou votre assistant IA. Le Pro, pour une équipe dans la console, coûte <span data-offre="pro.prix-mois">49</span> € HT par mois. L’Entreprise est sur devis. Meta facture ses messages directement à votre entreprise, selon sa grille, sans commission de Messaging Me.</p></details>
+        <details><summary>Combien coûte Messaging Me ?</summary><p>La Free est gratuite : <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois, l’API et le serveur MCP compris, pilotée depuis votre application ou votre assistant IA. Le Pro, pour une équipe dans la console, coûte <span data-offre="pro.prix-mois">49</span> € HT par mois, le Business, pour une équipe qui grandit, <span data-offre="business.prix-mois">349</span> € HT par mois. L’Entreprise est sur devis. Meta facture ses messages directement à votre entreprise, selon sa grille, sans commission de Messaging Me.</p></details>
       </div>
     </div>
   </section>

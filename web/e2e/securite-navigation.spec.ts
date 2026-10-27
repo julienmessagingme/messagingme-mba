@@ -96,7 +96,8 @@ async function monter(page: Page, opts: { requetes?: Array<{ id: string; label: 
       ] });
     }
     if (chemin.endsWith('/unread-count')) return json({ count: 0 });
-    if (chemin.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: 'admin' });
+    // /me rend le rôle de la session testée : la console relit le rôle effectif par /me (spec Business).
+    if (chemin.endsWith('/me')) return json({ email: 'admin@e2e.test', name: 'Jean Test', role: (opts.session ?? SESSION).role });
     if (chemin.endsWith('/settings')) {
       return json({
         mbaEnabled: false, hubspotListsEnabled: false, campaignsPaused: false, autoRetryEnabled: false,

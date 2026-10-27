@@ -63,8 +63,8 @@
 
 - [Centre d’aide](https://app.messagingme.fr/aide/) : les modes opératoires de la console, pas à pas.
 - [Help center](https://app.messagingme.fr/en/help/) : the same pages in English.
-- [Choisir mon offre](https://app.messagingme.fr/aide/choisir-mon-offre/) : Votre espace a une offre : Free (gratuite), Pro (un abonnement, au mois ou à l'année) ou Entreprise (sur devis). Elle décide des fonctions ouvertes, et des limites de ce que vous pouvez créer ou envoyer.
-- [Choose my plan](https://app.messagingme.fr/en/help/choose-my-plan/) : Your workspace has a plan: Free, Pro (a subscription, monthly or yearly) or Enterprise (on quote). It decides which features are open, and the limits on what you can create or send.
+- [Choisir mon offre](https://app.messagingme.fr/aide/choisir-mon-offre/) : Votre espace a une offre : Free (gratuite), Pro (un abonnement, au mois ou à l'année), Business (au mois, posé par nos soins) ou Entreprise (sur devis). Elle décide des fonctions ouvertes, et des limites de ce que vous pouvez créer ou envoyer.
+- [Choose my plan](https://app.messagingme.fr/en/help/choose-my-plan/) : Your workspace has a plan: Free, Pro (a subscription, monthly or yearly), Business (monthly, set up by us) or Enterprise (on quote). It decides which features are open, and the limits on what you can create or send.
 - [Ce qu'il faut chez Meta, avant et après la connexion](https://app.messagingme.fr/aide/ce-qu-il-faut-chez-meta/) : WhatsApp passe par Meta : votre compte WhatsApp, votre numéro et la facturation des messages vivent chez eux. Voici ce qu'il faut, dans l'ordre. La page « Connecter WhatsApp » et Claude vous disent exactement la même chose.
 - [What you need at Meta, before and after connecting](https://app.messagingme.fr/en/help/what-you-need-at-meta/) : WhatsApp goes through Meta: your WhatsApp account, your number and the billing of messages live with them. Here is what you need, in order. The “Connect WhatsApp” page and Claude tell you exactly the same thing.
 - [Connecter mon numéro WhatsApp, et lire son état](https://app.messagingme.fr/aide/connecter-mon-numero-whatsapp/) : L'Accueil est l'écran sur lequel vous arrivez en vous connectant, et celui que le logo ramène. Il porte une seule chose : l'état de votre compte WhatsApp, et tant qu'aucun numéro n'est rattaché, de quoi en connecter un.
@@ -115,7 +115,7 @@
 
 ## Tarifs
 
-- [Les tarifs](https://app.messagingme.fr/tarifs/) : la Free gratuite, pilotée depuis votre application ou votre assistant IA ; le Pro pour une équipe dans la console ; l’Entreprise sur devis. Ce que chaque offre comprend, le crédit IA et ce que Meta facture.
+- [Les tarifs](https://app.messagingme.fr/tarifs/) : la Free gratuite, pilotée depuis votre application ou votre assistant IA ; le Pro pour une équipe dans la console ; le Business pour une équipe qui grandit, à 349 € HT par mois ; l’Entreprise sur devis. Ce que chaque offre comprend, le crédit IA et ce que Meta facture.
 - [Pricing](https://app.messagingme.fr/en/pricing/) : the same page in English.
 
 ## Contact

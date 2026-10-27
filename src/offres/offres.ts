@@ -20,6 +20,8 @@ export const FONCTIONS = [
   'crm', 'rcs', 'performance_lab',
   // La console elle-même (spec offres v2, 2026-10-16) : la Free se pilote par l'API et le MCP, jamais par la console.
   'console',
+  // L'apparence du widget (couleur, position, libellé, avatar ; spec Business) : hors offre, l'apparence standard.
+  'widget_personnalise',
 ] as const;
 export type Fonction = (typeof FONCTIONS)[number];
 
@@ -97,12 +99,12 @@ export interface SurchargeEntreprise {
 const MO = 1024 * 1024;
 
 /**
- * Le Pro resserré (spec offres v2, livraison 5) : la console complète, sans l'analyse des conversations, les publicités ni les
- * chaînes, qui font la différence de l'Entreprise avec le CRM, le RCS et le Performance Lab.
+ * Le Pro resserré (spec offres v2, livraison 5, puis spec Business) : la console, l'Inbox, les scénarios, les statistiques
+ * et l'e-mail. L'agent de Meta, les assistants de configuration, l'assistant d'aide et le widget personnalisable font le
+ * Business ; l'analyse, les publicités, les chaînes, le CRM, le RCS et le Performance Lab, l'Entreprise.
  */
-const FONCTIONS_PRO: readonly Fonction[] = [
-  'inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console',
-];
+const FONCTIONS_PRO: readonly Fonction[] = ['inbox', 'scenarios', 'statistiques', 'email', 'console'];
+const FONCTIONS_BUSINESS: readonly Fonction[] = [...FONCTIONS_PRO, 'agent_meta', 'aide', 'assistants', 'widget_personnalise'];
 
 export const DROITS: Readonly<Record<Offre, Droits>> = {
   base: {
@@ -117,8 +119,8 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
     fonctions: new Set<Fonction>(FONCTIONS_PRO),
     limites: {
       // Tous administrateurs (spec du 2026-10-27, `roleEffectif`) : plus de limite d'administrateurs à part.
-      utilisateurs: 3, admins: null, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
-      adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 20, badge: false, numeroInclus: true,
+      utilisateurs: 3, admins: null, contacts: 1000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+      adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 60, commissionPct: 20, badge: false, numeroInclus: true,
       stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
     },
   },
@@ -127,7 +129,7 @@ export const DROITS: Readonly<Record<Offre, Droits>> = {
    * vendu en ligne. Ses limites invisibles (clés, appels, quotas, médiathèque) sont un choix relu de la spec.
    */
   business: {
-    fonctions: new Set<Fonction>(FONCTIONS_PRO),
+    fonctions: new Set<Fonction>(FONCTIONS_BUSINESS),
     limites: {
       utilisateurs: 5, admins: null, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
       adressesWebhook: 10, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 15, badge: false, numeroInclus: true,

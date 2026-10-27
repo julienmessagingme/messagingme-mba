@@ -145,7 +145,7 @@ const consigneFourni = (inclusDansLePro: boolean): string =>
   + numerotees([
     'Cliquer sur le lien.',
     inclusDansLePro
-      ? '« Obtenir mon numéro » : il est inclus dans son Pro, rien à payer ; le numéro s’affiche sur la page.'
+      ? '« Obtenir mon numéro » : il est inclus dans son offre, rien à payer ; le numéro s’affiche sur la page.'
       : '« Payer 3,50 € HT par mois » ; une fois le paiement confirmé, le numéro s’affiche sur la page.',
     ...ETAPES_NUMERO_FOURNI.map((e) => e.fr),
     'Revenir te voir seulement une fois l’écran « Finish » passé.',
@@ -199,7 +199,7 @@ const CONSIGNES_APPLICATION = {
     + numerotees([
       'Ouvrir le lien sur un ordinateur.',
       inclusDansLePro
-        ? '« Obtenir mon numéro » : il est inclus dans son Pro, rien à payer ; le numéro s’affiche sur la page.'
+        ? '« Obtenir mon numéro » : il est inclus dans son offre, rien à payer ; le numéro s’affiche sur la page.'
         : '« Payer 3,50 € HT par mois » ; une fois le paiement confirmé, le numéro s’affiche sur la page.',
       ...ETAPES_COMPTE_FOURNI.map((e) => e.fr),
       ...ETAPES_RELIER_APPLICATION.map((e) => e.fr),
@@ -321,7 +321,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
     description:
       'The subscription of the provided WhatsApp number (€3.50 excl. VAT a month): its status (actif, en_retard after '
       + 'a failed payment, resilie), the end of the paid period, and the number. `abonnement: null`: the workspace has '
-      + 'no paid provided number. `inclus_dans_le_pro: true`: the workspace\'s Pro plan includes the number, there is '
+      + 'no paid provided number. `inclus_dans_le_pro: true`: the workspace\'s plan (Pro, Business or Entreprise) includes the number, there is '
       + 'nothing to pay.',
     annotations: { title: 'Read the number subscription', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {}, additionalProperties: false },

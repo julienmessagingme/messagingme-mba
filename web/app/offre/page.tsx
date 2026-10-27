@@ -25,8 +25,8 @@ import {
 } from '@/lib/offre';
 
 /**
- * L'OFFRE DE L'ESPACE (lot 6, tâche 7) : ce que l'espace consomme de ses limites, la grille des trois offres, et
- * « Passer en Pro ». Réservée aux administrateurs, comme le reste de Paramètres : en Pro ou en Entreprise, un agent ou un
+ * L'OFFRE DE L'ESPACE (lot 6, tâche 7) : ce que l'espace consomme de ses limites, la grille des offres, et
+ * « Passer en Pro ». Réservée aux administrateurs, comme le reste de Paramètres : hors de la Free, un agent ou un
  * manager ne déclenche aucun refus d'offre, et une Base n'a qu'un administrateur. La ROUTE, elle, se lit par tout membre :
  * la coquille en grise les menus de chacun.
  *
@@ -192,7 +192,7 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
 
   const libelleLimite = (k: (typeof LIGNES_LIMITES)[number]): string => ({
     utilisateurs: t('Utilisateurs', 'Users'),
-    // La grille compare les trois offres : la Free compte aussi ceux qui écrivent (`contactsToutesOrigines`, 2026-10-25).
+    // La grille compare les offres : la Free compte aussi ceux qui écrivent (`contactsToutesOrigines`, 2026-10-25).
     contacts: t('Contacts (en Free, ceux qui vous écrivent compris)', 'Contacts (on Free, including those who write to you)'),
     envoisModelesMois: t('Modèles envoyés par mois', 'Templates sent per month'),
     automations: t('Automations allumées', 'Active automations'),
@@ -223,7 +223,11 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
     );
   }
 
-  const suivante: NomOffre | null = vue.offre === 'free' ? 'pro' : vue.offre === 'pro' ? 'entreprise' : null;
+  // L'offre suivante (spec Business) : la Free vers le Pro, le Pro vers le Business, le Business vers l'Entreprise. Une API
+  // d'avant le Business ne le met pas dans la grille : le Pro mène alors à l'Entreprise, comme avant.
+  const suivante: NomOffre | null = vue.offre === 'free' ? 'pro'
+    : vue.offre === 'pro' ? (vue.grille.business ? 'business' : 'entreprise')
+      : vue.offre === 'business' ? 'entreprise' : null;
   const offreDemandee = demandee ? offreQuiOuvre(vue, demandee) : null;
   /** Les colonnes de la grille : les offres que l'API connaît (le Business manque à une API d'avant lui). */
   const colonnes = NOMS_OFFRES.filter((o) => vue.grille[o] !== undefined);
@@ -325,12 +329,16 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
                 peut encore les dire sans limite (une API plus ancienne que la console). */}
             {suivante === 'pro'
               ? (vue.grille.pro.limites.contacts != null
-                ? t(`Le Pro ouvre la console complète (l’Inbox, les scénarios, les statistiques, l’agent de Meta), crée jusqu’à ${valeurLimite(vue.grille.pro.limites, 'contacts')} contacts et lève les limites d’envois et d’automations.`,
-                  `Pro unlocks the full console (the Inbox, scenarios, statistics, the Meta agent), creates up to ${valeurLimite(vue.grille.pro.limites, 'contacts')} contacts and lifts the sending and automation limits.`)
-                : t('Le Pro ouvre la console complète (l’Inbox, les scénarios, les statistiques, l’agent de Meta) et lève les limites de contacts, d’envois et d’automations.',
-                  'Pro unlocks the full console (the Inbox, scenarios, statistics, the Meta agent) and lifts the contact, sending and automation limits.'))
-              : t('L’Entreprise ajoute l’analyse des conversations, les publicités et les chaînes WhatsApp, le RCS, les connecteurs CRM, le Performance Lab et une équipe à votre mesure, sur devis.',
-                'Enterprise adds conversation analysis, WhatsApp ads and channels, RCS, CRM connectors, the Performance Lab and a team sized for you, on quote.')}
+                ? t(`Le Pro ouvre la console (l’Inbox, les scénarios, les statistiques), crée jusqu’à ${valeurLimite(vue.grille.pro.limites, 'contacts')} contacts et lève les limites d’envois et d’automations.`,
+                  `Pro unlocks the console (the Inbox, scenarios, statistics), creates up to ${valeurLimite(vue.grille.pro.limites, 'contacts')} contacts and lifts the sending and automation limits.`)
+                : t('Le Pro ouvre la console (l’Inbox, les scénarios, les statistiques) et lève les limites de contacts, d’envois et d’automations.',
+                  'Pro unlocks the console (the Inbox, scenarios, statistics) and lifts the contact, sending and automation limits.'))
+              : suivante === 'business'
+                // Le Business (spec Business) : posé par Messaging Me à la demande, jamais payé en ligne ; la carte mène au Support.
+                ? t(`Le Business ajoute le Meta Business Agent, les assistants de configuration, l’assistant d’aide, le widget personnalisable, les rôles de l’équipe, l’accompagnement de la mise en route et le support prioritaire${vue.prixBusiness ? `, pour ${euros(vue.prixBusiness.moisCentimes)} HT par mois` : ''}. Essai de 14 jours sur demande.`,
+                  `Business adds the Meta Business Agent, the setup assistants, the help assistant, the customisable widget, team roles, onboarding and priority support${vue.prixBusiness ? `, for ${euros(vue.prixBusiness.moisCentimes)} excl. VAT a month` : ''}. 14-day trial on request.`)
+                : t('L’Entreprise ajoute l’analyse des conversations, les publicités et les chaînes WhatsApp, le RCS, les connecteurs CRM, le Performance Lab et une équipe à votre mesure, sur devis.',
+                  'Enterprise adds conversation analysis, WhatsApp ads and channels, RCS, CRM connectors, the Performance Lab and a team sized for you, on quote.')}
           </p>
           {suivante === 'pro' && retour === 'recu' ? null : suivante === 'pro' && vue.prixPro && !proIndisponible ? (
             // Le Pro se paie sur la page de Stripe (lot 6, B1) ; le webhook signé, et lui seul, ouvre les fonctions.
@@ -365,7 +373,7 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
             </p>
             </>
           ) : (
-            // Pas encore en vente (API plus ancienne, prix pas posés), ou l'Entreprise : le Support, sujet prérempli.
+            // Pas encore en vente (API plus ancienne, prix pas posés), le Business ou l'Entreprise : le Support, sujet prérempli.
             <Link href={`/support?sujet=${suivante}`} className={classesBouton('principal')} data-testid={`offre-passer-${suivante}`}>
               {suivante === 'pro' ? t('Passer en Pro', 'Upgrade to Pro') : t('Nous contacter', 'Contact us')}
             </Link>

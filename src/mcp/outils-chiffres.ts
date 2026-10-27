@@ -184,7 +184,7 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
     fonction: null,
     description:
       'The workspace\'s message figures, as chart-ready series (one row per maille: day, week or month) and their totals: TEMPLATES '
-      + 'sent, delivered, read, failed and without receipt. With the plan\'s statistics (Pro, Enterprise), in addition: '
+      + 'sent, delivered, read, failed and without receipt. With the plan\'s statistics (Pro, Business, Enterprise), in addition: '
       + 'templates by category, messages exchanged and service messages, service by origin (AI, scenario, human), '
       + 'contacts (cumulative, active) and the ESTIMATED cost (the prices of the Statistics screen: an estimate, the '
       + 'invoice prevails). The same figures as the console\'s Statistics screen. Without statistics (Free): the '

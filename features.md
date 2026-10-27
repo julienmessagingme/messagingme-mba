@@ -4100,17 +4100,22 @@ page Offre ; les anciennes adresses y mènent toujours, retour de paiement et li
 
 ## Offres (menu « Paramètres » > Offre)
 
-Chaque espace a une offre : **Free** (gratuite), **Pro** (abonnement mensuel ou annuel) ou **Entreprise** (sur
-devis). L'offre décide de deux choses : les **fonctions** ouvertes, et les **limites** de ce qu'on peut créer ou
-envoyer. Les chiffres exacts vivent à un seul endroit (`src/offres/offres.ts`) et s'affichent sur la page Offre :
-cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
+Chaque espace a une offre : **Free** (gratuite), **Pro** (abonnement mensuel ou annuel), **Business** (au mois, posée
+par nous) ou **Entreprise** (sur devis). L'offre décide de deux choses : les **fonctions** ouvertes, et les **limites**
+de ce qu'on peut créer ou envoyer. Les chiffres exacts vivent à un seul endroit (`src/offres/offres.ts`) et s'affichent
+sur la page Offre : cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07) ; le Business, spec
+du 2026-10-27.
 
 - ✅ **L'offre Free** se pilote par l'API et Claude (le serveur MCP) : le numéro, les contacts, les envois de modèles et
   l'agent IA, avec des plafonds (contacts de toutes origines, modèles envoyés par mois civil, un seul utilisateur). Dans la console,
   elle ne garde que l'accueil, les clés d'API, la documentation, l'offre, le compte et le support (spec offres v2).
-- ✅ **Le Pro** ouvre la console complète (l'Inbox, les scénarios, les statistiques, l'agent de Meta, l'e-mail, les
-  assistants), porte la limite de contacts plus haut, lève celles des envois et des automations, et donne trois
-  utilisateurs, plus un par utilisateur payé en plus. **L'Entreprise** ajoute l'analyse des conversations, les publicités Click-to-WhatsApp, les chaînes
+- ✅ **Le Pro** ouvre la console (l'Inbox, les scénarios, les statistiques, l'e-mail), porte la limite de contacts
+  plus haut, lève celles des envois et des automations, et donne trois utilisateurs, plus un par utilisateur payé en
+  plus, tous administrateurs. **Le Business** ajoute l'agent de Meta, les assistants de configuration, l'assistant d'aide,
+  le widget personnalisable (couleur, position, libellé, avatar ; ailleurs la bulle garde l'apparence standard, le
+  réglage enregistré restant en base) et les rôles de l'équipe, avec cinq utilisateurs, dix euros de crédit IA offerts et
+  un support prioritaire. Un écran fermé en Pro propose la fiche d'aide qui fait la même chose pas à pas quand il en
+  existe une (les assistants, l'aide). **L'Entreprise** ajoute l'analyse des conversations, les publicités Click-to-WhatsApp, les chaînes
   WhatsApp (le Pro resserré, spec offres v2, livraison 5), le RCS, les connecteurs CRM (Batch, HubSpot, Salesforce) et
   le Performance Lab complet, avec une équipe à sa mesure. Un espace descendu de l'Entreprise au Pro garde ses publicités et ses chaînes,
   mais leurs automations se taisent, comme en Free. Côté statistiques : l'accueil, les coûts de chaque campagne et le
@@ -4126,19 +4131,20 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   (elle ne reçoit rien et ne libère aucune place). Un contact déjà présent écrit et reçoit comme avant, et une fiche
   supprimée libère sa place. Ce qui compte vient de l'offre de l'espace, sur la réception de Meta, celle de 360dialog et
   l'application WhatsApp Business reliée par QR code.
-- ✅ **Le Pro et l'Entreprise ne comptent que les contacts créés** : un client qui écrit le premier n'y est jamais
-  compté (même complété ensuite), ni jamais refusé.
+- ✅ **Hors de la Free, seuls les contacts créés comptent** : un client qui écrit le premier n'y est jamais compté
+  (même complété ensuite), ni jamais refusé.
 - ✅ **Ce qui n'est jamais compté** : une réponse dans les 24 h qui suivent un message du client (seuls les modèles
   comptent).
 - ✅ **Dans la console** : les menus et les onglets d'une fonction fermée restent visibles, grisés, avec un cadenas
   et l'offre qui l'ouvre ; ils mènent à la page Offre. Ouvrir l'adresse d'un écran fermé montre « Cet écran fait
-  partie de l'offre Pro » au lieu de l'écran. Sur l'Accueil et dans Paramètres, les cartes d'une fonction fermée
-  (RCS, chaîne, publicités, agent de Meta, Batch) disent « Inclus dans l'offre Pro » ou « Entreprise ». Un geste
+  partie de l'offre Business » (ou Pro, ou Entreprise) au lieu de l'écran. Sur l'Accueil et dans Paramètres, les cartes
+  d'une fonction fermée (RCS, chaîne, publicités, agent de Meta, Batch) disent l'offre qui l'ouvre. Un geste
   refusé (une fiche au-delà de la limite, par exemple) affiche la raison et un bouton « Voir les offres », au-dessus de la fenêtre
   ouverte.
 - ✅ **La page Offre** (admins) : l'offre de l'espace, ce qu'il consomme de chaque limite (avec une jauge ; en Free,
   celle des contacts dit que ceux qui écrivent les premiers comptent aussi, et, au-delà de la limite, combien en
-  supprimer et comment), la grille des trois offres, et le passage en Pro.
+  supprimer et comment), la grille des quatre offres, le passage en Pro, et « Nous contacter » vers le Support pour le
+  Business et l'Entreprise (une demande d'un espace Business y part marquée prioritaire).
   Deux onglets depuis le 2026-10-26 : **Offre** et **Crédit IA** (voir « Crédit IA »), sauf en Free, qui n'a pas l'écran du
   crédit et recharge depuis Claude.
 - ✅ **Le Pro se paie en ligne** (livraison B1) : un espace en Free choisit « Mensuel » ou « Annuel » sur la page Offre et
@@ -4168,11 +4174,13 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   affiche le prix, celui de la formule du Pro (mensuelle ou annuelle) ; l'administrateur confirme, le prorata jusqu'à la
   fin de la période est facturé tout de suite sur la carte du Pro, et l'invitation part une fois ce paiement accepté. Un
   paiement refusé ne change rien et laisse la facture à régler sur sa page. La page Offre dit les utilisateurs payés et en
-  retire un, sans remboursement, une fois le membre en trop désactivé. Les administrateurs restent deux. La page Offre
+  retire un, sans remboursement, une fois le membre en trop désactivé. En Pro, tout membre est administrateur : pas de
+  choix de rôle à l'invitation, et un rôle déjà donné reprend effet si l'espace passe en Business. La page Offre
   d'une Free dit aussi ce prix sous le Pro.
   ⚠️ Tant que le Pro n'est pas en vente (prix pas posés), le bouton « Passer en Pro » ouvre le Support, sujet
   prérempli. Tant que les sièges ne le sont pas, une invitation au-delà des trois utilisateurs renvoie à l'Entreprise.
-- ✅ **Le numéro fourni est inclus dans le Pro** (livraison B2b) : un espace en Pro obtient son numéro sans payer, depuis
+- ✅ **Le numéro fourni est inclus dans le Pro, le Business et l'Entreprise** (livraison B2b, puis spec Business) : un
+  espace en Pro obtient son numéro sans payer, depuis
   la page « Connecter WhatsApp » ou le lien que donne Claude (qui ne lui annonce alors aucun prix). Si la réserve ne
   garde que des numéros dus à des abonnés qui ont payé et attendent le leur, l'espace en Pro réessaie un peu plus tard.
   Un numéro déjà payé à part voit son abonnement s'arrêter au premier paiement du Pro (après l'essai, s'il y en a un : un
@@ -4219,10 +4227,14 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
   `get_conversation`, `get_messages`, et l'API `/v1/conversations`) et y RÉPONDRE dans la fenêtre de 24 h
   (`reply_in_open_window`, comme `POST /v1/messages/whatsapp`) sont ouverts dans toutes les offres depuis le
   2026-10-08 : seul l'écran de l'Inbox reste dans le Pro.
-- ✅ **L'Entreprise se pose par nous**, par une route de l'exploitation (`PUT /ops/offre/:tenantId`, pas encore d'écran),
-  avec sa limite d'utilisateurs (10 proposés, vide = sans limite) et, si on la donne, la durée de conservation des
-  conversations (absente, elle reste telle quelle : changer d'offre ne déclenche jamais de purge). La même route ramène
-  un espace en Free. Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
+- ✅ **L'Entreprise et le Business se posent par nous**, dans `/ops` (`PUT /ops/offre/:tenantId`), une seule offre
+  posée à la main à la fois. L'Entreprise avec sa limite d'utilisateurs (10 proposés, vide = sans limite) et, si on la
+  donne, la durée de conservation des conversations (absente, elle reste telle quelle : changer d'offre ne déclenche
+  jamais de purge). Le Business avec sa limite d'utilisateurs (vide = les cinq de la grille), facturé hors Stripe :
+  `/ops` signale un Pro payé encore vivant, un numéro payé à part, un numéro fourni que plus rien ne couvrirait au
+  retrait ; poser le Business arrête le numéro payé à part et complète le crédit offert jusqu'à dix euros, une fois par
+  espace ; le retirer lance la fin du numéro fourni s'il n'est plus couvert. La même route ramène un espace en Free.
+  Les espaces qui existaient avant le lot 6 sont tous en Entreprise, sans aucune limite.
 - ✅ **Les coûts suivent l'offre** (livraison C) :
   - la **commission sur le crédit IA** : 100 % en Free (10 € de crédit y paient 5 € de consommation des modèles,
     décision de Julien du 2026-10-22), 20 % en Pro, 10 % en Entreprise (ou celle négociée au devis),
@@ -4232,10 +4244,11 @@ cette section n'en recopie aucun. Lot 6, livraisons A, B1 et B2a (2026-10-07).
     message, et la fiche le dit (« analysée au prochain message »). Les déclencheurs d'automation nés d'une analyse
     (conversation analysée, une analyse qui change) ne se créent qu'en Entreprise : ailleurs, ils sont
     grisés avec l'offre qui les ouvre, et le serveur les refuse ; une automation qui en a déjà un reste modifiable ;
-  - la **conservation** : 30 jours en Free, 30 jours après l'entrée en Free (voir les conversations, plus haut) ;
+  - la **conservation** : celle de la grille en Free, en Pro et en Business, une durée plus courte ne s'appliquant que 30
+    jours après l'entrée dans l'offre par le haut (voir les conversations, plus haut) ; en Entreprise, celle de `/ops` ;
   - la **recherche dans la connaissance, la préparation des fiches et la transcription** sont payées par le crédit,
     dans toutes les offres ;
-  - le **crédit offert** au premier numéro vaut 1 € pour tous les espaces.
+  - le **crédit offert** au premier numéro vaut 1 € pour tous les espaces, 10 € pour un Business.
 
 ## MBA, le répondeur de Meta (menu « AI Agent » > MBA)
 

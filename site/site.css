@@ -1365,11 +1365,9 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
    ============================================================================================================ */
 .tarifs-une{padding-bottom:48px}
 .tarifs-offres{padding:0 0 32px}
-.tarifs-grille{list-style:none;margin:0 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;align-items:start}
-.tarif{display:flex;flex-direction:column;gap:16px;min-width:0;padding:32px 28px;border-radius:16px;background:var(--surface);border:1px solid var(--line)}
-.tarif-mis-en-avant{border-color:var(--action);box-shadow:0 0 0 1px var(--action),0 40px 80px -48px rgb(0 128 214 / .7)}
+.tarifs-grille{list-style:none;margin:0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;align-items:start}
+.tarif{display:flex;flex-direction:column;gap:16px;min-width:0;padding:30px 22px;border-radius:16px;background:var(--surface);border:1px solid var(--line)}
 .tarif-nom{margin:0;font-size:1.35rem;letter-spacing:-.02em;font-weight:800}
-.tarif-mis-en-avant .tarif-nom{color:var(--action-ink)}
 .tarif-prix{display:flex;flex-direction:column;gap:2px;margin:0}
 .tarif-prix strong{font-size:2.5rem;line-height:1.1;letter-spacing:-.03em;font-weight:800}
 .tarif-prix > span{color:var(--muted);font-size:.9rem}
@@ -1386,7 +1384,8 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .tarifs-detail{padding:72px 0 24px}
 .tarifs-faq-bloc{padding-top:48px}
 .tarifs-detail-grille{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:56px}
-@media (max-width:1000px){.tarifs-grille{grid-template-columns:minmax(0,1fr);max-width:560px}}
+@media (max-width:1240px){.tarifs-grille{grid-template-columns:repeat(2,minmax(0,1fr));max-width:900px}}
+@media (max-width:700px){.tarifs-grille{grid-template-columns:minmax(0,1fr);max-width:560px}}
 @media (max-width:900px){.tarifs-detail-grille{grid-template-columns:minmax(0,1fr);gap:40px}}
 
 /* ============================================================================================================

@@ -124,10 +124,10 @@ export interface LimitesAlertables {
 
 /**
  * Les limites que surveille le balayage, selon l'offre (spec offres v2, livraison 5) : celles de la Free, dont les textes
- * disent « Passez en Pro », et les contacts du Pro, dont les textes renvoient à l'Entreprise (le Pro n'a pas de limite de
+ * disent « Passez en Pro », et les contacts du Pro, dont les textes renvoient au Business (le Pro n'a pas de limite de
  * modèles). L'Entreprise, dont la limite de contacts se règle sur devis par /ops, n'en reçoit aucune : un texte la dirait
- * dans une offre qui n'est pas la sienne. Le Business non plus, tant que ses textes n'existent pas (lot 1, sous-lot B) :
- * ceux du Pro le diraient en Pro. `null` = rien à surveiller.
+ * dans une offre qui n'est pas la sienne. Le Business non plus : il n'a pas encore ses propres textes, et ceux du Pro le
+ * diraient en Pro. `null` = rien à surveiller.
  */
 export function limitesAlertables(
   offre: Offre, l: { envoisModelesMois: number | null; contacts: number | null },

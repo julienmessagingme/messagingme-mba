@@ -14,6 +14,11 @@ export interface SupportRouteDeps {
    * `null` -> pas de reply-to, jamais une adresse venue du client.
    */
   getUserEmail(userId: string): Promise<string | null>;
+  /**
+   * La demande est-elle prioritaire (spec Business : le support d'un espace Business est prioritaire) ? Le sujet le dit à
+   * l'équipe. Une lecture qui lève n'empêche jamais l'envoi : la demande part telle quelle.
+   */
+  prioritaire(tenantId: string): Promise<boolean>;
 }
 
 const SUBJECT_MAX = 200;
@@ -45,13 +50,15 @@ export function registerSupport(app: FastifyInstance, deps: SupportRouteDeps, ga
     // Reply-to résolu en base depuis le compte authentifié, jamais lu dans le corps (sinon n'importe qui ferait
     // répondre l'équipe à l'adresse de son choix). Une panne de lookup prive seulement l'envoi de son reply-to.
     const email = userId ? await deps.getUserEmail(userId).catch(() => null) : null;
+    const prioritaire = await deps.prioritaire(tenant).catch(() => false);
+    const sujet = b.subject.trim().slice(0, SUBJECT_MAX);
 
     try {
       await deps.sendSupport({
         tenantId: tenant,
         userId,
         email,
-        subject: b.subject.trim().slice(0, SUBJECT_MAX),
+        subject: prioritaire ? `[Prioritaire, Business] ${sujet}` : sujet,
         message: b.message.trim().slice(0, MESSAGE_MAX),
       });
       return reply.code(200).send({ ok: true });

@@ -24,13 +24,15 @@ export const BASE_DEPUIS_SQL = `greatest(t.created_at, t.entreprise_quittee_le, 
 /**
  * Depuis quand l'espace `t` est dans son offre « par le haut », en SQL (spec Business, 2026-10-27) : la date d'où court la
  * grâce d'une conservation plus courte. La Free : son entrée en Base (`BASE_DEPUIS_SQL`). Le Pro : sa sortie du Business
- * ou de l'Entreprise, la plus récente. Le Business : sa sortie de l'Entreprise. `null` = jamais descendu : la grille
+ * ou de l'Entreprise, ou la fin de son dernier Pro (une Free en grâce garde la durée de l'instance, plus longue que le
+ * Pro : rouge 2 de la relecture du sous-lot B), la plus récente. Le Business : sa sortie de l'Entreprise. `null` = jamais descendu : la grille
  * s'applique tout de suite (on n'y arrive alors que par le bas, avec une conservation plus courte que la sienne).
  * `offre` est le texte SQL de l'offre de l'espace.
  */
 export const descenteDepuisSql = (offre: string): string => `case ${offre}
       when 'base' then ${BASE_DEPUIS_SQL}
-      when 'pro' then greatest(t.entreprise_quittee_le, t.business_quitte_le)
+      when 'pro' then greatest(t.entreprise_quittee_le, t.business_quitte_le,
+        (select max(a.fini_le) from abonnements_offre a where a.tenant_id = t.id))
       when 'business' then t.entreprise_quittee_le
     end`;
 

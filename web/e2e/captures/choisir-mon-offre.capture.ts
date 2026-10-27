@@ -12,11 +12,11 @@ const CLE = 'choisir-mon-offre';
 const free = {
   ...OFFRE_PRO, offre: 'free', fonctions: [], limites: OFFRE_PRO.grille.free.limites,
   usage: { envoisModelesMois: 236, contacts: 74, automations: 2, membres: 1 },
-  prixPro: PRIX_DEMO.pro, prixSiege: PRIX_DEMO.siege, essai: { jours: PRIX_DEMO.essaiJours, possible: true, finLe: null }, sieges: null,
+  prixPro: PRIX_DEMO.pro, prixSiege: PRIX_DEMO.siege, prixBusiness: PRIX_DEMO.business, essai: { jours: PRIX_DEMO.essaiJours, possible: true, finLe: null }, sieges: null,
   suiteDuNumero: null,
 };
 const pro = {
-  ...OFFRE_PRO, prixPro: PRIX_DEMO.pro, prixSiege: PRIX_DEMO.siege, essai: { jours: PRIX_DEMO.essaiJours, possible: false, finLe: null },
+  ...OFFRE_PRO, prixPro: PRIX_DEMO.pro, prixSiege: PRIX_DEMO.siege, prixBusiness: PRIX_DEMO.business, essai: { jours: PRIX_DEMO.essaiJours, possible: false, finLe: null },
   sieges: { inclus: OFFRE_PRO.limites.utilisateurs, achetes: 0, periodicite: 'mois' }, suiteDuNumero: null,
   abonnement: {
     statut: 'actif', periodicite: 'mois', debutLe: '2026-09-14T09:00:00.000Z', prochaineEcheanceLe: '2026-11-14T09:00:00.000Z',

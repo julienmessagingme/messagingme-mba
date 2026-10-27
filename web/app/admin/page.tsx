@@ -12,7 +12,7 @@ import { routeInconnue } from '@/lib/canaux-services';
 import { Bouton } from '@/components/Bouton';
 import { lireSiegeRequis, type SiegeRequis } from '@/lib/offre';
 import { changerSieges } from '@/lib/api/offre';
-import { oublierOffre } from '@/lib/use-offre';
+import { oublierOffre, useOffre } from '@/lib/use-offre';
 import { useChargement } from '@/lib/use-chargement';
 import { TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
@@ -27,6 +27,12 @@ function AdminInner({ session }: { session: Session }) {
   const t = useT();
   const confirmer = useConfirmation();
   const { locale } = useLocale();
+  /**
+   * EN PRO, TOUS ADMINISTRATEURS (spec Business, « promus d'office ») : le serveur traite chaque membre en administrateur
+   * et refuse un changement de rôle (409 `roles_en_business`). L'écran n'offre donc aucun choix de rôle et dit
+   * « Administrateur » pour tous ; le rôle enregistré reprend effet si l'espace monte en Business.
+   */
+  const tousAdmins = useOffre(session.tenantId)?.offre === 'pro';
   const [users, setUsers] = useState<AdminUser[]>([]);
   /** Le membre dont l'admin s'apprête à réinitialiser le facteur : la fenêtre du mot de passe est ouverte pour lui. */
   const [aReinitialiser, setAReinitialiser] = useState<AdminUser | null>(null);
@@ -149,7 +155,7 @@ function AdminInner({ session }: { session: Session }) {
         />
       )}
 
-      <InviteCard tenantId={session.tenantId} onInvited={load} />
+      <InviteCard tenantId={session.tenantId} onInvited={load} tousAdmins={tousAdmins} />
 
       <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">
         <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">
@@ -190,6 +196,9 @@ function AdminInner({ session }: { session: Session }) {
                     </td>
                     <td className={`px-5 py-3 ${u.disabled ? 'text-ink-400' : 'text-ink-500'}`}>{u.email}</td>
                     <td className="px-5 py-3">
+                      {tousAdmins ? (
+                        <span className="text-sm text-ink-900" data-testid="role-administrateur">{t('Administrateur', 'Administrator')}</span>
+                      ) : (
                       <select
                         value={u.role}
                         disabled={isSelf}
@@ -201,6 +210,7 @@ function AdminInner({ session }: { session: Session }) {
                         <option value="manager">Manager</option>
                         <option value="agent">Agent</option>
                       </select>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       {u.disabled ? (
@@ -265,7 +275,7 @@ function AdminInner({ session }: { session: Session }) {
   );
 }
 
-function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () => void }) {
+function InviteCard({ tenantId, onInvited, tousAdmins }: { tenantId: string; onInvited: () => void; tousAdmins: boolean }) {
   const t = useT();
   const { locale } = useLocale();
   const [email, setEmail] = useState('');
@@ -347,25 +357,33 @@ function InviteCard({ tenantId, onInvited }: { tenantId: string; onInvited: () =
           <label className="mb-1 block text-xs font-medium text-ink-500">{t('Prénom (facultatif)', 'First name (optional)')}</label>
           <input value={nom} onChange={(e) => setNom(e.target.value)} maxLength={60} className={inputCls} placeholder={t('Camille', 'Camille')} />
         </div>
+        {!tousAdmins && (
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-500">{t('Rôle', 'Role')}</label>
           <select value={role} onChange={(e) => setRole(e.target.value as UserRole)} className="rounded-controle border border-ink-300 bg-white px-3 py-2 text-sm text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100">
-            <option value="agent">{t('Agent (inbox)', 'Agent (inbox)')}</option>
-            <option value="manager">{t('Manager (inbox)', 'Manager (inbox)')}</option>
+            <option value="agent">{t('Agent', 'Agent')}</option>
+            <option value="manager">{t('Manager', 'Manager')}</option>
             <option value="admin">Admin</option>
           </select>
         </div>
+        )}
         <Bouton enCours={busy} type="submit" disabled={busy}>
           {busy ? t('Envoi…', 'Sending…') : t('Inviter', 'Invite')}
         </Bouton>
       </div>
-      {/* Dit franchement ce que les rôles donnent AUJOURD'HUI : « manager » est un statut, ses droits propres
-          restent à définir. Sans cette ligne, on invite un manager en s'attendant à ce qu'il voie tout. */}
-      <p className="text-xs leading-snug text-ink-500">
-        {t(
-          'Manager et agent accèdent à l’inbox. Seul un admin accède au reste de la console.',
-          'Managers and agents get the inbox. Only an admin reaches the rest of the console.',
-        )}
+      {/* Dit ce que chaque rôle donne VRAIMENT (spec Business, « À savoir ») : la phrase d'avant réduisait le manager à
+          l'Inbox, alors que les routes lui ouvrent l'affectation, l'encadrement, les désabonnés et le journal. En Pro, il
+          n'y a pas de rôle : tout membre est administrateur (`roleEffectif`). */}
+      <p className="text-xs leading-snug text-ink-500" data-testid="roles-explication">
+        {tousAdmins
+          ? t(
+            'En Pro, chaque membre est administrateur. Les rôles (manager, agent) viennent avec l’offre Business.',
+            'On Pro, every member is an administrator. Roles (manager, agent) come with the Business plan.',
+          )
+          : t(
+            'Un agent répond dans l’Inbox, aux conversations libres et aux siennes. Un manager y voit toutes les conversations, les affecte, règle l’encadrement de l’équipe, consulte les contacts désabonnés et le journal. Un administrateur a toute la console.',
+            'An agent replies in the Inbox, to unassigned conversations and their own. A manager sees every conversation there, assigns them, sets the team supervision, checks unsubscribed contacts and the log. An administrator has the whole console.',
+          )}
       </p>
       {siege && (
         <div data-testid="siege-requis" className="space-y-3 rounded-controle border border-brand-200 bg-white px-4 py-3 text-sm text-ink-700">

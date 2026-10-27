@@ -287,6 +287,18 @@ describe('users route — suppression', () => {
 });
 
 describe('users route — invitation', () => {
+  it('🔴 jaune 11 de la relecture de A : en Pro, l’e-mail annonce le rôle ENREGISTRÉ (administrateur), pas celui demandé', async () => {
+    // Le store d’un Pro enregistre « admin » quel que soit le rôle demandé (`createPending`, spec Business).
+    const { server, cap } = app({ users: {
+      createPending: async (_tenant, email, _role, _name) => ({ id: 'pending1', email, name: null, role: 'admin', disabled: false, pending: true, createdAt: '2026-07-10T00:00:00.000Z', lastLoginAt: null }),
+    } });
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok), payload: { email: 'new@demo.test', role: 'agent' } });
+    expect(res.statusCode).toBe(201);
+    expect(cap.emailObjs[0]!.html).toContain('<strong>administrateur</strong>');
+    expect(cap.emailObjs[0]!.html).not.toContain('<strong>agent</strong>');
+    await server.close();
+  });
+
   it('POST /invitations admin -> 201, compte en attente créé + email envoyé', async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/invitations', ...h(adminTok), payload: { email: 'New@Demo.test', role: 'agent' } });

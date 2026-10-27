@@ -551,6 +551,16 @@ export interface OffreEntrepriseOps {
   commissionPct?: number | null;
   /** La limite que l'écran propose quand on pose l'Entreprise (10). */
   utilisateursProposes: number;
+  /**
+   * Le Business posé à la main (spec Business) et sa limite d'utilisateurs (`null` = les cinq de la grille). Absents sur une
+   * API d'avant lui : lus comme faux et `null`.
+   */
+  business?: boolean;
+  utilisateursBusiness?: number | null;
+  /** Ce que l'exploitant doit savoir avant de poser ou de retirer une offre à la main. Absent sur une API plus ancienne. */
+  alertes?: { proPayeVivant: boolean; numeroSeulVivant: boolean; numeroFourniSansCouverture: boolean };
+  /** Ce que le PUT a fait après l'écriture : le crédit offert (micro-euros), la fin du numéro, les gestes échoués. */
+  gestes?: { creditOffert: number | null; finDuNumero: string | null; echecs: string[] };
 }
 
 export function lireOffreOps(sessionOps: string, tenantId: string): Promise<OffreEntrepriseOps> {
@@ -564,6 +574,8 @@ export function lireOffreOps(sessionOps: string, tenantId: string): Promise<Offr
 export function ecrireOffreOps(sessionOps: string, tenantId: string, corps: {
   entreprise: boolean; utilisateurs: number | null; conservationJours?: number | null;
   contacts?: number | null; commissionPct?: number | null; note: string;
+  /** Absent = inchangé (spec Business) ; vrai avec `entreprise` vrai : refusé par le serveur (400). */
+  business?: boolean; utilisateursBusiness?: number | null;
 }): Promise<OffreEntrepriseOps> {
   return appelOps(sessionOps, `/ops/offre/${encodeURIComponent(tenantId)}`, { method: 'PUT', corps });
 }

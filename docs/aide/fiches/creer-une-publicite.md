@@ -7,6 +7,7 @@ publique: oui
 rubrique: parler-aux-clients
 rang: 12
 captures: non
+offre: entreprise
 ---
 # Lancer une publicité qui ouvre une conversation WhatsApp
 

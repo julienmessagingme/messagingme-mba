@@ -184,7 +184,7 @@ export class PgOauthStore {
          from users u
         where a.refresh_hash = $1 and a.client_id = $2 and a.revoque_le is null
           and a.refresh_expire_le > now() and a.refresh_max_le > now()
-          and u.id = a.user_id and u.tenant_id = a.tenant_id and u.role = 'admin' and u.disabled_at is null`,
+          and u.id = a.user_id and u.tenant_id = a.tenant_id and ${roleAdminEffectifSql('u')} and u.disabled_at is null`,
       [empreinteRefresh, clientId, nouveaux.refresh, nouveaux.acces, nouveaux.accesExpireLe, nouveaux.refreshExpireLe],
     );
     if ((tourne.rowCount ?? 0) > 0) return 'ok';

@@ -76,7 +76,7 @@ describe('le câblage de l’offre', () => {
     expect(api).toMatch(/passageBusiness: \(tenant\) => surPassageEnPro\(numeroInclus, tenant, \{ arreterLeNumeroSeul: false \}\),/);
     expect(api).toMatch(/const offert = await esCredentialsStore\.completerCreditBusiness\(tenant\);/);
     expect(api).toMatch(/finOffreManuelle: \(tenant, finiLe\) => surFinDeLOffreManuelle\(numeroInclus, \{ tenantId: tenant, finiLe \}\),/);
-    expect(api).toMatch(/badgeDeLOffre: async \(tenant\) => \(await offres\.offreDe\(tenant\)\)\.droits\.limites\.badge,/);
+    expect(api).toMatch(/presentationDeLOffre: async \(tenant\) => \{\s+const \{ droits \} = await offres\.offreDe\(tenant\);\s+return \{ badge: droits\.limites\.badge, apparencePersonnalisee: droits\.fonctions\.has\('widget_personnalise'\) \};/);
   });
 
   it('🔴 le webhook du Pro vide le cache de l’offre de la copie qui reçoit, et le paiement connaît le Pro vivant (lot 6, B1)', () => {

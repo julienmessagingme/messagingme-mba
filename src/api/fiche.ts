@@ -56,7 +56,7 @@ export const MESSAGE_RESOLUTION: Record<CodeResolution, string> = {
   unknown_contact: 'aucune fiche ne correspond à ces clés',
   identity_conflict: 'ces clés désignent des fiches différentes, ou une clé que la fiche porte déjà avec une autre valeur : rien n’a été écrit',
   // Lot 6 : la fiche serait une création au-delà de la limite de contacts de l'offre.
-  plan_limit_reached: `limite de contacts de votre offre atteinte, aucune fiche n’a été créée : passez en Pro (${adresseOffre()})`,
+  plan_limit_reached: `limite de contacts de votre offre atteinte, aucune fiche n’a été créée : voyez les offres (${adresseOffre()})`,
 };
 
 /** Rogne les clés, écarte les vides, normalise le numéro. */

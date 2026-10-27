@@ -3065,8 +3065,9 @@ hors du dépôt.
 Responsabilité : dire quelles fonctions un espace a, et borner ce qu'il crée ou envoie. Ce n'est PAS une garde de
 sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit aucune donnée d'un autre espace.
 
-- 🔴 **UNE SEULE DÉFINITION DE L'OFFRE, EN SQL** : `offre_de_l_espace(tenant_id)` (migration 0218), Entreprise si
-  `tenants.offre_entreprise`, sinon Pro si un `abonnements_offre` vivant (`fini_le` nul), sinon Base. Le code la lit
+- 🔴 **UNE SEULE DÉFINITION DE L'OFFRE, EN SQL** : `offre_de_l_espace(tenant_id)` (migrations 0218 et 0257), Entreprise si
+  `tenants.offre_entreprise`, sinon Business si `tenants.offre_business`, sinon Pro si un `abonnements_offre` vivant
+  (`fini_le` nul), sinon Base. Le code la lit
   par `PgOffresStore.offreDe`, derrière `OffresEnCache` (30 s, vidé par l'exploitation sur sa copie) ; les balayages
   qui en dépendront l'appelleront dans leur requête. Les VALEURS (fonctions, limites) vivent une fois, dans
   `DROITS` (`src/offres/offres.ts`) ; la console et `get_plan` les lisent dans la vue de l'offre (`grille`), jamais
@@ -3084,7 +3085,7 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   `src/http/stats.ts`.
 - 🔴 **Ce que compte la limite de contacts, une seule fonction le décide** : `contactsToutesOrigines(offre)`
   (`src/offres/offres.ts`, décision de Julien du 2026-10-25). En Free, toutes les fiches actives comptent, nées d'un
-  message entrant comprises ; en Pro et en Entreprise, une fiche `ne_entrant` ne compte jamais (la mise à jour ne touche
+  message entrant comprises ; hors de la Free, une fiche `ne_entrant` ne compte jamais (la mise à jour ne touche
   pas ce drapeau). La limite voyage avec son offre (`LimiteContacts`, `limiteContactsDe`, câblée par le socle) ; le
   prédicat SQL s'écrit une fois (`ficheComptee`, `src/crm/contact-store.pg.ts`), lu par les gardes du magasin et par
   `PgOffresStore.usage`, qui lit l'offre par `offre_de_l_espace` dans la même requête. La vue de l'offre le dit
@@ -3127,10 +3128,32 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   la commission sur le crédit IA (`tenants.entreprise_commission_pct`, un ENTIER de 0 à 100) ; absents du corps,
   inchangés ; `null`, le défaut de l'Entreprise (sans limite, 10 %). Une offre illisible se replie sur l'Entreprise PAR
   DÉFAUT : une Entreprise négociée sous 10 % paie 10 % le temps de la panne.
+- **Le Business se pose par la même route** (spec du 2026-10-27, migration 0257) : `business` (booléen) et
+  `utilisateursBusiness` (vide = les cinq de la grille), une seule offre posée à la main à la fois (`entreprise` et
+  `business` vrais ensemble : 400 ; poser l'Entreprise retire le Business). `business_quitte_le` date la sortie, comme
+  `entreprise_quittee_le`, pour la grâce de la conservation et la couverture du numéro. Le GET et le PUT rendent les
+  `alertes` (`PgOffresStore.alertes` : Pro payé vivant, numéro payé à part, numéro fourni sans couverture au retrait) ;
+  le PUT joue ensuite ses `gestes`, chacun sans lever (journalisé `ops_offre_geste_echoue`) : à l'entrée en Business,
+  l'arrêt du numéro payé à part puis le complément du crédit offert (`completerCreditBusiness`, jusqu'à
+  `CREDIT_OFFERT_BUSINESS_MICRO_EUR`, une fois par espace, `credits_offerts.complement_business_le`) ; au retrait d'une
+  offre posée à la main, la fin du numéro fourni s'il n'est plus couvert (`surFinDeLOffreManuelle`, une ligne `ops_` dans
+  `abonnements_numero`, que la garde du client Stripe refuse d'envoyer chez Stripe). Aucun objet Stripe : `ouvrirPro`
+  refuse un Business (409 `deja_business`). Un geste échoué ne se rejoue pas seul : le relancer, c'est retirer puis
+  reposer l'offre, en sachant que le retrait lance la fin du numéro fourni non couvert.
+- 🔴 **En Pro, tout membre est administrateur** (spec Business) : le rôle EFFECTIF (`roleEffectif`,
+  `roleAdminEffectifSql`, `src/offres/membres.ts`) est posé par la garde à chaque requête (`getUserState`), relu en SQL
+  par la validité et le renouvellement d'un jeton OAuth, les destinataires des e-mails du produit et le second facteur
+  exigé (`facteurExigeSql`), et rendu par `/me`, d'où la console met sa session à jour. Le rôle enregistré ne bouge pas :
+  il reprend effet en Business ; changer un rôle en Pro est refusé (409 `roles_en_business`), et une invitation en Pro
+  enregistre un administrateur.
+- **Le widget personnalisable** (`widget_personnalise`, Business et Entreprise) : hors offre, une apparence nouvelle
+  (couleur, position, libellé, avatar) est refusée en 402, une valeur standard ou déjà enregistrée passe sans rien changer
+  (`src/widgets/gestion.ts`), et le script public sert l'apparence standard (`APPARENCE_STANDARD`,
+  `presentationDeLOffre`, `src/http/widget-public.ts`) ; rien n'est effacé.
 - **Les refus nomment l'offre qui lève la limite ou ouvre la fonction** (`src/offres/refus.ts`) : déduite de la grille
   (l'offre dont c'est la limite, puis la suivante qui va plus haut ; l'offre la moins chère qui ouvre la fonction). Une
   limite absente de la grille (une Entreprise réglée) dit « Contactez-nous ».
-- 🔴 **La fonction `console`** (Pro et Entreprise, spec offres v2) dit si l'espace se pilote depuis la console. **Le
+- 🔴 **La fonction `console`** (Pro, Business et Entreprise, spec offres v2) dit si l'espace se pilote depuis la console. **Le
   serveur la garde par défaut** : chaque module d'espace l'exige sur ses routes sans fonction propre, sauf
   `MODULES_OUVERTS_AU_FREE` (`src/server.ts` : l'offre et ses paiements, le numéro, les clés d'API, le consentement
   OAuth, le compte, la session, les e-mails de l'utilisateur, le support). Un module ajouté naît donc fermé à la Free,
@@ -3148,7 +3171,8 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
   `PRIX_PRO_HT_CENTIMES` (sinon 422 `prix_incoherent`) ; la métadonnée `produit: pro` est posée sur la session ET sur
   l'abonnement, et le code promo est ouvert. Le retour dépend de l'appelant (`RetourPro`) : la console revient sur `/offre`,
   l'outil MCP `subscribe_pro` sur la page publique `/paiement-recu?produit=pro`, faute de session de console. Un espace déjà Pro reçoit le portail (`portail: true`), que
-  `POST .../offre/portail` ouvre aussi ; une Entreprise sans Pro vivant est refusée (409 `deja_entreprise`). Le webhook
+  `POST .../offre/portail` ouvre aussi ; une Entreprise sans Pro vivant est refusée (409 `deja_entreprise`), un Business
+  aussi (409 `deja_business`). Le webhook
   Stripe aiguille sur `produit: pro` (par `safeParse`) AVANT le chemin du numéro et écrit `abonnements_offre` par
   `PgAbonnementsOffreStore` (`src/offres/abonnements-offre.pg.ts`), son seul écrivain : rejouer ne duplique rien, la fin
   de période ne recule jamais, un abonnement fini le reste, et un second Pro vivant pour un espace bute sur

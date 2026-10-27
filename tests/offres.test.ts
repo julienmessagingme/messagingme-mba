@@ -16,8 +16,8 @@ const GRILLE: Record<Offre, Limites> = {
     stockageOctets: 0, clesApi: 2, appelsMinute: 30, appelsHeure: 500, modelesJour: 500, reponsesJour: 2000,
   },
   pro: {
-    utilisateurs: 3, admins: null, contacts: 5000, envoisModelesMois: null, automations: null, suppressionsJour: null,
-    adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 90, commissionPct: 20, badge: false, numeroInclus: true,
+    utilisateurs: 3, admins: null, contacts: 1000, envoisModelesMois: null, automations: null, suppressionsJour: null,
+    adressesWebhook: 5, journalWebhooksJours: 30, conservationJours: 60, commissionPct: 20, badge: false, numeroInclus: true,
     stockageOctets: 100 * MO, clesApi: 10, appelsMinute: 60, appelsHeure: 1000, modelesJour: 2000, reponsesJour: 2000,
   },
   // Le Business (spec du 2026-10-27) : posé à la main dans /ops ; ses limites invisibles sont un choix de Claude relu.
@@ -34,7 +34,10 @@ const GRILLE: Record<Offre, Limites> = {
 };
 
 // Le Pro resserré (spec offres v2, livraison 5) : l'analyse, les publicités et les chaînes passent à l'Entreprise.
-const PRO: Fonction[] = ['inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'email', 'console'];
+// Spec Business (sous-lot B) : le Pro perd encore l'agent de Meta, les assistants et l'assistant d'aide, qui passent au
+// Business avec le widget personnalisable.
+const PRO: Fonction[] = ['inbox', 'scenarios', 'statistiques', 'email', 'console'];
+const BUSINESS_EN_PLUS: Fonction[] = ['agent_meta', 'aide', 'assistants', 'widget_personnalise'];
 const ENTREPRISE_SEULE: Fonction[] = ['analyse', 'publicites', 'chaines', 'crm', 'rcs', 'performance_lab'];
 
 describe('la grille des offres', () => {
@@ -42,8 +45,9 @@ describe('la grille des offres', () => {
     expect(DROITS[offre].limites).toEqual(GRILLE[offre]);
   });
 
-  it('🔴 le Business ouvre ce qu’ouvre le Pro, et rien de ce qui reste à l’Entreprise (sous-lot A : le Pro garde tout)', () => {
-    expect([...DROITS.business.fonctions].sort()).toEqual([...PRO].sort());
+  it('🔴 le Business ouvre ce qu’ouvre le Pro, plus l’agent de Meta, les assistants, l’aide et le widget personnalisable, et rien de ce qui reste à l’Entreprise', () => {
+    expect([...DROITS.pro.fonctions].sort()).toEqual([...PRO].sort());
+    expect([...DROITS.business.fonctions].sort()).toEqual([...PRO, ...BUSINESS_EN_PLUS].sort());
     for (const f of ENTREPRISE_SEULE) expect(DROITS.business.fonctions.has(f)).toBe(false);
   });
 
@@ -81,7 +85,7 @@ describe('la grille des offres', () => {
 
   it('l\'Entreprise ouvre toutes les fonctions', () => {
     expect([...DROITS.entreprise.fonctions].sort()).toEqual([...FONCTIONS].sort());
-    expect(FONCTIONS).toHaveLength(PRO.length + ENTREPRISE_SEULE.length);
+    expect(FONCTIONS).toHaveLength(PRO.length + BUSINESS_EN_PLUS.length + ENTREPRISE_SEULE.length);
   });
 });
 
@@ -116,12 +120,28 @@ describe('les refus nomment l’offre qui lève la limite ou ouvre la fonction (
     expect(corpsRefusFonction('inbox').error).toMatch(/Passez en Pro/);
   });
 
-  it('🔴 le Pro resserré : l’analyse, les publicités et les chaînes renvoient à l’Entreprise, et les 5 000 contacts du Pro aussi', () => {
+  it('🔴 le Pro resserré : l’analyse, les publicités et les chaînes renvoient à l’Entreprise ; les 1 000 contacts du Pro au Business, les 5 000 du Business à l’Entreprise', () => {
     for (const f of ['analyse', 'publicites', 'chaines'] as const) {
       expect(corpsRefusFonction(f).error, f).toMatch(/Passez en Entreprise/);
     }
-    expect(phraseLimite('contacts', DROITS.pro.limites.contacts!)).toMatch(/5.000 contacts.*Passez en Entreprise/);
+    expect(phraseLimite('contacts', DROITS.pro.limites.contacts!)).toMatch(/1.000 contacts.*Passez en Business/);
+    expect(phraseLimite('contacts', DROITS.business.limites.contacts!)).toMatch(/5.000 contacts.*Passez en Entreprise/);
     expect(phraseLimite('contacts', DROITS.base.limites.contacts!)).toMatch(/Passez en Pro/);
+  });
+
+  it('🔴 spec Business : aucune phrase d’une limite du Pro ne renvoie à l’Entreprise, toutes renvoient au Business', () => {
+    for (const limite of ['contacts', 'adressesWebhook', 'clesApi'] as const) {
+      const p = phraseLimite(limite, DROITS.pro.limites[limite]!);
+      expect(p, limite).toMatch(/Passez en Business/);
+    }
+    expect(phraseLimite('utilisateurs', 3, { offre: 'pro' })).toMatch(/Passez en Business/);
+  });
+
+  it('🔴 spec Business : l’agent de Meta, les assistants, l’assistant d’aide et le widget personnalisable renvoient au Business', () => {
+    for (const f of BUSINESS_EN_PLUS) {
+      expect(corpsRefusFonction(f).error, f).toMatch(/Passez en Business/);
+    }
+    expect(corpsRefusFonction('widget_personnalise').error).toMatch(/le widget personnalisable/);
   });
 });
 
@@ -139,7 +159,7 @@ describe('🔴 ce que compte la limite de contacts : toutes les origines en Free
 
   it('la limite de contacts des droits, avec l’offre qui la fixe ; sans limite, rien', () => {
     expect(limiteContactsDe({ offre: 'base', droits: DROITS.base })).toEqual({ max: 100, offre: 'base' });
-    expect(limiteContactsDe({ offre: 'pro', droits: DROITS.pro })).toEqual({ max: 5000, offre: 'pro' });
+    expect(limiteContactsDe({ offre: 'pro', droits: DROITS.pro })).toEqual({ max: 1000, offre: 'pro' });
     expect(limiteContactsDe({ offre: 'entreprise', droits: DROITS.entreprise })).toBeNull();
     const devis = droitsDe('entreprise', { utilisateurs: null, conservationJours: null, contacts: 300 });
     expect(limiteContactsDe({ offre: 'entreprise', droits: devis })).toEqual({ max: 300, offre: 'entreprise' });
@@ -147,7 +167,7 @@ describe('🔴 ce que compte la limite de contacts : toutes les origines en Free
 
   it('la phrase du refus dit ce qui compte : ceux qui écrivent compris en Free, jamais ailleurs', () => {
     expect(phraseLimite('contacts', DROITS.base.limites.contacts!)).toMatch(/100 contacts, ceux qui vous écrivent compris\. Passez en Pro/);
-    expect(phraseLimite('contacts', DROITS.pro.limites.contacts!)).toMatch(/5.000 contacts créés \(ceux qui vous écrivent ne comptent pas\)\. Passez en Entreprise/);
+    expect(phraseLimite('contacts', DROITS.pro.limites.contacts!)).toMatch(/1.000 contacts créés \(ceux qui vous écrivent ne comptent pas\)\. Passez en Business/);
     // L'offre connue prime sur la grille : une Entreprise réglée à 100 contacts ne compte pas ceux qui lui écrivent.
     expect(phraseLimite('contacts', 100, { offre: 'entreprise' })).toMatch(/100 contacts créés \(ceux qui vous écrivent ne comptent pas\)/);
     expect(phraseLimite('contacts', 123_456)).toMatch(/contacts créés \(ceux qui vous écrivent ne comptent pas\)/);

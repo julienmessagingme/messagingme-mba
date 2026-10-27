@@ -27,6 +27,9 @@ export function registerMe(app: FastifyInstance, deps: MeRouteDeps, garde: Guard
     const u = await deps.getById(userId);
     if (!u) return reply.code(404).send({ error: 'utilisateur inconnu' });
     // `exploitation` n'est posé que vrai : la personne elle-même apprend qu'elle a l'accès, personne d'autre.
-    return reply.code(200).send({ email: u.email, name: u.name, role: u.role, ...(deps.estExploitant?.(u.email) ? { exploitation: true } : {}) });
+    // Le rôle EFFECTIF, celui que la garde a posé sur cette requête (jaune 4 de la relecture de A) : en Pro, tout membre est
+    // administrateur, et la console relit ici le rôle qu'elle affiche ; celui de la fiche ne vaut qu'en Business et au-delà.
+    const role = req.auth?.role ?? u.role;
+    return reply.code(200).send({ email: u.email, name: u.name, role, ...(deps.estExploitant?.(u.email) ? { exploitation: true } : {}) });
   });
 }

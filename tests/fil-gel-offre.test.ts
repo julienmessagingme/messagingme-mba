@@ -31,8 +31,14 @@ describe('sousLOffre : les réglages tels que l’offre les laisse jouer', () =>
     expect(modeEffectif(sousLOffre(r({ repondeurMode: 'agent', repondeurAgentId: 'ag' }), DROITS.base.fonctions))).toBe('agent');
   });
 
-  it('en Pro et en Entreprise, rien ne change', () => {
-    for (const o of ['pro', 'entreprise'] as const) {
+  it('🔴 spec Business : en Pro, « MBA » se lit « Équipe », « Scénario » reste (le Pro garde les scénarios)', () => {
+    expect(modeEffectif(sousLOffre(r(), DROITS.pro.fonctions))).toBe('equipe');
+    expect(leMbaRepond(sousLOffre(r(), DROITS.pro.fonctions))).toBe(false);
+    expect(modeEffectif(sousLOffre(r({ repondeurMode: 'scenario', repondeurWorkflowId: 'wf' }), DROITS.pro.fonctions))).toBe('scenario');
+  });
+
+  it('en Business et en Entreprise, rien ne change', () => {
+    for (const o of ['business', 'entreprise'] as const) {
       expect(modeEffectif(sousLOffre(r(), DROITS[o].fonctions))).toBe('mba');
       expect(modeEffectif(sousLOffre(r({ repondeurMode: 'scenario', repondeurWorkflowId: 'wf' }), DROITS[o].fonctions))).toBe('scenario');
     }
@@ -88,10 +94,13 @@ describe('le contrôle du fil en Base (lot 6, B2a)', () => {
     expect(b.table.has('w')).toBe(false);
   });
 
-  it('en Pro, le mode « MBA » confie comme avant', async () => {
+  it('en Business, le mode « MBA » confie comme avant ; en Pro (spec Business), plus rien n’est confié au MBA', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
+    const business = bancDuFil({ mode: 'mba', mbaEnabled: true, offre: 'business', conversations: { w: { owner: 'app_workflow' } } });
+    await business.fil.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false });
+    expect(business.table.has('w')).toBe(true);
     const pro = bancDuFil({ mode: 'mba', mbaEnabled: true, offre: 'pro', conversations: { w: { owner: 'app_workflow' } } });
     await pro.fil.remettreSiPersonneNeSuit('t1', 'w', MSG, { rouverte: false });
-    expect(pro.table.has('w')).toBe(true);
+    expect(pro.table.has('w')).toBe(false);
   });
 });

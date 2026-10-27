@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DROITS, PRIX_PRO_HT_CENTIMES } from '../src/offres/offres';
+import { DROITS, PRIX_BUSINESS_HT_CENTIMES, PRIX_PRO_HT_CENTIMES } from '../src/offres/offres';
 import { lire, pagesHtml, parAttribut, texte } from './vitrine-lecture';
 
 /**
@@ -85,6 +85,7 @@ describe('les chiffres de l’accueil', () => {
   const ATTENDU: Record<string, number> = {
     'base.envois-modeles-mois': DROITS.base.limites.envoisModelesMois ?? Number.NaN,
     'pro.prix-mois': PRIX_PRO_HT_CENTIMES.mois / 100,
+    'business.prix-mois': PRIX_BUSINESS_HT_CENTIMES.mois / 100,
   };
   for (const page of ['index.html', 'en/index.html']) {
     it(`🔴 ${page} : chaque chiffre marqué data-offre vaut ce que dit le code`, () => {
@@ -142,6 +143,7 @@ describe('les prix du JSON-LD', () => {
         for (const o of n.offers as Noeud[]) {
           const spec = o.priceSpecification as Noeud | undefined;
           const attendu = o.name === 'Free' ? 0
+            : o.name === 'Business' ? PRIX_BUSINESS_HT_CENTIMES.mois / 100
             : spec?.billingDuration === 'P1M' ? PRIX_PRO_HT_CENTIMES.mois / 100
               : spec?.billingDuration === 'P1Y' ? PRIX_PRO_HT_CENTIMES.an / 100
                 : Number.NaN;

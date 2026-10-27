@@ -3,8 +3,8 @@
 import Link from 'next/link';
 import { Icone } from './Icone';
 import { classesBouton } from './Bouton';
-import { useT } from '@/lib/i18n';
-import { libelleFonction, nomDeLOffre, offreQuiOuvre, type FonctionOffre, type VueOffre } from '@/lib/offre';
+import { useLocale, useT } from '@/lib/i18n';
+import { TUTORIEL_DE_LA_FONCTION, libelleFonction, nomDeLOffre, offreQuiOuvre, type FonctionOffre, type VueOffre } from '@/lib/offre';
 
 /**
  * L'ÉCRAN D'UNE FONCTION QUE L'OFFRE N'OUVRE PAS (lot 6), à la place de l'écran lui-même : la coquille le pose quand on
@@ -13,7 +13,9 @@ import { libelleFonction, nomDeLOffre, offreQuiOuvre, type FonctionOffre, type V
  */
 export function EncartOffre({ fonction, vue }: { fonction: FonctionOffre; vue: VueOffre }) {
   const t = useT();
+  const { locale } = useLocale();
   const offre = offreQuiOuvre(vue, fonction);
+  const tutoriel = TUTORIEL_DE_LA_FONCTION[fonction];
   return (
     <div className="mx-auto max-w-formulaire px-4 py-12 text-center" data-testid="encart-offre">
       <Icone nom="cadenas" taille="grande" className="mx-auto text-ink-400" />
@@ -37,6 +39,12 @@ export function EncartOffre({ fonction, vue }: { fonction: FonctionOffre; vue: V
           <Link href="/accueil" className={classesBouton('secondaire', 'normale')} data-testid="encart-offre-accueil">
             {t('Piloter depuis Claude Code', 'Run it from Claude Code')}
           </Link>
+        )}
+        {/* Spec Business : là où le Pro perd un assistant, la fiche qui fait la même chose pas à pas. */}
+        {tutoriel && (
+          <a href={locale === 'en' ? tutoriel.en : tutoriel.fr} target="_blank" rel="noreferrer" className={classesBouton('secondaire', 'normale')} data-testid="encart-offre-tutoriel">
+            {t('Le faire pas à pas', 'Do it step by step')}
+          </a>
         )}
         <Link href={`/offre?fonction=${fonction}`} className={classesBouton('principal', 'normale')} data-testid="encart-offre-lien">
           {t('Voir les offres', 'See plans')}

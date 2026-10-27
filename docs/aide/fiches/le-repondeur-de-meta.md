@@ -7,6 +7,7 @@ publique: oui
 rubrique: parler-aux-clients
 rang: 11
 captures: non
+offre: business
 ---
 # Le répondeur de Meta : à quoi il sert, et comment le régler
 

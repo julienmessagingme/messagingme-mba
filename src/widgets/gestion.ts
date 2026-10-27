@@ -8,7 +8,8 @@ import { PgChannelsMeLinkStore } from '../channels-me/link-store.pg';
 import { PgWorkflowStore, etatDuScenario, type EtatScenario } from '../workflow/store.pg';
 import { PgWidgetStore, type DevenirWidget, type PositionWidget, type WidgetInput, type WidgetRow } from './store.pg';
 import {
-  COULEUR_PAR_DEFAUT, LIMITE_WIDGETS_PAR_ESPACE, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PHRASE_WIDGET, POSITIONS_WIDGET,
+  APPARENCE_STANDARD, COULEUR_PAR_DEFAUT, LIMITE_WIDGETS_PAR_ESPACE, MAX_LIBELLE_WIDGET, MAX_NOM_WIDGET, MAX_PHRASE_WIDGET,
+  POSITIONS_WIDGET,
 } from '../../web/lib/partage/widgets';
 import { enConflitAvec, phrasesEnConflit } from './phrases';
 import { adresseDuScript, baliseDuScript, lienDuWidget, type NumeroDuWidget } from './adresses';
@@ -184,6 +185,14 @@ export function gestionDesWidgetsEnBase(pool: Pool, offres: SourceOffres): DepsG
   };
 }
 
+/** Les champs de l'apparence d'une bulle, ceux que `widget_personnalise` ouvre (spec Business). */
+const CLES_APPARENCE = ['couleur', 'position', 'libelle', 'avatarUrl'] as const;
+
+/** Deux valeurs d'apparence égales : une couleur se compare sans la casse (`#25D366` est le vert standard). */
+function memeApparence(cle: (typeof CLES_APPARENCE)[number], a: unknown, b: unknown): boolean {
+  return cle === 'couleur' && typeof a === 'string' && typeof b === 'string' ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
 /**
  * L'état que la saisie produit, contrôlé. `courant` = null à la création. Les contrôles statiques passent avant
  * ceux qui lisent la base.
@@ -216,6 +225,18 @@ async function preparer(
   } else if (s.workflowId !== undefined && s.workflowId !== null) {
     // Sinon la base refuserait (`widgets_scenario_sans_devenir_chk`), en 500.
     return refus(400, SCENARIO_SANS_DEVENIR);
+  }
+
+  // 🔴 L'apparence (couleur, position, libellé, avatar) suit la fonction `widget_personnalise` (spec Business). Hors offre,
+  // une valeur standard, ou celle déjà enregistrée, passe sans rien changer (le formulaire et les outils renvoient tout) ;
+  // une valeur NOUVELLE est refusée. Ce qui est enregistré n'est jamais effacé : il revient quand l'espace monte en Business.
+  const touchees = CLES_APPARENCE.filter((k) => s[k] !== undefined);
+  let apparenceFigee = false;
+  if (touchees.length > 0 && !(await deps.offres.offreDe(tenantId)).droits.fonctions.has('widget_personnalise')) {
+    const nouvelle = touchees.some((k) => !memeApparence(k, s[k], APPARENCE_STANDARD[k])
+      && !memeApparence(k, s[k], courant ? courant[k] : APPARENCE_STANDARD[k]));
+    if (nouvelle) return refusFonction('widget_personnalise');
+    apparenceFigee = true;
   }
 
   // La création exige la phrase et la modification part d'un widget qui en a une : `undefined` ne se produit pas,
@@ -273,10 +294,11 @@ async function preparer(
       // Le devenir `agent` étant refusé, aucun agent ne s'écrit par ici.
       agentId: null,
       workflowId,
-      couleur: s.couleur ?? courant?.couleur ?? COULEUR_PAR_DEFAUT,
-      position: s.position ?? courant?.position ?? 'bas_droite',
-      libelle: s.libelle !== undefined ? s.libelle : (courant?.libelle ?? null),
-      avatarUrl: s.avatarUrl !== undefined ? s.avatarUrl : (courant?.avatarUrl ?? null),
+      // Hors offre, l'apparence reste celle de la ligne (la standard à la création), quoi que la requête ait renvoyé.
+      couleur: (apparenceFigee ? undefined : s.couleur) ?? courant?.couleur ?? COULEUR_PAR_DEFAUT,
+      position: (apparenceFigee ? undefined : s.position) ?? courant?.position ?? 'bas_droite',
+      libelle: !apparenceFigee && s.libelle !== undefined ? s.libelle : (courant?.libelle ?? null),
+      avatarUrl: !apparenceFigee && s.avatarUrl !== undefined ? s.avatarUrl : (courant?.avatarUrl ?? null),
       badge: courant?.badge ?? true,
       actif: s.actif ?? courant?.actif ?? true,
       maxParHeure: s.maxParHeure !== undefined ? s.maxParHeure : (courant?.maxParHeure ?? null),

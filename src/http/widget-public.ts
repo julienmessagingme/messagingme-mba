@@ -7,6 +7,7 @@ import type { WidgetRow } from '../widgets/store.pg';
 import type { PhoneNumberRecord } from '../account/types';
 import { construireScript, SCRIPT_INERTE, type ConfigScript } from '../widgets/script';
 import { cacheCourt } from '../lib/cache-court';
+import { APPARENCE_STANDARD } from '../../web/lib/partage/widgets';
 
 /**
  * Le script de la bulle WhatsApp : `GET /widget/<code>.js`, la balise que le client colle sur son site (lot 2 de
@@ -33,10 +34,12 @@ export interface WidgetPublicRouteDeps {
    */
   budgetInconnus: RateLimiter;
   /**
-   * Le badge de l'offre de l'espace (lot 6, `droits.limites.badge`) : « Propulsé par Messaging Me » n'est affiché que si
-   * le widget le porte ET que l'offre l'impose (la Base). Requise : les fixtures disent leur hypothèse.
+   * Ce que l'offre de l'espace impose au rendu. Le badge (lot 6, `droits.limites.badge`) : « Propulsé par Messaging Me »
+   * n'est affiché que si le widget le porte ET que l'offre l'impose (la Base). L'apparence (spec Business, la fonction
+   * `widget_personnalise`) : sans elle, la bulle prend l'apparence standard, le réglage enregistré restant en base.
+   * Requise : les fixtures disent leur hypothèse.
    */
-  badgeDeLOffre(tenantId: string): Promise<boolean>;
+  presentationDeLOffre(tenantId: string): Promise<{ badge: boolean; apparencePersonnalisee: boolean }>;
 }
 
 /**
@@ -72,15 +75,16 @@ function repondre(reply: FastifyReply, script: string, cache: string): FastifyRe
 
 export function registerWidgetPublic(app: FastifyInstance, deps: WidgetPublicRouteDeps): void {
   /**
-   * Une dépendance qui lève garde le badge : l'afficher à tort coûte moins que le retirer à tort. ⚠️ Une panne de la LECTURE
-   * de l'offre n'arrive plus jusqu'ici : le cache la rend ouverte (`OffresEnCache`), donc sans badge le temps de la panne.
+   * Une dépendance qui lève garde le badge et l'apparence standard : les afficher à tort coûte moins que les retirer à tort.
+   * ⚠️ Une panne de la LECTURE de l'offre n'arrive plus jusqu'ici : le cache la rend ouverte (`OffresEnCache`), donc sans
+   * badge et avec l'apparence de la ligne le temps de la panne.
    */
-  const badgeDeLOffre = async (tenantId: string): Promise<boolean> => {
+  const presentationDeLOffre = async (tenantId: string): Promise<{ badge: boolean; apparencePersonnalisee: boolean }> => {
     try {
-      return await deps.badgeDeLOffre(tenantId);
+      return await deps.presentationDeLOffre(tenantId);
     } catch (err) {
       journaliser('error', 'widget_offre_illisible', { err, tenantId });
-      return true;
+      return { badge: true, apparencePersonnalisee: false };
     }
   };
   // Les codes déjà résolus par ce process échappent au budget des codes jamais vus (`ClesResolues`), comme
@@ -129,9 +133,12 @@ export function registerWidgetPublic(app: FastifyInstance, deps: WidgetPublicRou
     // sa mesure sont dans `lienDuWidget`, que la console lit aussi pour annoncer une bulle grisée.
     const lien = lienDuWidget(numero, widget.phrase);
 
+    const presentation = await presentationDeLOffre(widget.tenantId);
+    // Hors `widget_personnalise`, l'apparence standard (spec Business) ; la ligne garde son réglage.
+    const apparence = presentation.apparencePersonnalisee ? widget : APPARENCE_STANDARD;
     let config: ConfigScript;
     if (lien === null) {
-      config = { etat: 'grise', position: widget.position };
+      config = { etat: 'grise', position: apparence.position };
     } else {
       let svgQr: string | null = null;
       try {
@@ -145,11 +152,11 @@ export function registerWidgetPublic(app: FastifyInstance, deps: WidgetPublicRou
         etat: 'servi',
         lien,
         svgQr,
-        couleur: widget.couleur,
-        position: widget.position,
-        libelle: widget.libelle,
-        avatarUrl: widget.avatarUrl,
-        badge: widget.badge && await badgeDeLOffre(widget.tenantId),
+        couleur: apparence.couleur,
+        position: apparence.position,
+        libelle: apparence.libelle,
+        avatarUrl: apparence.avatarUrl,
+        badge: widget.badge && presentation.badge,
       };
     }
     return construireScript(config);

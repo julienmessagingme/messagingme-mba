@@ -46,6 +46,7 @@ describe('le traitement des événements Stripe d’abonnement', () => {
       ...stripeNumeroInerte,
       enregistrer: async (a) => { enregistres.push(a); return { etat: 'enregistre', numero: '33123456789' }; },
       reprendreCampagnes: async (tenantId) => { reprises.push(tenantId); },
+      inclusDansLOffre: async () => false,
     };
     const traitement = creer({ numero });
     const e = evenement('checkout.session.completed', {

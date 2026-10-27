@@ -1,6 +1,6 @@
 ---
 slug: put-a-whatsapp-bubble-on-my-site
-traduit_de: ab4d2f
+traduit_de: df6b2e
 description: Put a WhatsApp bubble on your site: create it, choose its pre-filled message and who answers, then paste the tag on your pages.
 ---
 # Put a WhatsApp bubble on my site
@@ -13,7 +13,8 @@ On a phone, the bubble opens WhatsApp directly; on a computer, it shows a QR cod
 
 **Create the widget.** Give it a name (to find your way around, the visitor does not see it), the pre-filled
 message, who answers, and its look: a color, one of the four corners of the screen, a short label and an avatar if
-you wish. A preview shows the bubble as it will appear. For the visitor, the bubble speaks the language of their
+you wish (the look is customisable on Business and Enterprise; elsewhere, the bubble keeps the standard WhatsApp
+look). A preview shows the bubble as it will appear. For the visitor, the bubble speaks the language of their
 browser, French or English; your label stays as you wrote it. Then copy the tag and paste it on every page where
 the bubble should appear. If our service does not answer, the bubble simply does not appear: your page is never
 slowed down.

@@ -27,6 +27,21 @@ export const lireContactsEntreprise = (saisie: string): number | null | 'invalid
 /** La commission négociée d'une Entreprise : vide = 10 %, sinon un ENTIER de 0 à 100 (une décimale rendrait la vue illisible). */
 export const lireCommissionEntreprise = (saisie: string): number | null | 'invalide' => lireEntier(saisie, 0, 100);
 
+/** Les utilisateurs d'un Business (spec Business) : vide = les cinq de la grille, sinon un entier de 1 à 10 000. */
+export const lireUtilisateursBusiness = (saisie: string): number | null | 'invalide' => lireEntier(saisie, 1, 10_000);
+
+/**
+ * Le retrait d'une offre posée à la main (Business ou Entreprise) laisse-t-il le numéro fourni sans couverture ? Oui quand
+ * aucune autre ne la remplace et que le serveur signale un numéro fourni que rien d'autre ne couvre
+ * (`alertes.numeroFourniSansCouverture`) : sa fin se lance, suspendu tout de suite puis résilié 7 jours plus tard. L'écran
+ * exige alors une confirmation (jaune 6 de la relecture du sous-lot A).
+ */
+export function retraitCoupeLeNumero(
+  avant: { entreprise: boolean; business: boolean }, apres: { entreprise: boolean; business: boolean }, numeroSansCouverture: boolean,
+): boolean {
+  return (avant.entreprise || avant.business) && !apres.entreprise && !apres.business && numeroSansCouverture;
+}
+
 /**
  * La nouvelle conservation peut-elle PURGER des conversations ? Oui dès qu'elle n'est pas « jamais » (0) et qu'on ne
  * sait pas qu'elle allonge l'actuelle : l'actuelle infinie (0) ou inconnue (`null`, le défaut de l'instance) ne se

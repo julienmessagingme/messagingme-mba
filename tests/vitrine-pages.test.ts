@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { DROITS, ESSAI_PRO_JOURS, FONCTIONS, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_HT_CENTIMES, type Fonction, type Offre } from '../src/offres/offres';
+import {
+  DROITS, ESSAI_PRO_JOURS, FONCTIONS, PRIX_BUSINESS_HT_CENTIMES, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_BUSINESS_HT_CENTIMES,
+  PRIX_SIEGE_HT_CENTIMES, type Fonction, type Offre,
+} from '../src/offres/offres';
 import { PRIX_NUMERO_HT_CENTIMES } from '../src/stripe/abonnement';
 import { schema } from '../src/config';
 import { JUMELLES } from '../scripts/vitrine/anglais';
@@ -34,6 +37,14 @@ const ATTENDU: Record<string, number> = {
   // Pas la commission sur le crédit IA : la page ne la dit pas (décision de Julien du 2026-10-19).
   // Le crédit IA offert au premier numéro, en euros : le défaut du code (une surcharge de .env.prod ne se lit pas ici).
   'credit.offert-euros': schema.shape.CREDIT_OFFERT_MICRO_EUR.parse(undefined) / 1_000_000,
+  // Le Business (spec Business) : posé à la main, jamais payé en ligne ; ses chiffres viennent du code comme les autres.
+  'business.prix-mois': PRIX_BUSINESS_HT_CENTIMES.mois / 100,
+  'business.contacts': DROITS.business.limites.contacts ?? NaN,
+  'business.utilisateurs': DROITS.business.limites.utilisateurs ?? NaN,
+  'business.siege-mois': PRIX_SIEGE_BUSINESS_HT_CENTIMES.mois / 100,
+  'business.adresses-webhook': DROITS.business.limites.adressesWebhook ?? NaN,
+  'business.conservation-jours': DROITS.business.limites.conservationJours,
+  'business.credit-offert-euros': schema.shape.CREDIT_OFFERT_BUSINESS_MICRO_EUR.parse(undefined) / 1_000_000,
 };
 
 /**
@@ -44,6 +55,9 @@ const ATTENDU_TEXTE: Record<string, RegExp> = {
   'pro.envois-modeles-mois': DROITS.pro.limites.envoisModelesMois === null ? /illimités|unlimited/i : /(?!)/,
   'pro.automations': DROITS.pro.limites.automations === null ? /illimitées|unlimited/i : /(?!)/,
   'pro.numero-inclus': DROITS.pro.limites.numeroInclus ? /inclus|included/i : /(?!)/,
+  'business.envois-modeles-mois': DROITS.business.limites.envoisModelesMois === null ? /illimités|unlimited/i : /(?!)/,
+  'business.automations': DROITS.business.limites.automations === null ? /illimitées|unlimited/i : /(?!)/,
+  'business.numero-inclus': DROITS.business.limites.numeroInclus ? /inclus|included/i : /(?!)/,
 };
 
 /** Ce qu'une offre ajoute à la précédente, dans l'ordre de la grille. */
@@ -68,8 +82,25 @@ for (const [langue, page] of Object.entries(PAGES)) {
       const marques = parAttribut(html, 'data-fonction').map((m) => m.valeur);
       const de = (offre: string) => marques.filter((m) => m.startsWith(`${offre}:`)).map((m) => m.slice(offre.length + 1)).sort();
       expect(de('pro')).toEqual(ajoutees('pro', 'base').sort());
-      expect(de('entreprise')).toEqual(ajoutees('entreprise', 'pro').sort());
-      expect(marques.every((m) => /^(pro|entreprise):/.test(m))).toBe(true);
+      expect(de('business')).toEqual(ajoutees('business', 'pro').sort());
+      expect(de('entreprise')).toEqual(ajoutees('entreprise', 'business').sort());
+      expect(marques.every((m) => /^(pro|business|entreprise):/.test(m))).toBe(true);
+    });
+
+    it('🔴 aucun « bientôt » sur la page : les fonctions du Business sont dites incluses (décision de Julien, 2026-10-27)', () => {
+      expect(html.replace(/<!--[\s\S]*?-->/g, '')).not.toMatch(/bientôt|coming soon|data-bientot/i);
+    });
+
+    it('🔴 spec Business : quatre cartes de même poids, aucune mise en avant', () => {
+      expect(html.match(/<li class="tarif[ "]/g)).toHaveLength(4);
+      expect(html).not.toContain('tarif-mis-en-avant');
+    });
+
+    it('🔴 spec Business : les données structurées portent le Business à 349 € par mois, hors taxe', () => {
+      const ld = html.slice(html.indexOf('application/ld+json'), html.indexOf('</script>', html.indexOf('application/ld+json')));
+      const bloc = ld.slice(ld.indexOf('"name": "Business"'));
+      expect(bloc).toContain(`"price": "${PRIX_BUSINESS_HT_CENTIMES.mois / 100}"`);
+      expect(bloc.slice(0, bloc.indexOf('}', bloc.indexOf('priceSpecification')))).toContain('"valueAddedTaxIncluded": false');
     });
 
     it('la connexion SSO est promise, dans la carte de l’Entreprise (spec offres v2)', () => {

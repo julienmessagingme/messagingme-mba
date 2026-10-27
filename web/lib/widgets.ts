@@ -77,6 +77,21 @@ export interface SaisieWidget {
   maxParHeure: number | null;
 }
 
+/** Les champs de l'apparence d'une bulle, que `widget_personnalise` ouvre (spec Business). */
+export const CLES_APPARENCE = ['couleur', 'position', 'libelle', 'avatarUrl'] as const;
+
+/**
+ * 🔴 Hors offre, l'apparence ne part JAMAIS, ni à la création ni à la modification (rouge 1 de la relecture de B) : le serveur
+ * l'ignorerait, mais une API d'avant le Business (la console est publiée avant elle, ou un retour arrière) l'écrirait telle
+ * quelle et effacerait le réglage du client.
+ */
+export function sansApparence<T extends Partial<SaisieWidget>>(saisie: T, personnalisable: boolean): T {
+  if (personnalisable) return saisie;
+  const copie: Partial<SaisieWidget> = { ...saisie };
+  for (const cle of CLES_APPARENCE) delete copie[cle];
+  return copie as T;
+}
+
 /** Les clés de `SaisieWidget`. `widgets.test.ts` vérifie qu'aucune ne manque : une clé oubliée ne s'enverrait jamais. */
 export const CLES_DE_SAISIE: readonly (keyof SaisieWidget)[] = [
   'nom', 'phrase', 'devenir', 'workflowId', 'couleur', 'position', 'libelle', 'avatarUrl', 'actif', 'maxParHeure',
@@ -120,7 +135,7 @@ export function listerWidgets(tenantId: string): Promise<{ widgets: Widget[]; li
   return request(base(tenantId));
 }
 
-export function creerWidget(tenantId: string, saisie: SaisieWidget): Promise<{ widget: Widget }> {
+export function creerWidget(tenantId: string, saisie: Partial<SaisieWidget> & Pick<SaisieWidget, 'nom' | 'phrase'>): Promise<{ widget: Widget }> {
   return request(base(tenantId), { method: 'POST', body: JSON.stringify(saisie) });
 }
 

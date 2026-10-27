@@ -20,6 +20,11 @@ export interface DepsTraitementAbonnements {
   numero: Pick<PgAbonnementsNumeroStore, 'enregistrer' | 'majStatut' | 'noterFinPrevue'> & {
     alerter(texte: string): Promise<void>;
     reprendreCampagnes(tenantId: string): Promise<void>;
+    /**
+     * L'offre de l'espace inclut-elle le numéro (Pro, Business, Entreprise ; `droits.limites.numeroInclus`) ? L'alerte de
+     * fin de l'abonnement du numéro seul le dit (jaune 10 de la relecture de A) : un Business le couvre sans Pro vivant.
+     */
+    inclusDansLOffre(tenantId: string): Promise<boolean>;
   };
   /**
    * Le Pro : son abonnement, l'invalidation immédiate du cache de l'offre, les alertes et les effets rejouables du
@@ -401,8 +406,8 @@ export function creerTraitementAbonnements(deps: DepsTraitementAbonnements) {
       if (!lu.success) return illisible(e, 'numero');
       const a = await deps.numero.majStatut(lu.data.id, 'resilie', null);
       if (a) {
-        await deps.numero.alerter(await deps.pro.vivant(a.tenantId)
-          ? `Abonnement du numéro seul arrêté : espace ${a.tenantId} (${a.abonnementId}). Le numéro est inclus dans son Pro.`
+        await deps.numero.alerter(await deps.numero.inclusDansLOffre(a.tenantId)
+          ? `Abonnement du numéro seul arrêté : espace ${a.tenantId} (${a.abonnementId}). Le numéro est inclus dans son offre.`
           : `Abonnement du numéro terminé : espace ${a.tenantId} (${a.abonnementId}). Ses envois sont coupés ; le numéro est gardé 7 jours pour un réabonnement, puis libéré.`);
       }
       return ACQUITTE;

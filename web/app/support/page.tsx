@@ -21,6 +21,7 @@ function sujetDemande(t: (fr: string, en: string) => string): string {
   if (typeof window === 'undefined') return '';
   const sujet = new URLSearchParams(window.location.search).get('sujet');
   if (sujet === 'pro') return t('Passer en Pro', 'Upgrade to Pro');
+  if (sujet === 'business') return t('Passer en Business', 'Upgrade to Business');
   if (sujet === 'entreprise') return t('Passer en Entreprise', 'Upgrade to Enterprise');
   return '';
 }

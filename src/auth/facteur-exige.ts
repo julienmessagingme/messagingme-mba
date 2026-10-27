@@ -1,3 +1,5 @@
+import { roleAdminEffectifSql } from '../offres/membres';
+
 /**
  * LE SECOND FACTEUR EST EXIGÉ D'UNE IDENTITÉ quand elle a un compte ADMIN actif dans un espace qui l'exige
  * (`tenants.second_facteur_admins`, migration 0230, décision de Julien du 2026-10-13). Jusque-là, tout admin y était
@@ -16,7 +18,10 @@
  * relit le facteur à chaque requête (`makeRequireOps`). Ni ce réglage ni son absence n'y touchent.
  *
  * `identite` : l'expression SQL de l'identifiant d'identité dans la requête appelante (`i.id`).
+ *
+ * Le rôle lu est le rôle EFFECTIF (spec Business, jaune 3 de la relecture de A) : en Pro, tout membre est administrateur,
+ * donc tenu au second facteur quand l'espace l'exige.
  */
 export const facteurExigeSql = (identite: string): string => `exists (
   select 1 from users a join tenants ta on ta.id = a.tenant_id
-   where a.identity_id = ${identite} and a.role = 'admin' and a.disabled_at is null and ta.second_facteur_admins)`;
+   where a.identity_id = ${identite} and ${roleAdminEffectifSql('a')} and a.disabled_at is null and ta.second_facteur_admins)`;

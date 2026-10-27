@@ -74,7 +74,8 @@ export const OUTILS_OFFRE: OutilMcp[] = [
       + 'EXCLUDING TAX, the tax calculated by Stripe from the country and VAT number entered there). The plan switches '
       + 'once Stripe has confirmed it (get_plan). A workspace that never had Pro starts with a 14-day free trial '
       + '(essai_jours): the card is entered on that page, nothing is charged before the trial ends, and the plan switches at '
-      + 'once; get_plan then tells when the trial ends. A workspace already on Pro gets its Stripe portal instead (portail: true); '
+      + 'once; get_plan then tells when the trial ends. A Business or Entreprise workspace is refused: its plan is set by '
+      + 'Messaging Me, not paid online. A workspace already on Pro gets its Stripe portal instead (portail: true); '
       + 'an Entreprise workspace is refused. ' + LOURDE,
     // Monde ouvert : elle crée une session chez Stripe. Non idempotente : une session de plus à chaque appel.
     annotations: ecriture('Open the Pro plan payment', false, true),

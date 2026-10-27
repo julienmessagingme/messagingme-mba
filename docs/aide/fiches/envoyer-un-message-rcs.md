@@ -7,6 +7,7 @@ publique: oui
 rubrique: parler-aux-clients
 rang: 9
 captures: non
+offre: entreprise
 ---
 # Envoyer un message RCS
 

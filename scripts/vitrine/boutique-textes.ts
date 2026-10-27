@@ -115,7 +115,7 @@ const fr = (): TexteBoutique => {
     },
     {
       titre: `Pro, ${euros(PRIX_PRO_HT_CENTIMES.mois, 'fr')} HT par mois`,
-      plus: ['La console complète : l’Inbox de l’équipe, les campagnes, la carte de votre boutique.', 'Un numéro fourni, inclus.', `${ESSAI_PRO_JOURS}&nbsp;jours d’essai la première fois, carte demandée.`],
+      plus: ['La console : l’Inbox de l’équipe, les campagnes, la carte de votre boutique.', 'Un numéro fourni, inclus.', `${ESSAI_PRO_JOURS}&nbsp;jours d’essai la première fois, carte demandée.`],
       moins: ['Un numéro API, donc un compte Meta Business, que la fenêtre de Meta vous fait créer en chemin.'],
     },
   ];
@@ -318,7 +318,7 @@ const fr = (): TexteBoutique => {
         {
           nom: 'Pro', prix: euros(PRIX_PRO_HT_CENTIMES.mois, 'fr'), detail: `HT par mois, essai gratuit de ${ESSAI_PRO_JOURS}&nbsp;jours, carte demandée`,
           liste: [
-            'La console complète, la carte de votre boutique comprise',
+            'La console, la carte de votre boutique comprise',
             `Envois illimités, ${milliers(limite('pro', 'contacts'), 'fr')} contacts créés et les contacts entrants illimités`,
             'Un numéro fourni, inclus',
             'Les campagnes et l’Inbox de l’équipe',
@@ -356,7 +356,7 @@ const en = (): TexteBoutique => {
     },
     {
       titre: `Pro, ${euros(PRIX_PRO_HT_CENTIMES.mois, 'en')} excl. VAT a month`,
-      plus: ['The full console: the team Inbox, campaigns, your store’s card.', 'A provided number, included.', `A ${ESSAI_PRO_JOURS}-day trial the first time, card required.`],
+      plus: ['The console: the team Inbox, campaigns, your store’s card.', 'A provided number, included.', `A ${ESSAI_PRO_JOURS}-day trial the first time, card required.`],
       moins: ['An API number, so a Meta Business account, which Meta’s window has you create along the way.'],
     },
   ];
@@ -557,7 +557,7 @@ const en = (): TexteBoutique => {
         {
           nom: 'Pro', prix: euros(PRIX_PRO_HT_CENTIMES.mois, 'en'), detail: `excl. VAT a month, ${ESSAI_PRO_JOURS}-day free trial, card required`,
           liste: [
-            'The full console, your store’s card included',
+            'The console, your store’s card included',
             `Unlimited sends, ${milliers(limite('pro', 'contacts'), 'en')} contacts created and unlimited inbound contacts`,
             'A provided number, included',
             'Campaigns and the team Inbox',

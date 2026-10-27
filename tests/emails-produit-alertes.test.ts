@@ -187,7 +187,7 @@ describe('les limites de la Free et du Pro', () => {
     expect(limitesAlertables('entreprise', limites)).toEqual({ modelesMois: null, contacts: null, offre: null });
   });
 
-  it('🔴 un Pro reçoit l’alerte du Pro, qui renvoie à l’Entreprise ; la Free cite la limite du Pro, lue dans la grille', async () => {
+  it('🔴 un Pro reçoit l’alerte du Pro, qui renvoie au Business (spec Business) ; la Free cite la limite du Pro, lue dans la grille', async () => {
     const { d, e } = banc({ pro: { modelesMois: null, contacts: 5000, crees: 4000, offre: 'pro' }, free: { modelesMois: null, contacts: 100, crees: 100 } });
     await balayerLimites(d);
     expect(e.emissions.map((x) => [x.tenantId, x.cle, x.valeurs.limite])).toEqual([
@@ -199,8 +199,8 @@ describe('les limites de la Free et du Pro', () => {
       const m = modeleDe(cle)!;
       for (const l of ['fr', 'en'] as const) {
         const texte = rendre(m, m.textes[l], { limite: '5000', espace: 'A', lien_offre: 'https://c/offre' }, l);
-        expect(texte.text, cle + l).toMatch(/Entreprise|Enterprise/);
-        expect(texte.text, cle + l).not.toMatch(/Passez en Pro|Upgrade to Pro|offre Free|Free plan/);
+        expect(texte.text, cle + l).toMatch(/Business/);
+        expect(texte.text, cle + l).not.toMatch(/Entreprise|Enterprise|Passez en Pro|Upgrade to Pro|offre Free|Free plan/);
       }
     }
     // La Free ne dit plus que le Pro n'a pas de limite de contacts : il en a une, et l'e-mail la cite.

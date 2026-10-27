@@ -118,7 +118,8 @@ async function monter(page: Page, opts: Options = {}) {
     if (/\/conversations(\?|$)/.test(url)) return json({ conversations: [CONV] });
     if (url.includes('/unread-count')) return json({ count: 0 });
     if (url.includes('/users')) return json({ users: [] });
-    if (url.endsWith('/me')) return json({ email: SESSION.email, name: 'Jean Test', role: 'admin' });
+    // /me rend le rôle de la session testée : la console relit le rôle effectif par /me (spec Business).
+    if (url.endsWith('/me')) return json({ email: SESSION.email, name: 'Jean Test', role: opts.role ?? SESSION.role });
     return json({});
   });
   // Lien profond `?c=c1` : la conversation se rouvre toute seule APRÈS un `reload()`, ce qu'un clic ne

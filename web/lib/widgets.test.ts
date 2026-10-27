@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Le socle HTTP est remplacé : ce module n'en a besoin que pour ses appels, que ces tests n'exercent pas.
 vi.mock('./http', () => ({ request: () => Promise.resolve({}) }));
 
-import { CLES_DE_SAISIE, ecartsDeSaisie, saisieDuWidget, type Widget } from './widgets';
+import { CLES_DE_SAISIE, ecartsDeSaisie, saisieDuWidget, sansApparence, type Widget } from './widgets';
 
 /**
  * Ce que le formulaire envoie à la modification : l'ÉCART, et rien d'autre. C'est ce qui laisse modifier la couleur
@@ -42,5 +42,20 @@ describe('ecartsDeSaisie', () => {
 describe('saisieDuWidget', () => {
   it('le devenir « agent » (refusé par le serveur, absent de l’écran) ne se saisit pas : le formulaire part du réglage de l’espace', () => {
     expect(saisieDuWidget({ ...WIDGET, devenir: 'agent' }).devenir).toBeNull();
+  });
+});
+
+/** Relecture de B, rouge 1 : hors offre, l’apparence ne part jamais, pour qu’aucune API ne puisse l’écrire à la place du client. */
+describe('sansApparence', () => {
+  it('🔴 hors offre : ni couleur, ni position, ni libellé, ni avatar dans ce qui part ; le reste part tel quel', () => {
+    const saisie = { ...saisieDuWidget(WIDGET), nom: 'Nouveau', couleur: '#25d366' };
+    const envoye = sansApparence(saisie, false);
+    for (const cle of ['couleur', 'position', 'libelle', 'avatarUrl']) expect(envoye, cle).not.toHaveProperty(cle);
+    expect(envoye).toMatchObject({ nom: 'Nouveau', phrase: 'Je viens du blog', actif: true });
+  });
+
+  it('dans l’offre : tout part', () => {
+    const saisie = saisieDuWidget(WIDGET);
+    expect(sansApparence(saisie, true)).toEqual(saisie);
   });
 });

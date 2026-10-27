@@ -338,6 +338,13 @@ async function analysesOuRien(deps: DepsMcp, tenantId: string, ids: string[]): P
 }
 
 /**
+ * L'apparence d'une bulle suit l'offre (spec Business, `widget_personnalise`) : dite au modèle sur chacun des quatre champs,
+ * pour qu'il ne propose pas une couleur que le serveur refuserait en Free ou en Pro.
+ */
+const APPARENCE_BUSINESS = 'Customisable on the Business and Enterprise plans; on Free and Pro, only the default is '
+  + 'accepted and the bubble keeps the standard look.';
+
+/**
  * Les champs d'un widget, tels que `create_widget` et `update_widget` les annoncent. Les mêmes NOMS que la route de
  * la console, parce que la saisie passe telle quelle à la gestion, qui refuse une clé qu'elle ne connaît pas ; et les
  * mêmes BORNES, lues dans `src/widgets/gestion.ts`, jamais recopiées. `satisfies` sur `ChampWidget` : un champ ajouté
@@ -371,19 +378,19 @@ const CHAMPS_WIDGET = {
   },
   couleur: {
     type: 'string', pattern: MOTIF_COULEUR,
-    description: 'The bubble color, six hexadecimal digits (default #25d366, the WhatsApp green).',
+    description: `The bubble color, six hexadecimal digits (default #25d366, the WhatsApp green). ${APPARENCE_BUSINESS}`,
   },
   position: {
     type: 'string', enum: [...POSITIONS_WIDGET],
-    description: 'The screen corner where the bubble sits (default bas_droite).',
+    description: `The screen corner where the bubble sits (default bas_droite). ${APPARENCE_BUSINESS}`,
   },
   libelle: {
     type: ['string', 'null'], maxLength: MAX_LIBELLE_WIDGET,
-    description: 'A short text shown next to the bubble, or null for none.',
+    description: `A short text shown next to the bubble, or null for none. ${APPARENCE_BUSINESS}`,
   },
   avatarUrl: {
     type: ['string', 'null'], maxLength: MAX_AVATAR_URL, pattern: `^${DEBUT_AVATAR}`,
-    description: 'The https:// address of an image shown in the bubble, or null for none.',
+    description: `The https:// address of an image shown in the bubble, or null for none. ${APPARENCE_BUSINESS}`,
   },
   actif: {
     type: 'boolean',
@@ -1063,17 +1070,20 @@ export const OUTILS: OutilMcp[] = [
     ...ficheOutilMcp('get_plan'),
     fonction: null,
     description:
-      'The workspace plan (free, pro or entreprise): the features it includes, its limits (null = no limit) and what '
-      + 'is used of them (contacts, automations on, members, templates sent this month), plus the upgradeUrl '
-      + 'link to the Pro plan, and the Pro trial (essai: whether the 14-day trial is possible, and the end of a running one). '
+      'The workspace plan (free, pro, business or entreprise): the features it includes, its limits (null = no limit) and '
+      + 'what is used of them (contacts, automations on, members, templates sent this month), plus the upgradeUrl '
+      + 'link to the plans page, and the Pro trial (essai: whether the 14-day trial is possible, and the end of a running one). '
+      + 'grille gives the four plans side by side. Pro is paid online (subscribe_pro); Business and Entreprise are set up by '
+      + 'Messaging Me on request (the Support page of the console), never paid through Claude. '
       + 'contactsToutesOrigines tells what the contact limit counts: in Free every contact counts, including those who wrote '
       + 'first, and a full Free workspace does not let a new customer in (their message is not recorded, the admins get an '
-      + 'email); in Pro and Entreprise only the contacts created count, and a customer who writes is never refused. '
+      + 'email); in Pro, Business and Entreprise only the contacts created count, and a customer who writes is never refused. '
       + 'contactsEnTrop is how many counted contacts are above the limit (0 within it): as long as it is above 0, no '
       + 'contact can be created or imported; deleting that many (prepare_contacts_deletion, then delete_contacts) brings '
       + 'the workspace back within its limit, and in Free these deletions are not capped per day meanwhile. '
       + 'A Pro includes 3 users; sieges gives the extra users it pays for and prixSiege the price of one more, offered to the '
-      + 'admin when an invitation goes beyond (in the console). '
+      + 'admin when an invitation goes beyond (in the console). A Business includes 5 users; one more is asked from the '
+      + 'Support (prixBusiness). In Pro every member is an administrator; roles exist from Business up. '
       + 'abonnement describes the Pro subscription, running or the last ended one (null if the workspace never had Pro): '
       + 'statut is termine, en_retard (a payment failed: the card must be updated, even if an end is set), '
       + 'resiliation_programmee (cancelled: Pro stays open until finPrevueLe, then the workspace goes back to Free), essai '

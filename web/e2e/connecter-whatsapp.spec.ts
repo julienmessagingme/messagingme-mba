@@ -130,7 +130,7 @@ test('🔴 en Pro (lot 6, B2b) : le numéro est inclus, « Obtenir mon numéro �
   await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
   const etat = await simulerNumeroFourni(page, { abonnement: null, inclusDansLePro: true });
   await page.goto('/connecter-whatsapp');
-  await expect(page.getByTestId('choix-fourni')).toContainText('Inclus dans votre Pro');
+  await expect(page.getByTestId('choix-fourni')).toContainText('Inclus dans votre offre');
   await page.getByTestId('choix-fourni').click();
   await expect(page.getByTestId('numero-inclus')).toBeVisible();
   await expect(page.getByTestId('payer-numero')).toHaveCount(0);

@@ -247,6 +247,15 @@ lire `select count(*) from shopify_messages where texte is not null` ; s'il y en
 (`update shopify_messages set actif = false where texte is not null`, puis le dire aux espaces concernés). La file
 `application_premiers_messages` n'a pas besoin d'être vidée : une image ancienne ne la lit pas, ses lignes attendent.
 
+## ⚠️ Retour arrière d'une image d'avant le Business (migration 0257, `b10f981c`, spec 2026-10-27-offre-business)
+
+Une image d'avant le sous-lot A ne connaît pas l'offre `business` : elle la lit comme la Free (`OFFRES`, `estOffre`),
+donc un espace en Business y perd la console, prend les quotas de la Free et refuse les contacts inconnus au-delà de
+100 (des messages entrants perdus). Avant de revenir en arrière, lire `select id from tenants where offre_business` ;
+s'il y en a, les sortir d'abord du Business (une Entreprise provisoire posée dans `/ops`, qui garde la console et les
+contacts), puis le dire aux espaces concernés. La migration elle-même n'a rien à défaire : elle n'ajoute que des
+colonnes et relâche un CHECK, l'ancien code y survit.
+
 ## ⚠️ Le rechargement nginx n'est plus nécessaire depuis le 2026-10-03, mais s'il sert, il vient APRÈS le `healthy`
 
 Les routes de `mba.` et d'`api.` nomment `mba-api` par une variable, que nginx relit seul (résolveur de Docker,

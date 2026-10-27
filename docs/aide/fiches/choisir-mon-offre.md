@@ -1,8 +1,8 @@
 ---
-description: Free, Pro ou Entreprise : ce que chaque offre de Messaging Me ouvre, ses limites, et comment passer en Pro ou gérer l'abonnement.
+description: Free, Pro, Business ou Entreprise : ce que chaque offre de Messaging Me ouvre, ses limites, et comment changer d'offre ou gérer l'abonnement.
 ecran: offre
 source_section: Offres (menu « Paramètres » > Offre)
-source_empreinte: f5789c
+source_empreinte: d8e810
 publique: oui
 rubrique: demarrer
 rang: 1
@@ -11,12 +11,13 @@ offre: non
 ---
 # Choisir mon offre
 
-Votre espace a une offre : **Free** (gratuite), **Pro** (un abonnement, au mois ou à l'année) ou **Entreprise**
-(sur devis). Elle décide des fonctions ouvertes, et des limites de ce que vous pouvez créer ou envoyer.
+Votre espace a une offre : **Free** (gratuite), **Pro** (un abonnement, au mois ou à l'année), **Business** (au
+mois, posé par nos soins) ou **Entreprise** (sur devis). Elle décide des fonctions ouvertes, et des limites de ce que
+vous pouvez créer ou envoyer.
 
 **1. Voir où vous en êtes.** Le menu Paramètres > Offre montre votre offre, ce que votre espace consomme de chaque
-limite (contacts, modèles envoyés ce mois-ci, automations allumées, utilisateurs), et la grille des trois offres côte
-à côte. En Pro et en Entreprise, son second onglet, Crédit IA, recharge le crédit prépayé de vos agents IA.
+limite (contacts, modèles envoyés ce mois-ci, automations allumées, utilisateurs), et la grille des offres côte à
+côte. Hors de la Free, son second onglet, Crédit IA, recharge le crédit prépayé de vos agents IA.
 
 **2. Passer en Pro.** Sur la page Offre, choisissez « Mensuel » ou « Annuel » : vous payez sur la page sécurisée de
 Stripe, où un code promo se saisit, et votre espace passe en Pro dès que le paiement est confirmé, en général dans
@@ -24,7 +25,9 @@ la minute.
 
 Si votre espace n'a jamais eu le Pro, il commence par un essai gratuit de 14 jours : la carte est demandée, rien
 n'est prélevé avant la fin de l'essai, et la page Offre dit la date de fin. Si ces boutons n'apparaissent pas,
-« Passer en Pro » ouvre le Support avec le sujet déjà rempli. L'offre Entreprise se demande au Support.
+« Passer en Pro » ouvre le Support avec le sujet déjà rempli. Le Business et l'Entreprise se demandent au Support,
+par « Nous contacter » sur la page Offre : nous posons l'offre sur votre espace, sans paiement en ligne, et un essai de
+14 jours du Business est possible sur demande.
 
 **3. Suivre et résilier mon abonnement.** En Pro, la carte « Votre abonnement », en tête de la page Offre, dit son
 statut (actif, essai gratuit, paiement en retard ou résiliation programmée), sa formule et son prix, sa date de
@@ -46,19 +49,21 @@ contacts, modèles envoyés chaque mois, un seul utilisateur. Claude et l'API li
 répondent à vos clients dans les 24 heures, envoient vos modèles et construisent votre agent IA. Dans la console,
 la Free garde l'accueil (votre numéro), les clés d'API, la documentation, l'offre, votre compte et le support.
 
-**Ce que le Pro et l'Entreprise ajoutent.** Le Pro ouvre la console complète : l'Inbox, les scénarios, les
-statistiques, l'agent de Meta, les assistants et l'e-mail, avec plus de contacts. Il compte trois utilisateurs :
-au-delà, chaque utilisateur en plus se paie, et son prix s'affiche quand vous invitez le membre, avant que rien ne
-soit facturé. La page Offre en retire un, sans remboursement, une fois le membre en trop désactivé. L'analyse des
-conversations, les publicités, les chaînes, le RCS, les connecteurs CRM et le Performance Lab complet demandent
-l'Entreprise.
+**Ce que le Pro, le Business et l'Entreprise ajoutent.** Le Pro ouvre la console : l'Inbox, les scénarios, les
+statistiques et l'e-mail, avec plus de contacts. Il compte trois utilisateurs, tous administrateurs : au-delà, chaque
+utilisateur en plus se paie, et son prix s'affiche quand vous invitez le membre, avant que rien ne soit facturé. La
+page Offre en retire un, sans remboursement, une fois le membre en trop désactivé. Le Business ajoute le Meta Business
+Agent, les assistants de configuration, l'assistant d'aide, le widget personnalisable et les rôles de l'équipe
+(administrateur, manager, agent), avec cinq utilisateurs, l'accompagnement de la mise en route et le support
+prioritaire ; un utilisateur de plus s'y demande au Support. Les publicités, les chaînes, le RCS, Salesforce et Batch,
+et le Performance Lab complet demandent l'Entreprise.
 
 **Ce que compte la limite de contacts.** En Free, tous vos contacts comptent, ceux qui vous écrivent les premiers
 compris. Quand votre espace Free est plein, créer ou importer un contact est refusé, et un nouveau client qui vous
 écrit n'entre pas dans Messaging Me : son message n'est pas enregistré et votre agent IA ne lui répond pas. Un e-mail
 vous prévient, une fois par jour au plus. Vos contacts déjà présents vous écrivent comme avant, et un contact supprimé
-libère sa place : demandez à Claude de supprimer ceux dont vous n'avez plus besoin. En Pro et en Entreprise, un contact
-qui vous écrit le premier n'est jamais compté ni refusé.
+libère sa place : demandez à Claude de supprimer ceux dont vous n'avez plus besoin. Hors de la Free, un contact qui
+vous écrit le premier n'est jamais compté ni refusé.
 
 **Ce qui n'est jamais compté.** Une réponse envoyée dans les 24 heures qui suivent un message du client n'est pas un
 envoi de modèle : elle n'est pas comptée.
@@ -67,11 +72,10 @@ envoi de modèle : elle n'est pas comptée.
 la page Offre. Si une action est refusée parce qu'une limite est atteinte, un message vous le dit, avec un bouton
 « Voir les offres ».
 
-**Ce que l'offre change aux coûts.** Notre commission sur le crédit IA est de 100 % en Free (10 € de crédit y paient
-5 € de consommation des modèles), de 20 % en Pro et de 10 % en Entreprise. L'analyse des conversations ne tourne qu'en Entreprise : quand votre espace y passe, une
-conversation est analysée au premier nouveau message (le passé n'est pas rattrapé). En Free, les conversations se
-gardent 30 jours, mais seulement 30 jours après l'entrée en Free : à la création de l'espace, à la fin de votre Pro
-ou au départ de l'Entreprise.
+**Combien de temps vos conversations sont gardées.** 30 jours en Free, 60 jours en Pro, 90 jours en Business ; en
+Entreprise, la durée réglée avec vous. Une durée plus courte ne s'applique que 30 jours après l'entrée dans l'offre (à
+la création de l'espace, à la fin de votre Pro, au départ du Business ou de l'Entreprise) : changer d'offre n'efface
+rien sur le coup.
 
 ## Si votre espace revient en Free
 
@@ -89,7 +93,7 @@ espace dépasse sa limite, ces suppressions ne sont pas limitées par jour.
 
 ## Votre numéro fourni
 
-Il est inclus dans le Pro : obtenez-le sans payer depuis la page « Connecter WhatsApp ». S'il était déjà payé à
+Il est inclus dans le Pro, le Business et l'Entreprise : obtenez-le sans payer depuis la page « Connecter WhatsApp ». S'il était déjà payé à
 part, cet abonnement s'arrête au premier paiement du Pro, avec un avoir sur la facture suivante. Si vous résiliez
 le Pro, la page Offre et un e-mail vous préviennent : à la fin du Pro, le numéro passe à 3,50 € HT par mois sur la
 même carte. Pour le rendre à la place, choisissez « Rendre mon numéro à la fin du Pro » sur la page Offre ; vous

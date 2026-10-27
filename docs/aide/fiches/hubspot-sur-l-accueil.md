@@ -7,6 +7,7 @@ publique: oui
 rubrique: demarrer
 rang: 6
 captures: non
+offre: entreprise
 ---
 # HubSpot sur l'Accueil : le brancher, le suivre, le couper
 

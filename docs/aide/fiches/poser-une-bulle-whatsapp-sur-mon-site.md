@@ -19,7 +19,8 @@ ordinateur, elle montre un QR code à scanner.
 
 **Créer le widget.** Donnez-lui un nom (pour vous y retrouver, le visiteur ne le voit pas), le message
 pré-rempli, qui répond, et son apparence : une couleur, un des quatre coins de l'écran, un libellé court et un
-avatar si vous le souhaitez. Un aperçu montre la bulle telle qu'elle apparaîtra. Pour le visiteur, la bulle parle
+avatar si vous le souhaitez (l'apparence se personnalise en Business et en Entreprise ; ailleurs, la bulle garde
+l'apparence standard de WhatsApp). Un aperçu montre la bulle telle qu'elle apparaîtra. Pour le visiteur, la bulle parle
 la langue de son navigateur, le français ou l'anglais ; votre libellé reste tel que vous l'avez écrit. Puis copiez la balise et collez-la
 sur chaque page où la bulle doit apparaître. Si notre service ne répond pas, la bulle n'apparaît simplement pas :
 votre page n'est jamais ralentie.

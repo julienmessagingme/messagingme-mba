@@ -143,6 +143,18 @@ describe('porte de sortie Resend', () => {
 });
 
 describe('routes support', () => {
+  it('🔴 spec Business : la demande d’un espace Business part marquée prioritaire ; ailleurs, ou si l’offre est illisible, telle quelle', async () => {
+    const captures: Array<{ subject: string }> = [];
+    for (const [prioritaire, attendu] of [[async () => true, '[Prioritaire, Business] Bug'], [async () => false, 'Bug'],
+      [async () => { throw new Error('offre illisible'); }, 'Bug']] as const) {
+      const a = app({ sendSupport: async (i) => { captures.push(i); }, prioritaire });
+      const res = await a.inject({ method: 'POST', url: '/tenants/t1/support', ...h(token), payload: { subject: 'Bug', message: 'ça casse' } });
+      expect(res.statusCode).toBe(200);
+      expect(captures.at(-1)!.subject).toBe(attendu);
+      await a.close();
+    }
+  });
+
   it('POST valide -> 200, reply-to résolu EN BASE depuis le compte authentifié', async () => {
     let captured: unknown = null;
     const a = app({

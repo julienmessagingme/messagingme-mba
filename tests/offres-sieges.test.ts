@@ -46,6 +46,8 @@ describe('🔴 l’invitation au-delà des sièges : refusée AVEC le prix', () 
     expect(corps.error).toMatch(/Ajoutez un utilisateur/);
     expect(corps.error).toMatch(/15 € HT par mois/);
     expect(corps.error).not.toMatch(/Passez en Pro/);
+    // Spec Business : l'offre suivante du Pro est le Business.
+    expect(corps.error).toMatch(/ou passez en Business/);
   });
 
   it('un Pro annuel avec un siège, à 4 sur 4 : le siège annuel, 150 € HT par an, le deuxième', async () => {
@@ -58,12 +60,23 @@ describe('🔴 l’invitation au-delà des sièges : refusée AVEC le prix', () 
     expect(corps.error).not.toMatch(/Contactez-nous/);
   });
 
-  it('les sièges pas en vente : le Pro lit « passez en Entreprise », sans prix ni siège', async () => {
+  it('les sièges pas en vente : le Pro lit « passez en Business » (spec Business), sans prix ni siège', async () => {
     const limites = { utilisateurs: 3, admins: 2, offre: 'pro' as const, siege: null };
     const err = await verifierPlaceMembre(compte(3, 1), 't1', limites, 'agent', null).catch((e: unknown) => e);
     const corps = corpsRefusLimite(err as LimiteOffreError);
     expect(corps).not.toHaveProperty('siege');
-    expect(corps.error).toMatch(/Passez en Entreprise/);
+    expect(corps.error).toMatch(/Passez en Business/);
+  });
+
+  it('🔴 spec Business : un Business à sa limite demande un utilisateur de plus (10 € HT par mois) au Support, ou passe en Entreprise ; aucun siège Stripe', async () => {
+    for (const max of [5, 7]) {
+      const limites = { utilisateurs: max, admins: null, offre: 'business' as const, siege: null };
+      const err = await verifierPlaceMembre(compte(max, 1), 't1', limites, 'agent', null).catch((e: unknown) => e);
+      const corps = corpsRefusLimite(err as LimiteOffreError);
+      expect(corps).not.toHaveProperty('siege');
+      expect(corps.error, String(max)).toMatch(/Demandez un utilisateur de plus \(10 € HT par mois\) depuis le Support, ou passez en Entreprise/);
+      expect(corps.error).not.toMatch(/Contactez-nous/);
+    }
   });
 
   it('🔴 un administrateur de trop, utilisateurs pleins aussi : refusé sur les ADMINISTRATEURS, sans siège (payer ne le ferait pas passer)', async () => {

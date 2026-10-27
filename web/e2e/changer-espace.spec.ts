@@ -42,7 +42,8 @@ async function monter(page: Page, session: Record<string, unknown>, espaces: (te
       const nom = CONVERSATION_DE[tenant] ?? '';
       return json({ conversations: [{ id: `c-${tenant}`, waId: '33600000001', profileName: nom, lastPreview: 'bonjour', lastMessageAt: '2026-10-06T10:00:00Z', controlOwner: 'app_human', unread: false, curseur: '2026-10-06T10:00:00Z' }] });
     }
-    if (chemin.endsWith('/me')) return json({ email: EMAIL, name: 'Julien', role: session.role });
+    // Le rôle de l'espace demandé, comme le serveur : la console relit le rôle effectif par /me (spec Business).
+    if (chemin.endsWith('/me')) return json({ email: EMAIL, name: 'Julien', role: tenant === session.tenantId ? session.role : (DEUX(tenant).find((e) => e.tenantId === tenant)?.role ?? session.role) });
     return json({});
   });
   return appels;

@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CARTE_CONSOLE } from '../../src/aide/carte-console';
-import { RUBRIQUES } from '../../src/aide/fiches';
+import { RUBRIQUES, type OffreFiche } from '../../src/aide/fiches';
 import { structureFiche, type BlocFiche } from '../../src/aide/structure';
 import { ESSAI_PRO_JOURS } from '../../src/offres/offres';
 import { DEPOT_PLUGIN } from '../../web/lib/demarrer';
@@ -41,8 +41,11 @@ const T = {
     recherche: 'Rechercher dans l’aide',
     detail: 'En détail',
     bonASavoir: 'Bon à savoir',
-    offre: `Avec l’offre Pro, ou pendant l’essai Pro de ${ESSAI_PRO_JOURS} jours.`,
-    offreClaude: `Gratuit depuis Claude Code, avec l’offre Free. Dans la console, avec l’offre Pro ou pendant l’essai Pro de ${ESSAI_PRO_JOURS} jours.`,
+    // L'offre minimale de la fiche (spec Business) : le Pro s'essaie en ligne, le Business sur demande, l'Entreprise sur devis.
+    offre: (o: OffreFiche) => (o === 'pro' ? `Avec l’offre Pro, ou pendant l’essai Pro de ${ESSAI_PRO_JOURS} jours.`
+      : o === 'business' ? 'Avec l’offre Business, essayable sur demande.' : 'Avec l’offre Entreprise.'),
+    offreClaude: (o: OffreFiche) => `Gratuit depuis Claude Code, avec l’offre Free. Dans la console, ${o === 'pro'
+      ? `avec l’offre Pro ou pendant l’essai Pro de ${ESSAI_PRO_JOURS} jours.` : o === 'business' ? 'avec l’offre Business.' : 'avec l’offre Entreprise.'}`,
     claudeCode: 'Le faire depuis Claude Code, gratuitement',
     ouvrir: (ecran: string) => `Ouvrir « ${ecran} » dans la console`,
     ouvrirConsole: 'Ouvrir la console',
@@ -76,8 +79,10 @@ const T = {
     recherche: 'Search the help',
     detail: 'In detail',
     bonASavoir: 'Good to know',
-    offre: `With the Pro plan, or during the ${ESSAI_PRO_JOURS}-day Pro trial.`,
-    offreClaude: `Free from Claude Code, with the Free plan. In the console, with the Pro plan or during the ${ESSAI_PRO_JOURS}-day Pro trial.`,
+    offre: (o: OffreFiche) => (o === 'pro' ? `With the Pro plan, or during the ${ESSAI_PRO_JOURS}-day Pro trial.`
+      : o === 'business' ? 'With the Business plan, trial on request.' : 'With the Enterprise plan.'),
+    offreClaude: (o: OffreFiche) => `Free from Claude Code, with the Free plan. In the console, ${o === 'pro'
+      ? `with the Pro plan or during the ${ESSAI_PRO_JOURS}-day Pro trial.` : o === 'business' ? 'with the Business plan.' : 'with the Enterprise plan.'}`,
     claudeCode: 'Do it from Claude Code, for free',
     ouvrir: (ecran: string) => `Open “${ecran}” in the console`,
     ouvrirConsole: 'Open the console',
@@ -230,7 +235,7 @@ function pageAide(pages: PageAide[], p: PageAide, langue: Langue): { chemin: str
     `    <p class="aide-fil"><a href="${ACCUEIL_AIDE[langue]}">${T[langue].aide}</a> › <a href="${ACCUEIL_AIDE[langue]}#${p.publication.rubrique}">${rubrique}</a> › ${texte(v.titre, langue)}</p>`,
     `    <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg>${T[langue].aide}</span> ${texte(v.titre, langue)}</h1>`,
     `    <p class="chapeau">${enLigne(s.chapeau, langue)}</p>`,
-    ...(p.publication.offre ? [`    <p class="aide-offre">${texte(p.publication.claudeCode ? T[langue].offreClaude : T[langue].offre, langue)}</p>`] : []),
+    ...(p.publication.offre ? [`    <p class="aide-offre">${texte(p.publication.claudeCode ? T[langue].offreClaude(p.publication.offre) : T[langue].offre(p.publication.offre), langue)}</p>`] : []),
     '    <div class="appels">',
     // Un geste qui se fait aussi depuis Claude Code mène d'abord au plugin, gratuit ; la console vient en second.
     ...(p.publication.claudeCode
@@ -385,7 +390,7 @@ function accueilAide(pages: PageAide[], langue: Langue): { chemin: string; conte
     // « tout en Free » alors que les outils de campagne sont fermés en Free ; `tests/vitrine-aide.test.ts` tient les deux).
     '        <ul class="aide-cartes">',
     ...PAGES_CLAUDE.map((p) => carte(p.adresse[langue], texte(p.titre[langue], langue), enLigne(p.chapeau[langue], langue),
-      p.offrePro ? `<small class="aide-carte-offre">${langue === 'fr' ? insecables(T.fr.offre) : T.en.offre}</small>` : '',
+      p.offrePro ? `<small class="aide-carte-offre">${langue === 'fr' ? insecables(T.fr.offre('pro')) : T.en.offre('pro')}</small>` : '',
       motsDeRecherche(`${p.titre[langue]} ${p.chapeau[langue]} ${p.etapes.map((e) => e.titre[langue]).join(' ')}`),
       p.etapes.map((e, n) => ({ numero: n + 1, titre: enLigne(e.titre[langue], langue) })), langue)),
     '        </ul>',
@@ -478,7 +483,7 @@ function pageClaude(p: PageClaude, langue: Langue): { chemin: string; contenu: s
     `    <p class="aide-fil"><a href="${DEVELOPPEURS[langue]}">${TC[langue].developpeurs}</a> › ${texte(p.titre[langue], langue)}</p>`,
     `    <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-code"/></svg>${TC[langue].surtitre}</span> ${texte(p.titre[langue], langue)}</h1>`,
     `    <p class="chapeau">${enLigne(p.chapeau[langue], langue)}</p>`,
-    ...(p.offrePro ? [`    <p class="aide-offre">${langue === 'fr' ? insecables(T.fr.offre) : T.en.offre}</p>`] : []),
+    ...(p.offrePro ? [`    <p class="aide-offre">${langue === 'fr' ? insecables(T.fr.offre('pro')) : T.en.offre('pro')}</p>`] : []),
     '    <div class="appels">',
     `      <a class="bouton bouton-plein" href="${DEPOT_PLUGIN}">${TC[langue].plugin}</a>`,
     '    </div>',

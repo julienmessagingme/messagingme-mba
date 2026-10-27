@@ -2,8 +2,8 @@
 
 import Link from 'next/link';
 import { Icone } from './Icone';
-import { useT } from '@/lib/i18n';
-import { phraseInclusDans, type FonctionOffre, type VueOffre } from '@/lib/offre';
+import { useLocale, useT } from '@/lib/i18n';
+import { TUTORIEL_DE_LA_FONCTION, phraseInclusDans, type FonctionOffre, type VueOffre } from '@/lib/offre';
 
 /**
  * LA LIGNE D'UNE FONCTION QUE L'OFFRE N'OUVRE PAS (lot 6), dans un écran ouvert : « Inclus dans l'offre Pro. Voir les
@@ -12,11 +12,18 @@ import { phraseInclusDans, type FonctionOffre, type VueOffre } from '@/lib/offre
  */
 export function HorsOffre({ fonction, vue, className = '' }: { fonction: FonctionOffre; vue: VueOffre; className?: string }) {
   const t = useT();
+  const { locale } = useLocale();
+  const tutoriel = TUTORIEL_DE_LA_FONCTION[fonction];
   return (
     <p className={`flex flex-wrap items-center gap-1.5 text-sm text-ink-500 ${className}`} data-testid={`hors-offre-${fonction}`}>
       <Icone nom="cadenas" taille="petite" className="text-ink-400" />
       <span>{phraseInclusDans(vue, fonction, t)}</span>
       <Link href={`/offre?fonction=${fonction}`} className="font-medium text-brand-600 hover:underline">{t('Voir les offres', 'See plans')}</Link>
+      {tutoriel && (
+        <a href={locale === 'en' ? tutoriel.en : tutoriel.fr} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:underline" data-testid={`hors-offre-tutoriel-${fonction}`}>
+          {t('Le faire pas à pas', 'Do it step by step')}
+        </a>
+      )}
     </p>
   );
 }

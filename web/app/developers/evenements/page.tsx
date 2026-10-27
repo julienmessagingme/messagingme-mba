@@ -147,7 +147,7 @@ function WebhooksSortants({ session }: { session: Session }) {
               `Votre offre permet ${liste!.limite} adresse${liste!.limite! > 1 ? 's' : ''} active${liste!.limite! > 1 ? 's' : ''} : mettez-en une en pause, ou `,
               `Your plan allows ${liste!.limite} active address${liste!.limite! > 1 ? 'es' : ''}: pause one, or `,
             )}
-            <Link href="/offre" className="font-medium text-brand-600 underline underline-offset-2">{t('passez en Pro', 'upgrade to Pro')}</Link>.
+            <Link href="/offre" className="font-medium text-brand-600 underline underline-offset-2">{t('changez d’offre', 'change plan')}</Link>.
           </p>
         )}
       </div>

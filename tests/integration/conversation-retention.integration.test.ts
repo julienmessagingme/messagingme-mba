@@ -238,6 +238,30 @@ describe.skipIf(!url)('rétention des conversations : la Base (Postgres)', () =>
     expect(await existe(sortiAncien)).toBe(false);
   });
 
+  it('🔴 relecture de B : un Pro qui revient d’une Free en grâce garde ses conversations, puis la grille du Pro s’applique', async () => {
+    // Rouge 2 de la relecture du sous-lot B (2026-10-27) : un premier Pro fini il y a 10 jours (la Free était en grâce, à la
+    // durée de l'instance), un second vivant ; la conversation de 70 jours dépasse les 60 du Pro.
+    const dernier = () => espaces[espaces.length - 1]!;
+    const revenu = await espace('itest-ret-pro-revenu-10', { creeIlYa: 400, proVivant: true });
+    await pool.query(
+      `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, fini_le, fin_raison, statut)
+       values ($1, $2, 'mois', true, now() - interval '10 days', 'resiliation', 'resilie')`,
+      [`sub_itestretrev${espaces.length}`, dernier()],
+    );
+    const ancien = await espace('itest-ret-pro-revenu-40', { creeIlYa: 400, proVivant: true });
+    await pool.query(
+      `insert into abonnements_offre (stripe_subscription_id, tenant_id, periodicite, livemode, fini_le, fin_raison, statut)
+       values ($1, $2, 'mois', true, now() - interval '40 days', 'resiliation', 'resilie')`,
+      [`sub_itestretanc${espaces.length}`, dernier()],
+    );
+    for (const id of [revenu, ancien]) {
+      await pool.query(`update conversations set last_message_at = now() - interval '70 days' where id = $1`, [id]);
+    }
+    await new PgInboxStore(pool).purgeConversationsOlderThan(365, 100_000);
+    expect(await existe(revenu)).toBe(true);
+    expect(await existe(ancien)).toBe(false);
+  });
+
   it('🔴 J5 : en Base après la grâce, un réglage plus COURT que 30 jours reste respecté ; un réglage « jamais » ne protège plus', async () => {
     const court = await espace('itest-ret-base-court', { creeIlYa: 60 });
     const jamais = await espace('itest-ret-base-jamais', { creeIlYa: 60 });

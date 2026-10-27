@@ -15,12 +15,13 @@ import type { Session } from '@/lib/session';
 import { listWorkflows, type WorkflowSummary } from '@/lib/api';
 import { erreurDeChargement, estAnnulation } from '@/lib/http';
 import { useT } from '@/lib/i18n';
+import { useOffre } from '@/lib/use-offre';
 import { cardCls, kickerCls } from '@/lib/ui';
 import {
-  creerWidget, ecartsDeSaisie, listerWidgets, modifierWidget, saisieDuWidget, supprimerWidget,
+  creerWidget, ecartsDeSaisie, listerWidgets, modifierWidget, saisieDuWidget, sansApparence, supprimerWidget,
   type SaisieWidget, type Widget,
 } from '@/lib/widgets';
-import { LIMITE_WIDGETS_PAR_ESPACE } from '@/lib/partage/widgets';
+import { APPARENCE_STANDARD, LIMITE_WIDGETS_PAR_ESPACE } from '@/lib/partage/widgets';
 
 /**
  * Widget WhatsApp : la bulle que le client pose sur son site. Le visiteur clique, WhatsApp s'ouvre avec un message
@@ -45,6 +46,10 @@ function WidgetsInner({ session }: { session: Session }) {
   const [erreur, setErreur] = useState<string | null>(null);
   const [edition, setEdition] = useState<Edition | null>(null);
   const [enCours, setEnCours] = useState(false);
+  // L'apparence suit `widget_personnalise` (spec Business) ; une offre inconnue ou pas encore lue laisse ouvert, le
+  // serveur tranche de toute façon.
+  const vueOffre = useOffre(session.tenantId);
+  const personnalisable = !vueOffre || vueOffre.fonctions.has('widget_personnalise');
 
   const charger = useCallback(async () => {
     setErreur(null);
@@ -71,10 +76,10 @@ function WidgetsInner({ session }: { session: Session }) {
     setErreur(null);
     try {
       if (edition.mode === 'creation') {
-        await creerWidget(session.tenantId, saisie);
+        await creerWidget(session.tenantId, sansApparence(saisie, personnalisable));
       } else {
         // Seul l'écart part : voir `ecartsDeSaisie`. Rien de changé, rien à envoyer.
-        const ecarts = ecartsDeSaisie(saisieDuWidget(edition.widget), saisie);
+        const ecarts = sansApparence(ecartsDeSaisie(saisieDuWidget(edition.widget), saisie), personnalisable);
         if (Object.keys(ecarts).length > 0) await modifierWidget(session.tenantId, edition.widget.id, ecarts);
       }
       setEdition(null);
@@ -136,9 +141,10 @@ function WidgetsInner({ session }: { session: Session }) {
 
       {edition !== null ? (
         <WidgetFormulaire
-          key={edition.mode === 'creation' ? 'creation' : edition.widget.id}
+          key={`${edition.mode === 'creation' ? 'creation' : edition.widget.id}-${personnalisable}`}
           initial={edition.mode === 'creation' ? null : edition.widget}
           scenarios={scenarios}
+          personnalisable={personnalisable}
           enCours={enCours}
           onAnnuler={() => { setEdition(null); setErreur(null); }}
           onEnregistrer={enregistrer}
@@ -175,6 +181,7 @@ function WidgetsInner({ session }: { session: Session }) {
               key={w.id}
               widget={w}
               scenarios={scenarios}
+              personnalisable={personnalisable}
               onModifier={() => { setErreur(null); setEdition({ mode: 'modification', widget: w }); }}
               onBasculer={() => { void basculer(w); }}
               onSupprimer={() => { void supprimer(w); }}
@@ -186,9 +193,11 @@ function WidgetsInner({ session }: { session: Session }) {
   );
 }
 
-function CarteWidget({ widget: w, scenarios, onModifier, onBasculer, onSupprimer }: {
+function CarteWidget({ widget: w, scenarios, personnalisable, onModifier, onBasculer, onSupprimer }: {
   widget: Widget;
   scenarios: WorkflowSummary[];
+  /** L'offre ouvre-t-elle `widget_personnalise` ? Sinon l'aperçu montre l'apparence standard, celle que le site sert. */
+  personnalisable: boolean;
   onModifier: () => void;
   onBasculer: () => void;
   onSupprimer: () => void;
@@ -263,11 +272,12 @@ function CarteWidget({ widget: w, scenarios, onModifier, onBasculer, onSupprimer
           )}
           <QrDuLien lien={w.waMeUrl} />
         </div>
+        {/* Hors offre, la bulle telle que le site la sert : l'apparence standard (spec Business). */}
         <WidgetApercu
-          couleur={w.couleur}
-          position={w.position}
-          libelle={w.libelle}
-          avatarUrl={w.avatarUrl}
+          couleur={personnalisable ? w.couleur : APPARENCE_STANDARD.couleur}
+          position={personnalisable ? w.position : APPARENCE_STANDARD.position}
+          libelle={personnalisable ? w.libelle : APPARENCE_STANDARD.libelle}
+          avatarUrl={personnalisable ? w.avatarUrl : APPARENCE_STANDARD.avatarUrl}
           badge={w.badge}
           grisee={w.waMeUrl === null}
         />

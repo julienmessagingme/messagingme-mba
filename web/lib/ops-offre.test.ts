@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise } from './ops-offre';
+import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise, lireUtilisateursBusiness, retraitCoupeLeNumero } from './ops-offre';
 
 /** Les réglages de devis d'une Entreprise (spec offres v2) : vide = le défaut, sinon un entier dans ses bornes. */
 describe('les contacts et la commission saisis', () => {
@@ -42,5 +42,25 @@ describe('🔴 l’avertissement de purge, irréversible', () => {
     expect(conservationPeutPurger(null, null)).toBe(false);
     expect(conservationPeutPurger(30, 0)).toBe(false);
     expect(conservationPeutPurger(30, 365)).toBe(false);
+  });
+});
+
+/** Le Business posé à la main (spec Business) : sa limite d'utilisateurs, et le retrait qui coupe le numéro fourni. */
+describe('le Business dans /ops', () => {
+  it('utilisateurs : vide = les cinq de la grille, un entier de 1 à 10 000 passe, le reste est refusé', () => {
+    expect(lireUtilisateursBusiness('')).toBeNull();
+    expect(lireUtilisateursBusiness(' 7 ')).toBe(7);
+    for (const s of ['0', '10001', '2.5', 'six']) expect(lireUtilisateursBusiness(s), s).toBe('invalide');
+  });
+
+  it('🔴 le retrait d’une offre posée à la main coupe le numéro fourni quand rien d’autre ne le couvre, et seulement alors', () => {
+    const rien = { entreprise: false, business: false };
+    expect(retraitCoupeLeNumero({ entreprise: false, business: true }, rien, true)).toBe(true);
+    expect(retraitCoupeLeNumero({ entreprise: true, business: false }, rien, true)).toBe(true);
+    // Le Business remplace l'Entreprise : le numéro reste couvert.
+    expect(retraitCoupeLeNumero({ entreprise: true, business: false }, { entreprise: false, business: true }, true)).toBe(false);
+    // Aucun numéro sans couverture, ou rien de posé avant : rien à confirmer.
+    expect(retraitCoupeLeNumero({ entreprise: false, business: true }, rien, false)).toBe(false);
+    expect(retraitCoupeLeNumero(rien, rien, true)).toBe(false);
   });
 });

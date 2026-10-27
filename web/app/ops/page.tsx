@@ -29,6 +29,7 @@ import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
 import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise } from '@/lib/ops-offre';
+import { lireUtilisateursBusiness, retraitCoupeLeNumero } from '@/lib/ops-offre';
 import { OpsEmailsCard } from '@/components/OpsEmailsCard';
 import { MbaTabs } from '@/components/MbaTabs';
 import { OpsSante } from '@/components/OpsSante';
@@ -1468,6 +1469,10 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
   const [changerDevis, setChangerDevis] = useState(false);
   const [contacts, setContacts] = useState('');
   const [commission, setCommission] = useState('');
+  // Le Business (spec Business) : une seule offre posée à la main, exclusive de l'Entreprise.
+  const [business, setBusiness] = useState(false);
+  const [utilisateursBusiness, setUtilisateursBusiness] = useState('');
+  const [retraitConfirme, setRetraitConfirme] = useState(false);
   const [note, setNote] = useState('');
   const [envoi, setEnvoi] = useState(false);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -1482,6 +1487,9 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
     setChangerDevis(false);
     setContacts(r.contacts == null ? '' : String(r.contacts));
     setCommission(r.commissionPct == null ? '' : String(r.commissionPct));
+    setBusiness(r.business === true);
+    setUtilisateursBusiness(r.utilisateursBusiness == null ? '' : String(r.utilisateursBusiness));
+    setRetraitConfirme(false);
   };
 
   useEffect(() => {
@@ -1503,7 +1511,15 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
   const nouvelleCommission = devis ? lireCommissionEntreprise(commission) : undefined;
   const devisValide = nouveauxContacts !== 'invalide' && nouvelleCommission !== 'invalide';
   const noteValide = note.trim().length >= 3;
-  const pret = etat !== null && limiteValide && conservationValide && devisValide && noteValide && !envoi;
+  const nouveauxUtilisateursBusiness = business ? lireUtilisateursBusiness(utilisateursBusiness) : undefined;
+  const businessValide = nouveauxUtilisateursBusiness !== 'invalide';
+  // 🔴 Retirer une offre posée à la main lance la fin d'un numéro fourni que plus rien ne couvre : l'écran le fait confirmer.
+  const coupeLeNumero = etat !== null && retraitCoupeLeNumero(
+    { entreprise: etat.entreprise, business: etat.business === true }, { entreprise, business },
+    etat.alertes?.numeroFourniSansCouverture === true,
+  );
+  const pret = etat !== null && limiteValide && conservationValide && devisValide && businessValide && noteValide
+    && (!coupeLeNumero || retraitConfirme) && !envoi;
 
   async function enregistrer() {
     if (!pret) return;
@@ -1518,13 +1534,24 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
         // `pret` a déjà écarté une saisie invalide (le compilateur le sait).
         ...(nouveauxContacts !== undefined ? { contacts: nouveauxContacts } : {}),
         ...(nouvelleCommission !== undefined ? { commissionPct: nouvelleCommission } : {}),
+        // Le Business ne part que s'il change, sa limite que s'il est coché (absents = inchangés côté serveur).
+        ...(business !== (etat?.business === true) ? { business } : {}),
+        ...(business && nouveauxUtilisateursBusiness !== undefined ? { utilisateursBusiness: nouveauxUtilisateursBusiness } : {}),
         note: note.trim(),
       });
       remplir(r);
       setNote('');
-      setMsg({ kind: 'ok', text: r.entreprise
+      const offre = r.entreprise
         ? t('Espace passé en Entreprise.', 'Workspace moved to Enterprise.')
-        : t('Espace hors Entreprise : il suit son offre en ligne (Base ou Pro).', 'Workspace out of Enterprise: it follows its online plan (Base or Pro).') });
+        : r.business ? t('Espace passé en Business.', 'Workspace moved to Business.')
+          : t('Espace hors Entreprise : il suit son offre en ligne (Free ou Pro).', 'Workspace out of Enterprise: it follows its online plan (Free or Pro).');
+      const g = r.gestes;
+      const suite = [
+        g?.creditOffert ? t(`${(g.creditOffert / 1_000_000).toFixed(2)} € de crédit IA offerts.`, `€${(g.creditOffert / 1_000_000).toFixed(2)} of AI credit offered.`) : '',
+        g?.finDuNumero ? t(`Numéro fourni : ${g.finDuNumero}.`, `Provided number: ${g.finDuNumero}.`) : '',
+        g && g.echecs.length > 0 ? t(`Gestes échoués : ${g.echecs.join(', ')} (journalisés).`, `Failed steps: ${g.echecs.join(', ')} (logged).`) : '',
+      ].filter(Boolean).join(' ');
+      setMsg({ kind: g && g.echecs.length > 0 ? 'err' : 'ok', text: suite ? `${offre} ${suite}` : offre });
     } catch (e) {
       setMsg({ kind: 'err', text: e instanceof Error ? e.message : t('Enregistrement impossible', 'Unable to save') });
     } finally {
@@ -1537,7 +1564,7 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
     : j === 0 ? t('jamais purgées', 'never purged') : t(`${j} jours`, `${j} days`));
 
   return (
-    <Modale titre={t('Offre Entreprise', 'Enterprise plan')} sousTitre={nom} testId="offre-modale" onClose={onFermer}
+    <Modale titre={t('Offre posée à la main', 'Manually set plan')} sousTitre={nom} testId="offre-modale" onClose={onFermer}
       pied={etat ? (
         <Bouton enCours={envoi} disabled={!pret} onClick={() => { void enregistrer(); }} data-testid="offre-enregistrer">
           {t('Enregistrer', 'Save')}
@@ -1554,11 +1581,37 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
             {etat.entreprise
               ? t(`Actuellement en Entreprise, ${etat.utilisateurs === null ? 'sans limite d’utilisateurs' : `${etat.utilisateurs} utilisateurs au plus`}. Conversations : ${conservationLue(etat.conservationJours)}.`,
                 `Currently on Enterprise, ${etat.utilisateurs === null ? 'no user limit' : `${etat.utilisateurs} users at most`}. Conversations: ${conservationLue(etat.conservationJours)}.`)
-              : t(`Actuellement hors Entreprise (offre en ligne). Conversations : ${conservationLue(etat.conservationJours)}.`,
-                `Currently not on Enterprise (online plan). Conversations: ${conservationLue(etat.conservationJours)}.`)}
+              : etat.business
+                ? t(`Actuellement en Business, ${etat.utilisateursBusiness == null ? 'les cinq utilisateurs de la grille' : `${etat.utilisateursBusiness} utilisateurs au plus`}. Conversations : ${conservationLue(etat.conservationJours)}.`,
+                  `Currently on Business, ${etat.utilisateursBusiness == null ? 'the five users of the grid' : `${etat.utilisateursBusiness} users at most`}. Conversations: ${conservationLue(etat.conservationJours)}.`)
+                : t(`Actuellement hors Entreprise (offre en ligne). Conversations : ${conservationLue(etat.conservationJours)}.`,
+                  `Currently not on Enterprise (online plan). Conversations: ${conservationLue(etat.conservationJours)}.`)}
           </p>
           <label className="flex items-center gap-2">
-            <input type="checkbox" checked={entreprise} onChange={(e) => setEntreprise(e.target.checked)} data-testid="offre-entreprise" className="h-4 w-4" />
+            <input type="checkbox" checked={business} onChange={(e) => { setBusiness(e.target.checked); if (e.target.checked) setEntreprise(false); }} data-testid="offre-business" className="h-4 w-4" />
+            <span className="font-medium text-ink-900">{t('Offre Business', 'Business plan')}</span>
+          </label>
+          {business && (
+            <div className="grid gap-2 pl-6">
+              <label className="grid gap-1">
+                <span className="text-xs font-medium text-ink-500">{t('Utilisateurs au plus (vide = les cinq de la grille)', 'Users at most (empty = the five of the grid)')}</span>
+                <input className={`${inputCls} w-32`} inputMode="numeric" value={utilisateursBusiness} onChange={(e) => setUtilisateursBusiness(e.target.value)} data-testid="offre-utilisateurs-business" />
+                {!businessValide && <span className="text-xs text-danger-700">{t('Un entier de 1 à 10 000, ou vide.', 'A whole number from 1 to 10,000, or empty.')}</span>}
+              </label>
+              {etat.business !== true && etat.alertes?.proPayeVivant && (
+                <p className="rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte" data-testid="offre-alerte-pro">
+                  {t('Un Pro payé est encore vivant chez Stripe : résiliez-le dans Stripe, sinon le client paiera deux fois.', 'A paid Pro is still live at Stripe: cancel it in Stripe, or the customer pays twice.')}
+                </p>
+              )}
+              {etat.business !== true && etat.alertes?.numeroSeulVivant && (
+                <p className="rounded-controle bg-alerte-50 px-3 py-2 text-xs text-alerte" data-testid="offre-alerte-numero">
+                  {t('Le numéro est payé à part : le Business l’inclut, son abonnement est arrêté au passage.', 'The number is paid separately: Business includes it, its subscription is stopped on the switch.')}
+                </p>
+              )}
+            </div>
+          )}
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={entreprise} onChange={(e) => { setEntreprise(e.target.checked); if (e.target.checked) setBusiness(false); }} data-testid="offre-entreprise" className="h-4 w-4" />
             <span className="font-medium text-ink-900">{t('Offre Entreprise', 'Enterprise plan')}</span>
           </label>
           {entreprise && (
@@ -1597,10 +1650,16 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
               )}
             </div>
           )}
-          {etat.entreprise && !entreprise && (
+          {coupeLeNumero && (
+            <label className="flex items-start gap-2 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="offre-retrait-numero">
+              <input type="checkbox" checked={retraitConfirme} onChange={(e) => setRetraitConfirme(e.target.checked)} data-testid="offre-retrait-confirme" className="mt-0.5 h-4 w-4" />
+              <span>{t('Le numéro fourni ne sera plus couvert : ses envois sont suspendus tout de suite, puis il est résilié 7 jours plus tard. Je confirme le retrait.', 'The provided number will no longer be covered: its sends are suspended at once, then it is cancelled 7 days later. I confirm the removal.')}</span>
+            </label>
+          )}
+          {etat.entreprise && !entreprise && !business && (
             <p className="rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700" data-testid="offre-retour-base">
-              {t(`L’espace suivra son offre en ligne. En Base, seuls 1 utilisateur et 1 administrateur restent actifs (il en compte ${membres}) : les autres sont bloqués tout de suite. Et 30 jours après, les conversations de plus de 30 jours sont effacées, sans retour. En Pro : 3 utilisateurs, 2 administrateurs, 90 jours.`,
-                `The workspace will follow its online plan. On Base, only 1 user and 1 administrator stay active (it has ${membres}): the others are blocked at once. And 30 days later, conversations older than 30 days are erased, for good. On Pro: 3 users, 2 administrators, 90 days.`)}
+              {t(`L’espace suivra son offre en ligne. En Base, seuls 1 utilisateur et 1 administrateur restent actifs (il en compte ${membres}) : les autres sont bloqués tout de suite. Et 30 jours après, les conversations de plus de 30 jours sont effacées, sans retour. En Pro : 3 utilisateurs, tous administrateurs, 60 jours.`,
+                `The workspace will follow its online plan. On Base, only 1 user and 1 administrator stay active (it has ${membres}): the others are blocked at once. And 30 days later, conversations older than 30 days are erased, for good. On Pro: 3 users, all administrators, 60 days.`)}
             </p>
           )}
           <div className="grid gap-2">

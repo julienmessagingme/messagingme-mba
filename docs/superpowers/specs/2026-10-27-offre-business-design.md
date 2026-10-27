@@ -255,23 +255,23 @@ reste à part ; les pièces jointes reçues entrent, l'envoi de pièces jointes 
 
 ## La vitrine (lot 1)
 
-- Décisions : la carte Business sort tout de suite, ce qui n'est pas encore livré marqué « bientôt » ; quatre cartes de
+- Décisions : la carte Business sort tout de suite, et ses fonctions sont dites incluses, sans « bientôt », même celles des
+  lots 2 et 3 (décision de Julien du 2026-10-27, qui remplace « marqué bientôt jusqu'à son lot ») ; quatre cartes de
   même poids (aucune mise en avant) ; le Business mène à « Demander une démo » (le formulaire de contact) ; « essai de
   14 jours sur demande » ; « widget personnalisable », jamais de couleurs ; jamais la marge.
 - **Carte Business** : 349 € HT par mois ; « pour les équipes en croissance : collaboration, CRM et pilotage » ; essai de
   14 jours sur demande ; envois et automations illimités ; 5 000 contacts créés, entrants illimités ; 5 utilisateurs puis
   10 € HT par utilisateur et par mois ; 10 adresses de webhook ; 90 jours d'historique ; un numéro fourni inclus ; 10 € de
   crédit IA offert ; l'onboarding et le CSM ; le support prioritaire. « Tout ce que fait le Pro, plus » : le Meta Business
-  Agent, les assistants de configuration, l'assistant d'aide, le widget personnalisable, puis, marqués « bientôt » jusqu'à
-  leur lot : l'analyse des conversations, HubSpot, quatre tableaux de bord montés pour vous, l'e-mail aller/retour.
+  Agent, les assistants de configuration, l'assistant d'aide, le widget personnalisable, l'analyse des conversations,
+  HubSpot, quatre tableaux de bord montés pour vous, l'e-mail aller/retour.
 - **Carte Pro** : 1 000 contacts, 60 jours ; ses lignes MBA, assistants et aide passent au Business.
 - **Carte Entreprise** : « Tout ce que fait le Business, plus » : publicités Click-to-WhatsApp, chaînes, RCS, tous les
   connecteurs CRM, le Performance Lab complet, SSO sur demande.
 - Le chapeau, le titre et la description, les données structurées (une offre Business à 349 € par mois, hors taxe) et
   la FAQ (« Comment se paie le Business ? ») suivent ; la page anglaise se régénère par ses dictionnaires.
-- Les marques `data-offre` et `data-fonction` couvrent le Business et le test les compare au code. Choix de Claude : une
-  ligne « bientôt » porte une marque propre, et le test vérifie qu'elle ne nomme jamais une fonction déjà ouverte au
-  Business (sinon « bientôt » mentirait), et qu'une fonction du Business n'est jamais marquée « bientôt ».
+- Les marques `data-offre` et `data-fonction` couvrent le Business et le test les compare au code ; les fonctions des
+  lots 2 et 3 sont des lignes sans marque, jusqu'à ce que leur fonction existe dans le code. Le test refuse tout « bientôt ».
 - Face publique nouvelle : le rendu (bureau et téléphone) est montré à Julien avant le push.
 
 ## Les textes à remettre au vrai
@@ -294,7 +294,8 @@ Chacun avec le lot qui le rend faux (l'inventaire complet, ligne par ligne, est 
   `src/workflow/lancements.ts`, page Événements de la console).
 - **Docs du dépôt** : `features.md` et ses fiches liées (empreintes), `documentation.md`, `CLAUDE.md` (« qui paie quoi »
   au lot 2, « pas de multicanal » au lot 3), `.env.example`.
-- Lots 2 et 3 : les « bientôt » de la vitrine tombent, les fiches des fonctions livrées et la FAQ du plugin suivent.
+- Lots 2 et 3 : les lignes de leurs fonctions prennent leur marque `data-fonction`, les fiches des fonctions livrées et la FAQ
+  du plugin suivent.
 
 ## Les trois lots, dans l'ordre (décision)
 
@@ -323,7 +324,6 @@ fourni à 3,50 € HT hors offre payante ; Groupama PJ (Entreprise) ne voit rien
 ## Ce qui ferait échouer le projet même s'il marche
 
 - Une page, un écran ou une réponse de Claude qui montre notre marge sur l'IA.
-- Une ligne de la vitrine qui promet sans « bientôt » ce qui ne marche pas.
 - Un client facturé deux fois (un Pro payé chez Stripe et un Business facturé à la main) sans que `/ops` l'ait signalé.
 - Une purge d'historique déclenchée par un changement d'offre, sans grâce.
 

@@ -84,6 +84,13 @@ describe('lireVueOffre', () => {
     expect(v!.grille.free.fonctions.has('console')).toBe(true);
   });
 
+  it('🔴 relecture de B : une API d’avant le Business (aucune offre ne porte widget_personnalise) laisse l’apparence ouverte', () => {
+    // Sinon la console, publiée avant l’API, grise l’apparence d’une Entreprise et l’effacerait au premier enregistrement.
+    const sansWidget = FONCTIONS_OFFRE.filter((f) => f !== 'widget_personnalise');
+    const v = lireVueOffre({ ...BASE, grille: { ...BASE.grille, entreprise: { fonctions: sansWidget, limites: limites(null) } } });
+    expect(v!.fonctions.has('widget_personnalise')).toBe(true);
+  });
+
   it('une API qui connaît la fonction console : la Free ne l’a pas, le Pro et l’Entreprise l’ont', () => {
     const v = lireVueOffre({ ...BASE, grille: { ...BASE.grille, pro: { fonctions: [...PRO, 'console'], limites: limites(null) } } });
     expect(v!.fonctions.has('console')).toBe(false);

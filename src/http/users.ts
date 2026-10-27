@@ -150,7 +150,8 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
         // bloque jamais l'invitation -> repli sur une formulation générique.
         const inviterName = req.auth?.userId ? await deps.getInviterName(req.auth.userId).catch(() => null) : null;
         const workspaceName = await deps.users.getTenantName(tenant).catch(() => null);
-        const html = renderInvitationEmail({ inviterName, workspaceName, acceptUrl, role: b.role });
+        // Le rôle ENREGISTRÉ (`user.role`) : en Pro, le store inscrit un administrateur quel que soit le rôle demandé.
+        const html = renderInvitationEmail({ inviterName, workspaceName, acceptUrl, role: user.role });
         // Repli texte brut pour les clients qui ne rendent pas le HTML (personnalisé si dispo).
         const intro = inviterName && workspaceName
           ? `${inviterName} t'invite à rejoindre l'espace ${workspaceName} sur Messaging Me.`
@@ -175,7 +176,7 @@ export function registerUsers(app: FastifyInstance, deps: UsersRouteDeps, garde:
        * l'identifiant interne suffit à retrouver qui. `emailSent` est journalisé : une invitation créée mais non
        * envoyée est un état réel.
        */
-      await journal(tenant, req, 'utilisateur.invite', { kind: 'user', id: user.id }, { role: b.role, emailSent });
+      await journal(tenant, req, 'utilisateur.invite', { kind: 'user', id: user.id }, { role: user.role, emailSent });
       return reply.code(201).send({ user, emailSent });
     } catch (err) {
       if (err instanceof DuplicateEmailError) return reply.code(409).send({ error: 'email déjà utilisé' });

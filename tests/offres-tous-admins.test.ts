@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Pool } from 'pg';
 import { roleAdminEffectifSql, roleEffectif, type LimitesMembres } from '../src/offres/membres';
+import { facteurExigeSql } from '../src/auth/facteur-exige';
 import { DROITS, type Offre } from '../src/offres/offres';
 import { PgUserStore } from '../src/user/store.pg';
 import { autoriser, type DepsAutoriser } from '../src/oauth/autoriser';
@@ -98,5 +99,12 @@ describe('le rôle effectif est appliqué partout où le rôle se relit', () => 
   it('🔴 la validité d’un jeton OAuth et les destinataires des e-mails du produit, en SQL', () => {
     expect(lire('src', 'oauth', 'store.pg.ts')).toContain("${roleAdminEffectifSql('u')}");
     expect(lire('src', 'emails-produit', 'store.pg.ts')).toContain("${roleAdminEffectifSql('u')}");
+  });
+
+  it('🔴 jaunes 2 et 3 de la relecture de A : le renouvellement d’un jeton OAuth et le second facteur exigé lisent le rôle effectif', () => {
+    // Un membre « agent » d’un Pro autorise Claude : son renouvellement ne doit pas être refusé à chaque heure.
+    expect(lire('src', 'oauth', 'store.pg.ts')).not.toMatch(/u\.role = 'admin'/);
+    // Un administrateur effectif d’un Pro qui exige le second facteur y est tenu comme un administrateur enregistré.
+    expect(facteurExigeSql('i.id')).toContain("offre_de_l_espace(a.tenant_id) = 'pro'");
   });
 });

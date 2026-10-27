@@ -1,5 +1,5 @@
 import { config } from '../config';
-import { DROITS, contactsToutesOrigines, type Fonction, type Limites, type Offre } from './offres';
+import { DROITS, PRIX_SIEGE_BUSINESS_HT_CENTIMES, contactsToutesOrigines, type Fonction, type Limites, type Offre } from './offres';
 import { refus, type Refus } from '../lib/issue';
 
 /**
@@ -44,6 +44,7 @@ const LIBELLE_FONCTION: Record<Fonction, string> = {
   agent_meta: 'l’agent de Meta', aide: 'l’assistant d’aide', assistants: 'les assistants de configuration',
   analyse: 'l’analyse des conversations', publicites: 'les publicités', email: 'l’e-mail', chaines: 'les chaînes',
   crm: 'les connecteurs CRM', rcs: 'le RCS', performance_lab: 'le Performance Lab', console: 'la console complète',
+  widget_personnalise: 'le widget personnalisable',
 };
 
 /** Un nombre écrit à la française (« 5 000 contacts ») : la phrase est lue par une personne, ou redite par Claude. */
@@ -98,13 +99,19 @@ export function phraseLimite(limite: NomLimite, max: number, contexte: ContexteL
   if (limite === 'stockageOctets') {
     return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max, contexte)}. Supprimez des fichiers inutilisés, ou changez d’offre : ${adresseOffre()}`;
   }
-  // Les utilisateurs d'un Pro (livraison 7) : un siège les lève, au prix de sa formule ; sans siège en vente, l'Entreprise.
+  // Les utilisateurs d'un Pro (livraison 7) : un siège les lève, au prix de sa formule ; sinon le Business (spec Business).
   if (limite === 'utilisateurs' && contexte.offre === 'pro') {
     const s = contexte.siege;
     const suite = s
-      ? `Ajoutez un utilisateur (${nb(s.prixHtCentimes / 100)} € HT par ${s.periodicite}) en invitant le membre depuis « Compte & équipe », ou passez en Entreprise`
-      : 'Passez en Entreprise pour la lever';
+      ? `Ajoutez un utilisateur (${nb(s.prixHtCentimes / 100)} € HT par ${s.periodicite}) en invitant le membre depuis « Compte & équipe », ou passez en Business`
+      : 'Passez en Business pour la lever';
     return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max, contexte)}. ${suite} : ${adresseOffre()}`;
+  }
+  // Les utilisateurs d'un Business (spec Business) : Julien relève la limite dans /ops, facturée hors Stripe, quelle
+  // qu'elle soit (la grille ou une limite posée) ; aucun siège ne s'achète en ligne.
+  if (limite === 'utilisateurs' && contexte.offre === 'business') {
+    return `Limite de votre offre atteinte : ${LIBELLE_LIMITE[limite](max, contexte)}. Demandez un utilisateur de plus `
+      + `(${nb(PRIX_SIEGE_BUSINESS_HT_CENTIMES.mois / 100)} € HT par mois) depuis le Support, ou passez en Entreprise : ${adresseOffre()}`;
   }
   const o = offreQuiLeve(limite, max);
   const suite = o === null ? 'Contactez-nous pour la relever' : `Passez en ${NOM_OFFRE[o]} pour la lever`;

@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getSession, clearSession, type Session } from '@/lib/session';
-import { countUnreadConversations, SESSION_EXPIRED_EVENT } from '@/lib/api';
+import { getSession, clearSession, saveSession, type Session } from '@/lib/session';
+import { countUnreadConversations, getMe, SESSION_EXPIRED_EVENT } from '@/lib/api';
 import { Logo, LogoComplet } from './Logo';
 import { AccountMenu } from './AccountMenu';
 import { LienCommentFaire } from './LienCommentFaire';
@@ -125,6 +125,29 @@ export function AppShell({ active, fullBleed = false, fonction, children }: {
     }
     setSession(s);
   }, [router, active]);
+
+  /**
+   * 🔴 LE RÔLE EFFECTIF (spec Business, jaune 4 de la relecture de A) : en Pro, tout membre est administrateur, et le serveur
+   * l'applique à chaque requête. La session garde le rôle de sa connexion : `/me` rend l'effectif, relu à chaque page, et la
+   * session se met à jour s'il a changé (une offre posée ou retirée depuis la connexion). Un échec garde le rôle connu.
+   */
+  useEffect(() => {
+    if (!session || session.observation) return;
+    let alive = true;
+    getMe(session.tenantId)
+      .then((me) => {
+        // Une réponse sans rôle lisible (une API plus ancienne) garde le rôle connu.
+        if (!alive || typeof me.role !== 'string' || me.role === '' || me.role === session.role) return;
+        const frais = { ...session, role: me.role };
+        saveSession(frais);
+        setSession(frais);
+        // Un rôle qui baisse (un Business reposé sur un ex-Pro) ferme peut-être cet écran : on part vers l'Inbox plutôt
+        // que de laisser une page vide (jaune 1 de la relecture de B).
+        if (!accesAutorise(active, me.role)) router.replace('/inbox');
+      })
+      .catch(() => { /* le rôle de la session reste */ });
+    return () => { alive = false; };
+  }, [session, active, router]);
 
   // Pastille de non-lus : relevée à l'arrivée puis toutes les 30 s. Échec silencieux (0) : une pastille est
   // une information d'appoint, elle ne doit jamais faire apparaître une erreur en travers du menu.

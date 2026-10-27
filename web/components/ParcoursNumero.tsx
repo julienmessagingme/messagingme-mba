@@ -184,7 +184,7 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
             <div className="text-base font-semibold text-ink-900">{t('Fournissez-moi un numéro', 'Provide me a number')}</div>
             <p className="mt-1 text-xs text-ink-500">
               {inclus
-                ? t('Un numéro dédié, prêt pour WhatsApp. Inclus dans votre Pro.', 'A dedicated number, ready for WhatsApp. Included in your Pro plan.')
+                ? t('Un numéro dédié, prêt pour WhatsApp. Inclus dans votre offre.', 'A dedicated number, ready for WhatsApp. Included in your plan.')
                 : t('Un numéro dédié, prêt pour WhatsApp : 3,50 € HT par mois.', 'A dedicated number, ready for WhatsApp: €3.50 excl. VAT per month.')}
             </p>
           </button>
@@ -244,7 +244,7 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
           ) : inclus ? (
             // Un Pro vivant inclut le numéro (lot 6, B2b) : rien à payer.
             <p data-testid="numero-inclus" className="mt-3 text-sm text-ink-700">
-              {t('Inclus dans votre Pro : rien à payer.', 'Included in your Pro plan: nothing to pay.')}
+              {t('Inclus dans votre offre : rien à payer.', 'Included in your plan: nothing to pay.')}
             </p>
           ) : paiementRecu && abonnement === null ? (
             <p data-testid="paiement-en-confirmation" className="mt-3 text-sm text-ink-700">

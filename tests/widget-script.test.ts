@@ -80,8 +80,8 @@ async function monter(options: {
   numero?: WidgetPublicRouteDeps['numero'];
   qr?: WidgetPublicRouteDeps['qrSvg'];
   budget?: RateLimiter;
-  /** Le badge de l'offre de l'espace (lot 6). Absent : une Base, qui l'affiche. */
-  badgeOffre?: WidgetPublicRouteDeps['badgeDeLOffre'];
+  /** Ce que l'offre de l'espace impose au rendu (lot 6, spec Business). Absent : une Base, badge affiché, apparence standard. */
+  presentation?: WidgetPublicRouteDeps['presentationDeLOffre'];
 } = {}): Promise<Montage> {
   const widget = options.widget === undefined ? widgetComplet() : options.widget;
   const parCode = vi.fn(options.parCode ?? (async () => widget));
@@ -93,7 +93,7 @@ async function monter(options: {
     qrSvg: qr,
     // Désactivé par défaut : seul le cas du budget le règle.
     budgetInconnus: options.budget ?? new RateLimiter(0, 60_000),
-    badgeDeLOffre: options.badgeOffre ?? (async () => true),
+    presentationDeLOffre: options.presentation ?? (async () => ({ badge: true, apparencePersonnalisee: true })),
   });
   await app.ready();
   return { app, parCode, qr };
@@ -171,7 +171,7 @@ describe('🔴 des valeurs hostiles ressortent sérialisées et inertes', () => 
   it('🔴 le badge suit l’offre : affiché en Base, retiré en Pro, même si le widget le porte en base', async () => {
     for (const [offre, attendu] of [[true, true], [false, false]] as const) {
       const vus: string[] = [];
-      const { app } = await monter({ badgeOffre: async (t) => { vus.push(t); return offre; } });
+      const { app } = await monter({ presentation: async (t) => { vus.push(t); return { badge: offre, apparencePersonnalisee: true }; } });
       expect(donnees((await charger(app)).body).badge).toBe(attendu);
       expect(vus).toEqual([widgetComplet().tenantId]);
       await app.close();
@@ -179,8 +179,30 @@ describe('🔴 des valeurs hostiles ressortent sérialisées et inertes', () => 
   });
 
   it('🔴 un widget dont la colonne dit « sans badge » reste sans badge, même en Base', async () => {
-    const { app } = await monter({ widget: { ...widgetComplet(), badge: false }, badgeOffre: async () => true });
+    const { app } = await monter({ widget: { ...widgetComplet(), badge: false }, presentation: async () => ({ badge: true, apparencePersonnalisee: true }) });
     expect(donnees((await charger(app)).body).badge).toBe(false);
+    await app.close();
+  });
+
+  it('🔴 spec Business : hors offre, la bulle prend l’apparence standard (vert, en bas à droite, ni libellé ni avatar) ; le réglage enregistré reste', async () => {
+    const { app } = await monter({ presentation: async () => ({ badge: true, apparencePersonnalisee: false }) });
+    const d = donnees((await charger(app)).body);
+    expect(d).toMatchObject({ couleur: '#25d366', position: 'bas_droite', libelle: null, avatar: null });
+    await app.close();
+    const libre = await monter({ presentation: async () => ({ badge: false, apparencePersonnalisee: true }) });
+    expect(donnees((await charger(libre.app)).body)).toMatchObject({ couleur: '#123abc', position: 'bas_gauche', libelle: 'Une question ?' });
+    await libre.app.close();
+  });
+
+  it('🔴 spec Business : une bulle grisée hors offre se pose aussi en bas à droite', async () => {
+    const { app } = await monter({ numero: async () => null, presentation: async () => ({ badge: true, apparencePersonnalisee: false }) });
+    expect(donnees((await charger(app)).body)).toMatchObject({ etat: 'grise', position: 'bas_droite' });
+    await app.close();
+  });
+
+  it('une lecture de l’offre qui lève garde le badge et l’apparence standard', async () => {
+    const { app } = await monter({ presentation: async () => { throw new Error('panne'); } });
+    expect(donnees((await charger(app)).body)).toMatchObject({ badge: true, couleur: '#25d366', position: 'bas_droite' });
     await app.close();
   });
 
@@ -379,7 +401,7 @@ describe('🔴 le chemin exact /widget/<code>.js', () => {
     app.addHook('onRoute', (r) => { chemins.push(r.url); });
     const parCode = vi.fn(async () => widgetComplet());
     registerWidgetPublic(app, {
-      widgets: { parCode }, numero: async () => NUMERO_SAIN, qrSvg, budgetInconnus: new RateLimiter(0, 60_000), badgeDeLOffre: async () => true,
+      widgets: { parCode }, numero: async () => NUMERO_SAIN, qrSvg, budgetInconnus: new RateLimiter(0, 60_000), presentationDeLOffre: async () => ({ badge: true, apparencePersonnalisee: true }),
     });
     await app.ready();
     expect(chemins).toContain('/widget/:code.js');

@@ -436,7 +436,8 @@ export const analysesInertes: Pick<AnalysesDep, 'getNuageQualitatif' | 'joursAna
   joursAnalyse: async () => [],
 };
 
-export const supportInerte: Pick<SupportRouteDeps, 'getUserEmail'> = {
+export const supportInerte: Pick<SupportRouteDeps, 'getUserEmail' | 'prioritaire'> = {
+  prioritaire: async () => false,
   // Absente : pas de reply-to.
   getUserEmail: async () => null,
 };
@@ -667,6 +668,7 @@ export const stripeNumeroInerte: StripeWebhookRouteDeps['numero'] = {
   noterFinPrevue: async () => false,
   alerter: async () => {},
   reprendreCampagnes: neDevraitPasEtreAppelee('stripe.numero.reprendreCampagnes'),
+  inclusDansLOffre: neDevraitPasEtreAppelee('stripe.numero.inclusDansLOffre'),
 };
 
 /** Le Pro pour un webhook Stripe qui ne vend que le numéro et la recharge (lot 6, B1) : un événement du Pro y lèverait. */

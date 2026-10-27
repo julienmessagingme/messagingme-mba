@@ -166,14 +166,21 @@ export interface PublicationFiche {
   video: boolean;
   /** La fiche à lire avant, le second bouton de la page. */
   prerequis: string | null;
-  /** La page dit l'offre qu'elle demande (le Pro) ; `offre: non` pour une page qui n'en demande pas. */
-  offre: boolean;
+  /**
+   * L'offre la moins chère qui ouvre ce que la page fait faire, et que la page dit (spec Business) : `pro` par défaut,
+   * `business` ou `entreprise` ; `null` (`offre: non`) pour une page qui n'en demande pas.
+   */
+  offre: OffreFiche | null;
   /**
    * Le geste se fait aussi depuis Claude Code, avec l'offre Free (`claude_code: oui`) : la page mène d'abord au plugin,
    * et dit que la console demande le Pro.
    */
   claudeCode: boolean;
 }
+
+/** Les offres qu'une fiche peut demander (le champ `offre:`), de la moins chère à la plus chère. */
+export const OFFRES_FICHE = ['pro', 'business', 'entreprise'] as const;
+export type OffreFiche = (typeof OFFRES_FICHE)[number];
 
 /** Un champ de l'en-tête `---` d'une fiche ; un champ vide vaut absent. */
 export function champDeFiche(texte: string, nom: string): string | null {
@@ -199,6 +206,10 @@ export function publicationDe(texte: string): PublicationFiche | null {
   };
   const rubrique = champDeFiche(texte, 'rubrique');
   if (!RUBRIQUES.includes(rubrique as Rubrique)) throw new Error(`rubrique: « ${rubrique} », attendu ${RUBRIQUES.join(' ou ')}`);
+  const offre = champDeFiche(texte, 'offre');
+  if (offre !== null && offre !== 'non' && !(OFFRES_FICHE as readonly string[]).includes(offre)) {
+    throw new Error(`offre: « ${offre} », attendu ${OFFRES_FICHE.join(', ')} ou non`);
+  }
   const rang = Number(champDeFiche(texte, 'rang'));
   if (!Number.isInteger(rang) || rang < 1) throw new Error(`rang: « ${champDeFiche(texte, 'rang')} », attendu un entier dès 1`);
   return {
@@ -208,7 +219,7 @@ export function publicationDe(texte: string): PublicationFiche | null {
     captures: oui('captures', true),
     video: oui('video', false),
     prerequis: champDeFiche(texte, 'prerequis'),
-    offre: oui('offre', true),
+    offre: offre === null ? 'pro' : offre === 'non' ? null : (offre as OffreFiche),
     claudeCode: oui('claude_code', false),
   };
 }

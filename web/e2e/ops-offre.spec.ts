@@ -25,7 +25,14 @@ async function ouvrir(page: import('@playwright/test').Page, offre: Record<strin
       if (route.request().method() === 'PUT') {
         const corps = route.request().postDataJSON() as Record<string, unknown>;
         ecrits.push(corps);
-        return json({ tenantId: 't-essai', entreprise: corps.entreprise, utilisateurs: corps.utilisateurs, conservationJours: 'conservationJours' in corps ? corps.conservationJours : offre.conservationJours, utilisateursProposes: 10 });
+        // Le Business (spec Business) : absent du corps = inchangé ; les gestes du PUT viennent de l'état donné au test.
+        const business = 'business' in corps ? corps.business : offre.business;
+        return json({
+          tenantId: 't-essai', entreprise: corps.entreprise, utilisateurs: corps.utilisateurs,
+          conservationJours: 'conservationJours' in corps ? corps.conservationJours : offre.conservationJours, utilisateursProposes: 10,
+          business, utilisateursBusiness: 'utilisateursBusiness' in corps ? corps.utilisateursBusiness : (offre.utilisateursBusiness ?? null),
+          alertes: offre.alertes, ...(offre.gestes ? { gestes: offre.gestes } : {}),
+        });
       }
       return json({ tenantId: 't-essai', utilisateursProposes: 10, ...offre });
     }
@@ -103,5 +110,43 @@ test.describe('Ops : l’offre Entreprise d’un espace', () => {
     await modale.getByTestId('offre-enregistrer').click();
     await expect(modale.getByTestId('offre-message')).toBeVisible();
     expect(ecrits).toEqual([{ entreprise: true, utilisateurs: 10, conservationJours: 30, note: 'Demande du client' }]);
+  });
+});
+
+test.describe('Ops : le Business d’un espace (spec Business)', () => {
+  const ALERTES = { proPayeVivant: true, numeroSeulVivant: true, numeroFourniSansCouverture: false };
+
+  test('🔴 poser le Business : exclusif de l’Entreprise, les alertes avant, le bilan des gestes après', async ({ page }) => {
+    const { modale, ecrits } = await ouvrir(page, {
+      entreprise: false, utilisateurs: null, conservationJours: 90, business: false, alertes: ALERTES,
+      gestes: { creditOffert: 9_000_000, finDuNumero: null, echecs: [] },
+    });
+    await modale.getByTestId('offre-entreprise').check();
+    await modale.getByTestId('offre-business').check();
+    await expect(modale.getByTestId('offre-entreprise')).not.toBeChecked();
+    await expect(modale.getByTestId('offre-alerte-pro')).toBeVisible();
+    await expect(modale.getByTestId('offre-alerte-numero')).toBeVisible();
+    await modale.getByTestId('offre-utilisateurs-business').fill('7');
+    await modale.getByTestId('offre-note').fill('Contrat Business signé');
+    await modale.getByTestId('offre-enregistrer').click();
+    await expect(modale.getByTestId('offre-message')).toContainText(/Business/);
+    await expect(modale.getByTestId('offre-message')).toContainText(/9[.,]00/);
+    expect(ecrits).toEqual([{ entreprise: false, utilisateurs: null, business: true, utilisateursBusiness: 7, note: 'Contrat Business signé' }]);
+  });
+
+  test('🔴 retirer un Business qui laisse le numéro fourni sans couverture : rien ne part sans la confirmation', async ({ page }) => {
+    const { modale, ecrits } = await ouvrir(page, {
+      entreprise: false, utilisateurs: null, conservationJours: 90, business: true, utilisateursBusiness: null,
+      alertes: { proPayeVivant: false, numeroSeulVivant: false, numeroFourniSansCouverture: true },
+    });
+    await expect(modale.getByTestId('offre-actuelle')).toContainText(/Business/);
+    await modale.getByTestId('offre-business').uncheck();
+    await modale.getByTestId('offre-note').fill('Fin du contrat');
+    await expect(modale.getByTestId('offre-retrait-numero')).toBeVisible();
+    await expect(modale.getByTestId('offre-enregistrer')).toBeDisabled();
+    await modale.getByTestId('offre-retrait-confirme').check();
+    await modale.getByTestId('offre-enregistrer').click();
+    await expect(modale.getByTestId('offre-message')).toBeVisible();
+    expect(ecrits).toEqual([{ entreprise: false, utilisateurs: null, business: false, note: 'Fin du contrat' }]);
   });
 });

@@ -7,7 +7,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tarifs de l’API WhatsApp Business · Messaging Me</title>
-<meta name="description" content="Les tarifs de Messaging Me : la Free gratuite, le Pro pour une équipe, l’Entreprise sur devis, le crédit IA et ce que Meta facture.">
+<meta name="description" content="Les tarifs de Messaging Me : la Free gratuite, le Pro, le Business pour une équipe qui grandit, l’Entreprise sur devis, le crédit IA et ce que Meta facture.">
 <link rel="canonical" href="https://app.messagingme.fr/tarifs/">
 <link rel="alternate" hreflang="fr" href="https://app.messagingme.fr/tarifs/">
 <link rel="alternate" hreflang="en" href="https://app.messagingme.fr/en/pricing/">
@@ -17,7 +17,7 @@
 <meta property="og:locale" content="fr_FR">
 <meta property="og:site_name" content="Messaging Me">
 <meta property="og:title" content="Tarifs de l’API WhatsApp Business · Messaging Me">
-<meta property="og:description" content="Les tarifs de Messaging Me : la Free gratuite, le Pro pour une équipe, l’Entreprise sur devis, le crédit IA et ce que Meta facture.">
+<meta property="og:description" content="Les tarifs de Messaging Me : la Free gratuite, le Pro, le Business pour une équipe qui grandit, l’Entreprise sur devis, le crédit IA et ce que Meta facture.">
 <meta property="og:image" content="https://app.messagingme.fr/img/partage/accueil.jpg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -71,6 +71,20 @@
       "price": "490",
       "priceCurrency": "EUR",
       "billingDuration": "P1Y",
+      "valueAddedTaxIncluded": false
+     }
+    },
+    {
+     "@type": "Offer",
+     "name": "Business",
+     "price": "349",
+     "priceCurrency": "EUR",
+     "url": "https://app.messagingme.fr/tarifs/",
+     "priceSpecification": {
+      "@type": "UnitPriceSpecification",
+      "price": "349",
+      "priceCurrency": "EUR",
+      "billingDuration": "P1M",
       "valueAddedTaxIncluded": false
      }
     }
@@ -127,6 +141,14 @@
      "acceptedAnswer": {
       "@type": "Answer",
       "text": "Par carte, au mois ou à l’an, depuis la console ou en le demandant à Claude, après un essai gratuit. Chaque utilisateur au-delà des trois inclus s’ajoute au même abonnement. Les prix sont hors taxes."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Comment se paie le Business ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Sur facture, au mois, après un échange avec nous : nous posons l’offre sur votre espace, sans paiement en ligne. Un essai de 14 jours est possible sur demande. Chaque utilisateur au-delà des cinq inclus coûte 10 € HT par mois. Les prix sont hors taxes."
      }
     },
     {
@@ -319,14 +341,15 @@
   <section class="cadre f-une-large tarifs-une">
     <div>
       <h1><span class="f-surtitre"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg>Tarifs</span> Gratuit pour commencer.</h1>
-      <p class="chapeau">La Free pour piloter WhatsApp depuis votre application ou votre assistant IA, le Pro pour une équipe dans la console, l’Entreprise pour acquérir et analyser à grande échelle.</p>
+      <p class="chapeau">La Free pour piloter WhatsApp depuis votre application ou votre assistant IA, le Pro pour une équipe dans la console, le Business pour une équipe qui grandit, avec le Meta Business Agent et un accompagnement, l’Entreprise pour acquérir et analyser à grande échelle.</p>
     </div>
   </section>
 
-  <section class="tarifs-offres" aria-label="Les trois offres">
+  <section class="tarifs-offres" aria-label="Les quatre offres">
     <!-- Les chiffres marqués data-offre et les fonctions marquées data-fonction sont ceux du code (src/offres/offres.ts,
-         PRIX_PRO_HT_CENTIMES, PRIX_NUMERO_HT_CENTIMES) : tests/vitrine-pages.test.ts les compare, dans les deux langues.
-         Aucune limite invisible ici : voir la spec offres v2. -->
+         PRIX_PRO_HT_CENTIMES, PRIX_BUSINESS_HT_CENTIMES, PRIX_NUMERO_HT_CENTIMES) : tests/vitrine-pages.test.ts les compare,
+         dans les deux langues. Aucune limite invisible ici, aucune carte mise en avant, aucun « bientôt » : voir la spec
+         Business. -->
     <ul class="cadre tarifs-grille">
       <li class="tarif">
         <h2 class="tarif-nom">Free</h2>
@@ -348,7 +371,7 @@
         </ul>
         <p class="tarif-note">Gérez 100&nbsp;% de votre WhatsApp depuis Claude Code, Codex ou votre terminal.</p>
       </li>
-      <li class="tarif tarif-mis-en-avant">
+      <li class="tarif">
         <h2 class="tarif-nom">Pro</h2>
         <p class="tarif-prix"><strong><span data-offre="pro.prix-mois">49</span>&nbsp;€</strong><span>HT par mois, ou <span data-offre="pro.prix-an">490</span>&nbsp;€&nbsp;HT par an</span></p>
         <p class="tarif-pour">Pour une équipe qui répond, relance et mesure ses conversations dans la console.</p>
@@ -356,24 +379,50 @@
         <ul class="tarif-liste">
           <li><strong>Essai gratuit de <span data-offre="pro.essai-jours">14</span>&nbsp;jours</strong>, carte demandée</li>
           <li><strong><span data-offre="pro.envois-modeles-mois">Envois illimités</span></strong> et <span data-offre="pro.automations">automations illimitées</span></li>
-          <li><strong><span data-offre="pro.contacts">5&nbsp;000</span> contacts</strong> créés</li>
+          <li><strong><span data-offre="pro.contacts">1&nbsp;000</span> contacts</strong> créés</li>
           <li><strong>Contacts entrants illimités</strong></li>
           <li><strong><span data-offre="pro.utilisateurs">3</span> utilisateurs</strong>, puis <span data-offre="pro.siege-mois">15</span>&nbsp;€&nbsp;HT par utilisateur et par mois</li>
           <li><strong><span data-offre="pro.adresses-webhook">5</span> adresses</strong> de webhook</li>
-          <li><strong><span data-offre="pro.conservation-jours">90</span> jours</strong> d’historique des conversations</li>
+          <li><strong><span data-offre="pro.conservation-jours">60</span> jours</strong> d’historique des conversations</li>
           <li>Un numéro fourni, <span data-offre="pro.numero-inclus">inclus</span></li>
         </ul>
         <p class="tarif-plus">Tout ce que fait la Free, plus&nbsp;:</p>
         <ul class="tarif-fonctions">
-          <li data-fonction="pro:console">La console complète</li>
+          <li data-fonction="pro:console">La console</li>
           <li data-fonction="pro:inbox">L’Inbox de l’équipe</li>
           <li data-fonction="pro:scenarios">Scénarios et formulaires</li>
           <li data-fonction="pro:statistiques">Les tableaux de bord et KPI de la console</li>
-          <li data-fonction="pro:agent_meta">Le Meta Business Agent</li>
           <li data-fonction="pro:email">Des e-mails dans vos scénarios</li>
-          <li data-fonction="pro:assistants">Assistants de configuration</li>
-          <li data-fonction="pro:aide">Assistant d’aide</li>
           <li>Shopify depuis la console</li>
+        </ul>
+      </li>
+      <li class="tarif">
+        <h2 class="tarif-nom">Business</h2>
+        <p class="tarif-prix"><strong><span data-offre="business.prix-mois">349</span>&nbsp;€</strong><span>HT par mois</span></p>
+        <p class="tarif-pour">Pour les équipes en croissance&nbsp;: collaboration, CRM et pilotage.</p>
+        <a class="bouton bouton-trait" href="/contact/#formulaire">Demander une démo</a>
+        <ul class="tarif-liste">
+          <li><strong>Essai de 14&nbsp;jours</strong> sur demande</li>
+          <li><strong><span data-offre="business.envois-modeles-mois">Envois illimités</span></strong> et <span data-offre="business.automations">automations illimitées</span></li>
+          <li><strong><span data-offre="business.contacts">5&nbsp;000</span> contacts</strong> créés, entrants illimités</li>
+          <li><strong><span data-offre="business.utilisateurs">5</span> utilisateurs</strong>, puis <span data-offre="business.siege-mois">10</span>&nbsp;€&nbsp;HT par utilisateur et par mois</li>
+          <li><strong><span data-offre="business.adresses-webhook">10</span> adresses</strong> de webhook</li>
+          <li><strong><span data-offre="business.conservation-jours">90</span> jours</strong> d’historique des conversations</li>
+          <li>Un numéro fourni, <span data-offre="business.numero-inclus">inclus</span></li>
+          <li><strong><span data-offre="business.credit-offert-euros">10</span>&nbsp;€ de crédit IA offert</strong></li>
+          <li>L’onboarding et un accompagnement dédié les deux premiers mois</li>
+          <li>Le support prioritaire</li>
+        </ul>
+        <p class="tarif-plus">Tout ce que fait le Pro, plus&nbsp;:</p>
+        <ul class="tarif-fonctions">
+          <li data-fonction="business:agent_meta">Le Meta Business Agent</li>
+          <li data-fonction="business:assistants">Assistants de configuration</li>
+          <li data-fonction="business:aide">Assistant d’aide</li>
+          <li data-fonction="business:widget_personnalise">Un widget personnalisable</li>
+          <li>L’analyse des conversations</li>
+          <li>HubSpot (app intégrée)</li>
+          <li>Quatre tableaux de bord montés pour vous</li>
+          <li>L’e-mail aller-retour dans la conversation</li>
         </ul>
       </li>
       <li class="tarif">
@@ -387,13 +436,13 @@
           <li>Un interlocuteur dédié</li>
           <li>Avance des frais et ligne de crédit</li>
         </ul>
-        <p class="tarif-plus">Tout ce que fait le Pro, plus&nbsp;:</p>
+        <p class="tarif-plus">Tout ce que fait le Business, plus&nbsp;:</p>
         <ul class="tarif-fonctions">
           <li data-fonction="entreprise:analyse">Analyse des conversations</li>
           <li data-fonction="entreprise:publicites">Publicités Click-to-WhatsApp</li>
           <li data-fonction="entreprise:chaines">Chaînes WhatsApp</li>
           <li data-fonction="entreprise:rcs">RCS, avec repli entre les deux canaux</li>
-          <li data-fonction="entreprise:crm">Connecteurs CRM</li>
+          <li data-fonction="entreprise:crm">Salesforce et Batch (app intégrée)</li>
           <li data-fonction="entreprise:performance_lab">Le Performance Lab complet</li>
           <li data-promesse="sso">Connexion SSO, sur demande</li>
         </ul>
@@ -422,6 +471,7 @@
         <details id="faq-console"><summary>Pourquoi la Free n’a-t-elle pas la console ?</summary><p>La Free se pilote à 100 % depuis votre application ou votre assistant IA, comme Claude Code ou Codex. Le Pro ouvre la console complète, pour une équipe.</p></details>
         <details id="faq-limite"><summary>Que se passe-t-il quand j’atteins une limite ?</summary><p>L’action est refusée avec un message qui le dit et un lien vers l’offre qui la lève. En Free, ceux qui vous écrivent comptent aussi parmi vos contacts : une fois l’espace plein, un nouveau client qui vous écrit n’entre pas dans Messaging Me, et un e-mail vous prévient ; vos contacts déjà là écrivent comme avant. Atteindre une limite ne vous facture jamais rien.</p></details>
         <details id="faq-pro"><summary>Comment se paie le Pro ?</summary><p>Par carte, au mois ou à l’an, depuis la console ou en le demandant à Claude, après un essai gratuit. Chaque utilisateur au-delà des trois inclus s’ajoute au même abonnement. Les prix sont hors taxes.</p></details>
+        <details id="faq-business"><summary>Comment se paie le Business ?</summary><p>Sur facture, au mois, après un échange avec nous : nous posons l’offre sur votre espace, sans paiement en ligne. Un essai de 14 jours est possible sur demande. Chaque utilisateur au-delà des cinq inclus coûte 10 € HT par mois. Les prix sont hors taxes.</p></details>
         <details id="faq-ia"><summary>Comment se paie l’IA ?</summary><p>Sur un crédit prépayé, à l’usage. Sans crédit, vos agents IA se taisent ; vos envois, eux, continuent.</p></details>
         <details id="faq-meta"><summary>Qui facture les messages WhatsApp ?</summary><p>Meta, directement à votre entreprise, sur le moyen de paiement de votre Business Manager, selon sa grille par pays et par catégorie de message.</p></details>
       </div>

@@ -17,3 +17,10 @@ export const COULEUR_PAR_DEFAUT = '#25d366';
 /** Les quatre coins où la bulle se pose (la colonne `position`). */
 export const POSITIONS_WIDGET = ['bas_droite', 'bas_gauche', 'haut_droite', 'haut_gauche'] as const;
 export type PositionWidget = (typeof POSITIONS_WIDGET)[number];
+/**
+ * L'apparence standard d'une bulle (spec Business, 2026-10-27) : celle de toute offre sans `widget_personnalise` (la Free et
+ * le Pro). Le serveur refuse hors offre une autre valeur et sert celle-ci ; la console grise l'apparence sur celle-ci.
+ */
+export const APPARENCE_STANDARD: {
+  readonly couleur: string; readonly position: PositionWidget; readonly libelle: null; readonly avatarUrl: null;
+} = { couleur: COULEUR_PAR_DEFAUT, position: 'bas_droite', libelle: null, avatarUrl: null };

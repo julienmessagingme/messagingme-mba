@@ -7,6 +7,7 @@ publique: oui
 rubrique: parler-aux-clients
 rang: 8
 captures: non
+offre: entreprise
 ---
 # Publier sur ma chaîne WhatsApp
 

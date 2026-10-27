@@ -465,14 +465,14 @@ export const CATALOGUE = [
         sujet: 'Vous approchez de votre limite de contacts',
         corps: 'Bonjour,\n\nL’espace {{espace}} a créé 80 % des {{limite}} contacts que l’offre Pro permet. Au-delà, il ne '
           + 'sera plus possible d’en créer ni d’en importer. Un contact qui vous écrit le premier n’est jamais refusé ni '
-          + 'compté.\n\nL’offre Entreprise fixe cette limite à votre mesure, sur devis.',
+          + 'compté.\n\nL’offre Business va plus loin : demandez-la depuis la page Offre.',
         bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
       },
       en: {
         sujet: 'You are close to your contact limit',
         corps: 'Hello,\n\nThe {{espace}} workspace has created 80% of the {{limite}} contacts the Pro plan allows. Beyond '
           + 'that, creating or importing contacts will no longer be possible. A contact who writes to you first is never '
-          + 'refused nor counted.\n\nThe Enterprise plan sets this limit to your needs, on quote.',
+          + 'refused nor counted.\n\nThe Business plan goes further: ask for it from the Plan page.',
         bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
       },
     },
@@ -488,14 +488,14 @@ export const CATALOGUE = [
         sujet: 'Limite atteinte : vous ne pouvez plus créer de contacts',
         corps: 'Bonjour,\n\nL’espace {{espace}} a atteint les {{limite}} contacts que l’offre Pro permet : créer ou importer '
           + 'un contact est refusé. Un contact qui vous écrit le premier n’est jamais refusé ni compté.\n\nL’offre '
-          + 'Entreprise fixe cette limite à votre mesure, sur devis : écrivez-nous depuis la page Offre.',
+          + 'Business va plus loin : demandez-la depuis la page Offre.',
         bouton: { libelle: 'Voir les offres', lien: '{{lien_offre}}' },
       },
       en: {
         sujet: 'Limit reached: you can no longer create contacts',
         corps: 'Hello,\n\nThe {{espace}} workspace has reached the {{limite}} contacts the Pro plan allows: creating or '
           + 'importing a contact is refused. A contact who writes to you first is never refused nor counted.\n\nThe '
-          + 'Enterprise plan sets this limit to your needs, on quote: write to us from the Plan page.',
+          + 'Business plan goes further: ask for it from the Plan page.',
         bouton: { libelle: 'See plans', lien: '{{lien_offre}}' },
       },
     },

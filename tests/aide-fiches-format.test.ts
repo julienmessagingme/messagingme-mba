@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { lireFicheDuDepot, publicationDe, type PublicationFiche, type Rubrique } from '../src/aide/fiches';
+import { DROITS, type Fonction } from '../src/offres/offres';
 import { erreursDeStructure } from '../src/aide/structure';
 import { chargerCarte } from '../src/aide/carte';
 
@@ -248,6 +249,18 @@ describe('les fiches publiques', () => {
         'garder-mon-application-whatsapp-business', 'la-fenetre-de-24-heures']);
   });
 
+  it('🔴 spec Business : chaque fiche dit l’offre la moins chère qui ouvre sa fonction (publicités, RCS, chaînes et HubSpot : l’Entreprise)', () => {
+    const fonctionDe: Record<string, Fonction> = {
+      'creer-une-publicite': 'publicites', 'envoyer-un-message-rcs': 'rcs', 'publier-sur-ma-chaine-whatsapp': 'chaines',
+      'hubspot-sur-l-accueil': 'crm', 'le-repondeur-de-meta': 'agent_meta', 'repondre-dans-l-inbox': 'inbox',
+    };
+    for (const [cle, fonction] of Object.entries(fonctionDe)) {
+      const attendue = (['pro', 'business', 'entreprise'] as const).find((o) => DROITS[o].fonctions.has(fonction));
+      expect(publiques.find((f) => f.cle === cle)?.publication.offre, cle).toBe(attendue);
+    }
+    expect(() => publicationDe('---\npublique: oui\nrubrique: demarrer\nrang: 1\noffre: oui\n---\n# T')).toThrow(/offre/);
+  });
+
   it('un prérequis désigne une autre fiche publique', () => {
     const cles = new Set(publiques.map((f) => f.cle));
     for (const f of publiques.filter((x) => x.publication.prerequis !== null)) {
@@ -264,7 +277,7 @@ describe('les fiches publiques', () => {
     expect(publicationDe('---\necran: offre\n---\n# T\n\nC.')).toBeNull();
     expect(() => publicationDe(fiche('rubrique: demarrer\nrang: 2\nclaude_code: si'))).toThrow(/claude_code/);
     expect(publicationDe(fiche('rubrique: demarrer\nrang: 2'))).toEqual({
-      rubrique: 'demarrer', rang: 2, commentFaire: false, captures: true, video: false, prerequis: null, offre: true,
+      rubrique: 'demarrer', rang: 2, commentFaire: false, captures: true, video: false, prerequis: null, offre: 'pro',
       claudeCode: false,
     });
     expect(publicationDe(fiche('rubrique: demarrer\nrang: 2\nclaude_code: oui'))?.claudeCode).toBe(true);

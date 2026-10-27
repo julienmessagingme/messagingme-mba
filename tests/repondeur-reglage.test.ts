@@ -135,8 +135,11 @@ describe('le réglage du répondeur en Base (lot 6, B2a)', () => {
     const m = monter({ offre: 'base', etat: { mbaEnabled: true, repondeurMode: 'mba' } });
     const e = await lireRepondeur(m.deps, T, async () => []);
     expect(e).toMatchObject({ mode: 'mba', modeEffectif: 'equipe', mbaConfigurable: false, scenariosPublies: [] });
+    const business = await lireRepondeur(monter({ offre: 'business', etat: { mbaEnabled: true, repondeurMode: 'mba' } }).deps, T, async () => []);
+    expect(business).toMatchObject({ modeEffectif: 'mba', mbaConfigurable: true, scenariosPublies: [{ id: WF, name: 'Bienvenue' }] });
+    // Spec Business : le Pro n'a plus l'agent de Meta, mais garde ses scénarios.
     const pro = await lireRepondeur(monter({ offre: 'pro', etat: { mbaEnabled: true, repondeurMode: 'mba' } }).deps, T, async () => []);
-    expect(pro).toMatchObject({ modeEffectif: 'mba', mbaConfigurable: true, scenariosPublies: [{ id: WF, name: 'Bienvenue' }] });
+    expect(pro).toMatchObject({ modeEffectif: 'equipe', mbaConfigurable: false, scenariosPublies: [{ id: WF, name: 'Bienvenue' }] });
   });
 });
 

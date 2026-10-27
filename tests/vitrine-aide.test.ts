@@ -11,7 +11,7 @@ import { FILMS_AIDE } from '../scripts/vitrine/aide-films';
 import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
 import { page } from '../scripts/vitrine/cas';
 import { OUTILS } from '../src/mcp/outils';
-import { DROITS, ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_HT_CENTIMES } from '../src/offres/offres';
+import { DROITS, ESSAI_PRO_JOURS, PRIX_BUSINESS_HT_CENTIMES, PRIX_PRO_HT_CENTIMES, PRIX_SIEGE_BUSINESS_HT_CENTIMES, PRIX_SIEGE_HT_CENTIMES } from '../src/offres/offres';
 import { OFFRE_PRO, PRIX_DEMO } from '../web/e2e/captures/offre-demo';
 import { SITE, lire, pagesHtml, parAttribut, texte } from './vitrine-lecture';
 
@@ -197,7 +197,8 @@ describe('le centre d’aide de la vitrine', () => {
     expect(PRIX_DEMO.pro).toEqual({ moisCentimes: PRIX_PRO_HT_CENTIMES.mois, anCentimes: PRIX_PRO_HT_CENTIMES.an });
     expect(PRIX_DEMO.siege).toEqual({ moisCentimes: PRIX_SIEGE_HT_CENTIMES.mois, anCentimes: PRIX_SIEGE_HT_CENTIMES.an });
     expect(PRIX_DEMO.essaiJours).toBe(ESSAI_PRO_JOURS);
-    for (const [demo, vraie] of [['free', 'base'], ['pro', 'pro'], ['entreprise', 'entreprise']] as const) {
+    expect(PRIX_DEMO.business).toEqual({ moisCentimes: PRIX_BUSINESS_HT_CENTIMES.mois, siegeMoisCentimes: PRIX_SIEGE_BUSINESS_HT_CENTIMES.mois });
+    for (const [demo, vraie] of [['free', 'base'], ['pro', 'pro'], ['business', 'business'], ['entreprise', 'entreprise']] as const) {
       const g = OFFRE_PRO.grille[demo];
       expect(new Set(g.fonctions), demo).toEqual(DROITS[vraie].fonctions);
       // Dans les deux sens : une limite que la page Offre affiche mais que la démo n'aurait pas disparaîtrait de la grille.
@@ -242,7 +243,7 @@ describe('le centre d’aide de la vitrine', () => {
   it('la mention de l’offre est sur chaque page, sauf celles qui ne demandent pas le Pro', () => {
     for (const p of centre) {
       const html = lire(`${p.fr.adresse.slice(1)}index.html`);
-      expect(html.includes('class="aide-offre"'), p.cle).toBe(p.publication.offre);
+      expect(html.includes('class="aide-offre"'), p.cle).toBe(p.publication.offre !== null);
     }
     expect(centre.filter((p) => !p.publication.offre).map((p) => p.cle).sort())
       .toEqual(['ce-qu-il-faut-chez-meta', 'choisir-mon-offre', 'connecter-mon-numero-whatsapp',

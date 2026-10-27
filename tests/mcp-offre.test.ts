@@ -120,6 +120,13 @@ describe('les outils MCP d’une Free : la clé de son application et le Pro', (
     expect(outil('subscribe_pro').description).toMatch(/14-day free trial/);
   });
 
+  it('🔴 spec Business : get_plan décrit les quatre offres, et subscribe_pro dit qu’un Business ne se paie pas en ligne', () => {
+    expect(outil('get_plan').description).toMatch(/free, pro, business or entreprise/);
+    expect(outil('get_plan').description).toMatch(/Business and Entreprise are set up by Messaging Me/);
+    expect(outil('get_plan').description).not.toMatch(/commission/i);
+    expect(outil('subscribe_pro').description).toMatch(/Business or Entreprise workspace is refused/);
+  });
+
   it('🔴 les deux comptent dans les opérations lourdes : refusées, elles n’appellent ni la création ni Stripe', async () => {
     const { d, cap } = deps({ couteuxAccepte: false });
     await expect(outil('create_api_key').executer(d, T, { name: 'x' }, PERSONNE)).rejects.toBeInstanceOf(RefusOutil);

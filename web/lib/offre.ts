@@ -2,7 +2,7 @@
  * L'OFFRE DE L'ESPACE, CÔTÉ CONSOLE (lot 6, tâche 7).
  *
  * 🔴 LES VALEURS DE LA GRILLE NE SONT JAMAIS RECOPIÉES ICI : elles arrivent par `GET /tenants/:tenantId/offre`
- * (`src/offres/vue.ts`), grille des trois offres comprise. Seuls les NOMS sont recopiés (des fonctions, des offres et des
+ * (`src/offres/vue.ts`), grille des offres comprise. Seuls les NOMS sont recopiés (des fonctions, des offres et des
  * limites), parce que la console ne peut pas importer le serveur ; leur parité est tenue par
  * `tests/offres-console-parite.test.ts`.
  *
@@ -12,7 +12,7 @@
 
 export const FONCTIONS_OFFRE = [
   'inbox', 'scenarios', 'statistiques', 'agent_meta', 'aide', 'assistants', 'analyse', 'publicites', 'email', 'chaines',
-  'crm', 'rcs', 'performance_lab', 'console',
+  'crm', 'rcs', 'performance_lab', 'console', 'widget_personnalise',
 ] as const;
 export type FonctionOffre = (typeof FONCTIONS_OFFRE)[number];
 
@@ -106,6 +106,11 @@ export interface VueOffre {
   /** Le prix HT d'un siège, en centimes ; `null` tant que les sièges ne sont pas en vente, ou sur une API plus ancienne. */
   prixSiege: { moisCentimes: number; anCentimes: number } | null;
   /**
+   * Le prix HT du Business et d'un utilisateur de plus, en centimes (spec Business) : affichés, jamais payés en ligne (le
+   * Business se demande au Support). `null` sur une API d'avant lui.
+   */
+  prixBusiness: { moisCentimes: number; siegeMoisCentimes: number } | null;
+  /**
    * L'abonnement Pro dit en clair (2026-10-26) : statut, souscription, renouvellement ou fin, essai, tels que le serveur les
    * calcule (`statutDuPro`, `src/offres/vue.ts`). `null` sans Pro, vivant ou fini, ou sur une API plus ancienne : la page
    * garde alors son ancien bloc d'abonnement.
@@ -186,7 +191,11 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
   // 🔴 Une API qui ne connaît pas encore la fonction `console` (aucune offre de sa grille ne la porte) : la console est
   // publiée avant l'API, et sans cette parade elle se fermerait à tout le monde, Pro et Entreprise compris.
   const apiSansConsole = !presentes.some((o) => grille[o]!.fonctions.has('console'));
-  const ouvrir = (f: ReadonlySet<FonctionOffre>): ReadonlySet<FonctionOffre> => (apiSansConsole ? new Set([...f, 'console' as const]) : f);
+  // 🔴 Même parade pour l'apparence du widget (rouge 1 de la relecture de B) : une API d'avant le Business ne la garde pas,
+  // et la console grisée enverrait l'apparence standard, que cette API écrirait à la place du réglage d'une Entreprise.
+  const apiSansWidget = !presentes.some((o) => grille[o]!.fonctions.has('widget_personnalise'));
+  const ouvertes: readonly FonctionOffre[] = [...(apiSansConsole ? ['console' as const] : []), ...(apiSansWidget ? ['widget_personnalise' as const] : [])];
+  const ouvrir = (f: ReadonlySet<FonctionOffre>): ReadonlySet<FonctionOffre> => (ouvertes.length > 0 ? new Set([...f, ...ouvertes]) : f);
   for (const o of presentes) grille[o] = { ...grille[o]!, fonctions: ouvrir(grille[o]!.fonctions) };
   return {
     offre, fonctions: ouvrir(fonctions), limites,
@@ -199,6 +208,7 @@ export function lireVueOffre(brut: unknown): VueOffre | null {
     essai: lireEssai(brut.essai),
     sieges: lireSieges(brut.sieges),
     prixSiege: lirePrixPro(brut.prixSiege),
+    prixBusiness: lirePrixBusiness(brut.prixBusiness),
     abonnement: lireAbonnement(brut.abonnement),
     upgradeUrl: brut.upgradeUrl,
   };
@@ -266,6 +276,22 @@ function lirePrixPro(v: unknown): VueOffre['prixPro'] {
   return { moisCentimes: v.moisCentimes, anCentimes: v.anCentimes };
 }
 
+/**
+ * Le tutoriel qui remplace une fonction fermée (spec Business : en Pro, les assistants de configuration et l'assistant
+ * d'aide laissent place aux fiches pas à pas du centre d'aide). L'agent de Meta n'en a pas : rien ne le remplace à la main.
+ * Absent : l'écran fermé ne propose que les offres.
+ */
+export const TUTORIEL_DE_LA_FONCTION: Readonly<Partial<Record<FonctionOffre, { fr: string; en: string }>>> = {
+  assistants: { fr: 'https://app.messagingme.fr/aide/construire-un-agent-ia/', en: 'https://app.messagingme.fr/en/help/build-an-ai-agent/' },
+  aide: { fr: 'https://app.messagingme.fr/aide/', en: 'https://app.messagingme.fr/en/help/' },
+};
+
+/** Le prix du Business, illisible ou absent (une API d'avant lui) : inconnu, la page n'en dit pas le montant. */
+function lirePrixBusiness(v: unknown): VueOffre['prixBusiness'] {
+  if (!estObjet(v) || !entier(v.moisCentimes) || !entier(v.siegeMoisCentimes)) return null;
+  return { moisCentimes: v.moisCentimes, siegeMoisCentimes: v.siegeMoisCentimes };
+}
+
 /** L'offre la moins chère de la grille qui ouvre cette fonction (« Pro », « Business »...), `null` si aucune. */
 export function offreQuiOuvre(vue: VueOffre, f: FonctionOffre): NomOffre | null {
   return NOMS_OFFRES.find((o) => vue.grille[o]?.fonctions.has(f)) ?? null;
@@ -301,6 +327,7 @@ export function libelleFonction(f: FonctionOffre, t: (fr: string, en: string) =>
     rcs: ['RCS', 'RCS'],
     performance_lab: ['Performance Lab', 'Performance Lab'],
     console: ['Console complète', 'Full console'],
+    widget_personnalise: ['Widget personnalisable', 'Customisable widget'],
   };
   const [fr, en] = libelles[f];
   return t(fr, en);

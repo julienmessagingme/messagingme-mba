@@ -1,5 +1,19 @@
 # todo.md : backlog
 
+## L'offre Business, lots 2 et 3 (spec `docs/superpowers/specs/2026-10-27-offre-business-design.md`)
+
+La vitrine les dit déjà inclus dans le Business, sans « bientôt » (décision de Julien du 2026-10-27) : chaque jour sans
+eux est une promesse publique en attente.
+
+- **Lot 2, les fonctions du Business** : l'analyse par conversation sur le crédit IA du client (prix client, commission du
+  Business ; l'Entreprise reste sur notre clé avec un plafond mensuel), HubSpot seul (la fonction `crm` se scinde : HubSpot
+  au Business, Salesforce et Batch à l'Entreprise ; la garde du bouton « Connecter HubSpot »), Mes tableaux (une fonction
+  propre, 4 tableaux en Business). À la livraison, les lignes de la carte Business prennent leur marque `data-fonction`.
+- **Lot 3, l'e-mail aller-retour** : la réponse à un e-mail de scénario revient dans la conversation, l'équipe répond par
+  e-mail depuis l'Inbox (fournisseur de réception à choisir, webhook signé, STOP sur le nouveau chemin d'envoi).
+- **Un geste de `/ops` échoué ne se rejoue pas seul** (jaune 13 de la relecture de A) : une route qui rejoue le seul geste
+  échoué, si l'essai réel en montre le besoin.
+
 ## 🟡 Les restes de la relecture de l'option A (index de prise de pg-boss, petite copie d'API, 2026-10-27)
 
 - **Une file pleine de tâches DIFFÉRÉES** (`start_after` dans le futur : un « attendre 24 h » d'automation sur 30 000
