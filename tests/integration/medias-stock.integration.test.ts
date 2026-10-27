@@ -5,6 +5,8 @@ import { pgSsl } from '../../src/db/ssl';
 import { PgRcsMediaStore, GRACE_SUPPRESSION_JOURS } from '../../src/rcs/media-store.pg';
 import { newMediaCode } from '../../src/ids/code';
 import { LimiteOffreError } from '../../src/offres/refus';
+import { magasinFaux, lireTout } from '../magasin-objets-faux';
+import { recopierVersObjets, sourceRecopiePg } from '../../src/medias/recopie';
 
 /**
  * LE STOCK DE LA MÉDIATHÈQUE (spec médias du 2026-10-14, lot B), sur une vraie base : quota sous verrou d'espace, un même
@@ -30,7 +32,7 @@ describe.skipIf(!url)('le stock de la médiathèque', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: url, ssl: pgSsl() });
-    store = new PgRcsMediaStore(pool);
+    store = new PgRcsMediaStore(pool, null);
     t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-medias-stock') returning id`)).rows[0]!.id;
     autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-medias-stock-autre') returning id`)).rows[0]!.id;
   });
@@ -195,5 +197,134 @@ describe.skipIf(!url)('le stock de la médiathèque', () => {
       await pool.query(`insert into workflows (tenant_id, name, graph) values ($1, 'Ailleurs', $2)`, [autre, graphe(a)]);
       expect(await store.utilisations(t, a)).toEqual([]);
     });
+  });
+});
+
+/**
+ * LE LOT A : LES OCTETS AU BUCKET (migration 0256), sur une vraie base et un magasin en mémoire. Une fiche est soit en
+ * base, soit au bucket, jamais les deux ni aucun ; la lecture sait faire les deux tant que la recopie n'est pas finie.
+ */
+describe.skipIf(!url)('la médiathèque au bucket (lot A)', () => {
+  let pool: Pool;
+  let t = '';
+  let autre = '';
+
+  beforeAll(async () => {
+    pool = new Pool({ connectionString: url, ssl: pgSsl() });
+    t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-medias-bucket') returning id`)).rows[0]!.id;
+    autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-medias-bucket-autre') returning id`)).rows[0]!.id;
+  });
+  beforeEach(async () => {
+    await pool.query('delete from rcs_media where tenant_id = any($1)', [[t, autre]]);
+  });
+  afterAll(async () => {
+    await pool.query('delete from tenants where id = any($1)', [[t, autre]]);
+    await pool.end();
+  });
+
+  const deposer = (store: PgRcsMediaStore, tenant: string, octets: Buffer, quota: number | null = null) =>
+    store.deposer(tenant, { code: newMediaCode(), mime: 'image/png', bytes: octets, nom: 'visuel.png' }, quota);
+  const fiche = async (code: string) =>
+    (await pool.query<{ bytes: Buffer | null; cle_objet: string | null }>('select bytes, cle_objet from rcs_media where code = $1', [code])).rows[0];
+
+  it('un dépôt va au bucket sous le préfixe de son espace, la fiche ne garde que la clé', async () => {
+    const { magasin, objets } = magasinFaux();
+    const store = new PgRcsMediaStore(pool, magasin);
+    const octets = fichier(1200, 3);
+    const { media } = await deposer(store, t, octets);
+    const f = await fiche(media.code);
+    expect(f!.bytes).toBeNull();
+    expect(f!.cle_objet).toBe(`tenants/${t}/${media.code}.png`);
+    expect(objets.get(f!.cle_objet!)?.octets.equals(octets)).toBe(true);
+    // Le quota compte toujours la taille de la fiche.
+    expect(await store.occupation(t)).toBe(1200);
+  });
+
+  it('/m/ lit le bucket en FLUX, la préparation d’un envoi en octets ; un code d’un autre espace ne se lit pas', async () => {
+    const { magasin } = magasinFaux();
+    const store = new PgRcsMediaStore(pool, magasin);
+    const octets = fichier(900, 4);
+    const { media } = await deposer(store, t, octets);
+    const servi = await store.getByCode(media.code);
+    expect(servi!.taille).toBe(900);
+    expect(Buffer.isBuffer(servi!.contenu)).toBe(false);
+    expect((await lireTout(servi!.contenu as import('node:stream').Readable)).equals(octets)).toBe(true);
+    expect((await store.lireDeLEspace(t, media.code))!.bytes.equals(octets)).toBe(true);
+    expect(await store.lireDeLEspace(autre, media.code)).toBeNull();
+  });
+
+  it('une fiche encore EN BASE se sert toujours, magasin configuré ou non (avant la recopie)', async () => {
+    const enBase = await deposer(new PgRcsMediaStore(pool, null), t, fichier(500, 5));
+    expect((await fiche(enBase.media.code))!.cle_objet).toBeNull();
+    const servi = await new PgRcsMediaStore(pool, magasinFaux().magasin).getByCode(enBase.media.code);
+    expect(Buffer.isBuffer(servi!.contenu)).toBe(true);
+  });
+
+  it('un doublon rend la fiche existante, et l’objet déposé pour rien est effacé', async () => {
+    const { magasin, objets } = magasinFaux();
+    const store = new PgRcsMediaStore(pool, magasin);
+    const a = await deposer(store, t, fichier(700, 6));
+    const b = await deposer(store, t, fichier(700, 6));
+    expect(b.existant).toBe(true);
+    expect(b.media.code).toBe(a.media.code);
+    expect([...objets.keys()]).toEqual([`tenants/${t}/${a.media.code}.png`]);
+  });
+
+  it('🔴 un dépôt refusé par le quota ne laisse aucun objet au bucket', async () => {
+    const { magasin, objets } = magasinFaux();
+    const store = new PgRcsMediaStore(pool, magasin);
+    await deposer(store, t, fichier(600, 7), 1000);
+    await expect(deposer(store, t, fichier(500, 8), 1000)).rejects.toBeInstanceOf(LimiteOffreError);
+    expect(objets.size).toBe(1);
+  });
+
+  it('la purge efface l’objet PUIS la fiche ; un objet qui résiste garde sa fiche et la passe lève', async () => {
+    const { magasin, objets } = magasinFaux((op, cle) => op === 'effacer' && cle.includes('RESISTE'));
+    const store = new PgRcsMediaStore(pool, magasin);
+    const a = (await deposer(store, t, fichier(300, 9))).media.code;
+    const b = (await deposer(store, t, fichier(300, 10))).media.code;
+    // Une fiche dont l'objet refuse de s'effacer (clé posée à la main pour la reconnaître).
+    await pool.query(`update rcs_media set cle_objet = 'tenants/RESISTE/x.png' where code = $1`, [b]);
+    await pool.query(`update rcs_media set supprime_le = now() - make_interval(days => $1) where code = any($2)`, [GRACE_SUPPRESSION_JOURS + 1, [a, b]]);
+    await expect(store.purgerSupprimes(50)).rejects.toThrow(/1 objet\(s\) du bucket non effacé/);
+    expect(await fiche(a)).toBeUndefined();
+    expect([...objets.keys()].some((k) => k.includes(a))).toBe(false);
+    expect(await fiche(b)).toBeDefined();
+  });
+
+  it('sans magasin, une fiche au bucket ne se lit pas (erreur qui se voit) et la purge ne l’efface pas', async () => {
+    const { media } = await deposer(new PgRcsMediaStore(pool, magasinFaux().magasin), t, fichier(400, 11));
+    const sans = new PgRcsMediaStore(pool, null);
+    await expect(sans.getByCode(media.code)).rejects.toThrow(/OBJETS_/);
+    await pool.query(`update rcs_media set supprime_le = now() - make_interval(days => $1) where code = $2`, [GRACE_SUPPRESSION_JOURS + 1, media.code]);
+    expect(await sans.purgerSupprimes(50)).toBe(0);
+    expect(await fiche(media.code)).toBeDefined();
+  });
+
+  it('🔴 le CHECK refuse une fiche sans octets ni objet, et une fiche avec les deux', async () => {
+    const inserer = (bytes: Buffer | null, cle: string | null) => pool.query(
+      `insert into rcs_media (tenant_id, code, mime, bytes, cle_objet, taille) values ($1, $2, 'image/png', $3, $4, 10)`,
+      [t, newMediaCode(), bytes, cle],
+    );
+    await expect(inserer(null, null)).rejects.toMatchObject({ code: '23514', constraint: 'rcs_media_bytes_ou_objet' });
+    await expect(inserer(Buffer.from('x'), 'tenants/x/y.png')).rejects.toMatchObject({ code: '23514', constraint: 'rcs_media_bytes_ou_objet' });
+  });
+
+  it('la recopie (sa source SQL) vide la base vers le bucket, fiches supprimées en grâce comprises ; rejouée, rien ne bouge', async () => {
+    const enBase = new PgRcsMediaStore(pool, null);
+    const a = (await deposer(enBase, t, fichier(300, 12))).media.code;
+    const b = (await deposer(enBase, autre, fichier(300, 13))).media.code;
+    await pool.query('update rcs_media set supprime_le = now() where code = $1', [b]);
+    const { magasin, objets } = magasinFaux();
+    // Bornée aux deux espaces du test : la base de la CI porte aussi les fiches des autres fichiers de test.
+    const source = sourceRecopiePg(pool, [t, autre]);
+    expect(await recopierVersObjets(source, magasin)).toEqual({ recopiees: 2, echecs: 0, restantes: 0 });
+    expect((await fiche(a))!.cle_objet).toBe(`tenants/${t}/${a}.png`);
+    expect((await fiche(b))!.bytes).toBeNull();
+    expect(objets.has(`tenants/${autre}/${b}.png`)).toBe(true);
+    expect((await recopierVersObjets(source, magasin)).recopiees).toBe(0);
+    // Et le magasin configuré sert ce qu'il vient de recevoir.
+    const servi = await new PgRcsMediaStore(pool, magasin).lireDeLEspace(t, a);
+    expect(servi!.bytes.equals(fichier(300, 12))).toBe(true);
   });
 });

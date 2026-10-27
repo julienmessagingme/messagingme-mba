@@ -56,6 +56,7 @@ import { resolveNode } from '../ids/resolve';
 import { PgErreursLivraisonStore } from '../ops/erreurs-livraison.pg';
 import type { SourceOffres } from '../offres/offre.pg';
 import type { EnvoiApplication } from '../application/envoi';
+import type { MagasinObjets } from '../lib/magasin-objets';
 
 /**
  * Câblage de l'exécuteur de scénarios : ses dépendances IO (contacts, tags, envois Meta, caches de
@@ -120,6 +121,11 @@ export interface WorkflowRuntimeDeps {
    * service de connexions. Requise : sans elle, l'agent d'un tel espace se tairait faute de numéro de Meta.
    */
   application: Pick<EnvoiApplication, 'filiere' | 'envoyer'>;
+  /**
+   * Le bucket de la médiathèque (lot A des médias), `null` sans les variables `OBJETS_*` : une vidéo ou un PDF du bloc
+   * « message rapide » s'y lit avant de partir chez Meta. Requis, `null` compris, comme pour la médiathèque elle-même.
+   */
+  magasinObjets: MagasinObjets | null;
 }
 
 /** `buildWorkflowRuntime` construit l'exécuteur et ce qui l'accompagne, une fois par process (les caches vivent dedans). */
@@ -209,7 +215,7 @@ export function buildWorkflowRuntime(deps: WorkflowRuntimeDeps) {
    */
   // La médiathèque, lue par (espace, code) : c'est par là qu'une vidéo ou un PDF du bloc « message rapide » partent, sans
   // adresse publique (spec médias, § 3.2).
-  const mediatheque = new PgRcsMediaStore(pool);
+  const mediatheque = new PgRcsMediaStore(pool, deps.magasinObjets);
   const templateMedia = new TemplateMediaPreparer({
     getPhoneNumberId: (tenant) => numeroDeLEspace(tenant),
     lireFichier: (tenant, code) => mediatheque.lireDeLEspace(tenant, code),

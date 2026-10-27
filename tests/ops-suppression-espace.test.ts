@@ -30,7 +30,7 @@ function contexte(over: Partial<ContexteTiers> = {}): ContexteTiers {
   return {
     meta: { jeton: 'propre', wabaId: 'waba-1' },
     hubspot: true,
-    configures: { vercel: true, salesforce: true, hubspot: true },
+    configures: { vercel: true, salesforce: true, hubspot: true, objets: true },
     ...over,
   };
 }
@@ -49,6 +49,7 @@ function gestes(o: { echecs?: NomEtape[]; verrou?: boolean; vercel?: 'null' | bo
     deconnecterSalesforce: async () => { appels.push('salesforce'); leve('salesforce'); return 'efface'; },
     deconnecterHubspot: async () => { appels.push('hubspot'); leve('hubspot'); },
     sortirNumeroFourni: async () => { appels.push('numero_fourni'); leve('numero_fourni'); return { fait: 'resilie', numero: '33100000000' }; },
+    effacerFichiers: async () => { appels.push('fichiers'); leve('fichiers'); return 3; },
     purger: async (_t, trace) => {
       appels.push('purge');
       traces.push(trace.etapes);
@@ -100,7 +101,7 @@ describe('supprimerEspace : l’ordre et les arrêts', () => {
 
   it('🔴 une clé existe et Vercel n’est pas configuré sur cette instance : arrêt, sans même appeler', async () => {
     const { d, appels } = gestes({ vercel: 'null' });
-    const r = await supprimerEspace(d, bilan(), contexte({ configures: { vercel: false, salesforce: true, hubspot: true } }), 'x');
+    const r = await supprimerEspace(d, bilan(), contexte({ configures: { vercel: false, salesforce: true, hubspot: true, objets: true } }), 'x');
     expect(appels).toEqual(['verrou']);
     expect(r.supprime).toBe(false);
     expect(etat(r.etapes, 'cle_vercel')).toBe('echec');
@@ -121,6 +122,27 @@ describe('supprimerEspace : l’ordre et les arrêts', () => {
     expect(r.supprime).toBe(true);
     for (const e of ['mba_eteint', 'waba_desabonne', 'salesforce', 'hubspot', 'numero_fourni'] as const) expect(etat(r.etapes, e)).toBe('echec');
     expect(etat(r.etapes, 'purge')).toBe('fait');
+  });
+
+  it('les fichiers au bucket s’effacent AVANT la purge ; un bucket en panne est noté et la purge se fait quand même', async () => {
+    const ok = gestes();
+    const r = await supprimerEspace(ok.d, bilan(), contexte(), 'x');
+    expect(ok.appels.indexOf('fichiers')).toBe(ok.appels.indexOf('purge') - 1);
+    expect(r.etapes.find((e) => e.etape === 'fichiers')).toEqual({ etape: 'fichiers', etat: 'fait', detail: '3 objet(s) effacé(s) du bucket' });
+    const panne = gestes({ echecs: ['fichiers'] });
+    const p = await supprimerEspace(panne.d, bilan(), contexte(), 'x');
+    expect(etat(p.etapes, 'fichiers')).toBe('echec');
+    expect(etat(p.etapes, 'purge')).toBe('fait');
+  });
+
+  it('sans stockage objet, l’étape des fichiers est sautée : ils sont en base et la purge les emporte', async () => {
+    const g = gestes();
+    g.d.effacerFichiers = null;
+    const c = contexte({ configures: { vercel: true, salesforce: true, hubspot: true, objets: false } });
+    const r = await supprimerEspace(g.d, bilan(), c, 'x');
+    expect(g.appels).not.toContain('fichiers');
+    expect(r.etapes.find((e) => e.etape === 'fichiers')).toMatchObject({ etat: 'sautee', detail: expect.stringContaining('la purge les emporte') });
+    expect(r.supprime).toBe(true);
   });
 
   it('un espace sans clé : l’étape est sautée, et la suite se joue', async () => {
@@ -193,7 +215,7 @@ describe('🔴 les gardes Meta : un objet partagé, ou notre jeton global, ne se
 describe('prevoirEtapes : ce que le bilan annonce', () => {
   it('HubSpot relié sans connecteur configuré : impossible, à délier à la main (et la purge se fait quand même)', async () => {
     const { d, appels } = gestes();
-    const c = contexte({ configures: { vercel: true, salesforce: true, hubspot: false } });
+    const c = contexte({ configures: { vercel: true, salesforce: true, hubspot: false, objets: true } });
     expect(prevoirEtapes(bilan(), c).find((p) => p.etape === 'hubspot')).toMatchObject({ etat: 'impossible' });
     const r = await supprimerEspace(d, bilan(), c, 'x');
     expect(appels).not.toContain('hubspot');
@@ -204,7 +226,7 @@ describe('prevoirEtapes : ce que le bilan annonce', () => {
   it('Salesforce relié sans l’app sur cette instance : la ligne seule est oubliée, et le déroulé le dit', async () => {
     const g = gestes();
     g.d.deconnecterSalesforce = async () => 'oublie';
-    const c = contexte({ configures: { vercel: true, salesforce: false, hubspot: true } });
+    const c = contexte({ configures: { vercel: true, salesforce: false, hubspot: true, objets: true } });
     expect(prevoirEtapes(bilan(), c).find((p) => p.etape === 'salesforce')).toMatchObject({ etat: 'a_faire', detail: expect.stringContaining('ligne seule') });
     const r = await supprimerEspace(g.d, bilan(), c, 'x');
     expect(r.etapes.find((e) => e.etape === 'salesforce')).toMatchObject({ etat: 'fait', detail: expect.stringContaining('secret non effacé') });

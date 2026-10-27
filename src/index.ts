@@ -139,6 +139,7 @@ import { creerEnvoiModeleInbox } from './inbox/envoi-modele';
 import type { DepsEnvoiModeleDansLeFil } from './inbox/envoi-operateur';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
+import { prefixeEspace } from './lib/magasin-objets';
 import { typeFichier, urlFichier } from './medias/fichier';
 import { newMediaCode } from './ids/code';
 import { verifierCleRcs } from './rcs/channel-info';
@@ -288,6 +289,7 @@ async function main(): Promise<void> {
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
     emailsProduit, envoisResend, paiementRefuse, emetteurEmails, envoiApplication, comptesApplication, clientApplication,
     lienConversation,
+    magasinObjets,
   } = construireSocle({ pool, queue, config });
 
   /**
@@ -538,7 +540,7 @@ async function main(): Promise<void> {
   // Hôte fixe et de confiance : aucune vérification d'adresse privée, même traitement que Meta et Zadarma.
   const channelsMeClient = new ChannelsMeClient();
   const rcsMessageStore = new PgRcsMessageStore(pool);
-  const rcsMediaStore = new PgRcsMediaStore(pool);
+  const rcsMediaStore = new PgRcsMediaStore(pool, magasinObjets);
   // Le cache de joignabilité RCS : lu par la fiche de l'API publique, écrit par le rapport de livraison
   // smsmode (`traiterRapportRcs`). L'envoi a le sien dans `rcsStack`.
   const rcsJoignabilite = new PgReachabilityStore(pool);
@@ -1135,7 +1137,7 @@ async function main(): Promise<void> {
       return {
         meta: { jeton, wabaId },
         hubspot,
-        configures: { vercel: provisionCle !== null, salesforce: salesforceSuppression !== null, hubspot: hubspotSuppression !== null },
+        configures: { vercel: provisionCle !== null, salesforce: salesforceSuppression !== null, hubspot: hubspotSuppression !== null, objets: magasinObjets !== null },
       };
     },
     gestes: {
@@ -1163,6 +1165,7 @@ async function main(): Promise<void> {
         if (r.fait === 'libre') await servirLAttente({ numeros: numerosFournis, abonnements: abonnementsNumero }, tenant, 'suppression_espace');
         return r;
       },
+      effacerFichiers: magasinObjets ? (tenant) => magasinObjets.effacerPrefixe(prefixeEspace(tenant)) : null,
       purger: (tenant, trace) => magasinSuppression.purger(tenant, trace),
     },
     verrous: verrousCourts,

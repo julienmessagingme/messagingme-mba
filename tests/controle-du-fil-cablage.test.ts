@@ -98,6 +98,7 @@ function cablageDuScenario(
     // L'e-mail aux admins (lot 7) : la demande est notée, ce qu'elle décide ensuite est `tests/emails-produit-alertes.test.ts`.
     prevenirEquipe: prevenirEquipe ?? (async (...a: unknown[]) => { appels.push(['prevenir', ...a]); }),
     application: filiereApiSeule,
+    magasinObjets: null,
   });
   // `deps` est privé à l'exécuteur : on lit la dépendance que le câblage lui a donnée, sans monter un parcours entier.
   const { escalateToHuman } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
@@ -212,6 +213,7 @@ describe('le câblage d’un scénario confie le message « à côté » au rép
       // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
       prevenirEquipe: async () => {},
       application: filiereApiSeule,
+      magasinObjets: null,
     });
     const { confierAuRepondeur } = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
     await confierAuRepondeur('t1', '33600000001', 'wamid.C');

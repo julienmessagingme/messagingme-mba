@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto';
+import type { Readable } from 'node:stream';
 import type { Pool, PoolClient } from 'pg';
-import type { MimeFichier } from '../medias/fichier';
+import { EXTENSION, type MimeFichier } from '../medias/fichier';
 import { enTransaction } from '../db/transaction';
 import { LimiteOffreError } from '../offres/refus';
+import { prefixeEspace, type MagasinObjets } from '../lib/magasin-objets';
+import { texteDe } from '../lib/erreur';
 
 /** Un visuel, sans ses octets : ce que le téléversement rend. */
 export interface RcsMediaResume {
@@ -14,11 +17,21 @@ export interface RcsMediaResume {
   createdAt: string;
 }
 
-/** Un visuel servi : les octets et leur type réel (celui déduit à l'écriture, jamais un type déclaré). */
+/** Un fichier lu en entier : les octets et leur type réel (celui déduit à l'écriture, jamais un type déclaré). */
 export interface RcsMediaFichier {
   bytes: Buffer;
   mime: MimeFichier;
 }
+
+/** Un visuel servi par `/m/` : ses octets (en base) ou leur flux (au bucket), son type réel et son poids. */
+export interface RcsMediaServi {
+  contenu: Buffer | Readable;
+  mime: MimeFichier;
+  taille: number;
+}
+
+/** La clé d'un fichier au bucket : le préfixe de son espace, puis son code et l'extension de son type réel. */
+export const cleObjet = (tenantId: string, code: string, mime: MimeFichier): string => `${prefixeEspace(tenantId)}${code}.${EXTENSION[mime]}`;
 
 /**
  * Ce qui cite encore un fichier et pourrait l'envoyer (spec médias du 2026-10-14, § 2.4). 🔴 La liste des lieux dérive
@@ -50,20 +63,58 @@ const resume = (r: Ligne): RcsMediaResume => ({ id: r.id, code: r.code, mime: r.
  * La médiathèque d'un espace (`rcs_media`, nom historique : WhatsApp s'en sert aussi). 🔴 L'opérateur télécom va chercher
  * l'image sur une URL publique, sans session : `getByCode` ne prend pas d'espace, c'est le code (130 bits) qui tient
  * l'accès. Toutes les autres opérations sont scopées espace.
+ *
+ * Les octets vivent au bucket (`cle_objet`) quand le magasin d'objets est configuré, en base (`bytes`) sinon : c'est le
+ * lot A des médias, et la lecture sait faire les deux tant que la recopie n'a pas vidé la colonne (migration 0256).
+ * `magasin` est requis, `null` compris : chaque câblage dit s'il en a un, aucun ne l'oublie en silence.
  */
 export class PgRcsMediaStore {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pool, private readonly magasin: MagasinObjets | null) {}
+
+  /** Le magasin, pour un fichier qui est au bucket : sans lui, ce fichier ne se lit pas, et ça doit se voir. */
+  private auBucket(cle: string): MagasinObjets {
+    if (this.magasin === null) throw new Error(`fichier au stockage objet (${cle}), mais les variables OBJETS_* ne sont pas posées ici`);
+    return this.magasin;
+  }
 
   /**
    * Dépose un fichier déjà validé (signature lue, poids borné). Sous verrou d'espace, pour que deux dépôts simultanés ne
    * dépassent pas le quota : un fichier identique (même empreinte) déjà vivant rend sa fiche sans rien consommer, même
    * au-dessus du quota ; sinon le quota (`null` = sans limite) est vérifié avant l'insertion. Refus :
    * `LimiteOffreError('stockageOctets')`, rien n'est écrit.
+   * Au bucket, l'objet se dépose AVANT la transaction : un fichier de 16 Mo ne tient ni le verrou ni une connexion
+   * pendant son envoi. Si la fiche n'est pas écrite (doublon, quota, erreur), l'objet déposé est effacé ; un objet
+   * orphelin ne naît que d'une copie arrêtée entre les deux.
    */
   async deposer(
     tenantId: string,
     input: { code: string; mime: MimeFichier; bytes: Buffer; nom: string | null },
     quota: number | null,
+  ): Promise<{ media: RcsMediaResume; existant: boolean }> {
+    const magasin = this.magasin;
+    if (magasin === null) return this.inscrire(tenantId, input, quota, null);
+    const cle = cleObjet(tenantId, input.code, input.mime);
+    await magasin.deposer(cle, input.bytes, input.mime);
+    const oublier = () => magasin.effacer(cle).catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error('medias: objet depose sans fiche, non efface :', cle, texteDe(err));
+    });
+    try {
+      const r = await this.inscrire(tenantId, input, quota, cle);
+      if (r.existant) await oublier();
+      return r;
+    } catch (err) {
+      await oublier();
+      throw err;
+    }
+  }
+
+  /** La fiche, sous verrou d'espace : les octets en base si `cle` est null, la clé de l'objet déjà déposé sinon. */
+  private async inscrire(
+    tenantId: string,
+    input: { code: string; mime: MimeFichier; bytes: Buffer; nom: string | null },
+    quota: number | null,
+    cle: string | null,
   ): Promise<{ media: RcsMediaResume; existant: boolean }> {
     const empreinte = createHash('sha256').update(input.bytes).digest('hex');
     return enTransaction(this.pool, async (client) => {
@@ -83,10 +134,10 @@ export class PgRcsMediaStore {
         if (Number(occ.rows[0]!.n) + input.bytes.length > quota) throw new LimiteOffreError(tenantId, 'stockageOctets', quota);
       }
       const { rows } = await client.query<Ligne>(
-        `insert into rcs_media (tenant_id, code, mime, bytes, taille, nom, empreinte)
-         values ($1, $2, $3, $4, $5, $6, $7)
+        `insert into rcs_media (tenant_id, code, mime, bytes, cle_objet, taille, nom, empreinte)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)
          returning id, code, mime, taille, nom, created_at`,
-        [tenantId, input.code, input.mime, input.bytes, input.bytes.length, input.nom, empreinte],
+        [tenantId, input.code, input.mime, cle === null ? input.bytes : null, cle, input.bytes.length, input.nom, empreinte],
       );
       return { media: resume(rows[0]!), existant: false };
     });
@@ -156,16 +207,38 @@ export class PgRcsMediaStore {
     });
   }
 
-  /** Efface au plus `taille` fichiers supprimés depuis plus de la grâce ; rend le nombre effacé (`purgerJusquAEpuisement`). */
+  /**
+   * Efface au plus `taille` fichiers supprimés depuis plus de la grâce ; rend le nombre effacé (`purgerJusquAEpuisement`).
+   * Au bucket, l'objet PUIS la fiche : un objet qui ne s'efface pas garde sa fiche, que le passage suivant reprend, et la
+   * passe lève pour que l'étape se voie en échec. Sans magasin, une fiche dont l'objet est au bucket ne s'efface pas :
+   * l'objet resterait, et plus rien ne le nommerait.
+   */
   async purgerSupprimes(taille: number): Promise<number> {
-    const r = await this.pool.query(
-      `delete from rcs_media where id in (
-         select id from rcs_media
-          where supprime_le is not null and supprime_le <= now() - make_interval(days => ${GRACE_SUPPRESSION_JOURS})
-          limit $1)`,
+    const echu = `supprime_le is not null and supprime_le <= now() - make_interval(days => ${GRACE_SUPPRESSION_JOURS})`;
+    if (this.magasin === null) {
+      const r = await this.pool.query(
+        `delete from rcs_media where id in (select id from rcs_media where ${echu} and cle_objet is null limit $1)`,
+        [taille],
+      );
+      return r.rowCount ?? 0;
+    }
+    const { rows } = await this.pool.query<{ id: string; cle_objet: string | null }>(
+      `select id, cle_objet from rcs_media where ${echu} order by supprime_le limit $1`,
       [taille],
     );
-    return r.rowCount ?? 0;
+    const effacees: string[] = [];
+    const echecs: string[] = [];
+    for (const r of rows) {
+      try {
+        if (r.cle_objet !== null) await this.magasin.effacer(r.cle_objet);
+        effacees.push(r.id);
+      } catch (err) {
+        echecs.push(texteDe(err));
+      }
+    }
+    if (effacees.length > 0) await this.pool.query('delete from rcs_media where id = any($1::uuid[])', [effacees]);
+    if (echecs.length > 0) throw new Error(`${echecs.length} objet(s) du bucket non effacé(s), leurs fiches restent : ${echecs[0]}`);
+    return effacees.length;
   }
 
   /**
@@ -174,22 +247,30 @@ export class PgRcsMediaStore {
    * console ouvre un fichier sous session. Un code d'un autre espace rend null, comme un code inconnu.
    */
   async lireDeLEspace(tenantId: string, code: string): Promise<(RcsMediaFichier & { nom: string | null }) | null> {
-    const { rows } = await this.pool.query<{ bytes: Buffer; mime: MimeFichier; nom: string | null }>(
-      `select bytes, mime, nom from rcs_media where tenant_id = $1 and code = $2 and ${SERVI}`,
+    const { rows } = await this.pool.query<{ bytes: Buffer | null; cle_objet: string | null; mime: MimeFichier; nom: string | null }>(
+      `select bytes, cle_objet, mime, nom from rcs_media where tenant_id = $1 and code = $2 and ${SERVI}`,
       [tenantId, code],
     );
-    return rows[0] ? { bytes: rows[0].bytes, mime: rows[0].mime, nom: rows[0].nom } : null;
+    const r = rows[0];
+    if (!r) return null;
+    const bytes = r.bytes ?? (await this.auBucket(r.cle_objet!).lireOctets(r.cle_objet!));
+    return bytes ? { bytes, mime: r.mime, nom: r.nom } : null;
   }
 
   /**
    * Le fichier derrière un code, sans espace (route publique, appelée par l'opérateur), vivant ou supprimé depuis moins
-   * de la grâce. null = code inconnu ou purgé : 404, sans dire si le code a existé.
+   * de la grâce. null = code inconnu ou purgé : 404, sans dire si le code a existé. Au bucket, c'est un FLUX : la
+   * connexion à la base est rendue dès la fiche lue, et l'image ne passe jamais en entier par la mémoire.
    */
-  async getByCode(code: string): Promise<RcsMediaFichier | null> {
-    const { rows } = await this.pool.query<{ bytes: Buffer; mime: MimeFichier }>(
-      `select bytes, mime from rcs_media where code = $1 and ${SERVI}`,
+  async getByCode(code: string): Promise<RcsMediaServi | null> {
+    const { rows } = await this.pool.query<{ bytes: Buffer | null; cle_objet: string | null; mime: MimeFichier; taille: number }>(
+      `select bytes, cle_objet, mime, taille from rcs_media where code = $1 and ${SERVI}`,
       [code],
     );
-    return rows[0] ? { bytes: rows[0].bytes, mime: rows[0].mime } : null;
+    const r = rows[0];
+    if (!r) return null;
+    if (r.bytes !== null) return { contenu: r.bytes, mime: r.mime, taille: r.bytes.length };
+    const flux = await this.auBucket(r.cle_objet!).lireFlux(r.cle_objet!);
+    return flux ? { contenu: flux, mime: r.mime, taille: r.taille } : null;
   }
 }

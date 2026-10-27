@@ -46,6 +46,7 @@ describe.skipIf(!url)('« Aller à » (Postgres)', () => {
       // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
       prevenirEquipe: async () => {},
       application: filiereApiSeule,
+      magasinObjets: null,
     });
     deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;
   });

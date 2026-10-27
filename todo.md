@@ -3070,19 +3070,15 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
   le point `quel_outil` de l'entretien pose la question au bon endroit, c'est-à-dire dans la QUESTION et non
   sur une ligne de diff dont ça changerait la clé. À rouvrir seulement si l'usage montre que ça manque encore.
 
-## 🟠 Médias, lot A : les fichiers sortent de Postgres APRÈS la bascule Scaleway
+## 🟠 Médias : la fin du lot A, et ce que les lots B et C laissent
 
-🔴 **ET AVANT L'OUVERTURE DU SITE** : l'épreuve de la médiathèque froide a échoué le 2026-10-26 au soir chez Scaleway
-(`docs/ARCHITECTURE-CIBLE.md` § 11 : 33 images lues ensemble, 1,7 s au pire, 12 attentes du pool de l'API sur 42).
-⚠️ La clé de cache de `/m/` chez Cloudflare ignore la chaîne de requête : la route réécrite par le lot ne doit lire
-aucun paramètre de requête (`documentation.md`, le cache devant `/m/`).
-
-Les lots B (médiathèque, quota, suppression) et C (vidéo et PDF dans le bloc « message rapide ») sont livrés le
-2026-10-15 avec les fichiers EN BASE (`rcs_media.bytes`), décision de Julien. Reste le lot A, à faire APRÈS la bascule :
-bucket privé en `nl-ams`, recopie de TOUT ce que la table porte (images, vidéos, PDF), retrait de la colonne en deux
-temps, effacement des objets à la suppression d'un espace. Plan `docs/superpowers/plans/2026-10-14-medias-message-rapide.md`,
-section « Lot A », à relire contre le code du moment avant d'écrire une ligne. Décidé le 2026-10-04
-(`docs/prive/AUDIT-PERFORMANCE-COMPLET-2026-10-02.md` § 6) ; le volume de la table est suivi dans `/ops` (rouge à 500 Mo).
+Le lot A (les fichiers sortent de Postgres) est EN COURS : `wip.md`. Ce qui reste après lui, à faire plus tard :
+- **La migration A2**, dans un déploiement à part, une fois la recopie à 0 et plus aucun code qui lise `bytes` : retrait
+  de la colonne, le CHECK devient « `cle_objet` non nul », les variables `OBJETS_*` deviennent obligatoires (plan des
+  médias, tâche A6 ; `tests/integration` ne nomme plus `bytes`).
+- **La carte « octets en base » de `/ops`** (tâche A5, reportée) : elle ne compte plus que ce qui reste en base.
+  Montrer aussi le volume au bucket, la somme des `taille` des fiches qui ont une `cle_objet`, sans appel au bucket,
+  et revoir le seuil rouge pour un stockage objet.
 
 Ce que les relectures des lots B et C laissent, aucun ne casse la production :
 

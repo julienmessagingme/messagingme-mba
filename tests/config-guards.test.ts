@@ -149,6 +149,22 @@ describe('gardes de config en production', () => {
     expect(schema.safeParse({ ...prodEnv, STRIPE_PRIX_SIEGE_MOIS: 'price_siege_mois', STRIPE_PRIX_SIEGE_AN: 'price_siege_an' }).success).toBe(true);
   });
 
+  it('🔴 le stockage objet des médias : les cinq variables ensemble ou aucune, et un point d’accès https sans chemin', () => {
+    // Un réglage partiel ferait échouer chaque dépôt et chaque lecture d'un fichier au bucket, en plein service.
+    asProd();
+    const objets = {
+      OBJETS_POINT_ACCES: 'https://s3.nl-ams.scw.cloud', OBJETS_REGION: 'nl-ams', OBJETS_BUCKET: 'mm-medias-prod',
+      OBJETS_CLE: 'cle-fabriquee', OBJETS_SECRET: 'secret-fabrique',
+    };
+    expect(schema.safeParse({ ...prodEnv, ...objets }).success).toBe(true);
+    expect(schema.safeParse(prodEnv).success).toBe(true);
+    expect(errPaths(schema.safeParse({ ...prodEnv, ...objets, OBJETS_SECRET: '' }))).toContain('OBJETS_SECRET');
+    expect(errPaths(schema.safeParse({ ...prodEnv, OBJETS_BUCKET: 'mm-medias-prod' }))).toContain('OBJETS_POINT_ACCES');
+    for (const pointAcces of ['http://s3.nl-ams.scw.cloud', 'https://s3.nl-ams.scw.cloud/mm-medias-prod', 's3.nl-ams.scw.cloud']) {
+      expect(errPaths(schema.safeParse({ ...prodEnv, ...objets, OBJETS_POINT_ACCES: pointAcces }))).toContain('OBJETS_POINT_ACCES');
+    }
+  });
+
   it('🔴 le provisionnement SANS clé de chiffrement -> refusé', () => {
     // Sans elle, la clé Gateway d'un client finirait en clair dans la base, ou l'écriture échouerait au
     // premier agent créé. Les deux sont inacceptables, et aucun des deux ne se voit avant la production.

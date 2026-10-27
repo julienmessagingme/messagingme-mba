@@ -15,7 +15,8 @@ const ascii = (b: Buffer, debut: number, fin: number): string => b.toString('lat
  */
 export const TAILLE_VIDEO_PDF_MAX = 16 * 1024 * 1024;
 
-const EXTENSION: Record<MimeFichier, string> = {
+/** L'extension d'un type : celle de l'adresse `/m/` et celle de la clé d'objet au bucket. */
+export const EXTENSION: Record<MimeFichier, string> = {
   'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'video/mp4': 'mp4', 'application/pdf': 'pdf',
 };
 

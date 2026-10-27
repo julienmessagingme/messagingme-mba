@@ -524,6 +524,7 @@ matin est supprimé. Le réseau privé et la base sont RÉGIONAUX : une ressourc
 |---|---|---|---|
 | VPC et réseau privé | `mm-vpc`, `mm-prive` | `nl-ams` | 172.16.0.0/22, adresses attribuées par l'IPAM |
 | Registre privé | `rg.nl-ams.scw.cloud/messagingme` | `nl-ams` | image `mba:<sha complet>` |
+| Bucket des médias | `mm-medias-prod` (Object Storage, créé le 2026-10-27) | `nl-ams` | privé (seul le propriétaire en ACL, lecture anonyme en 403), sans versions : un fichier effacé l'est vraiment ; lot A des médias, plus bas |
 | Espace de conteneurs | `messagingme` | `nl-ams` | le conteneur de l'API `mba-api` y est créé : privé, rattaché à `mm-prive` ; sa TAILLE se déclare dans `ops/scaleway/conteneur-api.json` (de 1 à 3 copies, décision de Julien du 2026-10-15 ; 1 120 mvCPU et 2 Go ; sonde HTTP sur `/live` ; pools et plafond), que le workflow applique à chaque déploiement en complétant les variables du script sans les remplacer. ⚠️ Le minimum à 1 garde aussi le conteneur d'ESSAI allumé (environ 40 € par mois) dès le prochain déploiement |
 | Passerelle | `mm-passerelle` (VPC-GW-S) | `nl-ams-2` | bastion SSH sur le port 61000, NAT et route par défaut vers `mm-prive` |
 | Base JETABLE | `mm-banc` (PostgreSQL 17, DB-DEV-M) | `nl-ams` | adresse privée seule, disque chiffré, sauvegardes en région ; mot de passe dans Secret Manager `mm-banc-db-admin` ; à supprimer après les lots 3 et 4 |
@@ -573,6 +574,11 @@ du 2026-10-14 reste sur la machine en `.env.prod.essai`. Le conteneur et la mach
 `AUTH_SECRET` : une différence entre eux casse le déchiffrement ou les sessions.
 6. Une application IAM `cloudflare-origine`, avec `ContainersPrivateAccess` pour seul droit : sa clé secrète va dans
    la règle Cloudflare qui écrase `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` §7.3).
+7. Une application IAM `mm-medias` SANS AUCUN droit IAM : c'est la politique du bucket `mm-medias-prod`, posée par
+   Claude avec l'IDENTIFIANT de l'application (jamais sa clé), qui l'autorise à lire, écrire et effacer ce seul bucket.
+   Sa clé et les quatre autres variables `OBJETS_*` (`https://s3.nl-ams.scw.cloud`, `nl-ams`, `mm-medias-prod`)
+   partent ENSEMBLE dans les secrets du conteneur et dans le `.env.prod` de la machine : le démarrage refuse un réglage
+   partiel. La suite : « Les médias au bucket », plus bas.
 
 ⚠️ **Chaque clé d'API Scaleway a une date d'expiration** (`github-deploy`, `workers-registre`, `cloudflare-origine`),
 lisible dans IAM, onglet API keys : la renouveler AVANT, sinon le déploiement, la mise à jour des workers ou l'accès de
@@ -610,6 +616,25 @@ run `waiting` se règle d'abord, et Julien reçoit les deux liens.
   Sa relecture en lecture seule passe par un script envoyé sur la machine et monté dans le conteneur
   (`-v /root/<script>:/app/<script>:ro`, puis `npx tsx <script>`) : l'utilisateur du conteneur n'est pas root, et un
   fichier écrit sous `umask 077` lui rend `EACCES` (`chmod 644`, il ne porte aucun secret) ; il s'efface après.
+
+### Les médias au bucket (lot A des médias)
+
+L'ordre, et ce que chaque pas laisse si on s'arrête là :
+1. Déployer le code avec `migration=avant` (0256 : `bytes` nullable, `cle_objet`, le CHECK « l'un ou l'autre »). Sans
+   les variables `OBJETS_*`, il fait exactement comme avant : tout reste en base.
+2. Poser les cinq variables (geste 7), puis recréer les workers. Dès lors, tout fichier NEUF va au bucket, et la
+   lecture sait faire les deux.
+3. Sonder le bucket depuis la machine, avec la vraie clé : déposer, lire, effacer sous `essais/`, et le refus de tout
+   autre bucket.
+4. Recopier l'existant, sur la machine : `docker run --rm --env-file /opt/messagingme/.env.prod <image> npx tsx
+   scripts/medias-vers-objets.mts --espaces=<un espace de test>`, puis sans `--espaces`. Rejouable ; la sortie dit
+   « encore en base 0 », sinon on relance et on lit ses échecs.
+5. Rejouer l'épreuve de la médiathèque froide (`docs/ARCHITECTURE-CIBLE.md` § 11) : aucune attente du pool de l'API.
+6. Plus tard, dans un déploiement à part : la migration A2 retire `bytes`, et les variables deviennent obligatoires.
+
+⚠️ Retirer les variables `OBJETS_*` après la recopie ne ramène PAS les fichiers en base : ceux du bucket ne se lisent
+plus (erreur à chaque lecture, jamais un 404 muet). Le retour arrière du lot, c'est une image d'avant 0256 TANT QUE la
+recopie n'a pas tourné ; après elle, on avance.
 
 ### Le connecteur HubSpot chez Scaleway (lot 5, 2026-10-15)
 

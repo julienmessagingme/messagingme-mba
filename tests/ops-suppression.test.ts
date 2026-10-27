@@ -44,6 +44,7 @@ function monter(o: { verrous?: ReturnType<typeof verrousEnMemoire> } = {}) {
     deconnecterSalesforce: async () => { gestes.push('salesforce'); return 'non_relie'; },
     deconnecterHubspot: note('hubspot'),
     sortirNumeroFourni: async () => { gestes.push('numero_fourni'); return { fait: 'aucun' }; },
+    effacerFichiers: null,
     purger: async (_t, trace) => {
       gestes.push('purge');
       purges.push({ par: trace.par });
@@ -53,7 +54,7 @@ function monter(o: { verrous?: ReturnType<typeof verrousEnMemoire> } = {}) {
   let lectures = 0;
   const deps: OpsSuppressionDeps = {
     bilan: async (t) => { lectures += 1; return t === T1 ? BILAN : null; },
-    contexte: async () => ({ meta: { jeton: 'global', wabaId: null }, hubspot: false, configures: { vercel: true, salesforce: true, hubspot: true } }),
+    contexte: async () => ({ meta: { jeton: 'global', wabaId: null }, hubspot: false, configures: { vercel: true, salesforce: true, hubspot: true, objets: false } }),
     gestes: d,
     verrous: o.verrous ?? verrousEnMemoire(),
   };

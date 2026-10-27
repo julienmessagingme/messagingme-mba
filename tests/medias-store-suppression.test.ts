@@ -25,7 +25,7 @@ describe('PgRcsMediaStore.supprimer', () => {
       connect: async () => client,
       query: async () => { throw new Error('seconde connexion demandée au pool pendant la transaction'); },
     } as unknown as Pool;
-    return { store: new PgRcsMediaStore(pool), requetes };
+    return { store: new PgRcsMediaStore(pool, null), requetes };
   }
 
   it('vérifie les utilisations SUR la connexion de la transaction, puis supprime', async () => {

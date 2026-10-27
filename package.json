@@ -33,6 +33,7 @@
     "vitrine:aide": "tsx scripts/vitrine/aide.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1149.0",
     "@fastify/cors": "^11.3.0",
     "@whiskeysockets/baileys": "6.7.23",
     "fastify": "^5.12.5",

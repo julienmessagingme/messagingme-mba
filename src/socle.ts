@@ -90,6 +90,7 @@ import { adresseOffre } from './offres/refus';
 import { PgComptesApplication } from './application/comptes.pg';
 import { creerClientApplication } from './application/client';
 import { creerEnvoiApplication } from './application/envoi';
+import { creerMagasinObjets, configObjets } from './lib/magasin-objets';
 
 /**
  * Ce que le socle lit de la configuration qu'on lui passe. Les autres réglages restent aux racines qui les consomment ;
@@ -100,6 +101,7 @@ export type ConfigSocle = Pick<Config,
   | 'META_GRAPH_VERSION' | 'META_MM_LITE' | 'PHONE_RATE_PER_MINUTE_MAX' | 'RCS_PROVIDER' | 'CREDIT_OFFERT_MICRO_EUR'
   | 'CONTROL_HUMAN_TIMEOUT_MS' | 'AI_GATEWAY_API_KEY' | 'RESEND_API_KEY' | 'SUPPORT_FROM' | 'APP_URL'
   | 'APPLICATION_SERVICE_URL' | 'APPLICATION_SERVICE_SECRET' | 'HUBSPOT_SERVICE_URL'
+  | 'OBJETS_POINT_ACCES' | 'OBJETS_REGION' | 'OBJETS_BUCKET' | 'OBJETS_CLE' | 'OBJETS_SECRET'
 >;
 
 export interface DepsSocle {
@@ -531,11 +533,19 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
    * Exécuteur de scénarios et ce qui l'accompagne (`workflow/wiring.ts`) : le worker le fait avancer (réponse d'un
    * contact, campagne, réveil), l'API le lance depuis l'Inbox et doit savoir tout de suite si c'est parti.
    */
+  /**
+   * Le bucket des fichiers de la médiathèque (lot A des médias), ou null sans les variables `OBJETS_*`. Un seul par
+   * processus : le runtime de scénario y lit une vidéo ou un PDF à envoyer, l'API et le worker le donnent à leur
+   * médiathèque (`PgRcsMediaStore`).
+   */
+  const magasinObjets = creerMagasinObjets(configObjets(config));
+
   const workflowRuntime = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
     emailTemplates, emailResolver, numeroDeLEspace, runStore, fil, offres, prevenirEquipe,
     application: envoiApplication,
+    magasinObjets,
   });
 
   /**
@@ -580,6 +590,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     connexionsPub, connexionPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
     emailsProduit, emetteurEmails, envoisResend, paiementRefuse, prevenirEquipe, lienConversation,
     comptesApplication, clientApplication, envoiApplication,
+    magasinObjets,
   };
 }
 

@@ -1198,6 +1198,7 @@ function SuppressionEspace({ jeton, tenantId, nom, onFermer, onPerdue }: {
     salesforce: 'Salesforce',
     hubspot: 'HubSpot',
     numero_fourni: t('Numéro fourni', 'Provided number'),
+    fichiers: t('Fichiers de la médiathèque', 'Media library files'),
     purge: t('Purge', 'Purge'),
   };
   const etat: Record<string, { texte: string; cls: string }> = {

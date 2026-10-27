@@ -572,6 +572,17 @@ export const schema = z.object({
   STRIPE_PRIX_SIEGE_MOIS: z.string().default(''),
   STRIPE_PRIX_SIEGE_AN: z.string().default(''),
   /**
+   * Le stockage objet des fichiers de la médiathèque (lot A des médias, `src/lib/magasin-objets.ts`) : le point d'accès
+   * S3 de la région (`https://s3.nl-ams.scw.cloud`), la région (`nl-ams`), le bucket, et la clé d'une application
+   * limitée à CE bucket. 🔴 Côté serveur uniquement, posées par Julien. Les cinq ensemble ou aucune (garde plus bas) :
+   * vides, les fichiers neufs s'écrivent en base comme avant, et un fichier déjà au bucket ne se lit plus (erreur).
+   */
+  OBJETS_POINT_ACCES: z.string().default(''),
+  OBJETS_REGION: z.string().default(''),
+  OBJETS_BUCKET: z.string().default(''),
+  OBJETS_CLE: z.string().default(''),
+  OBJETS_SECRET: z.string().default(''),
+  /**
    * Les numéros fournis (lot 3a, `src/otp/`). 🔴 Côté serveur uniquement.
    * `DIDWW_API_KEY` : la clé d'API DIDWW de PRODUCTION, limitée à l'adresse du VPS. Elle ne sert qu'à retrouver un
    * numéro et à le brancher sur le trunk de l'Asterisk (`DIDWW_TRUNK_OTP_ID`), jamais à acheter, bien qu'elle le
@@ -746,6 +757,16 @@ export const schema = z.object({
     // Les deux prix du siège vont ensemble : un Pro annuel ne pourrait pas acheter le sien, ou un mensuel le sien.
     if ((c.STRIPE_PRIX_SIEGE_MOIS === '') !== (c.STRIPE_PRIX_SIEGE_AN === '')) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [c.STRIPE_PRIX_SIEGE_MOIS === '' ? 'STRIPE_PRIX_SIEGE_MOIS' : 'STRIPE_PRIX_SIEGE_AN'], message: 'STRIPE_PRIX_SIEGE_MOIS et STRIPE_PRIX_SIEGE_AN se posent ensemble (ou aucun des deux)' });
+    }
+    // Le stockage objet : un réglage partiel (le bucket sans la clé, ou l'inverse) ferait échouer chaque dépôt et
+    // chaque lecture d'un fichier au bucket ; il est refusé au démarrage plutôt qu'en plein service.
+    const objets = ['OBJETS_POINT_ACCES', 'OBJETS_REGION', 'OBJETS_BUCKET', 'OBJETS_CLE', 'OBJETS_SECRET'] as const;
+    const objetsVides = objets.filter((k) => c[k] === '');
+    if (objetsVides.length > 0 && objetsVides.length < objets.length) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [objetsVides[0]!], message: `${objets.join(', ')} se posent ensemble (ou aucune) : ${objetsVides.join(', ')} manque(nt)` });
+    }
+    if (c.OBJETS_POINT_ACCES !== '' && !/^https:\/\/[^/\s]+\/?$/.test(c.OBJETS_POINT_ACCES)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['OBJETS_POINT_ACCES'], message: 'OBJETS_POINT_ACCES doit être une adresse https sans chemin (https://s3.nl-ams.scw.cloud)' });
     }
     // Le pont du code : un secret court se devinerait. ⚠️ AUCUNE garde au démarrage sur la paire clé DIDWW et trunk :
     // `.env.prod` porte encore la ligne `DIDWW_API_KEY` d'une clé révoquée (mesuré le 2026-10-02), et la garde aurait

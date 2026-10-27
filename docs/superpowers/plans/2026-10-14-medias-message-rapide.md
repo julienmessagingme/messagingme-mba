@@ -57,6 +57,14 @@ la tâche qui possède le code.
 
 ## Lot A : les fichiers sortent de Postgres
 
+**Révision du 2026-10-27, relu contre le code du jour** : la mesure 1 est connue (24 Mo traversent Cloudflare jusqu'au
+conteneur, 2026-10-26) ; le bucket `mm-medias-prod` est créé par Claude à la demande de Julien, l'application et sa clé
+restent à Julien. Écarts au plan : le magasin est un paramètre REQUIS de `PgRcsMediaStore` (`null` compris), construit
+dans le socle et passé aussi au runtime de scénario, qui lit les vidéos et les PDF ; la purge du worker efface l'objet
+avant la fiche (le plan ne la nommait pas) ; `effacerPrefixe` efface objet par objet, jamais par `DeleteObjects`, dont
+S3 exige une somme de contrôle que les stockages compatibles ne lisent pas tous ; la recopie accepte `--espaces` pour un
+premier espace d'essai. La carte de `/ops` (tâche 5) est reportée au `todo.md`.
+
 Prérequis : la bascule faite, la mesure 1 de la spec (§ 6, taille maximale d'une requête vers le conteneur) connue.
 Julien crée le bucket et la clé, pose les variables dans les secrets de la cible. Mesure 2 de la spec : borner la
 clé au bucket par l'IAM, sinon par une politique de bucket, et le vérifier (la clé refuse un autre bucket du projet).

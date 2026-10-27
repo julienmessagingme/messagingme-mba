@@ -522,7 +522,7 @@ export function declarerNumeroFourni(sessionOps: string, numero: string, note: s
 
 /** Les étapes de la suppression d'un espace (RC8), dans l'ordre où le serveur les joue. */
 export type EtapeSuppressionNom =
-  | 'verrou' | 'cle_vercel' | 'mba_eteint' | 'mba_liste' | 'waba_desabonne' | 'salesforce' | 'hubspot' | 'numero_fourni' | 'purge';
+  | 'verrou' | 'cle_vercel' | 'mba_eteint' | 'mba_liste' | 'waba_desabonne' | 'salesforce' | 'hubspot' | 'numero_fourni' | 'fichiers' | 'purge';
 
 /** Un objet Stripe, avec le lien du tableau de bord (dans le bon mode) : Julien y résilie à la main. */
 export interface AbonnementStripeOps { id: string; produit: 'numero' | 'offre'; statut: string; livemode: boolean; vivant: boolean; lien: string }

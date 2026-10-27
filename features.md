@@ -3355,7 +3355,8 @@ boîte par sous-menu.
   les étapes qui seront sautées). On tape le nom exact de l'espace pour confirmer. La suppression verrouille l'espace,
   révoque sa clé de modèle chez Vercel (si cela échoue, rien n'est supprimé), puis, au mieux, éteint l'agent de Meta
   et vide sa liste, désabonne le compte WhatsApp de notre app (sauté si ce compte sert à un autre espace ou s'il passe
-  par notre propre jeton), délie Salesforce et HubSpot, et sort le numéro fourni ; enfin elle efface l'espace et ses
+  par notre propre jeton), délie Salesforce et HubSpot, sort le numéro fourni et efface les fichiers de sa
+  médiathèque du stockage objet ; enfin elle efface l'espace et ses
   données, et laisse une trace sans donnée client. Elle ne résilie RIEN chez Stripe : les liens sont affichés pour le
   faire à la main, et une facture qui arrive ensuite pour un espace disparu prévient l'exploitation au lieu de
   boucler.

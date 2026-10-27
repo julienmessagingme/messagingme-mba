@@ -232,6 +232,7 @@ describe('l’agent IA répond par l’application', () => {
       rcsProvider: 'fake', emailTemplates: inerte, emailResolver: inerte, numeroDeLEspace: async () => null, runStore: inerte,
       fil: inerte, offres: offresToutOuvert, prevenirEquipe: async () => {},
       application,
+      magasinObjets: null,
     });
   };
 

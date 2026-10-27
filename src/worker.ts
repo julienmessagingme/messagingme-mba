@@ -226,6 +226,7 @@ export async function demarrerWorker(): Promise<void> {
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
     emailsProduit, emetteurEmails, envoisResend, prevenirEquipe, lienConversation, quotaModeles, comptesApplication, clientApplication,
+    magasinObjets,
   } = construireSocle({ pool, queue, config });
   // La commission sur le crédit IA, celle de l'offre de l'espace (lot 6, C) : le cerveau des tours d'agent la lit.
   const commissionDeLEspace = commissionPour(offres);
@@ -244,8 +245,8 @@ export async function demarrerWorker(): Promise<void> {
   };
   // Les appels captés par le pont du code (lot 3a) : le worker ne fait que les purger (balayage de rétention).
   const numerosFournisStore = new PgNumerosFournisStore(pool);
-  // La médiathèque : le worker n'en fait que purger les fichiers supprimés (rétention générale).
-  const mediatheque = new PgRcsMediaStore(pool);
+  // La médiathèque : le worker n'en fait que purger les fichiers supprimés (rétention générale), objet au bucket compris.
+  const mediatheque = new PgRcsMediaStore(pool, magasinObjets);
   const PURGE_MEDIAS_PAR_LOT = 50;
 
   // Heartbeat : le worker écrit un signal de vie best-effort, dont /ops/overview lit l'âge. Il prouve que le

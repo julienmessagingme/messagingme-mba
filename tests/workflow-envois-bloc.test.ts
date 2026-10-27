@@ -745,6 +745,7 @@ function cablage(opts: { dryRun?: boolean; numero?: string | null; templates?: T
     // Le lot 7 : ces bancs ne testent pas l’e-mail aux admins.
     prevenirEquipe: async () => {},
     application: filiereApiSeule,
+    magasinObjets: null,
   });
   // `deps` est privé à l'exécuteur : on lit les dépendances que le câblage lui a données.
   const deps = Reflect.get(executor, 'deps') as WorkflowExecutorDeps;

@@ -13,7 +13,8 @@ import type { IssueSortieNumero } from '../numero/liberation.pg';
  *  1. 🔴 la clé Vercel, révoquée chez Vercel puis chez nous. ÉCHEC = ARRÊT, RIEN N'EST PURGÉ : la cascade emporterait
  *     notre ligne, et une clé dont l'identifiant est perdu facture à vie ;
  *  2. au mieux, chacun noté et aucun n'arrête la suite : l'agent de Meta éteint, sa liste vidée, le compte WhatsApp
- *     désabonné de notre app, Salesforce et HubSpot déliés, le numéro fourni sorti ;
+ *     désabonné de notre app, Salesforce et HubSpot déliés, le numéro fourni sorti, les fichiers de la médiathèque
+ *     effacés du bucket (un bucket ne suit pas la cascade : sans cette étape, ils y resteraient à vie) ;
  *  3. la purge, en UNE transaction, qui écrit la ligne de trace (`espaces_supprimes`) avec elle.
  *
  * 🔴 UN OBJET META PARTAGÉ NE SE TOUCHE PAS. Les trois étapes chez Meta sont SAUTÉES si le compte WhatsApp ou le numéro
@@ -24,7 +25,7 @@ import type { IssueSortieNumero } from '../numero/liberation.pg';
 
 /** Les étapes, dans l'ordre où elles se jouent. */
 export const ETAPES = [
-  'verrou', 'cle_vercel', 'mba_eteint', 'mba_liste', 'waba_desabonne', 'salesforce', 'hubspot', 'numero_fourni', 'purge',
+  'verrou', 'cle_vercel', 'mba_eteint', 'mba_liste', 'waba_desabonne', 'salesforce', 'hubspot', 'numero_fourni', 'fichiers', 'purge',
 ] as const;
 export type NomEtape = (typeof ETAPES)[number];
 
@@ -95,7 +96,7 @@ export interface ContexteTiers {
   meta: { jeton: 'propre' | 'global' | 'invalide'; wabaId: string | null };
   /** Un portail HubSpot relié ? `null` = la lecture a échoué. */
   hubspot: boolean | null;
-  configures: { vercel: boolean; salesforce: boolean; hubspot: boolean };
+  configures: { vercel: boolean; salesforce: boolean; hubspot: boolean; objets: boolean };
 }
 
 /** Les gestes, donnés par le câblage. Chacun peut lever : l'orchestrateur note l'échec. */
@@ -116,6 +117,12 @@ export interface DepsSuppression {
   deconnecterSalesforce(tenantId: string): Promise<'efface' | 'non_efface' | 'oublie' | 'non_relie'>;
   deconnecterHubspot: ((tenantId: string) => Promise<void>) | null;
   sortirNumeroFourni(tenantId: string): Promise<IssueSortieNumero>;
+  /**
+   * Efface le préfixe de l'espace au bucket et rend le nombre d'objets effacés. `null` = stockage objet non configuré :
+   * les fichiers sont alors en base, et la purge les emporte. Un échec se rejoue : le préfixe se déduit de l'identifiant
+   * de l'espace, que la ligne de trace garde.
+   */
+  effacerFichiers: ((tenantId: string) => Promise<number>) | null;
   purger(tenantId: string, trace: { par: string; etapes: EtapeJouee[] }): Promise<IssuePurge>;
 }
 
@@ -192,6 +199,7 @@ export function prevoirEtapes(b: BilanSuppression, c: ContexteTiers): EtapePrevu
         : a('hubspot', c.hubspot === null ? 'portail inconnu (lecture en échec)' : null),
     b.numeroFourni === null ? s('numero_fourni', 'aucun')
       : a('numero_fourni', b.numeroFourni.vuDeMeta ? `${b.numeroFourni.numero} : vu de Meta, à résilier chez DIDWW` : `${b.numeroFourni.numero} : rendu à la réserve`),
+    !c.configures.objets ? s('fichiers', 'stockage objet non configuré : les fichiers sont en base, la purge les emporte') : a('fichiers'),
     a('purge'),
   ];
 }
@@ -281,6 +289,10 @@ export async function supprimerEspace(d: DepsSuppression, b: BilanSuppression, c
     return fait();
   });
   await jouer('numero_fourni', async () => detailNumero(await d.sortirNumeroFourni(b.tenantId)));
+  await jouer('fichiers', async () => {
+    if (d.effacerFichiers === null) throw new Error('stockage objet non configuré sur cette instance');
+    return fait(`${await d.effacerFichiers(b.tenantId)} objet(s) effacé(s) du bucket`);
+  });
 
   // 3. La purge, et sa ligne de trace dans la même transaction. Ses propres étapes ne sont pas dans la trace : la
   //    ligne n'existe que si elle a réussi.

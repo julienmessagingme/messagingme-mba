@@ -8,7 +8,8 @@ import {
 } from '../src/rcs/image';
 import type { MimeImage } from '../src/rcs/image';
 import { urlFichier, type MimeFichier } from '../src/medias/fichier';
-import type { RcsMediaFichier, IssueSuppression } from '../src/rcs/media-store.pg';
+import { Readable } from 'node:stream';
+import type { RcsMediaServi, IssueSuppression } from '../src/rcs/media-store.pg';
 import { LimiteOffreError } from '../src/offres/refus';
 
 /** Signatures REELLES, suivies de remplissage : `typeImage` ne lit que les premiers octets. */
@@ -73,17 +74,25 @@ async function jeton(role: 'admin' | 'agent'): Promise<string> {
 }
 
 function appWith(
-  stocke: { bytes: Buffer; mime: MimeImage } | null,
+  stocke: { bytes: Buffer; mime: MimeImage; auBucket?: boolean } | null,
   o: { quotaAtteint?: boolean; suppression?: IssueSuppression; prive?: { bytes: Buffer; mime: MimeFichier; nom: string | null } } = {},
 ) {
   const crees: Array<{ mime: MimeFichier; taille: number; nom: string | null }> = [];
   const supprimes: Array<{ tenant: string; code: string }> = [];
+  /** Les flux rendus par le faux magasin (fichier au bucket) : un flux ouvert pour rien doit être fermé. */
+  const flux: Readable[] = [];
   const app = buildServer({
     queue: new FakeQueue(),
     auth: { users: noUsers, secret: SECRET },
     rcsMedia: {
       medias: {
-        getByCode: async (code): Promise<RcsMediaFichier | null> => (code === CODE && stocke ? stocke : null),
+        getByCode: async (code): Promise<RcsMediaServi | null> => {
+          if (code !== CODE || !stocke) return null;
+          if (!stocke.auBucket) return { contenu: stocke.bytes, mime: stocke.mime, taille: stocke.bytes.length };
+          const f = Readable.from([stocke.bytes]);
+          flux.push(f);
+          return { contenu: f, mime: stocke.mime, taille: stocke.bytes.length };
+        },
       },
       create: async (t, input) => {
         if (o.quotaAtteint) throw new LimiteOffreError(t, 'stockageOctets', 100 * 1024 * 1024);
@@ -106,7 +115,7 @@ function appWith(
       lire: async (tenant, code) => (tenant === 't1' && code === CODE && o.prive ? o.prive : null),
     },
   });
-  return { app, crees, supprimes };
+  return { app, crees, supprimes, flux };
 }
 
 describe('La médiathèque : quota, liste, suppression (spec médias, lot B)', () => {
@@ -239,6 +248,25 @@ describe('Servir un visuel RCS (route PUBLIQUE)', () => {
     expect(r.headers['cache-control']).toBe('public, max-age=86400');
     expect(r.headers['cache-control']).not.toContain('immutable');
     expect(r.rawPayload.equals(PNG)).toBe(true);
+  });
+
+  // Lot A des medias : au bucket, la route recoit un FLUX, et l'envoie avec le poids de la fiche.
+  it('sert un fichier du bucket en flux, memes en-tetes, avec son poids', async () => {
+    const { app } = appWith({ bytes: PNG, mime: 'image/png', auBucket: true });
+    const r = await app.inject({ method: 'GET', url: `/m/${CODE}.png` });
+    expect(r.statusCode).toBe(200);
+    expect(r.headers['content-type']).toBe('image/png');
+    expect(r.headers['x-content-type-options']).toBe('nosniff');
+    expect(r.headers['cache-control']).toBe('public, max-age=86400');
+    expect(r.headers['content-length']).toBe(String(PNG.length));
+    expect(r.rawPayload.equals(PNG)).toBe(true);
+  });
+
+  it('un flux du bucket ouvert pour une mauvaise extension est FERME (sa connexion ne reste pas prise)', async () => {
+    const { app, flux } = appWith({ bytes: PNG, mime: 'image/png', auBucket: true });
+    expect((await app.inject({ method: 'GET', url: `/m/${CODE}.jpg` })).statusCode).toBe(404);
+    expect(flux).toHaveLength(1);
+    expect(flux[0]!.destroyed).toBe(true);
   });
 
   // Servir un PNG sous une adresse en `.jpg` trompe le cache autant que l'operateur.

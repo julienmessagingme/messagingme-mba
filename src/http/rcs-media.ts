@@ -4,7 +4,7 @@ import type { Guard, PreHandler } from '../auth/middleware';
 import { espaceVerifie } from './scope';
 import { octetsDepuisDataUrl, mimeDeExtension, TAILLE_IMAGE_MAX } from '../rcs/image';
 import { typeFichier, verifierVideo, nomDeFichier, estQuickTime, REFUS_MOV, TAILLE_VIDEO_PDF_MAX, type MimeFichier } from '../medias/fichier';
-import type { RcsMediaResume, RcsMediaFichier, IssueSuppression } from '../rcs/media-store.pg';
+import type { RcsMediaResume, RcsMediaFichier, RcsMediaServi, IssueSuppression } from '../rcs/media-store.pg';
 
 /**
  * Une vidéo ou un PDF de 16 Mo pèse ~21,4 Mo en base64 : 24 Mo, comme l'en-tête vidéo des templates (`src/http/media.ts`),
@@ -16,8 +16,8 @@ const TAILLE_MAX_CORPS = 24 * 1024 * 1024;
 const CODE_RE = /^[0-9a-hjkmnp-tv-z]{26}$/;
 
 export interface RcsMediasDep {
-  /** Le fichier derrière un code. Pas de tenant : la route de lecture est publique. */
-  getByCode(code: string): Promise<RcsMediaFichier | null>;
+  /** Le fichier derrière un code, en octets ou en flux. Pas de tenant : la route de lecture est publique. */
+  getByCode(code: string): Promise<RcsMediaServi | null>;
 }
 
 export interface RcsMediaRouteDeps {
@@ -125,11 +125,16 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
     if (!CODE_RE.test(code) || mimeDemande === null) return reply.code(404).send({ error: 'introuvable' });
 
     const fichierStocke = await deps.medias.getByCode(code);
-    if (!fichierStocke || fichierStocke.mime !== mimeDemande) return reply.code(404).send({ error: 'introuvable' });
+    if (!fichierStocke || fichierStocke.mime !== mimeDemande) {
+      // Un flux du bucket ouvert pour rien se ferme, sinon sa connexion reste prise.
+      if (fichierStocke && !Buffer.isBuffer(fichierStocke.contenu)) fichierStocke.contenu.destroy();
+      return reply.code(404).send({ error: 'introuvable' });
+    }
 
     return reply
       .code(200)
       .header('content-type', fichierStocke.mime)
+      .header('content-length', fichierStocke.taille)
       // `nosniff` : même avec un type juste, on interdit au navigateur de deviner autre chose.
       .header('x-content-type-options', 'nosniff')
       .header('content-disposition', `inline; filename="${code}"`)
@@ -138,6 +143,6 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
        * (suppression de l'espace) alors que l'origine rend 404. Un jour couvre la rafale de lectures d'une campagne et borne l'exposition.
        */
       .header('cache-control', 'public, max-age=86400')
-      .send(fichierStocke.bytes);
+      .send(fichierStocke.contenu);
   });
 }
