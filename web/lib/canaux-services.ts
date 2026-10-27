@@ -93,7 +93,9 @@ export function lignePublicites(etat: { configure?: unknown; connexion?: unknown
  * l'écran dit de faire d'abord la « Déconnexion complète ». Réglage inconnu (API plus ancienne) : pas
  * d'interrupteur.
  */
-export function ligneHubspot(p: { actif: boolean | undefined; portailRelie: boolean | undefined }): Ligne {
+export function ligneHubspot(p: { actif: boolean | undefined; portailRelie: boolean | undefined; reveil?: boolean }): Ligne {
+  // Le connecteur se réveille : on ne sait pas encore s'il est relié, donc aucun geste (le serveur les refuserait).
+  if (p.reveil === true) return SANS_INTERRUPTEUR;
   // Lot 1bis : un portail relié, c'est HubSpot allumé, quel que soit l'ancien interrupteur d'affichage (une connexion
   // faite depuis Tools > Intégrations ne le pose pas). Pas d'interrupteur : on le délie par la déconnexion complète.
   if (p.portailRelie === true) return { allume: true, geste: null };

@@ -84,6 +84,10 @@ describe('ligneHubspot', () => {
     expect(ligneHubspot({ actif: false, portailRelie: false })).toEqual({ allume: false, geste: 'allumer_hubspot' });
     expect(ligneHubspot({ actif: true, portailRelie: false })).toEqual({ allume: true, geste: 'eteindre_hubspot' });
   });
+  it('🔴 connecteur qui se réveille : aucun geste, ni éteindre ni allumer (2026-10-27)', () => {
+    expect(ligneHubspot({ actif: true, portailRelie: false, reveil: true })).toEqual({ allume: null, geste: null });
+    expect(ligneHubspot({ actif: false, portailRelie: false, reveil: true })).toEqual({ allume: null, geste: null });
+  });
   it('🔴 allumé AVEC un portail relié : extinction refusée, comme le serveur (409)', () => {
     expect(ligneHubspot({ actif: true, portailRelie: true })).toEqual({ allume: true, geste: null });
   });

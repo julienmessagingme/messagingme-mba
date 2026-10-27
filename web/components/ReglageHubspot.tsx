@@ -61,8 +61,10 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
   const fonctionsLues = useRef(fonctions);
   fonctionsLues.current = fonctions;
 
+  // Prévenu quand la lecture en cours est revenue : la relecture d'un réveil ne compte qu'une fois revenue.
+  const auRetourDeLecture = useRef<(() => void) | null>(null);
   const lire = useCallback(() => {
-    if (enregistrementEnCours.current) return;
+    if (enregistrementEnCours.current) { auRetourDeLecture.current = null; return; }
     const v = version.current;
     Promise.all([getSettings(tenantId), getAccountStatus(tenantId).catch(() => null)])
       .then(([s, a]) => {
@@ -70,8 +72,11 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
         const portail = a?.hubspotPortal;
         const estRelie = typeof s.hubspotPortalConnecte === 'boolean' ? s.hubspotPortalConnecte : undefined;
         const date = s.hubspotChoixValideLe;
-        setRelie(estRelie);
         setReveil(s.hubspotReveil === true);
+        // Pendant un réveil, on ne sait rien du portail : on ne touche ni au relié ni au choix en cours, qu'une
+        // relecture au retour du focus aurait sinon remis aux défauts.
+        if (s.hubspotReveil === true) { setLecture('ok'); return; }
+        setRelie(estRelie);
         setValideLe(date);
         setNomPortail(portail?.connected ? (portail.hubDomain ?? portail.hubId ?? null) : null);
         setListesAutorisees(portail?.listsScopeGranted === true);
@@ -85,7 +90,8 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
         }
         setLecture('ok');
       })
-      .catch(() => { if (vivant.current) setLecture('echec'); });
+      .catch(() => { if (vivant.current) setLecture('echec'); })
+      .finally(() => { const f = auRetourDeLecture.current; auRetourDeLecture.current = null; f?.(); });
   }, [tenantId]);
 
   useEffect(() => {
@@ -124,8 +130,9 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
 
   // Le connecteur met une quinzaine de secondes à se réveiller : la relecture le trouve debout.
   useEffect(() => {
-    if (etape !== 'reveil' || relecturesReveil >= 3) return;
-    const minuteur = setTimeout(() => { setRelecturesReveil((n) => n + 1); lire(); }, 10_000);
+    if (etape !== 'reveil') { setRelecturesReveil(0); return; }
+    if (relecturesReveil >= 3) return;
+    const minuteur = setTimeout(() => { auRetourDeLecture.current = () => setRelecturesReveil((n) => n + 1); lire(); }, 10_000);
     return () => clearTimeout(minuteur);
   }, [etape, relecturesReveil, lire]);
 

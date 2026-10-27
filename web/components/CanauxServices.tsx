@@ -125,7 +125,7 @@ export function CanauxServices(p: {
     rcs: ligneRcs(p.rcs.etat),
     chaine: ligneChaine(chaine === 'echec' ? null : chaine),
     publicites: lignePublicites(pubs === 'echec' ? null : pubs),
-    hubspot: ligneHubspot({ actif: p.hubspotActif, portailRelie: p.compte ? p.compte.hubspotPortal?.connected === true : undefined }),
+    hubspot: ligneHubspot({ actif: p.hubspotActif, portailRelie: p.compte ? p.compte.hubspotPortal?.connected === true : undefined, reveil: p.compte?.hubspotPortal?.reveil === true }),
   };
 
   function messageDe(err: unknown): string {

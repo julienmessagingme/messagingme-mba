@@ -208,10 +208,10 @@ function AccueilInner({ session }: { session: Session }) {
   // chargement qui ferait clignoter la carte, toutes les 10 s et trois fois au plus.
   const [relecturesHubspot, setRelecturesHubspot] = useState(0);
   useEffect(() => {
-    if (account?.hubspotPortal?.reveil !== true || relecturesHubspot >= 3) return;
+    if (account?.hubspotPortal?.reveil !== true) { setRelecturesHubspot(0); return; }
+    if (relecturesHubspot >= 3) return;
     const minuteur = setTimeout(() => {
-      setRelecturesHubspot((n) => n + 1);
-      getAccountStatus(session.tenantId).then(setAccount).catch(() => {});
+      getAccountStatus(session.tenantId).then(setAccount).catch(() => {}).finally(() => setRelecturesHubspot((n) => n + 1));
     }, 10_000);
     return () => clearTimeout(minuteur);
   }, [account, relecturesHubspot, session.tenantId]);
@@ -412,8 +412,9 @@ function AccueilInner({ session }: { session: Session }) {
   // Après « Onboard with 360dialog » ou une clé recollée : relire le compte, comme après la fenêtre de Meta.
   const recharger360 = (): void => { setAvertissementsConnexion([]); setConnexionRenouvelee(false); setLoading(true); void load(); void loadAccount(); };
   const affichageHubspot = account
-    // Un connecteur qui se réveille compte comme relié ici : le bloc s'affiche, et c'est lui qui dit « connexion en cours ».
-    ? affichageHubspotAccueil({ actif: hubspotActif, aUnNumero: account.hasNumber, portailRelie: account.hubspotPortal?.connected === true || account.hubspotPortal?.reveil === true })
+    // Un connecteur qui se réveille compte comme relié, sauf pour un espace qui a éteint HubSpot : le bloc s'affiche,
+    // et c'est lui qui dit « connexion en cours ».
+    ? affichageHubspotAccueil({ actif: hubspotActif, aUnNumero: account.hasNumber, portailRelie: account.hubspotPortal?.connected === true || (account.hubspotPortal?.reveil === true && hubspotActif !== false) })
     : 'rien';
 
   // L'état de l'agent chez Meta, sous le titre de sa carte. `null` : rien à dire (il est allumé et répond aux

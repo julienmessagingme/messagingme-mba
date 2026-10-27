@@ -7,6 +7,7 @@ import type { HubspotChoixRouteDeps } from '../src/http/hubspot-choix';
 import type { ChoixHubspotEcrit } from '../src/settings/store.pg';
 import type { Fonction } from '../src/offres/offres';
 import type { ModeTaches } from '../src/account/types';
+import { ConnecteurEnReveil } from '../src/crm/hubspot-service';
 
 /**
  * `PUT /tenants/:t/hubspot/choix` (lot 1bis) : le client choisit ce qu'il branche entre Messaging Me et HubSpot.
@@ -37,6 +38,7 @@ interface Banc {
 function app(o: {
   fonctions?: ReadonlySet<Fonction>;
   relie?: boolean;
+  reveil?: boolean;
   premiere?: boolean;
   numero?: { id: string; hubspotConnected: boolean; hubspotPausedAt: string | null } | null;
   modeEchoue?: boolean;
@@ -55,7 +57,7 @@ function app(o: {
     },
     fonctions: async () => o.fonctions ?? ENTREPRISE,
     choixEnVigueur: async () => ({ modeles: false, ...(o.avant ?? { analyse: false, reponse: false, listes: false }), valideLe: (o.premiere ?? true) ? null : new Date('2026-10-20T10:00:00.000Z') }),
-    portail: async () => ({ connected: o.relie ?? true }),
+    portail: async () => { if (o.reveil) throw new ConnecteurEnReveil(); return { connected: o.relie ?? true }; },
     numeroPrincipal: async () => (o.numero === undefined ? { id: 'pn1', hubspotConnected: false, hubspotPausedAt: null } : o.numero),
     allumerSynchro: async (numero, t) => { if (o.synchroEchoue) throw new Error('base'); b.synchros.push({ numero, t }); },
     poserModeTaches: async (t, mode) => {
@@ -97,6 +99,15 @@ describe('PUT /tenants/:t/hubspot/choix (lot 1bis)', () => {
     const eteint = await server.inject(put(adminTok, { ...TOUT, analyse: false, listes: false }));
     expect(eteint.statusCode).toBe(200);
     expect(b.ecrits).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 connecteur qui se réveille : 503 qui le dit, rien n’est écrit (jamais un 500 muet)', async () => {
+    const { server, b } = app({ reveil: true });
+    const res = await server.inject(put(adminTok, TOUT));
+    expect(res.statusCode).toBe(503);
+    expect(res.json<{ error: string }>().error).toMatch(/réveille/);
+    expect(b.ecrits).toHaveLength(0);
     await server.close();
   });
 

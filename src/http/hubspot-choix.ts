@@ -7,6 +7,7 @@ import type { ChoixHubspotEcrit, ChoixHubspot } from '../settings/store.pg';
 import type { HubspotPortalLink, ModeTaches } from '../account/types';
 import { journaliser } from '../lib/journal';
 import { espaceVerifie } from './scope';
+import { ConnecteurEnReveil } from '../crm/hubspot-service';
 
 /**
  * LE CHOIX DES FONCTIONS HUBSPOT (lot 1bis de la reprise humaine, cadrage validé par Julien le 2026-10-23) : le client
@@ -87,7 +88,13 @@ export function registerHubspotChoix(app: FastifyInstance, deps: HubspotChoixRou
       if (c[champ] && !avant[champ] && !fonctions.has(fonction)) return reply.code(402).send(corpsRefusFonction(fonction));
     }
 
-    const portail = await deps.portail(tenant);
+    let portail: HubspotPortalLink;
+    try {
+      portail = await deps.portail(tenant);
+    } catch (err) {
+      if (!(err instanceof ConnecteurEnReveil)) throw err;
+      return reply.code(503).send({ error: 'HubSpot se réveille : réessayez dans quelques secondes. Rien n’a été enregistré.' });
+    }
     if (!portail.connected) return reply.code(409).send({ error: 'hubspot_non_relie' });
 
     // La synchro du numéro s'allume AVANT d'écrire la date de validation : si elle échoue, la route échoue sans avoir
