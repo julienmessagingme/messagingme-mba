@@ -139,6 +139,22 @@ export function adresseDeRetourSure(adresse: string, hoteAffiche: string): boole
   }
 }
 
+/**
+ * 🔴 SANS COMPTE GOOGLE, LE DÉTOUR RAMÈNE AU CONSENTEMENT (2026-10-27). La page d'autorisation envoie à l'inscription ou
+ * à la connexion par mot de passe avec sa demande, et ces pages y reviennent une fois la session ouverte, au lieu de
+ * l'accueil ou du tunnel de la Free. Seule la demande voyage, jamais une adresse : la destination est l'une de ces
+ * trois pages, donc aucune redirection ouverte, et le consentement relit la demande auprès de l'API comme à son arrivée.
+ */
+export function avecDemande(page: '/autoriser' | '/signup' | '/login', demande: string | null): string {
+  return demande === null ? page : `${page}?demande=${encodeURIComponent(demande)}`;
+}
+
+/** La demande que porte l'adresse de la page (`?demande=`), ou `null`. */
+export function demandeDeLAdresse(recherche: string): string | null {
+  const d = new URLSearchParams(recherche).get('demande');
+  return d === null || d === '' ? null : d;
+}
+
 // --- « Applications autorisées » (page des clés d'API, admin) --------------------------------------------------
 
 /** Une autorisation vivante de l'espace, telle que la liste la rend : ni jeton, ni empreinte, ni échéance. */

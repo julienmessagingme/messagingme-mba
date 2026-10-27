@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { ApiError } from './http';
 import {
-  adresseDeRetourSure, autoriserParGoogle, autoriserParSession, capacitesAnnoncees, continuerAvecGoogle, estDemandeExpiree,
-  listerAutorisations, ouvrirConsentement, personneDe, peutAutoriserDirectement, revoquerAutorisation,
+  adresseDeRetourSure, autoriserParGoogle, autoriserParSession, avecDemande, capacitesAnnoncees, continuerAvecGoogle,
+  demandeDeLAdresse, estDemandeExpiree, listerAutorisations, ouvrirConsentement, personneDe, peutAutoriserDirectement,
+  revoquerAutorisation,
 } from './oauth';
 import type { Session } from './session';
 import { ACTIONS_JOURNAL } from './partage/actions-journal';
@@ -169,6 +170,19 @@ describe('ce que la page décide seule', () => {
     expect(peutAutoriserDirectement({ ...admin, role: 'agent' })).toBe(false);
     expect(peutAutoriserDirectement({ ...admin, observation: 'Client' })).toBe(false);
     expect(peutAutoriserDirectement(null)).toBe(false);
+  });
+
+  it('🔴 sans Google, la demande voyage seule, encodée, et revient telle quelle', () => {
+    const demande = 'eyJ.a+b/c=&retour=https://evil.test';
+    const lien = avecDemande('/signup', demande);
+    expect(lien.startsWith('/signup?demande=')).toBe(true);
+    // Aucun caractère de la demande ne peut ajouter un paramètre ni changer de page.
+    expect(new URLSearchParams(lien.slice('/signup'.length)).getAll('retour')).toEqual([]);
+    expect(demandeDeLAdresse(lien.slice('/signup'.length))).toBe(demande);
+    expect(avecDemande('/autoriser', 'd-1')).toBe('/autoriser?demande=d-1');
+    expect(avecDemande('/login', null)).toBe('/login');
+    expect(demandeDeLAdresse('')).toBeNull();
+    expect(demandeDeLAdresse('?demande=')).toBeNull();
   });
 });
 

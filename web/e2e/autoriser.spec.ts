@@ -124,9 +124,10 @@ test.describe('Autoriser Claude : avec la session de la console', () => {
       .toHaveAttribute('href', 'https://www.messagingme.fr/politique-de-confidentialite-messaging-me/');
     const direct = page.getByRole('button', { name: 'Autoriser dans Mon espace' });
     await expect(direct).toBeVisible();
-    // Google reste offert, pour un autre espace, et le dit.
+    // Google reste offert, pour un autre espace, et le dit ; l'inscription et la connexion, non : on est déjà entré.
     await expect(page.getByTestId('google-simule')).toBeVisible();
     await expect(page.getByText('Pas encore de compte ? Il sera créé avec votre adresse Google.')).toBeVisible();
+    await expect(page.getByTestId('autoriser-sans-google')).toHaveCount(0);
     expect(autorisations(appels)).toEqual([]);
 
     await direct.click();
@@ -180,6 +181,71 @@ test.describe('Autoriser Claude : avec la session de la console', () => {
     await page.getByTestId('autoriser-direct').click();
     await expect(page.getByTestId('autoriser-refus')).toContainText('ne correspond pas à celle annoncée');
     await expect(page).toHaveURL(/\/autoriser\?demande=d-e2e$/);
+  });
+});
+
+/**
+ * 🔴 SANS COMPTE GOOGLE (2026-10-27) : l'inscription par e-mail et la connexion par mot de passe partent de la page avec
+ * la demande et y reviennent, la session ouverte, sur le bouton direct. Le consentement reste un clic : rien n'est
+ * autorisé au retour.
+ */
+test.describe('Autoriser Claude : sans compte Google', () => {
+  const SESSION_OUVERTE = { token: 'jeton-console', user: { email: 'lea@exemple.fr', role: 'admin', tenantId: 't1' } };
+  const repondeur = (chemin: string): Reponse | undefined => {
+    if (chemin === '/oauth/consentement/demande') return { body: DEMANDE };
+    if (chemin === '/auth/signup') return { status: 201, body: SESSION_OUVERTE };
+    if (chemin === '/auth/login') return { body: SESSION_OUVERTE };
+    if (chemin === '/tenants/t1/nom') return { body: { nom: 'Mon espace' } };
+    if (chemin === '/tenants/t1/oauth/autoriser') return { body: { adresse: RETOUR } };
+    return undefined;
+  };
+
+  test('🔴 l’inscription par e-mail ramène au consentement, et l’autorisation attend le clic', async ({ page }) => {
+    const appels = await monter(page, repondeur);
+    await page.goto('/autoriser?demande=d-e2e');
+    await page.getByRole('link', { name: 'Créer mon espace avec mon adresse e-mail' }).click();
+
+    await page.waitForURL('**/signup?demande=d-e2e');
+    // Google est resté sur la page d'autorisation : ici, il ouvrirait la console et perdrait la demande.
+    await expect(page.getByRole('button', { name: 'Créer mon espace' })).toBeVisible();
+    await expect(page.getByTestId('google-simule')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Se connecter' })).toHaveAttribute('href', '/login?demande=d-e2e');
+    await page.getByPlaceholder('Mon entreprise').fill('Mon espace');
+    await page.locator('input[type="email"]').fill('lea@exemple.fr');
+    await page.locator('input[type="password"]').fill('motdepasse-long');
+    await page.getByRole('button', { name: 'Créer mon espace' }).click();
+
+    await page.waitForURL('**/autoriser?demande=d-e2e');
+    const direct = page.getByRole('button', { name: 'Autoriser dans Mon espace' });
+    await expect(direct).toBeVisible();
+    expect(appels.find((a) => a.chemin === '/auth/signup')?.corps).toMatchObject({ email: 'lea@exemple.fr', workspaceName: 'Mon espace' });
+    expect(autorisations(appels)).toEqual([]);
+
+    await direct.click();
+    await page.waitForURL(/localhost:5555\/callback/);
+    expect(autorisations(appels)).toEqual([
+      { chemin: '/tenants/t1/oauth/autoriser', methode: 'POST', corps: { demande: 'd-e2e' }, autorisation: 'Bearer jeton-console' },
+    ]);
+  });
+
+  test('🔴 la connexion par mot de passe ramène au consentement, sans nouvel onglet ni rechargement', async ({ page }) => {
+    const appels = await monter(page, repondeur);
+    await page.goto('/autoriser?demande=d-e2e');
+    const lien = page.getByRole('link', { name: 'Connectez-vous' });
+    await expect(lien).not.toHaveAttribute('target', '_blank');
+    await lien.click();
+
+    await page.waitForURL('**/login?demande=d-e2e');
+    await expect(page.getByRole('button', { name: 'Se connecter' })).toBeVisible();
+    await expect(page.getByTestId('google-simule')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Créer un espace' })).toHaveAttribute('href', '/signup?demande=d-e2e');
+    await page.getByLabel('Email').fill('lea@exemple.fr');
+    await page.locator('input[type="password"]').fill('motdepasse-long');
+    await page.getByRole('button', { name: 'Se connecter' }).click();
+
+    await page.waitForURL('**/autoriser?demande=d-e2e');
+    await expect(page.getByRole('button', { name: 'Autoriser dans Mon espace' })).toBeVisible();
+    expect(autorisations(appels)).toEqual([]);
   });
 });
 

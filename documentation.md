@@ -3453,7 +3453,10 @@ clique « Autoriser » dans un espace où elle est admin, et Claude reçoit un j
   liée à l'empreinte de LA demande). Les deux portes passent par UNE fonction, `autoriser` (`src/oauth/autoriser.ts`),
   qui relit le rôle en base AU CLIC, jamais dans la preuve ni la session. Une adresse Google inconnue crée son espace
   par le MÊME chemin que `/auth/google` (`creerEspaceParGoogle`, `src/auth/routes.ts`). Pas de second facteur exigé :
-  c'est la règle de la connexion Google à un espace.
+  c'est la règle de la connexion Google à un espace. **Sans Google**, la page envoie à `/signup` ou `/login` avec
+  `?demande=`, et ces pages ramènent à `/autoriser` une fois la session ouverte (`avecDemande`, `web/lib/oauth.ts`) :
+  seule la demande voyage, la destination est fixe (aucune redirection ouverte), et le consentement relit la demande
+  et attend le clic comme à l'arrivée. Google y est masqué : il ouvrirait la console sans revenir.
 - **Les erreurs de `/oauth/token` sont au format OAuth et en 400** (`invalid_grant`, `invalid_request`,
   `invalid_client`, `invalid_target`, `unsupported_grant_type`) : un refus n'est jamais un 5xx, dont Cloudflare
   remplacerait le corps. Seule une panne de base y rend 500, délibérément : un `invalid_grant` ferait jeter ses

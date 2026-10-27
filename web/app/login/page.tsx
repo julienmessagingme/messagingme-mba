@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { login, chooseWorkspace, isLoginChoice, estEtapeSecondFacteur, type LoginChoice, type EtapeSecondFacteur, type SuiteConnexion } from '@/lib/api';
 import { saveSession, pageDArrivee } from '@/lib/session';
+import { avecDemande, demandeDeLAdresse } from '@/lib/oauth';
 import { LogoComplet } from '@/components/Logo';
 import { GoogleButton } from '@/components/GoogleButton';
 import { LocaleToggle } from '@/components/LocaleToggle';
@@ -32,6 +33,13 @@ export default function LoginPage() {
    * aucune session ni aucune liste d'espaces n'existe tant que cette étape n'est pas passée.
    */
   const [etape, setEtape] = useState<EtapeSecondFacteur | null>(null);
+  /** Venue de la page d'autorisation d'une application (Claude Code), sans Google : on y retourne une fois entré. */
+  const [demande, setDemande] = useState<string | null>(null);
+
+  // Lu ici et pas au rendu : l'adresse n'existe pas côté serveur.
+  useEffect(() => { setDemande(demandeDeLAdresse(window.location.search)); }, []);
+
+  const arrivee = (role: string): string => (demande !== null ? avecDemande('/autoriser', demande) : pageDArrivee(role));
 
   /** Ce qui suit le mot de passe (ou le second facteur) : une session, ou le choix d'un espace. */
   function continuer(res: SuiteConnexion): void {
@@ -42,7 +50,7 @@ export default function LoginPage() {
       return;
     }
     saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-    router.replace(pageDArrivee(res.user.role));
+    router.replace(arrivee(res.user.role));
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -72,7 +80,7 @@ export default function LoginPage() {
     try {
       const res = await chooseWorkspace(choix.choiceToken, tenantId);
       saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-      router.replace(pageDArrivee(res.user.role));
+      router.replace(arrivee(res.user.role));
     } catch (err) {
       // Le jeton de choix est court (5 min) : le plus probable est qu'il ait expiré. On le dit, et on ramène
       // au formulaire plutôt que de laisser une liste morte à l'écran.
@@ -172,10 +180,11 @@ export default function LoginPage() {
           </Bouton>
           <div className="flex items-center justify-between text-xs text-ink-500">
             <Link href="/forgot" className="hover:text-brand-600">{t('Mot de passe oublié ?', 'Forgot password?')}</Link>
-            <Link href="/signup" className="font-medium text-brand-600 hover:underline">{t('Créer un espace', 'Create a workspace')}</Link>
+            <Link href={avecDemande('/signup', demande)} className="font-medium text-brand-600 hover:underline">{t('Créer un espace', 'Create a workspace')}</Link>
           </div>
 
-          <GoogleButton onError={setError} onChoix={setChoix} />
+          {/* Venu d'une application, Google est sur la page d'autorisation : ici il ouvrirait la console et perdrait la demande. */}
+          {demande === null && <GoogleButton onError={setError} onChoix={setChoix} />}
         </form>
         )}
       </div>

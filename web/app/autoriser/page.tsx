@@ -5,14 +5,14 @@ import Link from 'next/link';
 import { Logo } from '@/components/Logo';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { GoogleButton } from '@/components/GoogleButton';
-import { Bouton } from '@/components/Bouton';
+import { Bouton, classesBouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
 import { Squelette } from '@/components/Squelette';
 import { ApiError } from '@/lib/http';
 import { useT } from '@/lib/i18n';
 import { getSession, type Session } from '@/lib/session';
 import {
-  adresseDeRetourSure, autoriserParGoogle, autoriserParSession, capacitesAnnoncees, continuerAvecGoogle, estDemandeExpiree,
+  adresseDeRetourSure, autoriserParGoogle, autoriserParSession, avecDemande, capacitesAnnoncees, continuerAvecGoogle, estDemandeExpiree,
   ouvrirConsentement, type ChoixOauth, type MarqueClient, type Ouverture,
 } from '@/lib/oauth';
 
@@ -215,16 +215,29 @@ export default function AutoriserPage() {
                 <p className="mt-3 text-center text-xs text-ink-500">
                   {t('Pas encore de compte ? Il sera créé avec votre adresse Google.', 'No account yet? It will be created with your Google address.')}
                 </p>
-                {/* Un compte à mot de passe (et second facteur) passe par sa connexion habituelle : la session de la
-                    console donne alors le bouton direct. La demande vit dix minutes, le temps de revenir. */}
+                {/* Sans Google : l'inscription ou la connexion par mot de passe (et second facteur), qui reviennent ici
+                    avec la demande (`avecDemande`) ; la session de la console donne alors le bouton direct. La demande
+                    vit dix minutes. */}
                 {!ouverture.espaceDirect && (
-                  <p className="mt-2 text-center text-xs text-ink-500" data-testid="autoriser-mot-de-passe">
-                    {t('Compte avec mot de passe :', 'Password account:')}{' '}
-                    <Link href="/login" target="_blank" rel="noopener" className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700">
-                      {t('connectez-vous à la console', 'sign in to the console')}
-                    </Link>
-                    {t(', puis rechargez cette page.', ', then reload this page.')}
-                  </p>
+                  <div className="mt-4 space-y-3">
+                    <div className="flex items-center gap-3 text-xs text-ink-500">
+                      <span className="h-px flex-1 bg-ink-200" />
+                      {t('ou', 'or')}
+                      <span className="h-px flex-1 bg-ink-200" />
+                    </div>
+                    {/* Un bouton de la taille de celui de Google (320 px) : sans compte Google, c'est la porte d'entrée. */}
+                    <div className="flex justify-center">
+                      <Link href={avecDemande('/signup', demande)} className={classesBouton('secondaire', 'normale', 'w-80 max-w-full')} data-testid="autoriser-sans-google">
+                        {t('Créer mon espace avec mon adresse e-mail', 'Create my workspace with my email address')}
+                      </Link>
+                    </div>
+                    <p className="text-center text-xs text-ink-500" data-testid="autoriser-mot-de-passe">
+                      {t('Déjà un compte avec mot de passe ?', 'Already have a password account?')}{' '}
+                      <Link href={avecDemande('/login', demande)} className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700">
+                        {t('Connectez-vous', 'Sign in')}
+                      </Link>
+                    </p>
+                  </div>
                 )}
               </div>
             )}

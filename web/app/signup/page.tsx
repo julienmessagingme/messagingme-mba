@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { signup, isLoginChoice, estEtapeSecondFacteur, type EtapeSecondFacteur, type SuiteConnexion } from '@/lib/api';
 import { saveSession } from '@/lib/session';
+import { avecDemande, demandeDeLAdresse } from '@/lib/oauth';
 import { CadreSansCompte } from '@/components/CadreSansCompte';
 import { GoogleButton } from '@/components/GoogleButton';
 import { useT } from '@/lib/i18n';
@@ -33,16 +34,22 @@ export default function SignupPage() {
    * renvoie donc à la connexion, qui reprendra l'enrôlement.
    */
   const [interrompu, setInterrompu] = useState<string | null>(null);
+  /** Venue de la page d'autorisation d'une application (Claude Code), sans compte Google : on y retourne ensuite. */
+  const [demande, setDemande] = useState<string | null>(null);
+
+  // Lu ici et pas au rendu : l'adresse n'existe pas côté serveur.
+  useEffect(() => { setDemande(demandeDeLAdresse(window.location.search)); }, []);
 
   function entrer(res: SuiteConnexion): void {
     // Impossible par construction (l'inscription porte un seul espace) : la connexion saura demander.
     if (isLoginChoice(res)) {
-      router.replace('/login');
+      router.replace(avecDemande('/login', demande));
       return;
     }
     saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-    // Le tunnel de la Base (lot 19) : le numéro (sautable), puis la page finale, sans passer par l'accueil.
-    router.replace('/connecter-whatsapp?suite=demarrer');
+    // Le tunnel de la Base (lot 19) : le numéro (sautable), puis la page finale, sans passer par l'accueil. Venu
+    // d'une application, le consentement d'abord : c'est elle qui fait la suite (`/messagingme:demarrer`).
+    router.replace(demande !== null ? avecDemande('/autoriser', demande) : '/connecter-whatsapp?suite=demarrer');
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -92,9 +99,10 @@ export default function SignupPage() {
         <Bouton enCours={loading} type="submit" disabled={loading} className="w-full">
           {loading ? t('Création…', 'Creating…') : t('Créer mon espace', 'Create my workspace')}
         </Bouton>
-        <p className="text-center text-xs text-ink-500">{t('Déjà un compte ?', 'Already have an account?')} <Link href="/login" className="font-medium text-brand-600 hover:underline">{t('Se connecter', 'Log in')}</Link></p>
+        <p className="text-center text-xs text-ink-500">{t('Déjà un compte ?', 'Already have an account?')} <Link href={avecDemande('/login', demande)} className="font-medium text-brand-600 hover:underline">{t('Se connecter', 'Log in')}</Link></p>
 
-        <GoogleButton onError={setError} />
+        {/* Venu d'une application, Google est sur la page d'autorisation : ici il ouvrirait la console et perdrait la demande. */}
+        {demande === null && <GoogleButton onError={setError} />}
       </form>
       )}
     </CadreSansCompte>

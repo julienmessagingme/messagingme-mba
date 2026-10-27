@@ -4866,9 +4866,13 @@ clique « Autoriser », et Claude travaille dans son espace. Les clés d'API ne 
 vers quelle adresse il repartira (`localhost` ou `claude.ai`), ce qu'il pourra lire et faire, et que ces données
 seront lues par Claude et traitées par Anthropic, avec un lien vers notre politique de confidentialité. Puis deux
 façons de prouver qui l'on est :
-- **déjà connecté à la console comme administrateur** : un bouton « Autoriser dans <espace> ». Un compte à mot de
-  passe (et second facteur) passe ainsi par sa connexion habituelle : se connecter à la console, puis recharger la
-  page, que la demande attend dix minutes ;
+- **déjà connecté à la console comme administrateur** : un bouton « Autoriser dans <espace> ». **Sans compte Google**
+  (2026-10-27), sous le bouton Google, un bouton de même taille « Créer mon espace avec mon adresse e-mail »
+  (l'inscription) et le lien « Déjà un compte avec mot de passe ? Connectez-vous » (la connexion, second facteur
+  compris). Les deux gardent la
+  demande et ramènent à la page, la session ouverte, sur ce bouton : ni nouvel onglet, ni rechargement, ni tunnel de la
+  Free (Claude fait la suite). Ces deux pages n'y montrent pas Google, qui ouvrirait la console et perdrait la demande.
+  La demande attend dix minutes ;
 - **« Continuer avec Google »** : la page liste les espaces de la personne, un bouton « Autoriser dans <espace> »
   pour chacun de ceux où elle est administrateur, les autres affichés avec « demandez à un administrateur ». Une
   adresse Google inconnue crée son espace au passage, et la page le dit sous le bouton, avant le clic.
