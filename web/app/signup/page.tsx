@@ -7,7 +7,7 @@ import { signup, isLoginChoice, estEtapeSecondFacteur, type EtapeSecondFacteur, 
 import { saveSession } from '@/lib/session';
 import { avecDemande, demandeDeLAdresse } from '@/lib/oauth';
 import { CadreSansCompte } from '@/components/CadreSansCompte';
-import { GoogleButton } from '@/components/GoogleButton';
+import { GoogleButton, RetourGoogle } from '@/components/GoogleButton';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { aideMotDePasse } from '@/lib/mot-de-passe';
@@ -74,7 +74,7 @@ export default function SignupPage() {
       {etape ? (
         <EtapesSecondFacteur etape={etape} onSuite={entrer} onRetour={(message) => { setEtape(null); setInterrompu(message); }} />
       ) : interrompu ? (
-        <EtapeInterrompue message={interrompu} />
+        <EtapeInterrompue message={interrompu} connexion={avecDemande('/login', demande)} />
       ) : (
       <form onSubmit={onSubmit} className="space-y-4 rounded-carte border border-ink-200 bg-white p-6">
         <div>
@@ -101,8 +101,9 @@ export default function SignupPage() {
         </Bouton>
         <p className="text-center text-xs text-ink-500">{t('Déjà un compte ?', 'Already have an account?')} <Link href={avecDemande('/login', demande)} className="font-medium text-brand-600 hover:underline">{t('Se connecter', 'Log in')}</Link></p>
 
-        {/* Venu d'une application, Google est sur la page d'autorisation : ici il ouvrirait la console et perdrait la demande. */}
-        {demande === null && <GoogleButton onError={setError} />}
+        {/* Venu d'une application, Google est sur la page d'autorisation : ici il ouvrirait la console et perdrait la
+            demande. On y renvoie, pour une adresse qui est en fait un compte Google (l'inscription la refuse). */}
+        {demande === null ? <GoogleButton onError={setError} /> : <RetourGoogle demande={demande} />}
       </form>
       )}
     </CadreSansCompte>

@@ -190,6 +190,16 @@ export default function AutoriserPage() {
               />
             ) : (
               <div className="rounded-carte border border-ink-200 bg-white p-6">
+                {/* Revenu de `/login` avec un compte qui n'est pas admin : sans cette phrase, la page réaffiche les mêmes
+                    portes sans dire pourquoi il n'y a pas de bouton direct. */}
+                {!ouverture.espaceDirect && session && session.role !== 'admin' && (
+                  <p className="mb-4 rounded-controle bg-alerte-50 px-3 py-2 text-sm text-alerte-900" data-testid="autoriser-pas-admin">
+                    {t(
+                      `Connecté à la console avec ${session.email}, qui n’est pas administrateur de son espace : seul un administrateur peut y connecter ${ouverture.demande.client}.`,
+                      `Signed in to the console as ${session.email}, who is not an administrator of their workspace: only an administrator can connect ${ouverture.demande.client} to it.`,
+                    )}
+                  </p>
+                )}
                 {ouverture.espaceDirect && (
                   <div>
                     <Bouton

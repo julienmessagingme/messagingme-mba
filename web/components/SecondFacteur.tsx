@@ -88,14 +88,14 @@ export function EtapesSecondFacteur<S = SuiteConnexion>({ etape, onSuite, onReto
 /**
  * Une étape qui n'a pas abouti APRÈS la création du compte (inscription, invitation acceptée). Revenir au
  * formulaire le rejouerait (un second espace, une invitation déjà consommée) : on renvoie à la connexion, qui
- * reprend là où l'on s'est arrêté.
+ * reprend là où l'on s'est arrêté. `connexion` : la page de connexion qui garde une demande d'autorisation en cours.
  */
-export function EtapeInterrompue({ message }: { message: string }) {
+export function EtapeInterrompue({ message, connexion = '/login' }: { message: string; connexion?: string }) {
   const t = useT();
   return (
     <div className="space-y-3 rounded-carte border border-ink-200 bg-white p-6" data-testid="etape-interrompue">
       <p className={ERREUR}>{message}</p>
-      <Link href="/login" className={classesBouton('principal', 'normale', 'w-full')}>{t('Se connecter', 'Sign in')}</Link>
+      <Link href={connexion} className={classesBouton('principal', 'normale', 'w-full')}>{t('Se connecter', 'Sign in')}</Link>
     </div>
   );
 }

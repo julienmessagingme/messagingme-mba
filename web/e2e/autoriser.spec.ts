@@ -144,6 +144,9 @@ test.describe('Autoriser Claude : avec la session de la console', () => {
     await page.goto('/autoriser?demande=d-e2e');
     await expect(page.getByTestId('google-simule')).toBeVisible();
     await expect(page.getByTestId('autoriser-direct')).toHaveCount(0);
+    // Revenu de la connexion avec ce compte, il saurait pourquoi il n'a pas de bouton.
+    await expect(page.getByTestId('autoriser-pas-admin')).toContainText('admin@e2e.test');
+    await expect(page.getByTestId('autoriser-pas-admin')).toContainText('seul un administrateur peut y connecter Claude Code');
     expect(appels.filter((a) => a.chemin.startsWith('/tenants/'))).toEqual([]);
   });
 
@@ -206,8 +209,10 @@ test.describe('Autoriser Claude : sans compte Google', () => {
     await page.getByRole('link', { name: 'Créer mon espace avec mon adresse e-mail' }).click();
 
     await page.waitForURL('**/signup?demande=d-e2e');
-    // Google est resté sur la page d'autorisation : ici, il ouvrirait la console et perdrait la demande.
+    // Google est resté sur la page d'autorisation : ici, il ouvrirait la console et perdrait la demande. Le lien de
+    // retour est rendu À LA PLACE du bouton : sa présence prouve la branche, l'absence du bouton seule dépendrait du délai.
     await expect(page.getByRole('button', { name: 'Créer mon espace' })).toBeVisible();
+    await expect(page.getByTestId('retour-google').getByRole('link')).toHaveAttribute('href', '/autoriser?demande=d-e2e');
     await expect(page.getByTestId('google-simule')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Se connecter' })).toHaveAttribute('href', '/login?demande=d-e2e');
     await page.getByPlaceholder('Mon entreprise').fill('Mon espace');
@@ -237,6 +242,7 @@ test.describe('Autoriser Claude : sans compte Google', () => {
 
     await page.waitForURL('**/login?demande=d-e2e');
     await expect(page.getByRole('button', { name: 'Se connecter' })).toBeVisible();
+    await expect(page.getByTestId('retour-google').getByRole('link')).toHaveAttribute('href', '/autoriser?demande=d-e2e');
     await expect(page.getByTestId('google-simule')).toHaveCount(0);
     await expect(page.getByRole('link', { name: 'Créer un espace' })).toHaveAttribute('href', '/signup?demande=d-e2e');
     await page.getByLabel('Email').fill('lea@exemple.fr');
@@ -246,6 +252,21 @@ test.describe('Autoriser Claude : sans compte Google', () => {
     await page.waitForURL('**/autoriser?demande=d-e2e');
     await expect(page.getByRole('button', { name: 'Autoriser dans Mon espace' })).toBeVisible();
     expect(autorisations(appels)).toEqual([]);
+  });
+
+  test('une étape du second facteur expirée après l’inscription renvoie à la connexion avec la demande', async ({ page }) => {
+    await monter(page, (chemin) => {
+      if (chemin === '/oauth/consentement/demande') return { body: DEMANDE };
+      if (chemin === '/auth/signup') return { status: 201, body: { enrolToken: 'jeton-enrol' } };
+      if (chemin === '/auth/mfa/enroler') return { status: 401, body: { error: 'Cette étape a expiré, reconnectez-vous.' } };
+      return undefined;
+    });
+    await page.goto('/signup?demande=d-e2e');
+    await page.getByPlaceholder('Mon entreprise').fill('Mon espace');
+    await page.locator('input[type="email"]').fill('lea@exemple.fr');
+    await page.locator('input[type="password"]').fill('motdepasse-long');
+    await page.getByRole('button', { name: 'Créer mon espace' }).click();
+    await expect(page.getByTestId('etape-interrompue').getByRole('link')).toHaveAttribute('href', '/login?demande=d-e2e');
   });
 });
 

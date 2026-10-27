@@ -7,7 +7,7 @@ import { login, chooseWorkspace, isLoginChoice, estEtapeSecondFacteur, type Logi
 import { saveSession, pageDArrivee } from '@/lib/session';
 import { avecDemande, demandeDeLAdresse } from '@/lib/oauth';
 import { LogoComplet } from '@/components/Logo';
-import { GoogleButton } from '@/components/GoogleButton';
+import { GoogleButton, RetourGoogle } from '@/components/GoogleButton';
 import { LocaleToggle } from '@/components/LocaleToggle';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
@@ -183,8 +183,9 @@ export default function LoginPage() {
             <Link href={avecDemande('/signup', demande)} className="font-medium text-brand-600 hover:underline">{t('Créer un espace', 'Create a workspace')}</Link>
           </div>
 
-          {/* Venu d'une application, Google est sur la page d'autorisation : ici il ouvrirait la console et perdrait la demande. */}
-          {demande === null && <GoogleButton onError={setError} onChoix={setChoix} />}
+          {/* Venu d'une application, Google est sur la page d'autorisation : ici il ouvrirait la console et perdrait la
+              demande. On y renvoie. */}
+          {demande === null ? <GoogleButton onError={setError} onChoix={setChoix} /> : <RetourGoogle demande={demande} />}
         </form>
         )}
       </div>

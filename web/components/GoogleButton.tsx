@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getAuthConfig, loginWithGoogle, isLoginChoice, type LoginChoice } from '@/lib/api';
 import { saveSession, pageDArrivee } from '@/lib/session';
+import { avecDemande } from '@/lib/oauth';
 import { useT } from '@/lib/i18n';
 
 // GIS (Google Identity Services) : typage minimal du global injecté par le script Google.
@@ -146,5 +148,21 @@ export function GoogleButton({ onError, onChoix, surJeton, separateur = true }: 
       )}
       <div ref={ref} className="flex justify-center" />
     </div>
+  );
+}
+
+/**
+ * À la place du bouton, sur `/signup` et `/login` venus d'une demande d'autorisation (Claude Code) : Google y
+ * ouvrirait la console sans revenir, il reste donc sur la page d'autorisation, et ce lien y ramène avec la demande.
+ */
+export function RetourGoogle({ demande }: { demande: string }) {
+  const t = useT();
+  return (
+    <p className="mt-4 text-center text-xs text-ink-500" data-testid="retour-google">
+      {t('Vous avez un compte Google ?', 'Have a Google account?')}{' '}
+      <Link href={avecDemande('/autoriser', demande)} className="font-medium text-brand-600 hover:underline">
+        {t('Continuer avec Google', 'Continue with Google')}
+      </Link>
+    </p>
   );
 }
