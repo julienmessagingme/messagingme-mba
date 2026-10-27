@@ -1,7 +1,11 @@
 import { estSuppression, type Operation } from './proposition';
 import type { LigneHistorique } from '../../reglages/historique';
 import { messageDe, texteDe } from '../../lib/erreur';
-import { ecrireRolloutPuisDrapeau, type Skill } from '../client';
+import { ecrireRolloutPuisDrapeau, type AgentSettings, type BusinessInfo, type Skill } from '../client';
+import {
+  appliquerMutationConnaissance, RefusConnaissanceMba,
+  type ClientConnaissanceMba, type MutationConnaissanceMba,
+} from '../connaissance';
 import {
   ID_MESSAGE_RE, validerCreation, validerModification,
   type CreationMessageInteractif, type MessageInteractif, type ModificationMessageInteractif,
@@ -40,32 +44,8 @@ export interface ApplicationDeps {
 }
 
 /** Ce que l'application attend du client Meta, sous-ensemble strict de `MbaClient`. */
-export interface ClientMbaEcriture {
-  listFaqs(p: string): Promise<Array<{ id?: string; question?: string; answer?: string }>>;
-  createFaq(p: string, faq: unknown): Promise<unknown>;
-  updateFaq(p: string, id: string, faq: unknown): Promise<unknown>;
-  deleteFaq(p: string, id: string): Promise<void>;
-  /**
-   * 🔴 Le corps est `Skill`, pas `unknown` : typé `unknown`, il a laissé partir `{ name, instruction }` jusqu'au
-   * 2026-10-08, que Meta refusait à la création et ignorait à la modification. Le compilateur garde la forme.
-   */
-  listSkills(p: string, agentId: string): Promise<Skill[]>;
-  createSkill(p: string, agentId: string, s: Skill): Promise<unknown>;
-  updateSkill(p: string, id: string, s: Skill): Promise<unknown>;
-  deleteSkill(p: string, id: string): Promise<void>;
-  listWebsites(p: string): Promise<Array<{ id?: string; url?: string }>>;
-  createWebsite(p: string, url: string): Promise<unknown>;
-  deleteWebsite(p: string, id: string): Promise<void>;
-  listFiles(p: string): Promise<Array<{ id?: string; name?: string }>>;
-  deleteFile(p: string, id: string): Promise<void>;
-  /**
-   * `unknown` et non `Record<string, unknown>` : le vrai `MbaClient` rend un type nommé (`BusinessInfo`), sans
-   * index de chaîne, donc non assignable ; resserrer ici obligerait à affaiblir ce type.
-   */
-  getBusinessInfo(p: string): Promise<unknown>;
-  putBusinessInfo(p: string, info: unknown): Promise<unknown>;
-  getSettings(p: string): Promise<unknown>;
-  putSettings(p: string, s: unknown, agentId?: string): Promise<unknown>;
+export interface ClientMbaEcriture extends ClientConnaissanceMba {
+  putSettings(p: string, s: AgentSettings, agentId?: string): Promise<unknown>;
   listMessagesInteractifs(p: string): Promise<MessageInteractif[]>;
   creerMessageInteractif(p: string, c: CreationMessageInteractif): Promise<unknown>;
   modifierMessageInteractif(p: string, id: string, v: ModificationMessageInteractif): Promise<unknown>;
@@ -94,6 +74,8 @@ export interface ResultatApplication {
   echec: EchecOperation | null;
   /** Celles qu'on n'a même pas tentées, parce qu'on s'est arrêté avant. */
   nonTentees: Operation[];
+  /** Meta a accepté ces gestes mais notre historique ne les a pas enregistrés : ne pas les renvoyer. */
+  avertissements: Operation[];
 }
 
 /** Le libellé d'une opération, pour le diff et pour l'historique. PUR. */
@@ -137,7 +119,7 @@ export function operationDe(o: Operation): LigneHistorique['operation'] {
  * dans les journaux serveur.
  */
 export function raisonLisible(err: unknown): string {
-  if (err instanceof RefusAvantMeta) return err.message;
+  if (err instanceof RefusAvantMeta || err instanceof RefusConnaissanceMba) return err.message;
   const brut = texteDe(err);
   if (/blocked/i.test(brut)) return 'Meta a refusé ce contenu. Reformulez-le, puis réessayez.';
   if (/rate|429|limit/i.test(brut)) return 'Meta nous a demandé de ralentir. Réessayez dans un instant.';
@@ -152,10 +134,10 @@ export function raisonLisible(err: unknown): string {
 export async function appliquer(
   deps: ApplicationDeps,
   tenantId: string,
-  agentId: string,
   operations: readonly Operation[],
 ): Promise<ResultatApplication> {
   const passees: Operation[] = [];
+  const avertissements: Operation[] = [];
   const numero = await deps.numeros.getTenantPhoneNumberId(tenantId);
   if (!numero) {
     return {
@@ -164,6 +146,7 @@ export async function appliquer(
         ? { operation: operations[0], message: 'Aucun numéro WhatsApp n’est rattaché à cet espace.' }
         : null,
       nonTentees: operations.slice(1),
+      avertissements,
     };
   }
   const client = await deps.meta.mbaClientForTenant(tenantId);
@@ -171,17 +154,30 @@ export async function appliquer(
   for (let i = 0; i < operations.length; i += 1) {
     const o = operations[i]!;
     try {
-      const avant = await etatAvant(client, numero, agentId, o);
-      await executer(deps, tenantId, client, numero, agentId, o);
+      const mutation = versMutationConnaissance(o);
+      if (mutation) {
+        const resultat = await appliquerMutationConnaissance(
+          { historique: deps.historique },
+          {
+            tenantId, phoneNumberId: numero, client, origine: 'assistant', acteur: deps.acteur,
+          },
+          mutation,
+        );
+        passees.push(o);
+        if (resultat.historique === 'indisponible') avertissements.push(o);
+        continue;
+      }
+      const avant = await etatAvant(client, numero, o);
+      await executer(deps, tenantId, client, numero, o);
       passees.push(o);
       await journaliserOuTaire(deps, tenantId, o, avant);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn(`assistant MBA : « ${libelleDe(o)} » refusée par Meta (${tenantId}) :`, messageDe(err));
-      return { passees, echec: { operation: o, message: raisonLisible(err) }, nonTentees: operations.slice(i + 1) };
+      return { passees, echec: { operation: o, message: raisonLisible(err) }, nonTentees: operations.slice(i + 1), avertissements };
     }
   }
-  return { passees, echec: null, nonTentees: [] };
+  return { passees, echec: null, nonTentees: [], avertissements };
 }
 
 /**
@@ -212,6 +208,40 @@ async function journaliserOuTaire(
   }
 }
 
+/** Traduit le vocabulaire du diff vers le contrat unique des mutations de connaissance. */
+function versMutationConnaissance(o: Operation): MutationConnaissanceMba | null {
+  switch (o.type) {
+    case 'faq.ajouter': return { type: o.type, valeur: { question: o.question, answer: o.reponse } };
+    case 'faq.modifier': return { type: o.type, id: o.cible, valeur: { question: o.question, answer: o.reponse } };
+    case 'faq.supprimer': return { type: o.type, id: o.cible, libelle: o.libelle };
+    case 'competence.ajouter': return { type: o.type, valeur: versSkill(o) };
+    case 'competence.modifier': return { type: o.type, id: o.cible, valeur: versSkill(o) };
+    case 'competence.supprimer': return { type: o.type, id: o.cible, libelle: o.libelle };
+    case 'site.ajouter': return { type: o.type, url: o.url };
+    case 'site.supprimer': return { type: o.type, id: o.cible, libelle: o.libelle };
+    case 'fichier.supprimer': return { type: o.type, id: o.cible, libelle: o.libelle };
+    case 'business.modifier': return {
+      type: o.type,
+      patch: patchBusiness(o.champ, o.valeur),
+      libelle: `Fiche d’activité : ${o.champ}`,
+    };
+    case 'activation.mettreEnService':
+    case 'message_interactif.ajouter':
+    case 'message_interactif.modifier':
+    case 'message_interactif.supprimer':
+      return null;
+  }
+}
+
+function patchBusiness(champ: 'description' | 'horaires' | 'adresse' | 'email', valeur: string): BusinessInfo {
+  switch (champ) {
+    case 'description': return { business_description: valeur };
+    case 'horaires': return { contact_info: { hours_of_operation: valeur } };
+    case 'adresse': return { contact_info: { address: valeur } };
+    case 'email': return { contact_info: { email: valeur } };
+  }
+}
+
 /**
  * L'état avant, lu avant de toucher à quoi que ce soit. Les suppressions en ont besoin, absolument : Meta ne rend plus
  * un objet parti. La modification d'une consigne aussi : son `PUT` remplace le corps entier (jusqu'à 20 000
@@ -219,19 +249,11 @@ async function journaliserOuTaire(
  * ratée ne bloque pas la modification, elle laisse `null`.
  */
 async function etatAvant(
-  client: ClientMbaEcriture, numero: string, agentId: string, o: Operation,
+  client: ClientMbaEcriture, numero: string, o: Operation,
 ): Promise<unknown> {
-  if (o.type === 'competence.modifier') {
-    return (await client.listSkills(numero, agentId).catch(() => null))?.find((s) => s.id === o.cible) ?? null;
-  }
-  if (!estSuppression(o)) return null;
-  const cible = 'cible' in o ? o.cible : '';
-  if (o.type === 'faq.supprimer') return (await client.listFaqs(numero)).find((f) => f.id === cible) ?? { id: cible };
-  if (o.type === 'competence.supprimer') return (await client.listSkills(numero, agentId)).find((s) => s.id === cible) ?? { id: cible };
-  if (o.type === 'site.supprimer') return (await client.listWebsites(numero)).find((w) => w.id === cible) ?? { id: cible };
-  if (o.type === 'fichier.supprimer') return (await client.listFiles(numero)).find((f) => f.id === cible) ?? { id: cible };
-  if (o.type === 'message_interactif.supprimer') return (await client.listMessagesInteractifs(numero)).find((m) => m.id === cible) ?? { id: cible };
-  return { id: cible };
+  if (o.type !== 'message_interactif.supprimer') return null;
+  return (await client.listMessagesInteractifs(numero).catch(() => []))
+    .find((m) => m.id === o.cible) ?? { id: o.cible };
 }
 
 /** Ce que l'opération a posé, pour l'historique. `null` pour une suppression. */
@@ -242,26 +264,9 @@ function apresDe(o: Operation): unknown {
 }
 
 async function executer(
-  deps: ApplicationDeps, tenantId: string, client: ClientMbaEcriture, numero: string, agentId: string, o: Operation,
+  deps: ApplicationDeps, tenantId: string, client: ClientMbaEcriture, numero: string, o: Operation,
 ): Promise<void> {
   switch (o.type) {
-    case 'faq.ajouter': await client.createFaq(numero, { question: o.question, answer: o.reponse }); return;
-    case 'faq.modifier': await client.updateFaq(numero, o.cible, { question: o.question, answer: o.reponse }); return;
-    case 'faq.supprimer': await client.deleteFaq(numero, o.cible); return;
-    case 'competence.ajouter': await client.createSkill(numero, agentId, versSkill(o)); return;
-    // La cible entre telle quelle dans le chemin de Meta : comme pour un message interactif, rien qui l'en fasse sortir
-    // (`..` remonterait d'un cran, et `encodeURIComponent` ne l'encode pas).
-    case 'competence.modifier':
-      if (!ID_MESSAGE_RE.test(o.cible)) throw new RefusAvantMeta('Identifiant de consigne invalide.');
-      await client.updateSkill(numero, o.cible, versSkill(o));
-      return;
-    case 'competence.supprimer':
-      if (!ID_MESSAGE_RE.test(o.cible)) throw new RefusAvantMeta('Identifiant de consigne invalide.');
-      await client.deleteSkill(numero, o.cible);
-      return;
-    case 'site.ajouter': await client.createWebsite(numero, o.url); return;
-    case 'site.supprimer': await client.deleteWebsite(numero, o.cible); return;
-    case 'fichier.supprimer': await client.deleteFile(numero, o.cible); return;
     case 'message_interactif.ajouter': {
       // La même validation que l'onglet (`src/http/mba.ts`), dont les bornes en OCTETS : Zod a borné en caractères.
       const v = validerCreation({ titre: o.titre, type: o.composant, consigne: o.consigne, formulaireId: o.formulaire ?? null });
@@ -283,39 +288,24 @@ async function executer(
       if (!ID_MESSAGE_RE.test(o.cible)) throw new RefusAvantMeta('Identifiant de message interactif invalide.');
       await client.supprimerMessageInteractif(numero, o.cible);
       return;
-    case 'business.modifier': {
-      // Lecture puis fusion : `putBusinessInfo` remplace, et envoyer le seul champ modifié effacerait les autres
-      // (la description de l'activité). Même règle que `fusionnerBusinessInfo` (`src/mba/client.ts`).
-      const actuel = (await client.getBusinessInfo(numero)) as Record<string, unknown>;
-      await client.putBusinessInfo(numero, { ...actuel, [champMeta(o.champ)]: o.valeur });
-      return;
-    }
     case 'activation.mettreEnService': {
       // L'ordre que Meta prescrit (audience, relecture, puis `rollout`), sur la configuration de cet agent. Puis
       // notre drapeau : Meta d'abord, nous ensuite.
-      await ecrireRolloutPuisDrapeau(client, numero, true, { attendre: (ms) => deps.attendre(ms), agentId }, (e) => deps.drapeau.setMbaEnabled(tenantId, e));
+      // Le helper reprend l'`agent_id` des réglages qu'il vient de lire. Le numéro n'est jamais un agent_id.
+      await ecrireRolloutPuisDrapeau(
+        client,
+        numero,
+        true,
+        { attendre: (ms) => deps.attendre(ms) },
+        (enabled) => deps.drapeau.setMbaEnabled(tenantId, enabled),
+      );
       return;
     }
-    default: throw new Error('operation inconnue');
+    default: throw new Error('mutation de connaissance non déléguée');
   }
 }
 
 /** Une consigne dans la forme de Meta : le titre, le QUAND (`description`) et le corps (`skill`). */
 function versSkill(o: { titre: string; quand: string; instruction: string }): Skill {
   return { title: o.titre, description: o.quand, skill: o.instruction };
-}
-
-/**
- * La clé que Meta attend pour un champ de fiche d'activité : notre écran dit « description », Meta veut
- * `business_description`. La table est ici, en un seul endroit.
- */
-function champMeta(champ: string): string {
-  return ({
-    description: 'business_description',
-    horaires: 'business_hours',
-    adresse: 'address',
-    telephone: 'phone_number',
-    email: 'email',
-    site: 'website',
-  } as Record<string, string>)[champ] ?? champ;
 }

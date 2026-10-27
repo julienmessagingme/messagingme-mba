@@ -201,6 +201,21 @@ export interface MbaFaq {
   metadata?: Record<string, string>;
 }
 
+export interface ResultatSuppressionMba {
+  deleted: string;
+  avertissements?: Array<'historique_indisponible'>;
+}
+
+export function historiqueMbaIndisponible(resultat: unknown): boolean {
+  return Array.isArray((resultat as ResultatSuppressionMba | null)?.avertissements)
+    && (resultat as ResultatSuppressionMba).avertissements?.includes('historique_indisponible') === true;
+}
+
+function segmentMba(id: string): string {
+  if (id === '.' || id === '..') throw new Error('Identifiant Meta invalide.');
+  return encodeURIComponent(id);
+}
+
 export function listMbaFaqs(tenantId: string, phoneNumberId: string): Promise<{ faqs: MbaFaq[]; count: number }> {
   return request(`${base(tenantId, phoneNumberId)}/faq`);
 }
@@ -210,11 +225,11 @@ export function createMbaFaq(tenantId: string, phoneNumberId: string, faq: { que
 }
 
 export function updateMbaFaq(tenantId: string, phoneNumberId: string, faqId: string, faq: { question: string; answer: string }): Promise<MbaFaq> {
-  return request(`${base(tenantId, phoneNumberId)}/faq/${faqId}`, { method: 'PUT', body: JSON.stringify(faq) });
+  return request(`${base(tenantId, phoneNumberId)}/faq/${segmentMba(faqId)}`, { method: 'PUT', body: JSON.stringify(faq) });
 }
 
-export function deleteMbaFaq(tenantId: string, phoneNumberId: string, faqId: string): Promise<{ deleted: string }> {
-  return request(`${base(tenantId, phoneNumberId)}/faq/${faqId}`, { method: 'DELETE' });
+export function deleteMbaFaq(tenantId: string, phoneNumberId: string, faqId: string): Promise<ResultatSuppressionMba> {
+  return request(`${base(tenantId, phoneNumberId)}/faq/${segmentMba(faqId)}`, { method: 'DELETE' });
 }
 
 /** Source d'un chargement en lot. Une seule des trois clés est envoyée à la fois. */
@@ -271,11 +286,11 @@ export function createMbaSkill(tenantId: string, phoneNumberId: string, skill: M
 }
 
 export function updateMbaSkill(tenantId: string, phoneNumberId: string, skillId: string, skill: MbaSkill): Promise<MbaSkill> {
-  return request(`${base(tenantId, phoneNumberId)}/skills/${skillId}`, { method: 'PUT', body: JSON.stringify(skill) });
+  return request(`${base(tenantId, phoneNumberId)}/skills/${segmentMba(skillId)}`, { method: 'PUT', body: JSON.stringify(skill) });
 }
 
-export function deleteMbaSkill(tenantId: string, phoneNumberId: string, skillId: string): Promise<{ deleted: string }> {
-  return request(`${base(tenantId, phoneNumberId)}/skills/${skillId}`, { method: 'DELETE' });
+export function deleteMbaSkill(tenantId: string, phoneNumberId: string, skillId: string): Promise<ResultatSuppressionMba> {
+  return request(`${base(tenantId, phoneNumberId)}/skills/${segmentMba(skillId)}`, { method: 'DELETE' });
 }
 
 // --- Messages interactifs (les « UI skills » de Meta) ---------------------------------------------
@@ -310,7 +325,7 @@ export function updateMbaMessageInteractif(
   return request(`${base(tenantId, phoneNumberId)}/messages-interactifs/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(corps) });
 }
 
-export function deleteMbaMessageInteractif(tenantId: string, phoneNumberId: string, id: string): Promise<{ deleted: string }> {
+export function deleteMbaMessageInteractif(tenantId: string, phoneNumberId: string, id: string): Promise<ResultatSuppressionMba> {
   return request(`${base(tenantId, phoneNumberId)}/messages-interactifs/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
 
@@ -333,8 +348,8 @@ export function createMbaWebsite(tenantId: string, phoneNumberId: string, url: s
   return request(`${base(tenantId, phoneNumberId)}/websites`, { method: 'POST', body: JSON.stringify({ url }) });
 }
 
-export function deleteMbaWebsite(tenantId: string, phoneNumberId: string, websiteId: string): Promise<{ deleted: string }> {
-  return request(`${base(tenantId, phoneNumberId)}/websites/${websiteId}`, { method: 'DELETE' });
+export function deleteMbaWebsite(tenantId: string, phoneNumberId: string, websiteId: string): Promise<ResultatSuppressionMba> {
+  return request(`${base(tenantId, phoneNumberId)}/websites/${segmentMba(websiteId)}`, { method: 'DELETE' });
 }
 
 // --- Fichiers de connaissance ---------------------------------------------------------------------
@@ -356,8 +371,8 @@ export function uploadMbaFile(tenantId: string, phoneNumberId: string, fileName:
   return request(`${base(tenantId, phoneNumberId)}/files`, { method: 'POST', body: JSON.stringify({ fileName, dataUrl }) });
 }
 
-export function deleteMbaFile(tenantId: string, phoneNumberId: string, fileId: string): Promise<{ deleted: string }> {
-  return request(`${base(tenantId, phoneNumberId)}/files/${fileId}`, { method: 'DELETE' });
+export function deleteMbaFile(tenantId: string, phoneNumberId: string, fileId: string): Promise<ResultatSuppressionMba> {
+  return request(`${base(tenantId, phoneNumberId)}/files/${segmentMba(fileId)}`, { method: 'DELETE' });
 }
 
 // --- Bac à sable ----------------------------------------------------------------------------------
@@ -435,6 +450,8 @@ export interface ResultatApplicationMba {
   passees: string[];
   echec: { libelle: string; message: string } | null;
   nonTentees: string[];
+  /** Optionnel pendant la fenêtre de déploiement où l'ancienne API répond encore. */
+  avertissements?: Array<{ libelle: string; message: string }>;
 }
 
 export function lireFilAssistantMba(tenantId: string): Promise<FilAssistantMba> {

@@ -217,6 +217,36 @@ describe('appliquer', () => {
     const r = await post(m.app, '/tenants/t1/mba/assistant/appliquer', { operations: [] });
     expect(r.statusCode).toBe(403);
   });
+
+  it('🔴 rend explicitement « appliqué mais historique indisponible » sans inviter à renvoyer', async () => {
+    const avertissement = console.warn;
+    console.warn = () => {};
+    try {
+      const m = monter({
+        application: () => ({
+          numeros: { getTenantPhoneNumberId: async () => '123' },
+          meta: { mbaClientForTenant: async () => ({ createFaq: async () => ({ id: 'f1' }) } as never) },
+          formulaires: { estPublie: async () => false },
+          historique: { ecrire: async () => { throw new Error('base indisponible'); } },
+          acteur: { id: 'u1', email: null },
+          drapeau: { setMbaEnabled: async () => {} },
+          attendre: async () => {},
+        }),
+      });
+      const r = await post(m.app, '/tenants/t1/mba/assistant/appliquer', {
+        operations: [{ type: 'faq.ajouter', question: 'Horaires ?', reponse: '9 h–18 h' }],
+      });
+      expect(r.statusCode).toBe(200);
+      expect(r.json()).toMatchObject({
+        passees: ['FAQ : Horaires ?'],
+        echec: null,
+        avertissements: [{ libelle: 'FAQ : Horaires ?' }],
+      });
+      expect(r.json().avertissements[0].message).toMatch(/Ne la renvoyez pas/);
+    } finally {
+      console.warn = avertissement;
+    }
+  });
 });
 
 /**

@@ -78,4 +78,13 @@ describe('assistant du MBA : ce que Zod refuse, le modèle en a été prévenu',
   it('aucun anyOf : tous les fournisseurs ne le lisent pas', () => {
     expect(JSON.stringify(SCHEMA_PROPOSITION_MBA)).not.toContain('anyOf');
   });
+
+  it('préserve exactement un identifiant Meta opaque, espaces compris', () => {
+    const cible = ' id rendu par Meta ';
+    const lu = propositionMbaSchema.parse({
+      message: 'Supprimer cette FAQ.',
+      operations: [{ type: 'faq.supprimer', cible, libelle: 'FAQ de test' }],
+    });
+    expect(lu.operations[0]).toEqual({ type: 'faq.supprimer', cible, libelle: 'FAQ de test' });
+  });
 });

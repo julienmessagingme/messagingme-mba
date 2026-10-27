@@ -7,7 +7,7 @@ import { MbaNotice } from './MbaNotice';
 import { fileToDataUrl } from '@/lib/image';
 import { MBA_FILE_ACCEPT, mbaFileFormatConditionnel } from '@/lib/mba-files';
 import { MAX_FICHIER, extensionCoherente, tailleFichierOk } from '@/lib/partage/agent-meta';
-import { deleteMbaFile, listMbaFiles, uploadMbaFile, type MbaFile } from '@/lib/api-mba';
+import { deleteMbaFile, historiqueMbaIndisponible, listMbaFiles, uploadMbaFile, type MbaFile } from '@/lib/api-mba';
 import { BoutonConfirme } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 
@@ -24,6 +24,7 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
   const [chargement, setChargement] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [avertissement, setAvertissement] = useState(false);
 
   const recharger = useCallback(async (): Promise<void> => {
     const { files } = await listMbaFiles(tenantId, phoneNumberId);
@@ -79,6 +80,10 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
   return (
     <div className="space-y-5">
       {err !== '' && <MbaNotice kind="error" testid="mba-files-error">{err}</MbaNotice>}
+      {avertissement && <MbaNotice kind="warning" testid="mba-files-history-warning">{t(
+        'La suppression a bien été appliquée chez Meta, mais son historique n’a pas pu être enregistré. Ne recommencez pas.',
+        'The deletion was applied by Meta, but its history could not be recorded. Do not try it again.',
+      )}</MbaNotice>}
 
       <section className={cardCls}>
         <h3 className="text-sm font-semibold text-ink-900">{t('Ajouter un document', 'Add a document')}</h3>
@@ -120,8 +125,12 @@ export function MbaFilesPanel({ tenantId, phoneNumberId }: { tenantId: string; p
               libelleConfirmer={t('Supprimer', 'Delete')}
               onConfirme={() => {
                 setErr('');
+                setAvertissement(false);
                 void deleteMbaFile(tenantId, phoneNumberId, f.id)
-                  .then(recharger)
+                  .then(async (resultat) => {
+                    setAvertissement(historiqueMbaIndisponible(resultat));
+                    await recharger();
+                  })
                   .catch((e: unknown) => setErr(e instanceof Error ? e.message : String(e)));
               }}
             >

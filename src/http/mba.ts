@@ -1,11 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Guard } from '../auth/middleware';
-import { AudienceNonConfirmee, FENETRES_BUDGET, MbaClient, UNITES_BUDGET, ecrireRollout, ecrireRolloutPuisDrapeau, fusionnerBusinessInfo, modifierSettings } from '../mba/client';
+import { AudienceNonConfirmee, FENETRES_BUDGET, MbaClient, UNITES_BUDGET, ecrireRollout, ecrireRolloutPuisDrapeau, modifierSettings } from '../mba/client';
 import type { BudgetAgent, BusinessInfo, Faq, FenetreBudget, Skill, UniteBudget } from '../mba/client';
 import { ID_MESSAGE_RE, validerCreation, validerModification } from '../mba/messages-interactifs';
 import { extraireDepuisCsvHorsBoucle, extraireDepuisHtmlHorsBoucle, extraireDepuisJson, normaliser, planifierImport } from '../mba/faq-import';
 import type { FaqRow } from '../mba/faq-import';
-import { isSendableButtonUrl } from '../../web/lib/partage/button-url';
 import {
   CORPS_SKILL_MAX, DESCRIPTION_SKILL_MAX, EXTENSIONS_FICHIER, MAX_FICHIER, PRIX_MESSAGE_AGENT_USD, TITRE_SKILL_MAX,
   extensionCoherente, tailleFichierOk, titreSkillValide,
@@ -16,6 +15,11 @@ import { espaceVerifie, nonEmpty } from './scope';
 import { MetaApiError } from '../meta/errors';
 import { calculerCompletion } from '../mba/completion';
 import { appliquerActivation, EtatMetaIllisible, MetaARefuse, type ActivationDeps } from '../mba/activation';
+import {
+  appliquerMutationConnaissance,
+  type MutationConnaissanceMba, type ResultatMutationConnaissance,
+} from '../mba/connaissance';
+import { messageDe } from '../lib/erreur';
 
 /**
  * Configuration du Meta Business Agent depuis la console : base de connaissance (informations business, FAQ,
@@ -146,32 +150,68 @@ async function contexte(
   return { tenant, pn: phoneNumberId, client: await deps.meta.mbaClientForTenant(tenant) };
 }
 
-/**
- * Supprime un élément de l'agent de Meta (FAQ, compétence, site, fichier) et journalise ce qu'il contenait.
- * Le contenu est lu avant de supprimer, seule fenêtre où il existe encore (Meta ne rend plus un objet parti).
- * Au mieux : si la lecture de la liste échoue, on supprime quand même et on journalise l'identifiant seul. Le
- * journal vient après la suppression ; `libelle` et `champ` composent la ligne lisible (« FAQ : <question> »).
- */
-async function supprimerAvecTrace(
+/** L'adapter HTTP fournit l'identité ; le module possède l'écriture Meta et sa règle d'historique. */
+async function appliquerDepuisFormulaire(
+  deps: MbaRouteDeps,
+  ctx: { tenant: string; pn: string; client: MbaClient },
+  acteurId: string | null,
+  mutation: MutationConnaissanceMba,
+): Promise<ResultatMutationConnaissance> {
+  return appliquerMutationConnaissance(
+    {
+      historique: {
+        ecrire: async (tenantId, ligne) => {
+          if (ligne.operation !== 'suppression' || ligne.cible === null) return;
+          const element = ligne.element;
+          if (element !== 'faq' && element !== 'competence' && element !== 'site' && element !== 'fichier') return;
+          await deps.journaliserSuppression(tenantId, {
+            element,
+            cible: ligne.cible,
+            libelle: ligne.libelle,
+            avant: ligne.avant,
+            acteurId: ligne.acteurId,
+          });
+        },
+      },
+    },
+    {
+      tenantId: ctx.tenant, phoneNumberId: ctx.pn, client: ctx.client,
+      origine: 'formulaire', acteur: { id: acteurId, email: null },
+    },
+    mutation,
+  );
+}
+
+function valeurMutation(resultat: ResultatMutationConnaissance): unknown {
+  if (resultat.historique !== 'indisponible') return resultat.valeur;
+  const valeur = typeof resultat.valeur === 'object' && resultat.valeur !== null ? resultat.valeur : { valeur: resultat.valeur };
+  return { ...valeur, avertissements: ['historique_indisponible'] };
+}
+
+/** Le message interactif reste hors du module de connaissance, mais garde la même prélecture best-effort. */
+async function supprimerMessageInteractifAvecTrace(
   deps: MbaRouteDeps,
   tenant: string,
   acteurId: string | null,
-  o: {
-    element: 'faq' | 'competence' | 'site' | 'fichier' | 'message_interactif';
-    cible: string;
-    libelle: string;
-    champ: string;
-    lister: () => Promise<ReadonlyArray<{ id?: string }>>;
-    supprimer: () => Promise<unknown>;
-  },
-): Promise<void> {
-  const avant = (await o.lister().catch(() => [])).find((x) => x.id === o.cible);
-  await o.supprimer();
-  await deps.journaliserSuppression(tenant, {
-    element: o.element, cible: o.cible,
-    libelle: `${o.libelle} : ${String((avant as Record<string, unknown> | undefined)?.[o.champ] ?? o.cible)}`,
-    avant: avant ?? { id: o.cible }, acteurId,
-  });
+  cible: string,
+  lister: () => Promise<ReadonlyArray<{ id?: string; titre?: string }>>,
+  supprimer: () => Promise<unknown>,
+): Promise<{ deleted: string; avertissements?: ['historique_indisponible'] }> {
+  const avant = (await lister().catch(() => [])).find((x) => x.id === cible);
+  await supprimer();
+  const libelle = `Message interactif : ${avant?.titre ?? cible}`;
+  try {
+    await deps.journaliserSuppression(tenant, {
+      element: 'message_interactif', cible, libelle,
+      avant: avant ?? { id: cible }, acteurId,
+    });
+    return { deleted: cible };
+  } catch (err) {
+    // Meta a déjà supprimé le message : répondre 500 inviterait à recommencer un geste irréversible déjà passé.
+    // eslint-disable-next-line no-console
+    console.warn(`message interactif MBA : « ${libelle} » supprimé mais NON journalisé (${tenant}) :`, messageDe(err));
+    return { deleted: cible, avertissements: ['historique_indisponible'] };
+  }
 }
 
 /**
@@ -489,8 +529,8 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
   });
 
   /**
-   * PATCH et non PUT, volontairement : côté Meta la ressource est en remplacement complet, et `fusionnerBusinessInfo`
-   * relit l'existant avant d'écrire. L'écran n'envoie donc que ce qu'il modifie sans risquer d'effacer le reste.
+   * PATCH et non PUT, volontairement : côté Meta la ressource est en remplacement complet. Le module de connaissance
+   * relit l'existant avant d'écrire ; l'écran n'envoie donc que ce qu'il modifie sans effacer le reste.
    */
   app.patch(`${base}/business-info`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
@@ -526,7 +566,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     }
 
     if (Object.keys(patch).length === 0) return reply.code(400).send({ error: 'aucun champ à modifier' });
-    return reply.code(200).send(await fusionnerBusinessInfo(ctx.client, ctx.pn, patch));
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'business.modifier', patch,
+    });
+    return reply.code(200).send(valeurMutation(resultat));
   });
 
   // ---------- FAQ ----------
@@ -553,7 +596,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     if (!ctx) return;
     const lu = lireFaq(req.body);
     if ('error' in lu) return reply.code(400).send({ error: lu.error });
-    return reply.code(201).send(await ctx.client.createFaq(ctx.pn, lu.faq));
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'faq.ajouter', valeur: lu.faq,
+    });
+    return reply.code(201).send(valeurMutation(resultat));
   });
 
   app.put(`${base}/faq/:faqId`, g, async (req, reply) => {
@@ -562,19 +608,20 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const lu = lireFaq(req.body);
     if ('error' in lu) return reply.code(400).send({ error: lu.error });
     const { faqId } = req.params as { faqId: string };
-    return reply.code(200).send(await ctx.client.updateFaq(ctx.pn, faqId, lu.faq));
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'faq.modifier', id: faqId, valeur: lu.faq,
+    });
+    return reply.code(200).send(valeurMutation(resultat));
   });
 
   app.delete(`${base}/faq/:faqId`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const { faqId } = req.params as { faqId: string };
-    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
-      element: 'faq', cible: faqId, libelle: 'FAQ', champ: 'question',
-      lister: () => ctx.client.listFaqs(ctx.pn),
-      supprimer: () => ctx.client.deleteFaq(ctx.pn, faqId),
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'faq.supprimer', id: faqId,
     });
-    return reply.code(200).send({ deleted: faqId });
+    return reply.code(200).send(valeurMutation(resultat));
   });
 
   /**
@@ -623,9 +670,12 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
 
     for (const f of plan.aCreer) {
       try {
-        const r = await ctx.client.createFaq(ctx.pn, f);
+        const r = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+          type: 'faq.ajouter', valeur: f,
+        });
         creees += 1;
-        if (r.id !== undefined) cree.push(r.id);
+        const id = (r.valeur as { id?: unknown } | null)?.id;
+        if (typeof id === 'string') cree.push(id);
       } catch (err) {
         echec = { question: f.question, error: err instanceof Error ? err.message : 'erreur inconnue' };
         break;
@@ -634,7 +684,9 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     if (!echec) {
       for (const f of plan.aMettreAJour) {
         try {
-          await ctx.client.updateFaq(ctx.pn, f.id, f);
+          await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+            type: 'faq.modifier', id: f.id, valeur: f,
+          });
           misAJour.push(f.id);
         } catch (err) {
           echec = { question: f.question, error: err instanceof Error ? err.message : 'erreur inconnue' };
@@ -682,9 +734,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     if (!ctx) return;
     const lu = lireSkill(req.body);
     if ('error' in lu) return reply.code(400).send({ error: lu.error });
-    const agentId = await agentIdDe(ctx.client, ctx.pn);
-    if (agentId === null) return reply.code(409).send({ error: "l'agent n'est pas encore configuré sur ce numéro" });
-    return reply.code(201).send(await ctx.client.createSkill(ctx.pn, agentId, lu.skill));
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'competence.ajouter', valeur: lu.skill,
+    });
+    return reply.code(201).send(valeurMutation(resultat));
   });
 
   app.put(`${base}/skills/:skillId`, g, async (req, reply) => {
@@ -693,22 +746,20 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const lu = lireSkill(req.body);
     if ('error' in lu) return reply.code(400).send({ error: lu.error });
     const { skillId } = req.params as { skillId: string };
-    return reply.code(200).send(await ctx.client.updateSkill(ctx.pn, skillId, lu.skill));
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'competence.modifier', id: skillId, valeur: lu.skill,
+    });
+    return reply.code(200).send(valeurMutation(resultat));
   });
 
   app.delete(`${base}/skills/:skillId`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const { skillId } = req.params as { skillId: string };
-    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
-      // 🔴 Le champ `title` : jusqu'au 2026-10-07 cette relecture cherchait un champ `name` qu'une consigne n'a pas, donc
-      // l'historique nommait une consigne supprimée par son seul identifiant. Le numéro en `agent_id` est accepté par
-      // Meta (mesuré le 2026-10-07 : mêmes consignes qu'avec le vrai `agent_id`).
-      element: 'competence', cible: skillId, libelle: 'Consigne', champ: 'title',
-      lister: () => ctx.client.listSkills(ctx.pn, ctx.pn),
-      supprimer: () => ctx.client.deleteSkill(ctx.pn, skillId),
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'competence.supprimer', id: skillId,
     });
-    return reply.code(200).send({ deleted: skillId });
+    return reply.code(200).send(valeurMutation(resultat));
   });
 
   // ---------- Messages interactifs (agent-ui-skills) ----------
@@ -750,12 +801,12 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     if (!ctx) return;
     const { messageId } = req.params as { messageId: string };
     if (!ID_MESSAGE_RE.test(messageId)) return reply.code(400).send({ error: 'identifiant de message interactif invalide' });
-    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
-      element: 'message_interactif', cible: messageId, libelle: 'Message interactif', champ: 'titre',
-      lister: () => ctx.client.listMessagesInteractifs(ctx.pn),
-      supprimer: () => ctx.client.supprimerMessageInteractif(ctx.pn, messageId),
-    });
-    return reply.code(200).send({ deleted: messageId });
+    const resultat = await supprimerMessageInteractifAvecTrace(
+      deps, ctx.tenant, req.auth?.userId ?? null, messageId,
+      () => ctx.client.listMessagesInteractifs(ctx.pn),
+      () => ctx.client.supprimerMessageInteractif(ctx.pn, messageId),
+    );
+    return reply.code(200).send(resultat);
   });
 
   // ---------- Sites web ----------
@@ -774,22 +825,23 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const url = (req.body as { url?: unknown } | null)?.url;
-    if (!nonEmpty(url) || !isSendableButtonUrl(url)) {
+    if (!nonEmpty(url)) {
       return reply.code(400).send({ error: 'url invalide (adresse complète attendue, ex. https://www.exemple.fr)' });
     }
-    return reply.code(201).send(await ctx.client.createWebsite(ctx.pn, url.trim()));
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'site.ajouter', url,
+    });
+    return reply.code(201).send(valeurMutation(resultat));
   });
 
   app.delete(`${base}/websites/:websiteId`, g, async (req, reply) => {
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const { websiteId } = req.params as { websiteId: string };
-    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
-      element: 'site', cible: websiteId, libelle: 'Site', champ: 'url',
-      lister: () => ctx.client.listWebsites(ctx.pn),
-      supprimer: () => ctx.client.deleteWebsite(ctx.pn, websiteId),
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'site.supprimer', id: websiteId,
     });
-    return reply.code(200).send({ deleted: websiteId });
+    return reply.code(200).send(valeurMutation(resultat));
   });
 
   // ---------- Fichiers de connaissance ----------
@@ -839,12 +891,10 @@ export function registerMba(app: FastifyInstance, deps: MbaRouteDeps, garde: Gua
     const ctx = await contexte(req, reply, deps);
     if (!ctx) return;
     const { fileId } = req.params as { fileId: string };
-    await supprimerAvecTrace(deps, ctx.tenant, req.auth?.userId ?? null, {
-      element: 'fichier', cible: fileId, libelle: 'Document', champ: 'name',
-      lister: () => ctx.client.listFiles(ctx.pn),
-      supprimer: () => ctx.client.deleteFile(ctx.pn, fileId),
+    const resultat = await appliquerDepuisFormulaire(deps, ctx, req.auth?.userId ?? null, {
+      type: 'fichier.supprimer', id: fileId,
     });
-    return reply.code(200).send({ deleted: fileId });
+    return reply.code(200).send(valeurMutation(resultat));
   });
 
   // ---------- Bac à sable ----------

@@ -26,6 +26,16 @@ const VERSION_AGENT_CONFIG = '2.0.0';
  */
 const VERSION_THREAD_CONTROL = '1.0.0';
 
+/**
+ * Un identifiant rendu par Meta reste une donnée opaque, jamais un morceau de chemin.
+ * `encodeURIComponent` neutralise notamment `/`; les deux segments spéciaux doivent être
+ * refusés explicitement car les URL les normalisent même lorsqu'ils sont percent-encodés.
+ */
+function segmentOpaque(id: string): string {
+  if (id === '.' || id === '..') throw new Error('identifiant Meta invalide');
+  return encodeURIComponent(id);
+}
+
 /** Informations générales sur l'entreprise. Ressource singleton : le PUT est un remplacement complet. */
 export interface BusinessInfo {
   payment_method?: string;
@@ -242,8 +252,8 @@ export class MbaClient {
   }
 
   /**
-   * Remplacement complet : l'appelant doit fusionner sur l'existant (`fusionnerBusinessInfo`), un objet partiel
-   * efface le reste.
+   * Remplacement complet : le module de connaissance relit et fusionne l'existant avant cet appel. Un objet
+   * partiel effacerait le reste.
    */
   async putBusinessInfo(phoneNumberId: string, info: BusinessInfo): Promise<BusinessInfo> {
     return this.appel<BusinessInfo>('PUT', `${phoneNumberId}/agent_config/business_info`, info);
@@ -260,11 +270,11 @@ export class MbaClient {
   }
 
   async updateFaq(phoneNumberId: string, faqId: string, faq: Faq): Promise<Faq> {
-    return this.appel<Faq>('PUT', `${phoneNumberId}/agent_config/faq/${faqId}`, faq);
+    return this.appel<Faq>('PUT', `${phoneNumberId}/agent_config/faq/${segmentOpaque(faqId)}`, faq);
   }
 
   async deleteFaq(phoneNumberId: string, faqId: string): Promise<void> {
-    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/faq/${faqId}`);
+    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/faq/${segmentOpaque(faqId)}`);
   }
 
   // ---------- Skills ----------
@@ -282,11 +292,11 @@ export class MbaClient {
   }
 
   async updateSkill(phoneNumberId: string, skillId: string, skill: Skill): Promise<Skill> {
-    return this.appel<Skill>('PUT', `${phoneNumberId}/agent_config/skills/${skillId}`, skill);
+    return this.appel<Skill>('PUT', `${phoneNumberId}/agent_config/skills/${segmentOpaque(skillId)}`, skill);
   }
 
   async deleteSkill(phoneNumberId: string, skillId: string): Promise<void> {
-    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/skills/${skillId}`);
+    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/skills/${segmentOpaque(skillId)}`);
   }
 
   // ---------- Messages interactifs (agent-ui-skills) ----------
@@ -365,7 +375,7 @@ export class MbaClient {
   }
 
   async deleteWebsite(phoneNumberId: string, websiteId: string): Promise<void> {
-    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/websites/${websiteId}`);
+    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/websites/${segmentOpaque(websiteId)}`);
   }
 
   // ---------- Fichiers ----------
@@ -395,7 +405,7 @@ export class MbaClient {
   }
 
   async deleteFile(phoneNumberId: string, fileId: string): Promise<void> {
-    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/files/${fileId}`);
+    await this.appel<unknown>('DELETE', `${phoneNumberId}/agent_config/files/${segmentOpaque(fileId)}`);
   }
 
   // ---------- Plafond et statistiques ----------
@@ -631,23 +641,6 @@ function erreurMba(status: number, json: unknown): MetaApiError {
   // à suivre exacte (« Add a payment method in the Billing Hub and try again : <URL> »), il doit arriver
   // jusqu'au client tel quel.
   return new MetaApiError(status, { message, type: 'MbaError', error_user_msg: o.detail ?? message, error_user_title: o.title });
-}
-
-/** Lecture puis fusion : l'appelant ne fournit que ce qu'il change, le reste est préservé. */
-export async function fusionnerBusinessInfo(
-  client: MbaClient,
-  phoneNumberId: string,
-  patch: BusinessInfo,
-): Promise<BusinessInfo> {
-  const actuel = await client.getBusinessInfo(phoneNumberId);
-  const contact = patch.contact_info === undefined
-    ? actuel.contact_info
-    : { ...(actuel.contact_info ?? {}), ...(patch.contact_info ?? {}) };
-  return client.putBusinessInfo(phoneNumberId, {
-    ...actuel,
-    ...patch,
-    ...(contact === undefined ? {} : { contact_info: contact }),
-  });
 }
 
 /**

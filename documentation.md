@@ -248,13 +248,20 @@ carrousel en `type: 'button'`), donc il reste à l'agent : ni automation ni avan
 (`tests/webhook-triggers.test.ts`).
 
 ⚠️ **UNE CONSIGNE PART DANS LA FORME DE META, PAR L'ONGLET COMME PAR L'ASSISTANT** : `title` (slug), `description`
-(le QUAND, 1 024 au plus) et `skill` (le corps), typés `Skill` dans les deux interfaces étroites de l'assistant
-(`src/mba/assistant/application.ts`, `inventaire.ts`). Un `PUT` aux noms inconnus rend 200 et ne change rien (mesuré
+(le QUAND, 1 024 au plus) et `skill` (le corps), typés `Skill` dans le contrat de connaissance et l'inventaire
+(`src/mba/connaissance.ts`, `src/mba/assistant/inventaire.ts`). Un `PUT` aux noms inconnus rend 200 et ne change rien (mesuré
 le 2026-10-08) : un corps mal nommé ne se voit pas à la réponse, d'où le type plutôt que `unknown`. Les opérations
 `competence.*` de l'assistant portent `titre`, `quand` et `instruction`, et l'inventaire lui donne la cible de
 chaque consigne. Le `PUT` remplace le corps entier : la modification par l'assistant lit d'abord la consigne et
-l'historique en garde la copie (`avant`). Une cible qui n'est pas un identifiant Meta (`ID_MESSAGE_RE`) est refusée
-avant Meta, pour une consigne comme pour un message interactif.
+l'historique en garde la copie (`avant`). L'identifiant d'une consigne reste opaque : seuls les segments `.` et `..`
+sont refusés, puis le client l'encode dans le chemin. `ID_MESSAGE_RE` reste propre aux messages interactifs.
+
+🔴 **LES MUTATIONS DE CONNAISSANCE DU MBA PASSENT PAR UN SEUL MODULE** (`src/mba/connaissance.ts`) : FAQ,
+consignes, sites, fiche d'activité et suppression de fichiers. La console et l'assistant ne choisissent plus
+eux-mêmes l'`agent_id`, la fusion de `contact_info`, la politique d'URL ni l'ordre Meta puis historique. Le client
+Meta est transmis comme objet entier, jamais comme une méthode détachée, parce que ses méthodes lisent leur instance.
+La console ne journalise que les suppressions, l'assistant journalise toutes ses opérations. Si Meta a accepté mais
+que l'historique échoue, le geste reste un succès explicite avec avertissement, jamais une erreur à rejouer.
 
 ⚠️ **LES MESSAGES INTERACTIFS VIVENT CHEZ META, COMME LES CONSIGNES** (`/{numéro}/agent-ui-skills`, client
 `src/mba/client.ts`, validation `src/mba/messages-interactifs.ts`). Leur contrat pur vit à un seul endroit,
@@ -5163,6 +5170,7 @@ avec elle) garde son test de parité.
 | `src/account/connexion-numero.ts` -> `connecterNumero`, `demanderCodeNumero`, `activerNumero` | 🔴 le protocole de connexion d'un numéro : échange du code Meta, découverte du WABA et du numéro, preuve d'appartenance, rattachement à l'espace, abonnement aux webhooks, enregistrement, identifiants et PIN, crédit offert, demande de code (délai partagé entre copies, `cleDemandeCode`), vérification et activation. `src/http/embedded-signup.ts` traduit les issues |
 | `src/numero/reserve.ts` -> `servirLAttente`, `droitAuNumero`, `numerosDisponibles` | la réserve de numéros fournis : un numéro qui y revient (rendu, libéré, sorti d'un espace supprimé ou déconnecté, déclaré dans `/ops`) va à l'abonné qui attend le sien depuis le plus longtemps, jamais à celui qui vient de le rendre. `servirLAttente` ne lève jamais : le geste d'avant a réussi. Pas de numéro avant le paiement, et un Pro ne prend pas celui d'un abonné qui attend |
 | `src/mba/client.ts` -> `ecrireRolloutPuisDrapeau` | « Meta d'abord, nous ensuite » pour l'allumage de l'agent de Meta (route `PUT .../rollout`, assistant) : un refus de Meta ne laisse pas notre drapeau dire le contraire. `appliquerActivation` reçoit les deux écritures en dépendances séparées |
+| `src/mba/connaissance.ts` -> `appliquerMutationConnaissance` | les écritures de connaissance de l'agent de Meta, communes à la console et à l'assistant : véritable `agent_id` des consignes, lecture-fusion-écriture de la fiche d'activité, URL, identifiants opaques et politique d'historique après succès Meta |
 | `src/mba/handoff.ts` -> `reglerModeHandoff`, `reconcilierHandoffSurHoraires` | le passage de main à l'agent de Meta : le choix en base, son application chez Meta et sa réconciliation (`mba_handoff_mode`, § 5) |
 | `src/flow/preparation.ts`, `src/flow/lifecycle.ts` | un formulaire WhatsApp : la préparation SANS écriture (écrans, mappings, champs CRM à assurer, rien de partiel sur un refus), puis l'ordre des effets chez Meta et en base (invariant 59) |
 | `src/agent/setup/tour-entretien.ts` -> `creerTourEntretien` | un tour de l'entretien de configuration d'un agent : chargement, budget, contexte, appel du modèle, validation de la proposition, progression des questions, fusion des réponses, synthèse finale, comptabilisation, persistance, import différé du site retenu. `src/http/agent-setup.ts` traduit l'issue |

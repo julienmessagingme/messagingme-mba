@@ -55,6 +55,8 @@ export interface MbaFixtures {
   preview?: Record<string, unknown>;
   importResult?: Record<string, unknown>;
   testReply?: Record<string, unknown>;
+  /** Les DELETE de connaissance réussissent chez Meta mais rendent l'avertissement du journal local. */
+  historiqueIndisponible?: boolean;
   /** Court-circuite le routage par défaut. Rendre `true` si l'appel a été traité. */
   custom?: (route: Route, method: string, url: string, body: Record<string, unknown> | null) => Promise<boolean>;
 }
@@ -103,7 +105,10 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
     if (method === 'DELETE') {
       const i = liste.findIndex((e) => e.id === id);
       if (i >= 0) liste.splice(i, 1);
-      return { deleted: id };
+      return {
+        deleted: id,
+        ...(f.historiqueIndisponible ? { avertissements: ['historique_indisponible'] } : {}),
+      };
     }
     if (method === 'PUT') {
       const i = liste.findIndex((e) => e.id === id);
@@ -144,7 +149,7 @@ export async function mockMba(page: Page, f: MbaFixtures = {}): Promise<Appel[]>
     return courant;
   };
 
-  /** Fusion du patch à plat vers la forme imbriquée de Meta, comme `fusionnerBusinessInfo` côté serveur. */
+  /** Fusion du patch à plat vers la forme imbriquée de Meta, comme le module de connaissance côté serveur. */
   const appliquerBusinessInfo = (patch: Record<string, unknown>): Record<string, unknown> => {
     const champs: Record<string, string> = {
       description: 'business_description', paymentMethod: 'payment_method', returnPolicy: 'return_policy',

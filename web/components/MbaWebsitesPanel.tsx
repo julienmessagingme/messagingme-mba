@@ -5,7 +5,7 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { isSendableButtonUrl } from '@/lib/partage/button-url';
-import { createMbaWebsite, deleteMbaWebsite, listMbaWebsites, type MbaWebsite } from '@/lib/api-mba';
+import { createMbaWebsite, deleteMbaWebsite, historiqueMbaIndisponible, listMbaWebsites, type MbaWebsite } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
 import { BoutonConfirme } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
@@ -36,6 +36,7 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
   const [chargement, setChargement] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [avertissement, setAvertissement] = useState(false);
 
   const recharger = useCallback(async (): Promise<void> => {
     const { websites } = await listMbaWebsites(tenantId, phoneNumberId);
@@ -53,8 +54,9 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
   async function agir(action: () => Promise<unknown>): Promise<void> {
     setBusy(true);
     setErr('');
+    setAvertissement(false);
     try {
-      await action();
+      setAvertissement(historiqueMbaIndisponible(await action()));
       await recharger();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -79,6 +81,10 @@ export function MbaWebsitesPanel({ tenantId, phoneNumberId }: { tenantId: string
   return (
     <div className="space-y-5">
       {err !== '' && <MbaNotice kind="error" testid="mba-websites-error">{err}</MbaNotice>}
+      {avertissement && <MbaNotice kind="warning" testid="mba-websites-history-warning">{t(
+        'La suppression a bien été appliquée chez Meta, mais son historique n’a pas pu être enregistré. Ne recommencez pas.',
+        'The deletion was applied by Meta, but its history could not be recorded. Do not try it again.',
+      )}</MbaNotice>}
 
       <section className={cardCls}>
         <h3 className="text-sm font-semibold text-ink-900">{t('Ajouter une page', 'Add a page')}</h3>

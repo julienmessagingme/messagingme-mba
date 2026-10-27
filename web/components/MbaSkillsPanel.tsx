@@ -6,7 +6,7 @@ import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { slugSkillTitle, slugSkillTitleFrappe } from '@/lib/mba-skills';
 import { CORPS_SKILL_MAX, DESCRIPTION_SKILL_MAX, TITRE_SKILL_MAX, titreSkillValide } from '@/lib/partage/agent-meta';
-import { createMbaSkill, deleteMbaSkill, listMbaSkills, updateMbaSkill, type MbaSkill } from '@/lib/api-mba';
+import { createMbaSkill, deleteMbaSkill, historiqueMbaIndisponible, listMbaSkills, updateMbaSkill, type MbaSkill } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
 import { BoutonConfirme } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
@@ -25,6 +25,7 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
   const [agentId, setAgentId] = useState<string | null>(null);
   const [chargement, setChargement] = useState(true);
   const [err, setErr] = useState('');
+  const [avertissement, setAvertissement] = useState(false);
   const [busy, setBusy] = useState(false);
   const [edition, setEdition] = useState<MbaSkill | null>(null);
 
@@ -45,8 +46,9 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
   async function agir(action: () => Promise<unknown>): Promise<void> {
     setBusy(true);
     setErr('');
+    setAvertissement(false);
     try {
-      await action();
+      setAvertissement(historiqueMbaIndisponible(await action()));
       await recharger();
       setEdition(null);
     } catch (e) {
@@ -78,6 +80,10 @@ export function MbaSkillsPanel({ tenantId, phoneNumberId }: { tenantId: string; 
   return (
     <div className="space-y-5">
       {err !== '' && <MbaNotice kind="error" testid="mba-skills-error">{err}</MbaNotice>}
+      {avertissement && <MbaNotice kind="warning" testid="mba-skills-history-warning">{t(
+        'La suppression a bien été appliquée chez Meta, mais son historique n’a pas pu être enregistré. Ne recommencez pas.',
+        'The deletion was applied by Meta, but its history could not be recorded. Do not try it again.',
+      )}</MbaNotice>}
 
       <Bouton
         data-testid="mba-skill-new"

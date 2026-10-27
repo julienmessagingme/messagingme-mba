@@ -39,7 +39,7 @@ export interface MbaAssistantDeps {
   modele: string;
   /** Tout ce qu'il faut pour écrire chez Meta. */
   application(tenantId: string, acteur: { id: string | null; email: string | null }): ApplicationDeps;
-  /** L'identifiant de l'agent Meta de cet espace (`agentId` des routes MBA) : son numéro Meta. */
+  /** Le numéro WhatsApp rattaché, utilisé comme garde d'existence. Ce n'est pas l'`agent_id` des réglages Meta. */
   numeros: { getTenantPhoneNumberId(tenantId: string): Promise<string | null> };
   tauxEurParDollar: number;
 }
@@ -63,9 +63,9 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
   const ouvrir = async (req: FastifyRequest, reply: FastifyReply) => {
     const tenant = espaceVerifie(req);
     if (forbidNonAdmin(req, reply)) return null;
-    const agentId = await deps.numeros.getTenantPhoneNumberId(tenant);
-    if (!agentId) { reply.code(404).send({ error: 'aucun agent Meta sur cet espace' }); return null; }
-    return { tenant, agentId, acteur: { id: req.auth?.userId ?? null, email: null } };
+    const phoneNumberId = await deps.numeros.getTenantPhoneNumberId(tenant);
+    if (!phoneNumberId) { reply.code(404).send({ error: 'aucun agent Meta sur cet espace' }); return null; }
+    return { tenant, acteur: { id: req.auth?.userId ?? null, email: null } };
   };
 
   /**
@@ -216,13 +216,16 @@ export function registerMbaAssistant(app: FastifyInstance, deps: MbaAssistantDep
     if (!valides.success) return reply.code(422).send({ error: 'ces opérations ne sont pas applicables' });
 
     const r = await appliquer(
-      deps.application(ctx.tenant, ctx.acteur), ctx.tenant, ctx.agentId,
-      valides.data.operations as Operation[],
+      deps.application(ctx.tenant, ctx.acteur), ctx.tenant, valides.data.operations as Operation[],
     );
     return reply.code(200).send({
       passees: r.passees.map((o) => libelleDe(o)),
       echec: r.echec ? { libelle: libelleDe(r.echec.operation), message: r.echec.message } : null,
       nonTentees: r.nonTentees.map((o) => libelleDe(o)),
+      avertissements: r.avertissements.map((o) => ({
+        libelle: libelleDe(o),
+        message: 'La modification a bien été appliquée chez Meta, mais son historique est indisponible. Ne la renvoyez pas.',
+      })),
     });
   });
 }

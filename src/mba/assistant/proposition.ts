@@ -20,7 +20,7 @@ import {
 const MAX_TEXTE = 4000;
 const MAX_TITRE = 500;
 /** L'identifiant d'un objet chez Meta. Opaque : on ne présume pas de sa forme, seulement de sa taille. */
-const cible = z.string().trim().min(1).max(200);
+const cible = z.string().min(1).max(200);
 /**
  * Le titre d'une consigne comme celui d'un message interactif : un slug borné à la limite de Meta (64), la même règle
  * pour les deux (mesuré le 2026-10-07).
@@ -93,7 +93,7 @@ const fichierSupprimer = z.object({
 });
 
 /** Les champs de `business-info`, en énumération fermée : le modèle ne peut pas en inventer un. */
-export const CHAMPS_BUSINESS = ['description', 'horaires', 'adresse', 'telephone', 'email', 'site'] as const;
+export const CHAMPS_BUSINESS = ['description', 'horaires', 'adresse', 'email'] as const;
 const businessModifier = z.object({
   type: z.literal('business.modifier'),
   champ: z.enum(CHAMPS_BUSINESS),

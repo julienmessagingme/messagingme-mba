@@ -158,27 +158,48 @@ describe('la liste des messages interactifs est bornée, et le dit', () => {
  */
 describe('ce que l’assistant voit des consignes (corrigé le 2026-10-08)', () => {
   it('🔴 le titre et la cible de chaque consigne, lus dans la forme de Meta', async () => {
+    const agentsLus: string[] = [];
     const client = {
-      getSettings: async () => ({}),
+      getSettings: async () => ({ agent_id: 'agent-settings-42' }),
       getBusinessInfo: async () => ({}),
       listFaqs: async () => [],
-      listSkills: async () => [{ id: 'pfbid0s1', title: 'politique-de-retour', description: 'Quand…', skill: '…', status: 'active' }],
+      listSkills: async (_numero: string, agentId: string) => {
+        agentsLus.push(agentId);
+        return [{ id: 'pfbid0s1', title: 'politique-de-retour', description: 'Quand…', skill: '…', status: 'active' }];
+      },
       listWebsites: async () => [],
       listFiles: async () => [],
       listMessagesInteractifs: async () => [],
     };
-    const inv = await lireInventaireMba(client, '123', 'ag1', async () => []);
+    const inv = await lireInventaireMba(client, '123', async () => []);
+    expect(agentsLus).toEqual(['agent-settings-42']);
     expect(inv.resume.competences).toEqual([{ id: 'pfbid0s1', titre: 'politique-de-retour', etat: 'active' }]);
     expect(systeme(inv)).toContain('politique-de-retour [active] (cible : pfbid0s1)');
   });
 
+  it('lit le nom réel `file_name` des documents, jamais un ancien champ `name`', async () => {
+    const client = {
+      getSettings: async () => ({ agent_id: 'agent-settings-42' }),
+      getBusinessInfo: async () => ({}),
+      listFaqs: async () => [],
+      listSkills: async () => [],
+      listWebsites: async () => [],
+      listFiles: async () => [{ id: 'f1', file_name: 'conditions.pdf', name: 'ancien-nom.pdf' }],
+      listMessagesInteractifs: async () => [],
+    };
+
+    const inv = await lireInventaireMba(client, '123', async () => []);
+
+    expect(inv.resume.fichiers).toEqual(['conditions.pdf']);
+  });
+
   it('⚠️ une consigne sans titre s’affiche comme telle, jamais « undefined »', async () => {
     const client = {
-      getSettings: async () => ({}), getBusinessInfo: async () => ({}), listFaqs: async () => [],
+      getSettings: async () => ({ agent_id: 'agent-settings-42' }), getBusinessInfo: async () => ({}), listFaqs: async () => [],
       listSkills: async () => [{ id: 'pfbid0s2', description: 'Quand…', skill: '…', status: 'active' } as never],
       listWebsites: async () => [], listFiles: async () => [], listMessagesInteractifs: async () => [],
     };
-    const texte = systeme(await lireInventaireMba(client, '123', 'ag1', async () => []));
+    const texte = systeme(await lireInventaireMba(client, '123', async () => []));
     expect(texte).toContain('(sans titre) [active] (cible : pfbid0s2)');
     expect(texte).not.toContain('undefined');
   });

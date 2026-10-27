@@ -2014,9 +2014,7 @@ async function main(): Promise<void> {
         inventaire: async (tenant: string) => {
           const phoneNumberId = await repo.getTenantPhoneNumberId(tenant);
           if (!phoneNumberId) return null;
-          // L'« agentId » des routes MBA est le `phone_number_id`, comme dans `src/http/mba.ts` : un second
-          // champ créerait une seconde vérité pour la même chose.
-          return lireInventaireMba(await metaFactory.mbaClientForTenant(tenant), phoneNumberId, phoneNumberId,
+          return lireInventaireMba(await metaFactory.mbaClientForTenant(tenant), phoneNumberId,
             () => flowStore.listPublies(tenant));
         },
         entretiens: new PgEntretienMbaStore(pool),

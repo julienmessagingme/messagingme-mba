@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MbaClient, RELECTURE_AUDIENCE_ATTENTE_MS, ecrireRollout, ecrireRolloutPuisDrapeau, fusionnerBusinessInfo, modifierSettings, nomLisibleOutil } from '../src/mba/client';
+import { MbaClient, RELECTURE_AUDIENCE_ATTENTE_MS, ecrireRollout, ecrireRolloutPuisDrapeau, modifierSettings, nomLisibleOutil } from '../src/mba/client';
 import { MetaApiError } from '../src/meta/errors';
 
 /** Faux fetch : enregistre les appels et rend des réponses scriptées. Aucun réseau. */
@@ -66,6 +66,32 @@ describe('MbaClient : la surface MBA n’est pas Graph', () => {
     expect(appels[0]!.url).toContain('agent_id=AG1');
     expect(appels[1]!.url).toContain('agent_id=AG1');
   });
+
+  it('un identifiant opaque reste dans son segment et ne peut pas viser une autre ressource', async () => {
+    const { impl, appels } = faux([{ body: {} }, { body: {} }, { body: {} }, { body: {} }]);
+    const c = new MbaClient('tok', impl);
+
+    await c.deleteFaq('PN1', '../business_info');
+    await c.deleteSkill('PN1', '../settings');
+    await c.deleteWebsite('PN1', '../faq');
+    await c.deleteFile('PN1', '../skills');
+
+    expect(appels.map((a) => new URL(a.url).pathname)).toEqual([
+      '/PN1/agent_config/faq/..%2Fbusiness_info',
+      '/PN1/agent_config/skills/..%2Fsettings',
+      '/PN1/agent_config/websites/..%2Ffaq',
+      '/PN1/agent_config/files/..%2Fskills',
+    ]);
+  });
+
+  it('refuse les deux segments spéciaux avant tout appel réseau', async () => {
+    const { impl, appels } = faux([]);
+    const c = new MbaClient('tok', impl);
+
+    await expect(c.deleteFaq('PN1', '..')).rejects.toThrow(/identifiant Meta invalide/);
+    await expect(c.deleteWebsite('PN1', '.')).rejects.toThrow(/identifiant Meta invalide/);
+    expect(appels).toEqual([]);
+  });
 });
 
 describe('thread_control : rendre le fil', () => {
@@ -95,25 +121,6 @@ describe('thread_control : rendre le fil', () => {
     await c.isEligible('PN1');
     expect(appels[0]!.headers['X-API-Version']).toBe('1.0.0');
     expect(appels[1]!.headers['X-API-Version']).toBe('2.0.0');
-  });
-});
-
-describe('fusionnerBusinessInfo : le PUT est un remplacement complet', () => {
-  it('🔴 préserve les champs absents du patch', async () => {
-    const existant = { business_description: 'Réseau de bus', purchase_info: 'En agence', contact_info: { email: 'a@b.c' } };
-    const { impl, appels } = faux([{ body: existant }, { body: existant }]);
-    await fusionnerBusinessInfo(new MbaClient('tok', impl), 'PN1', { return_policy: 'Aucune' });
-    const envoye = appels[1]!.body as Record<string, unknown>;
-    expect(envoye.return_policy).toBe('Aucune');
-    expect(envoye.business_description).toBe('Réseau de bus'); // aurait été effacé par un PUT naïf
-    expect(envoye.purchase_info).toBe('En agence');
-    expect(envoye.contact_info).toEqual({ email: 'a@b.c' });
-  });
-
-  it('fusionne contact_info champ par champ', async () => {
-    const { impl, appels } = faux([{ body: { contact_info: { email: 'a@b.c', address: 'Auxerre' } } }, { body: {} }]);
-    await fusionnerBusinessInfo(new MbaClient('tok', impl), 'PN1', { contact_info: { email: 'neuf@b.c' } });
-    expect((appels[1]!.body as { contact_info: unknown }).contact_info).toEqual({ email: 'neuf@b.c', address: 'Auxerre' });
   });
 });
 

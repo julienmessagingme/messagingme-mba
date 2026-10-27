@@ -19,8 +19,9 @@ function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | 
   const questionsFormulaire: Array<[string, string]> = [];
   const journal: LigneHistorique[] = [];
   const faits: string[] = [];
+  const agentsReglages: Array<string | undefined> = [];
   // Des réglages qui gardent ce qu'on y écrit, comme Meta : la mise en service relit l'audience qu'elle vient de poser.
-  let reglages: unknown = { locale: 'fr' };
+  let reglages: unknown = { locale: 'fr', agent_id: 'ag1' };
   const client = {
     listFaqs: async () => [{ id: 'f1', question: 'Horaires du dimanche', answer: 'Fermé' }],
     createFaq: async () => { faits.push('createFaq'); },
@@ -36,7 +37,9 @@ function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | 
     getBusinessInfo: async () => ({ business_description: 'Un garage', address: 'Lyon' }),
     putBusinessInfo: async (_p: string, info: unknown) => { faits.push(`put:${JSON.stringify(info)}`); },
     getSettings: async () => reglages,
-    putSettings: async (_p: string, s: unknown) => { reglages = s; faits.push(`settings:${JSON.stringify(s)}`); },
+    putSettings: async (_p: string, s: unknown, agentId?: string) => {
+      reglages = s; faits.push(`settings:${JSON.stringify(s)}`); agentsReglages.push(agentId);
+    },
     listMessagesInteractifs: async () => [{ id: 'm1', titre: 'boutons-rdv', type: 'interactive_reply_buttons', actif: true, consigne: 'Quand : rdv', formulaireId: null, creeLe: 1, modifieLe: 2 }],
     creerMessageInteractif: async (_p: string, c: unknown) => { faits.push(`creerMessage:${JSON.stringify(c)}`); },
     modifierMessageInteractif: async (_p: string, id: string, v: unknown) => { faits.push(`modifierMessage:${id}:${JSON.stringify(v)}`); },
@@ -59,13 +62,13 @@ function monter(sur: Partial<ClientMbaEcriture> = {}, opts: { numero?: string | 
     attendre: async () => {},
     formulaires: { estPublie: async (t, f) => { questionsFormulaire.push([t, f]); return f === '111'; } },
   };
-  return { deps, journal, faits, questionsFormulaire };
+  return { deps, journal, faits, questionsFormulaire, agentsReglages };
 }
 
 describe('l’ordre et l’arrêt', () => {
   it('applique dans l’ordre quand tout passe', async () => {
     const m = monter();
-    const r = await appliquer(m.deps, 't1', 'ag1', [FAQ_A, SKILL, SITE]);
+    const r = await appliquer(m.deps, 't1', [FAQ_A, SKILL, SITE]);
     expect(r.echec).toBeNull();
     expect(r.passees).toHaveLength(3);
     expect(m.faits).toEqual(['createFaq', 'createSkill', 'createWebsite']);
@@ -73,7 +76,7 @@ describe('l’ordre et l’arrêt', () => {
 
   it('🔴 s’arrête à la PREMIÈRE erreur et dit ce qui n’a pas été tenté', async () => {
     const m = monter({ createSkill: async () => { throw new Error('skill blocked by review'); } });
-    const r = await appliquer(m.deps, 't1', 'ag1', [FAQ_A, SKILL, SITE]);
+    const r = await appliquer(m.deps, 't1', [FAQ_A, SKILL, SITE]);
     expect(r.passees).toEqual([FAQ_A]);
     expect(r.echec?.operation).toBe(SKILL);
     expect(r.nonTentees).toEqual([SITE]);
@@ -83,14 +86,14 @@ describe('l’ordre et l’arrêt', () => {
 
   it('🔴 le message rendu est en FRANÇAIS, le brut de Meta reste dans les journaux', async () => {
     const m = monter({ createSkill: async () => { throw new Error('skill blocked by review'); } });
-    const r = await appliquer(m.deps, 't1', 'ag1', [SKILL]);
+    const r = await appliquer(m.deps, 't1', [SKILL]);
     expect(r.echec?.message).toMatch(/refusé ce contenu/i);
     expect(r.echec?.message).not.toMatch(/blocked/);
   });
 
   it('⚠️ sans numéro rattaché, rien n’est tenté et la raison le dit', async () => {
     const m = monter({}, { numero: null });
-    const r = await appliquer(m.deps, 't1', 'ag1', [FAQ_A, SITE]);
+    const r = await appliquer(m.deps, 't1', [FAQ_A, SITE]);
     expect(r.passees).toEqual([]);
     expect(r.echec?.message).toMatch(/numéro WhatsApp/i);
     expect(r.nonTentees).toEqual([SITE]);
@@ -100,7 +103,7 @@ describe('l’ordre et l’arrêt', () => {
 describe('l’historique', () => {
   it('journalise CHAQUE opération passée', async () => {
     const m = monter();
-    await appliquer(m.deps, 't1', 'ag1', [FAQ_A, SITE]);
+    await appliquer(m.deps, 't1', [FAQ_A, SITE]);
     expect(m.journal).toHaveLength(2);
     expect(m.journal[0]).toMatchObject({ surface: 'mba', surfaceId: null, element: 'faq', operation: 'ajout', origine: 'assistant' });
     expect(m.journal[0]?.acteurEmail).toBe('julien@messagingme.fr');
@@ -110,7 +113,7 @@ describe('l’historique', () => {
     // Une ligne d'historique sur un geste qui n'a pas eu lieu ferait chercher une cause qui n'existe pas,
     // sur le seul journal que le client consulte.
     const m = monter({ createFaq: async () => { throw new Error('refus'); } });
-    await appliquer(m.deps, 't1', 'ag1', [FAQ_A]);
+    await appliquer(m.deps, 't1', [FAQ_A]);
     expect(m.journal).toHaveLength(0);
   });
 
@@ -118,7 +121,7 @@ describe('l’historique', () => {
     // C'est tout l'intérêt de l'historique : Meta ne rend plus un objet parti, cette ligne en est le seul
     // exemplaire. Le lire après coup serait trop tard.
     const m = monter();
-    await appliquer(m.deps, 't1', 'ag1', [SUPPR]);
+    await appliquer(m.deps, 't1', [SUPPR]);
     expect(m.journal[0]?.operation).toBe('suppression');
     expect(m.journal[0]?.avant).toMatchObject({ id: 'f1', question: 'Horaires du dimanche', answer: 'Fermé' });
   });
@@ -127,7 +130,7 @@ describe('l’historique', () => {
     // Quelqu'un a supprimé au formulaire entre-temps : on ne peut plus lire le contenu, mais une ligne sans
     // `avant` serait refusée par le schéma, et surtout ne dirait rien.
     const m = monter({ listFaqs: async () => [] });
-    await appliquer(m.deps, 't1', 'ag1', [SUPPR]);
+    await appliquer(m.deps, 't1', [SUPPR]);
     expect(m.journal[0]?.avant).toEqual({ id: 'f1' });
   });
 });
@@ -137,7 +140,7 @@ describe('les pièges de l’API Meta', () => {
     // `putBusinessInfo` REMPLACE : envoyer le seul champ modifié effacerait la description de l'activité,
     // sur un geste annoncé comme « changer les horaires ».
     const m = monter();
-    await appliquer(m.deps, 't1', 'ag1', [{ type: 'business.modifier', champ: 'horaires', valeur: '9h-19h' }]);
+    await appliquer(m.deps, 't1', [{ type: 'business.modifier', champ: 'horaires', valeur: '9h-19h' }]);
     const envoye = m.faits.find((f) => f.startsWith('put:'))!;
     expect(envoye).toContain('business_description');
     expect(envoye).toContain('Lyon');
@@ -146,18 +149,19 @@ describe('les pièges de l’API Meta', () => {
 
   it('⚠️ nos noms de champs ne sont pas ceux de Meta', async () => {
     const m = monter();
-    await appliquer(m.deps, 't1', 'ag1', [{ type: 'business.modifier', champ: 'description', valeur: 'Un garage à Lyon' }]);
+    await appliquer(m.deps, 't1', [{ type: 'business.modifier', champ: 'description', valeur: 'Un garage à Lyon' }]);
     expect(m.faits.find((f) => f.startsWith('put:'))).toContain('business_description');
   });
 
   it('🔴 la mise en service ne remplace pas les autres réglages, et allume dans l’ordre de Meta', async () => {
     const m = monter();
-    const r = await appliquer(m.deps, 't1', 'ag1', [{ type: 'activation.mettreEnService' }]);
+    const r = await appliquer(m.deps, 't1', [{ type: 'activation.mettreEnService' }]);
     expect(r.echec).toBeNull();
     // L'audience d'abord (la liste, sans allumer), une relecture, puis l'allumage.
     const [audience, allumage] = m.faits.filter((f) => f.startsWith('settings:')).map((f) => JSON.parse(f.slice('settings:'.length)) as Record<string, unknown>);
-    expect(audience).toEqual({ locale: 'fr', ai_audience: 'ALLOWLISTED_ONLY' });
-    expect(allumage).toEqual({ locale: 'fr', ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: true } });
+    expect(audience).toEqual({ locale: 'fr', agent_id: 'ag1', ai_audience: 'ALLOWLISTED_ONLY' });
+    expect(allumage).toEqual({ locale: 'fr', agent_id: 'ag1', ai_audience: 'ALLOWLISTED_ONLY', rollout: { enabled: true } });
+    expect(m.agentsReglages).toEqual(['ag1', 'ag1']);
   });
 
   it('🔴 la mise en service écrit aussi notre drapeau, APRÈS Meta', async () => {
@@ -165,14 +169,14 @@ describe('les pièges de l’API Meta', () => {
     // réponses rangées en `standby` n'arrivaient à personne. Vérifié dans les deux sens : l'écriture du drapeau
     // retirée de `executer`, ce cas échoue (aucun `drapeau:true`).
     const m = monter();
-    await appliquer(m.deps, 't1', 'ag1', [{ type: 'activation.mettreEnService' }]);
+    await appliquer(m.deps, 't1', [{ type: 'activation.mettreEnService' }]);
     expect(m.faits.filter((f) => f.startsWith('settings:') || f.startsWith('drapeau:')).map((f) => f.split(':')[0])).toEqual(['settings', 'settings', 'drapeau']);
     expect(m.faits.at(-1)).toBe('drapeau:true');
   });
 
   it('⚠️ Meta refuse la mise en service : notre drapeau ne bouge pas', async () => {
     const m = monter({ putSettings: async () => { throw new Error('refusé par Meta'); } });
-    const r = await appliquer(m.deps, 't1', 'ag1', [{ type: 'activation.mettreEnService' }]);
+    const r = await appliquer(m.deps, 't1', [{ type: 'activation.mettreEnService' }]);
     expect(r.echec).not.toBeNull();
     expect(m.faits.some((f) => f.startsWith('drapeau:'))).toBe(false);
   });
@@ -226,23 +230,24 @@ describe('quand le journal est indisponible', () => {
   });
 
   it('🔴 les opérations passent quand même, et la SUITE est appliquée', async () => {
-    const r = await appliquer(deps(), 't1', 'ag-1', [
+    const r = await appliquer(deps(), 't1', [
       { type: 'faq.ajouter', question: 'Horaires ?', reponse: '9h-18h' },
       { type: 'faq.ajouter', question: 'Livraison ?', reponse: 'Sous 48 h' },
     ]);
     expect(r.echec).toBeNull();
     expect(r.passees).toHaveLength(2);
     expect(r.nonTentees).toEqual([]);
+    expect(r.avertissements).toEqual(r.passees);
   });
 
   it('🔴 et JAMAIS la même opération sous « fait » et sous « arrêté sur »', async () => {
-    const r = await appliquer(deps(), 't1', 'ag-1', [{ type: 'faq.ajouter', question: 'Q', reponse: 'R' }]);
+    const r = await appliquer(deps(), 't1', [{ type: 'faq.ajouter', question: 'Q', reponse: 'R' }]);
     const arretee = r.echec?.operation;
     expect(arretee === undefined || !r.passees.includes(arretee)).toBe(true);
   });
 
   it('🔴 et on n’accuse pas Meta d’une panne qui vient de chez nous', async () => {
-    const r = await appliquer(deps(), 't1', 'ag-1', [{ type: 'faq.ajouter', question: 'Q', reponse: 'R' }]);
+    const r = await appliquer(deps(), 't1', [{ type: 'faq.ajouter', question: 'Q', reponse: 'R' }]);
     expect(r.echec?.message ?? '').not.toMatch(/Meta/);
   });
 });
@@ -282,7 +287,7 @@ describe('les messages interactifs (lot du 2026-10-07)', () => {
 
   it('crée avec la valeur validée, sans formulaire', async () => {
     const m = monter();
-    const r = await appliquer(m.deps, 't1', 'ag1', [AJOUT]);
+    const r = await appliquer(m.deps, 't1', [AJOUT]);
     expect(r.echec).toBeNull();
     expect(m.faits).toEqual([`creerMessage:${JSON.stringify({ titre: 'boutons-rdv', type: 'interactive_reply_buttons', consigne: 'Quand : rdv', formulaireId: null })}`]);
     expect(m.journal[0]).toMatchObject({ element: 'message_interactif', operation: 'ajout', libelle: 'Message interactif : boutons-rdv', origine: 'assistant' });
@@ -290,43 +295,43 @@ describe('les messages interactifs (lot du 2026-10-07)', () => {
 
   it('🔴 un formulaire doit être un formulaire PUBLIÉ de CET espace : la question est posée avec l’espace', async () => {
     const refuse = monter();
-    const r = await appliquer(refuse.deps, 't1', 'ag1', [{ ...AJOUT, composant: 'flow', formulaire: '222' }]);
+    const r = await appliquer(refuse.deps, 't1', [{ ...AJOUT, composant: 'flow', formulaire: '222' }]);
     expect(r.echec?.message).toBe('Ce formulaire n’est pas un formulaire publié de cet espace.');
     expect(refuse.faits).toEqual([]);
     expect(refuse.journal).toEqual([]);
     expect(refuse.questionsFormulaire).toEqual([['t1', '222']]);
 
     const accepte = monter();
-    expect((await appliquer(accepte.deps, 't1', 'ag1', [{ ...AJOUT, composant: 'flow', formulaire: '111' }])).echec).toBeNull();
+    expect((await appliquer(accepte.deps, 't1', [{ ...AJOUT, composant: 'flow', formulaire: '111' }])).echec).toBeNull();
     expect(accepte.faits[0]).toContain('"formulaireId":"111"');
   });
 
   it('🔴 revalide AVANT Meta : un titre qui n’est pas un slug est refusé sans appel, une consigne accentuée valide passe', async () => {
     // Zod borne la consigne à 4 000 caractères ; Meta compte 20 000 octets. Une consigne valide pour Zod passe ici.
     const m = monter();
-    expect((await appliquer(m.deps, 't1', 'ag1', [{ ...AJOUT, consigne: 'é'.repeat(4000) }])).echec).toBeNull();
+    expect((await appliquer(m.deps, 't1', [{ ...AJOUT, consigne: 'é'.repeat(4000) }])).echec).toBeNull();
     const n = monter();
-    const r = await appliquer(n.deps, 't1', 'ag1', [{ ...AJOUT, titre: 'Pas Un Slug' }]);
+    const r = await appliquer(n.deps, 't1', [{ ...AJOUT, titre: 'Pas Un Slug' }]);
     expect(r.echec?.message).toMatch(/titre invalide/);
     expect(n.faits).toEqual([]);
   });
 
   it('refuse un identifiant de message qui pourrait sortir de son chemin, sans appeler Meta', async () => {
     const m = monter();
-    const r = await appliquer(m.deps, 't1', 'ag1', [{ type: 'message_interactif.supprimer', cible: '../x', libelle: 'x' }]);
+    const r = await appliquer(m.deps, 't1', [{ type: 'message_interactif.supprimer', cible: '../x', libelle: 'x' }]);
     expect(r.echec?.message).toMatch(/Identifiant/);
     expect(m.faits).toEqual([]);
   });
 
   it('modifie le titre et la consigne, jamais le type', async () => {
     const m = monter();
-    await appliquer(m.deps, 't1', 'ag1', [{ type: 'message_interactif.modifier', cible: 'm1', titre: 'neuf', consigne: 'Quand : autre' }]);
+    await appliquer(m.deps, 't1', [{ type: 'message_interactif.modifier', cible: 'm1', titre: 'neuf', consigne: 'Quand : autre' }]);
     expect(m.faits).toEqual([`modifierMessage:m1:${JSON.stringify({ titre: 'neuf', consigne: 'Quand : autre' })}`]);
   });
 
   it('🔴 supprime en gardant le contenu effacé dans l’historique, seul exemplaire', async () => {
     const m = monter();
-    await appliquer(m.deps, 't1', 'ag1', [{ type: 'message_interactif.supprimer', cible: 'm1', libelle: 'boutons-rdv' }]);
+    await appliquer(m.deps, 't1', [{ type: 'message_interactif.supprimer', cible: 'm1', libelle: 'boutons-rdv' }]);
     expect(m.faits).toEqual(['supprimerMessage:m1']);
     expect(m.journal[0]).toMatchObject({
       element: 'message_interactif', operation: 'suppression', libelle: 'Message interactif : boutons-rdv',
@@ -353,7 +358,7 @@ describe('les consignes (corrigé le 2026-10-08)', () => {
   it('🔴 la création envoie title, description et skill, sur l’agent', async () => {
     const corps: unknown[] = [];
     const m = monter({ createSkill: async (_p, agentId, s) => { corps.push([agentId, s]); } });
-    const r = await appliquer(m.deps, 't1', 'ag1', [SKILL]);
+    const r = await appliquer(m.deps, 't1', [SKILL]);
     expect(r.echec).toBeNull();
     expect(corps).toEqual([['ag1', { title: 'rdv', description: 'Quand le client veut un rendez-vous', skill: 'Prendre un rendez-vous' }]]);
   });
@@ -361,17 +366,17 @@ describe('les consignes (corrigé le 2026-10-08)', () => {
   it('🔴 la modification envoie le même corps complet, sur la cible', async () => {
     const corps: unknown[] = [];
     const m = monter({ updateSkill: async (_p, id, s) => { corps.push([id, s]); } });
-    const r = await appliquer(m.deps, 't1', 'ag1', [MODIF]);
+    const r = await appliquer(m.deps, 't1', [MODIF]);
     expect(r.echec).toBeNull();
     expect(corps).toEqual([['s1', { title: 'rdv', description: 'Quand le client veut un rendez-vous', skill: 'Proposer deux créneaux' }]]);
   });
 
   it('l’historique nomme la consigne par son titre et garde ce qui a été posé', async () => {
     const m = monter();
-    await appliquer(m.deps, 't1', 'ag1', [MODIF]);
+    await appliquer(m.deps, 't1', [MODIF]);
     expect(m.journal[0]).toMatchObject({
       element: 'competence', operation: 'modification', cible: 's1', libelle: 'Consigne : rdv',
-      apres: { cible: 's1', titre: 'rdv', quand: 'Quand le client veut un rendez-vous', instruction: 'Proposer deux créneaux' },
+      apres: { title: 'rdv', description: 'Quand le client veut un rendez-vous', skill: 'Proposer deux créneaux' },
     });
   });
 
@@ -379,29 +384,29 @@ describe('les consignes (corrigé le 2026-10-08)', () => {
     // Le PUT remplace le corps entier, que le modèle n'a pas vu : sans cette lecture, l'ancien texte serait perdu.
     const actuelle = { id: 's1', title: 'rdv', description: 'Ancien quand', skill: 'Ancien corps écrit dans l’onglet', status: 'active' };
     const m = monter({ listSkills: async () => [actuelle] });
-    await appliquer(m.deps, 't1', 'ag1', [MODIF]);
+    await appliquer(m.deps, 't1', [MODIF]);
     expect(m.journal[0]?.avant).toEqual(actuelle);
   });
 
   it('⚠️ une lecture ratée de la consigne actuelle ne bloque pas la modification', async () => {
     const corps: unknown[] = [];
     const m = monter({ listSkills: async () => { throw new Error('lecture impossible'); }, updateSkill: async (_p, id) => { corps.push(id); } });
-    const r = await appliquer(m.deps, 't1', 'ag1', [MODIF]);
+    const r = await appliquer(m.deps, 't1', [MODIF]);
     expect(r.echec).toBeNull();
     expect(corps).toEqual(['s1']);
-    expect(m.journal[0]?.avant).toBeNull();
+    expect(m.journal[0]?.avant).toEqual({ id: 's1' });
   });
 
-  it('🔴 une cible qui sortirait de son chemin est refusée sans appeler Meta', async () => {
+  it('🔴 les segments spéciaux sont refusés ; un identifiant opaque contenant une barre reste accepté par le domaine', async () => {
     const appels: string[] = [];
     const m = monter({
       updateSkill: async (_p, id) => { appels.push(`update:${id}`); },
       deleteSkill: async (_p, id) => { appels.push(`delete:${id}`); },
     });
-    const r1 = await appliquer(m.deps, 't1', 'ag1', [{ ...MODIF, cible: '..' } as Operation]);
-    const r2 = await appliquer(m.deps, 't1', 'ag1', [{ type: 'competence.supprimer', cible: '../faq', libelle: 'rdv' }]);
-    expect(r1.echec?.message).toBe('Identifiant de consigne invalide.');
-    expect(r2.echec?.message).toBe('Identifiant de consigne invalide.');
-    expect(appels).toEqual([]);
+    const r1 = await appliquer(m.deps, 't1', [{ ...MODIF, cible: '..' } as Operation]);
+    const r2 = await appliquer(m.deps, 't1', [{ type: 'competence.supprimer', cible: '../faq', libelle: 'rdv' }]);
+    expect(r1.echec?.message).toBe('Identifiant Meta invalide.');
+    expect(r2.echec).toBeNull();
+    expect(appels).toEqual(['delete:../faq']);
   });
 });

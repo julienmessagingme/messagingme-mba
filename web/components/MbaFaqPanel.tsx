@@ -5,7 +5,7 @@ import { useT } from '@/lib/i18n';
 import { cardCls, inputCls } from '@/lib/ui';
 import { MbaNotice } from './MbaNotice';
 import { MbaFaqImportPanel } from './MbaFaqImportPanel';
-import { createMbaFaq, deleteMbaFaq, listMbaFaqs, updateMbaFaq, type MbaFaq } from '@/lib/api-mba';
+import { createMbaFaq, deleteMbaFaq, historiqueMbaIndisponible, listMbaFaqs, updateMbaFaq, type MbaFaq } from '@/lib/api-mba';
 import { Bouton } from '@/components/Bouton';
 import { useConfirmation } from '@/components/Confirmation';
 import { Modale } from '@/components/Modale';
@@ -27,6 +27,7 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
   const [faqs, setFaqs] = useState<MbaFaq[]>([]);
   const [chargement, setChargement] = useState(true);
   const [err, setErr] = useState('');
+  const [avertissement, setAvertissement] = useState(false);
   const [edition, setEdition] = useState<{ id?: string; question: string; answer: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [recherche, setRecherche] = useState('');
@@ -48,8 +49,9 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
   async function agir(action: () => Promise<unknown>): Promise<void> {
     setBusy(true);
     setErr('');
+    setAvertissement(false);
     try {
-      await action();
+      setAvertissement(historiqueMbaIndisponible(await action()));
       await recharger();
       setEdition(null);
     } catch (e) {
@@ -80,6 +82,10 @@ export function MbaFaqPanel({ tenantId, phoneNumberId }: { tenantId: string; pho
   return (
     <div className="space-y-5">
       {err !== '' && <MbaNotice kind="error" testid="mba-faq-error">{err}</MbaNotice>}
+      {avertissement && <MbaNotice kind="warning" testid="mba-faq-history-warning">{t(
+        'La suppression a bien été appliquée chez Meta, mais son historique n’a pas pu être enregistré. Ne recommencez pas.',
+        'The deletion was applied by Meta, but its history could not be recorded. Do not try it again.',
+      )}</MbaNotice>}
 
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm text-ink-900" data-testid="mba-faq-count">

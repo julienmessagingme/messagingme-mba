@@ -418,6 +418,7 @@ function DetailMessageInteractif({ o }: { o: OperationAssistantMba }) {
  */
 function Resultat({ resultat }: { resultat: ResultatApplicationMba }) {
   const t = useT();
+  const avertissements = resultat.avertissements ?? [];
   return (
     <div className="mt-4 rounded-carte border border-ink-200 p-4 text-sm" data-testid="mba-assistant-resultat">
       {resultat.passees.length > 0 && (
@@ -432,6 +433,16 @@ function Resultat({ resultat }: { resultat: ResultatApplicationMba }) {
         <div className="mt-3 rounded-controle bg-danger-50 px-3 py-2">
           <p className="font-medium text-danger-800">{t('Arrêté sur', 'Stopped at')} : {resultat.echec.libelle}</p>
           <p className="mt-0.5 text-danger-700">{resultat.echec.message}</p>
+        </div>
+      )}
+      {avertissements.length > 0 && (
+        <div className="mt-3 rounded-controle bg-alerte-100 px-3 py-2" data-testid="mba-assistant-avertissements">
+          <p className="font-medium text-ink-900">{t('À vérifier', 'Check')}</p>
+          <ul className="mt-1 space-y-1 text-ink-700">
+            {avertissements.map((a) => (
+              <li key={a.libelle}><span className="font-medium">{a.libelle}</span> — {a.message}</li>
+            ))}
+          </ul>
         </div>
       )}
       {resultat.nonTentees.length > 0 && (

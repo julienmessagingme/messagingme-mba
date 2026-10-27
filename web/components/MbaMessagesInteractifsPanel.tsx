@@ -12,7 +12,7 @@ import { Squelette } from '@/components/Squelette';
 import { Toggle } from '@/components/Toggle';
 import { ChoixMessageInteractif } from '@/components/mba-messages/ChoixMessageInteractif';
 import {
-  createMbaMessageInteractif, deleteMbaMessageInteractif, listMbaMessagesInteractifs, updateMbaMessageInteractif,
+  createMbaMessageInteractif, deleteMbaMessageInteractif, historiqueMbaIndisponible, listMbaMessagesInteractifs, updateMbaMessageInteractif,
   type MbaMessageInteractif, type MbaStatus,
 } from '@/lib/api-mba';
 import { listFlows } from '@/lib/api/scenarios';
@@ -48,6 +48,7 @@ export function MbaMessagesInteractifsPanel({ tenantId, phoneNumberId, status, i
   const [formulaires, setFormulaires] = useState<Formulaires>(null);
   const [mode, setMode] = useState<Mode>({ vue: 'liste' });
   const [erreur, setErreur] = useState<string | null>(null);
+  const [avertissement, setAvertissement] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const chargerMessages = useCallback(async (): Promise<void> => {
@@ -75,8 +76,10 @@ export function MbaMessagesInteractifsPanel({ tenantId, phoneNumberId, status, i
   async function agir(action: () => Promise<unknown>): Promise<boolean> {
     setBusy(true);
     setErreur(null);
+    setAvertissement(false);
     try {
-      await action();
+      const resultat = await action();
+      setAvertissement(historiqueMbaIndisponible(resultat));
       await chargerMessages();
       return true;
     } catch (e) {
@@ -121,6 +124,14 @@ export function MbaMessagesInteractifsPanel({ tenantId, phoneNumberId, status, i
       </div>
 
       {erreur !== null && <MbaNotice kind="error" testid="mba-messages-erreur">{erreur}</MbaNotice>}
+      {avertissement && (
+        <MbaNotice kind="warning" testid="mba-messages-history-warning">
+          {t(
+            'La suppression a bien été appliquée chez Meta, mais son historique n’a pas pu être enregistré. Ne recommencez pas.',
+            'The deletion was applied by Meta, but its history could not be recorded. Do not try it again.',
+          )}
+        </MbaNotice>
+      )}
 
       {mode.vue === 'choix' && (
         <ChoixMessageInteractif

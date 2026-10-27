@@ -1,5 +1,5 @@
 import { calculerCompletion } from '../completion';
-import type { Skill } from '../client';
+import type { AgentSettings, KnowledgeFile, Skill } from '../client';
 import type { InventaireMba } from './conversation';
 
 /**
@@ -12,13 +12,13 @@ import type { InventaireMba } from './conversation';
 
 /** Ce que l'assistant a besoin de savoir lire, sous-ensemble strict de `MbaClient`. */
 export interface ClientMbaLecture {
-  getSettings(p: string): Promise<unknown>;
+  getSettings(p: string): Promise<AgentSettings | null>;
   getBusinessInfo(p: string): Promise<unknown>;
   listFaqs(p: string): Promise<unknown[]>;
   /** Typé : lue en `unknown`, une consigne a été lue sous `name`, champ qu'elle n'a pas (corrigé le 2026-10-08). */
   listSkills(p: string, agentId: string): Promise<Skill[]>;
   listWebsites(p: string): Promise<unknown[]>;
-  listFiles(p: string): Promise<unknown[]>;
+  listFiles(p: string): Promise<KnowledgeFile[]>;
   listMessagesInteractifs(p: string): Promise<Array<{ id: string; titre: string; type: string; actif: boolean }>>;
 }
 
@@ -30,15 +30,19 @@ async function ouNull<T>(p: Promise<T>): Promise<T | null> {
 export async function lireInventaireMba(
   client: ClientMbaLecture,
   phoneNumberId: string,
-  agentId: string,
   /** Les formulaires PUBLIÉS de l'espace, que l'assistant peut faire ouvrir par un message interactif. Lu chez nous. */
   formulairesPublies: () => Promise<Array<{ id: string; nom: string }>>,
 ): Promise<InventaireMba> {
+  const settingsPromis = ouNull(client.getSettings(phoneNumberId));
+  const skillsPromis = settingsPromis.then((settings) => {
+    const id = settings?.agent_id;
+    return id ? ouNull(client.listSkills(phoneNumberId, id)) : null;
+  });
   const [settings, businessInfo, faqs, skills, websites, files, messages, formulaires] = await Promise.all([
-    ouNull(client.getSettings(phoneNumberId)),
+    settingsPromis,
     ouNull(client.getBusinessInfo(phoneNumberId)),
     ouNull(client.listFaqs(phoneNumberId)),
-    ouNull(client.listSkills(phoneNumberId, agentId)),
+    skillsPromis,
     ouNull(client.listWebsites(phoneNumberId)),
     ouNull(client.listFiles(phoneNumberId)),
     ouNull(client.listMessagesInteractifs(phoneNumberId)),
@@ -71,8 +75,7 @@ export async function lireInventaireMba(
       competences: (skills ?? []).map((s) => ({ id: s.id ?? '', titre: s.title || '(sans titre)', etat: s.status ?? 'inconnu' })),
       sites: ((websites ?? []) as Array<Record<string, unknown>>)
         .map((w) => ({ url: String(w.url ?? ''), pages: Number(w.pages_crawled ?? 0) })),
-      fichiers: ((files ?? []) as Array<Record<string, unknown>>)
-        .map((f) => String(f.name ?? f.file_name ?? '')).filter((n) => n !== ''),
+      fichiers: (files ?? []).map((f) => f.file_name ?? '').filter((n) => n !== ''),
       enService: ((settings ?? {}) as { rollout?: { enabled?: boolean } }).rollout?.enabled === true,
       // ⚠️ Avec leur identifiant, comme les consignes : modifier ou supprimer un message interactif, et
       // désigner un formulaire, exigent l'identifiant exact. `null` = pas lu, que le texte dit.

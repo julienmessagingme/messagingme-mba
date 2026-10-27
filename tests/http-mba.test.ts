@@ -3,7 +3,7 @@ import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
-import type { MbaClient } from '../src/mba/client';
+import { MbaClient } from '../src/mba/client';
 import type { MbaRouteDeps } from '../src/http/mba';
 import { MetaApiError } from '../src/meta/errors';
 import { mbaInerte } from './routes-inertes';
@@ -268,6 +268,36 @@ describe('routes MBA : FAQ', { timeout: 30_000 }, () => {
     const { server } = app();
     expect((await server.inject({ method: 'POST', url: url('/faq'), ...h(adminTok), payload: { question: 'Q' } })).statusCode).toBe(400);
     expect((await server.inject({ method: 'POST', url: url('/faq'), ...h(adminTok), payload: { question: 'Q', answer: 'R' } })).statusCode).toBe(201);
+    await server.close();
+  });
+
+  it('🔴 le câblage conserve le `this` du vrai client en classe', async () => {
+    const appels: Array<{ url: string; method: string }> = [];
+    const client = new MbaClient('tok', async (adresse, init) => {
+      appels.push({ url: String(adresse), method: init?.method ?? 'GET' });
+      return new Response(JSON.stringify({ id: 'faq-classee', question: 'Q', answer: 'R' }), {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    const { server } = app({}, {
+      meta: {
+        mbaClientForTenant: async () => client,
+        phoneClientForTenant: async () => ({
+          getWabaHealth: async () => ({ ownerBusinessId: 'BM1', ownerBusinessName: 'Messaging Me' }),
+        } as never),
+      },
+    });
+
+    const res = await server.inject({
+      method: 'POST', url: url('/faq'), ...h(adminTok), payload: { question: 'Q', answer: 'R' },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(appels).toEqual([{
+      url: `https://api.facebook.com/${PN}/agent_config/faq`,
+      method: 'POST',
+    }]);
     await server.close();
   });
 
@@ -650,7 +680,7 @@ describe('GET /tenants/:tenantId/mba-insights', () => {
 
 /**
  * Les CINQ suppressions (FAQ, consigne, site, fichier, message interactif) lisent le contenu AVANT de supprimer et le
- * journalisent APRÈS (`supprimerAvecTrace`, audit ponytail du 2026-09-25). Chez Meta une suppression est
+ * journalisent APRÈS (module de connaissance, ou adapter propre au message interactif). Chez Meta une suppression est
  * définitive : la ligne d'historique est le seul exemplaire de ce qui a été effacé.
  */
 describe('routes MBA : une suppression laisse sa trace', () => {
@@ -659,7 +689,7 @@ describe('routes MBA : une suppression laisse sa trace', () => {
     // 🔴 Une consigne porte un `title` : jusqu'au 2026-10-07 la route cherchait `name`, et ce cas l'affirmait.
     { chemin: '/skills/s1', liste: 'listSkills', supprime: 'deleteSkill', element: 'competence', cible: 's1', objet: { id: 's1', title: 'reserver' }, libelle: 'Consigne : reserver' },
     { chemin: '/websites/w1', liste: 'listWebsites', supprime: 'deleteWebsite', element: 'site', cible: 'w1', objet: { id: 'w1', url: 'https://bus.fr' }, libelle: 'Site : https://bus.fr' },
-    { chemin: '/files/d1', liste: 'listFiles', supprime: 'deleteFile', element: 'fichier', cible: 'd1', objet: { id: 'd1', name: 'tarifs.pdf' }, libelle: 'Document : tarifs.pdf' },
+    { chemin: '/files/d1', liste: 'listFiles', supprime: 'deleteFile', element: 'fichier', cible: 'd1', objet: { id: 'd1', file_name: 'tarifs.pdf' }, libelle: 'Document : tarifs.pdf' },
     { chemin: '/messages-interactifs/m1', liste: 'listMessagesInteractifs', supprime: 'supprimerMessageInteractif', element: 'message_interactif', cible: 'm1', objet: { id: 'm1', titre: 'boutons-rdv' }, libelle: 'Message interactif : boutons-rdv' },
   ] as const;
 
@@ -675,7 +705,9 @@ describe('routes MBA : une suppression laisse sa trace', () => {
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ deleted: c.cible });
       ordre.unshift(...appels.map((a) => a.m));
-      expect(ordre).toEqual([c.liste, c.supprime, 'journal']);
+      expect(ordre).toEqual(c.element === 'competence'
+        ? ['getSettings', c.liste, c.supprime, 'journal']
+        : [c.liste, c.supprime, 'journal']);
       expect(appels.find((a) => a.m === c.supprime)?.args).toEqual([PN, c.cible]);
       expect(lignes).toEqual([{ tenant: 't1', ligne: { element: c.element, cible: c.cible, libelle: c.libelle, avant: c.objet, acteurId: 'u1' } }]);
       await server.close();
@@ -706,6 +738,40 @@ describe('routes MBA : une suppression laisse sa trace', () => {
       await server.close();
     });
   }
+  it('🔴 Meta a supprimé mais le journal est indisponible : 200 explicite, jamais une erreur qui invite à recommencer', async () => {
+    const avertissement = console.warn;
+    console.warn = () => {};
+    try {
+      const { server, appels } = app(
+        { listFaqs: () => [{ id: 'f1', question: 'Horaires ?', answer: '9h' }] },
+        { journaliserSuppression: async () => { throw new Error('base indisponible'); } },
+      );
+      const res = await server.inject({ method: 'DELETE', url: url('/faq/f1'), ...h(adminTok) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ deleted: 'f1', avertissements: ['historique_indisponible'] });
+      expect(appels.map((a) => a.m)).toContain('deleteFaq');
+      await server.close();
+    } finally {
+      console.warn = avertissement;
+    }
+  });
+  it('🔴 un message interactif supprimé mais non journalisé rend le même succès explicite', async () => {
+    const avertissement = console.warn;
+    console.warn = () => {};
+    try {
+      const { server, appels } = app(
+        { listMessagesInteractifs: () => [{ id: 'm1', titre: 'boutons-rdv' }] },
+        { journaliserSuppression: async () => { throw new Error('base indisponible'); } },
+      );
+      const res = await server.inject({ method: 'DELETE', url: url('/messages-interactifs/m1'), ...h(adminTok) });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ deleted: 'm1', avertissements: ['historique_indisponible'] });
+      expect(appels.map((a) => a.m)).toContain('supprimerMessageInteractif');
+      await server.close();
+    } finally {
+      console.warn = avertissement;
+    }
+  });
 });
 
 /**
