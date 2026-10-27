@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { etapeHubspot, fermeeParLOffre, phraseDeLOffre, choixParDefaut, choixActuel, corpsDuChoix } from './hubspot-choix';
+import { etapeHubspot, fermeeParLOffre, phraseDeLOffre, choixParDefaut, choixActuel, corpsDuChoix, choixApresBascule } from './hubspot-choix';
 import type { TenantSettings } from './api';
 import type { FonctionOffre, VueOffre } from './offre';
 
@@ -38,7 +38,7 @@ describe('fermeeParLOffre', () => {
 describe('choixParDefaut (décision 2 du cadrage)', () => {
   it('🔴 coche ce qui écrit dans HubSpot, décoche ce qui ouvre une porte, et suit le mode du portail', () => {
     expect(choixParDefaut({ routingMode: 'mm_routing', fonctions: ENTREPRISE }))
-      .toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, listes: false, taches: true });
+      .toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, listes: false, taches: true });
     expect(choixParDefaut({ routingMode: 'hubspot_native', fonctions: ENTREPRISE }).taches).toBe(false);
   });
   it('🔴 une fonction fermée par l’offre est décochée (le serveur refuserait de l’allumer)', () => {
@@ -49,16 +49,16 @@ describe('choixParDefaut (décision 2 du cadrage)', () => {
 describe('choixActuel', () => {
   it('lit les réglages, et un champ absent (API antérieure) prend le défaut de la migration', () => {
     const vide = {} as TenantSettings;
-    expect(choixActuel(vide, undefined)).toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, listes: false, taches: true });
+    expect(choixActuel(vide, undefined)).toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, listes: false, taches: true });
     const s = { hubspotAnalyse: false, hubspotPassage: true, hubspotInjoignable: false, hubspotReponse: true, hubspotListsEnabled: true } as TenantSettings;
-    expect(choixActuel(s, 'hubspot_native')).toEqual({ analyse: false, passage: true, injoignable: false, reponse: true, listes: true, taches: false });
+    expect(choixActuel(s, 'hubspot_native')).toEqual({ analyse: false, passage: true, injoignable: false, reponse: true, modeles: false, listes: true, taches: false });
   });
 });
 
 describe('les correctifs de la relecture du lot 1bis', () => {
-  const choix = { analyse: true, passage: false, injoignable: true, reponse: false, listes: false, taches: true };
+  const choix = { analyse: true, passage: false, injoignable: true, reponse: false, modeles: false, listes: false, taches: true };
   it('🔴 « Créer des tâches » ne part QUE si on le demande (sa ligne basculée, ou la validation avec un mode connu)', () => {
-    expect(corpsDuChoix(choix, { envoyerTaches: false })).toEqual({ analyse: true, passage: false, injoignable: true, reponse: false, listes: false });
+    expect(corpsDuChoix(choix, { envoyerTaches: false })).toEqual({ analyse: true, passage: false, injoignable: true, reponse: false, modeles: false, listes: false });
     expect(corpsDuChoix(choix, { envoyerTaches: false })).not.toHaveProperty('taches');
     expect(corpsDuChoix(choix, { envoyerTaches: true })).toEqual(choix);
   });
@@ -89,5 +89,22 @@ describe('lot 3 : « Répondre aux clients depuis HubSpot » (décision D)', () 
     expect(phraseDeLOffre(vue, 'reponse', t)).toBe('Inclus dans l’offre Pro.');
     expect(phraseDeLOffre(vue, 'analyse', t)).toBe('Inclus dans l’offre Entreprise.');
     expect(phraseDeLOffre(vue, 'passage', t)).toBe('Pas dans votre offre.');
+  });
+});
+
+describe('sous-lot « relancer » : « Envoyer des modèles depuis HubSpot » (décision E)', () => {
+  const choix = { analyse: true, passage: true, injoignable: true, reponse: true, modeles: true, listes: false, taches: true };
+  it('🔴 éteindre la réponse éteint les modèles ; basculer une autre ligne ne les touche pas', () => {
+    expect(choixApresBascule(choix, 'reponse')).toMatchObject({ reponse: false, modeles: false });
+    expect(choixApresBascule(choix, 'passage')).toMatchObject({ passage: false, reponse: true, modeles: true });
+    expect(choixApresBascule({ ...choix, modeles: false }, 'modeles')).toMatchObject({ modeles: true });
+  });
+  it('🔴 lus allumés seulement avec la réponse, et l’offre qui ouvre l’Inbox ; éteints par défaut', () => {
+    const s = { hubspotReponse: true, hubspotModeles: true } as TenantSettings;
+    expect(choixActuel(s, 'mm_routing', PRO).modeles).toBe(true);
+    expect(choixActuel({ ...s, hubspotReponse: false }, 'mm_routing', PRO).modeles).toBe(false);
+    expect(choixActuel(s, 'mm_routing', new Set<FonctionOffre>(['aide'])).modeles).toBe(false);
+    expect(choixParDefaut({ routingMode: 'mm_routing', fonctions: ENTREPRISE }).modeles).toBe(false);
+    expect(fermeeParLOffre('modeles', PRO)).toBe(false);
   });
 });

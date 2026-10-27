@@ -9,7 +9,7 @@ import { Toggle } from '@/components/Toggle';
 import { Bouton } from '@/components/Bouton';
 import { useInstallationHubspot } from '@/lib/hubspot-installation';
 import { useOffre } from '@/lib/use-offre';
-import { etapeHubspot, fermeeParLOffre, phraseDeLOffre, choixParDefaut, choixActuel, corpsDuChoix } from '@/lib/hubspot-choix';
+import { etapeHubspot, fermeeParLOffre, phraseDeLOffre, choixParDefaut, choixActuel, corpsDuChoix, choixApresBascule } from '@/lib/hubspot-choix';
 
 /**
  * TOOLS > INTÉGRATIONS > HUBSPOT : le client choisit ce qu'il branche entre Messaging Me et HubSpot (lot 1bis de
@@ -21,6 +21,8 @@ import { etapeHubspot, fermeeParLOffre, phraseDeLOffre, choixParDefaut, choixAct
  * se fait dans un AUTRE onglet : l'écran se relit quand la fenêtre reprend le focus, et l'étape de choix apparaît.
  *
  * « Répondre aux clients depuis HubSpot » (lot 3, décision D) : éteint par défaut, ouvert par l'offre qui ouvre l'Inbox.
+ * « Envoyer des modèles depuis HubSpot » (sous-lot « relancer », décision E) : éteint par défaut, sous la même offre, et
+ * seulement réponse allumée (éteindre la réponse l'éteint, `choixApresBascule`).
  * La raison d'une ligne fermée se lit dans la grille du serveur (`phraseInclusDans`) : la réponse vient avec Pro,
  * l'analyse et les listes avec Entreprise.
  *
@@ -109,6 +111,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
       ...c,
       analyse: c.analyse && !fermeeParLOffre('analyse', fonctions),
       reponse: c.reponse && !fermeeParLOffre('reponse', fonctions),
+      modeles: c.modeles && c.reponse && !fermeeParLOffre('modeles', fonctions),
       listes: c.listes && !fermeeParLOffre('listes', fonctions),
     } : c));
   }, [fonctions]);
@@ -128,6 +131,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
         setValideLe(r.hubspotChoixValideLe);
         setChoix({
           analyse: r.hubspotAnalyse, passage: r.hubspotPassage, injoignable: r.hubspotInjoignable, reponse: r.hubspotReponse,
+          modeles: r.hubspotModeles === true,
           listes: r.hubspotListsEnabled,
           // Le mode posé par cette requête ; non demandé, le mode affiché ne bouge pas ; demandé et non posé, la ligne
           // revient à ce qu'elle était (l'avertissement le dit).
@@ -147,7 +151,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
 
   const basculer = (champ: Champ) => {
     if (!choix || statut === 'saving') return;
-    const suivant = { ...choix, [champ]: !choix[champ] };
+    const suivant = choixApresBascule(choix, champ);
     if (etape === 'choisir') { setChoix(suivant); return; }
     setChoix(suivant);
     enregistrer(suivant, choix, champ === 'taches');
@@ -178,6 +182,11 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
       champ: 'reponse',
       titre: t('Répondre aux clients depuis HubSpot', 'Reply to customers from HubSpot'),
       detail: t('Toute personne du portail répond depuis la carte Messaging Me de la fiche contact, signée de son adresse, tant que la fenêtre de 24 heures est ouverte. Jamais à un contact qui a dit STOP.', 'Anyone on the portal replies from the Messaging Me card on the contact record, signed with their address, while the 24-hour window is open. Never to a contact who said STOP.'),
+    },
+    {
+      champ: 'modeles',
+      titre: t('Envoyer des modèles depuis HubSpot', 'Send templates from HubSpot'),
+      detail: t('Une fois la fenêtre de 24 heures fermée, la carte propose vos modèles approuvés. Un modèle Marketing ne part qu’à un contact qui a donné son accord, et rien ne part à un contact qui a dit STOP. Meta facture chaque modèle.', 'Once the 24-hour window has closed, the card offers your approved templates. A Marketing template only goes to a contact who has agreed, and nothing goes to a contact who said STOP. Meta charges for each template.'),
     },
     {
       champ: 'listes',
@@ -239,6 +248,9 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
                     {l.champ === 'taches' && !modeConnu && (
                       <p className="mt-0.5 text-xs text-ink-500">{t('Réglage indisponible pour le moment : rechargez la page.', 'Setting unavailable right now: reload the page.')}</p>
                     )}
+                    {l.champ === 'modeles' && !choix.reponse && (
+                      <p className="mt-0.5 text-xs text-ink-500" data-testid="integration-hubspot-modeles-sans-reponse">{t('Allumez d’abord « Répondre aux clients depuis HubSpot ».', 'First turn on “Reply to customers from HubSpot”.')}</p>
+                    )}
                     {fermee && offre && (
                       <p className="mt-0.5 text-xs text-ink-500" data-testid={`integration-hubspot-${l.champ}-offre`}>{phraseDeLOffre(offre, l.champ, t)}</p>
                     )}
@@ -260,7 +272,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
                     onChange={() => basculer(l.champ)}
                     // Fermée par l'offre : on peut l'éteindre, jamais l'allumer. « Créer des tâches » dont le mode n'a pas
                     // pu être lu : grisé, jamais réécrit à l'aveugle.
-                    disabled={statut === 'saving' || (fermee && !choix[l.champ]) || (l.champ === 'taches' && !modeConnu)}
+                    disabled={statut === 'saving' || (fermee && !choix[l.champ]) || (l.champ === 'taches' && !modeConnu) || (l.champ === 'modeles' && !choix.reponse)}
                   />
                 </li>
               );

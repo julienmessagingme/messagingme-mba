@@ -94,7 +94,7 @@ async function parametres(page: Page, o: { reglages: Record<string, unknown>; co
       if (o.refus) return json({ error: o.refus.error }, o.refus.status);
       return json({
         hubspotAnalyse: corps.analyse, hubspotPassage: corps.passage, hubspotInjoignable: corps.injoignable,
-        hubspotReponse: corps.reponse, hubspotListsEnabled: corps.listes, hubspotChoixValideLe: '2026-10-23T18:00:00.000Z',
+        hubspotReponse: corps.reponse, hubspotModeles: corps.reponse === true && corps.modeles === true, hubspotListsEnabled: corps.listes, hubspotChoixValideLe: '2026-10-23T18:00:00.000Z',
         routingMode: corps.taches === undefined ? null : corps.taches ? 'mm_routing' : 'hubspot_native',
         tachesAppliquees: true, premiereValidation: true,
       });
@@ -135,7 +135,7 @@ test.describe('Tools > Intégrations > HubSpot : le choix des fonctions (lot 1bi
     await expect(page.getByTestId('integration-hubspot-listes-toggle')).toHaveAttribute('aria-pressed', 'false');
     await page.getByTestId('integration-hubspot-valider').click();
     await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(1);
-    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, listes: false, taches: true });
+    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, listes: false, taches: true });
     await expect(page.getByTestId('integration-hubspot-etape-choix')).toHaveCount(0);
   });
 
@@ -144,7 +144,7 @@ test.describe('Tools > Intégrations > HubSpot : le choix des fonctions (lot 1bi
     await expect(page.getByTestId('integration-hubspot-taches-toggle')).toBeDisabled();
     await page.getByTestId('integration-hubspot-injoignable-toggle').click();
     await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(1);
-    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: false, reponse: false, listes: false });
+    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: false, reponse: false, modeles: false, listes: false });
   });
 
   test('le serveur refuse : son message s’affiche, et l’interrupteur revient à sa place', async ({ page }) => {
@@ -205,5 +205,30 @@ test.describe('Paramètres > Intégrations > HubSpot : « Répondre aux clients 
     await expect(reponse).toHaveAttribute('aria-pressed', 'false');
     await expect(reponse).toBeDisabled();
     expect(trace.puts).toHaveLength(0);
+  });
+});
+
+test.describe('Paramètres > Intégrations > HubSpot : « Envoyer des modèles depuis HubSpot » (sous-lot « relancer »)', () => {
+  test('🔴 réponse éteinte : la ligne est grisée et le dit ; allumée, elle s’allume ; éteindre la réponse l’éteint', async ({ page }) => {
+    const trace = await parametres(page, {
+      reglages: CHOIX_FAIT,
+      compte: { hasNumber: false, hubspotPortal: { ...PORTAIL, routingMode: 'mm_routing' } },
+      offre: offre('pro'),
+    });
+    const modeles = page.getByTestId('integration-hubspot-modeles-toggle');
+    const reponse = page.getByTestId('integration-hubspot-reponse-toggle');
+    await expect(modeles).toBeDisabled();
+    await expect(page.getByTestId('integration-hubspot-modeles-sans-reponse')).toBeVisible();
+    await reponse.click();
+    await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(1);
+    await expect(modeles).toBeEnabled();
+    await modeles.click();
+    await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(2);
+    expect(trace.puts[1]).toMatchObject({ reponse: true, modeles: true });
+    await expect(modeles).toHaveAttribute('aria-pressed', 'true');
+    await reponse.click();
+    await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(3);
+    expect(trace.puts[2]).toMatchObject({ reponse: false, modeles: false });
+    await expect(modeles).toHaveAttribute('aria-pressed', 'false');
   });
 });

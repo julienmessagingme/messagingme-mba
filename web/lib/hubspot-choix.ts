@@ -23,6 +23,7 @@ export const FONCTION_REQUISE: Partial<Record<keyof ChoixHubspot, FonctionOffre>
   analyse: 'analyse',
   listes: 'crm',
   reponse: 'inbox',
+  modeles: 'inbox',
 };
 
 /** La ligne est-elle fermée par l'offre ? `fonctions` absente (offre inconnue) : tout est ouvert, le serveur tranche. */
@@ -47,6 +48,7 @@ export function choixParDefaut(p: { routingMode: 'mm_routing' | 'hubspot_native'
     passage: true,
     injoignable: true,
     reponse: false,
+    modeles: false,
     listes: false,
     taches: p.routingMode !== 'hubspot_native',
   };
@@ -58,14 +60,25 @@ export function choixParDefaut(p: { routingMode: 'mm_routing' | 'hubspot_native'
  * pas la dire allumée.
  */
 export function choixActuel(s: TenantSettings, routingMode: 'mm_routing' | 'hubspot_native' | undefined, fonctions?: ReadonlySet<FonctionOffre> | null): ChoixHubspot {
+  const reponse = s.hubspotReponse === true && !fermeeParLOffre('reponse', fonctions);
   return {
     analyse: s.hubspotAnalyse !== false && !fermeeParLOffre('analyse', fonctions),
     passage: s.hubspotPassage !== false,
     injoignable: s.hubspotInjoignable !== false,
-    reponse: s.hubspotReponse === true && !fermeeParLOffre('reponse', fonctions),
+    reponse,
+    modeles: reponse && s.hubspotModeles === true && !fermeeParLOffre('modeles', fonctions),
     listes: s.hubspotListsEnabled === true && !fermeeParLOffre('listes', fonctions),
     taches: routingMode !== 'hubspot_native',
   };
+}
+
+/**
+ * La ligne suivante après une bascule : éteindre la réponse éteint les modèles (le serveur l'écrit aussi), pour qu'aucune
+ * ligne ne se lise allumée sans pouvoir servir.
+ */
+export function choixApresBascule(choix: ChoixHubspot, champ: keyof ChoixHubspot): ChoixHubspot {
+  const suivant = { ...choix, [champ]: !choix[champ] };
+  return suivant.reponse ? suivant : { ...suivant, modeles: false };
 }
 
 /**

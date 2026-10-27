@@ -2,7 +2,7 @@
 description: Connecter un numéro WhatsApp à Messaging Me depuis la fenêtre de Meta, en obtenir un si besoin, le faire vérifier, puis lire son état sur l'Accueil.
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: b8364c
+source_empreinte: fc13a3
 publique: oui
 rubrique: demarrer
 rang: 3

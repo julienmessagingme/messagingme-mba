@@ -724,6 +724,8 @@ export interface TenantSettings {
   hubspotPassage?: boolean;
   hubspotInjoignable?: boolean;
   hubspotReponse?: boolean;
+  /** Envoyer des modèles depuis HubSpot (sous-lot « relancer »). Absent d'une API antérieure : éteint. */
+  hubspotModeles?: boolean;
   hubspotChoixValideLe?: string | null;
   /*
    * `prix` A QUITTE LES REGLAGES LE 2026-09-23 (lot 8, migration 0168). Il n'y a plus qu'une grille, pour
@@ -770,6 +772,8 @@ export interface ChoixHubspot {
   passage: boolean;
   injoignable: boolean;
   reponse: boolean;
+  /** Envoyer des modèles depuis HubSpot quand la fenêtre est fermée (sous-lot « relancer ») : ne vaut que réponse allumée. */
+  modeles: boolean;
   listes: boolean;
   /** Créer des tâches dans HubSpot (sinon : propriétés seulement). Vaut pour tout le portail. */
   taches: boolean;
@@ -781,6 +785,7 @@ export interface ChoixHubspotEnregistre {
   hubspotPassage: boolean;
   hubspotInjoignable: boolean;
   hubspotReponse: boolean;
+  hubspotModeles: boolean;
   hubspotListsEnabled: boolean;
   hubspotChoixValideLe: string | null;
   routingMode: 'mm_routing' | 'hubspot_native' | null;

@@ -2213,8 +2213,11 @@ scénario, comment importer des contacts.
   un humain, « Créer des tâches dans HubSpot » (éteint : les propriétés seulement, pour vos workflows HubSpot ; vaut
   pour tout le portail), le contact injoignable sur WhatsApp, **« Répondre aux clients depuis HubSpot »** (décochée :
   toute personne du portail répond depuis la carte Messaging Me de la fiche contact, signée de son adresse, tant que
-  la fenêtre de 24 heures est ouverte, jamais à un contact qui a dit STOP ; au plus 20 réponses par minute et par
-  personne), et vos listes HubSpot comme audience de campagne
+  la fenêtre de 24 heures est ouverte, jamais à un contact qui a dit STOP ni à un contact bloqué ; au plus 20 réponses
+  par minute et par personne), **« Envoyer des modèles depuis HubSpot »** (décochée, proposée réponse allumée : une fois
+  la fenêtre fermée, la carte propose les modèles approuvés de l'espace, valeurs pré-remplies depuis la fiche ; un
+  modèle Marketing ne part qu'à un contact qui a donné son accord, rien ne part à un contact STOP ou bloqué, au plus 5
+  modèles par minute et par personne ; éteindre la réponse l'éteint), et vos listes HubSpot comme audience de campagne
   (décochée ; un bouton **« Autoriser l'accès aux listes HubSpot »** demande ce droit au portail s'il manque).
   Valider allume aussi la synchronisation du numéro principal : avant, une installation ne branchait rien. Ensuite,
   chaque choix se change d'un interrupteur. Ce que l'offre n'ouvre pas dit l'offre qui l'ouvre (« Inclus dans

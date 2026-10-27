@@ -1,6 +1,6 @@
 ---
 slug: hubspot-on-the-home-screen
-traduit_de: d2ac9b
+traduit_de: 12f4ef
 description: Connect HubSpot to Messaging Me: link it in Tools > Integrations, choose what syncs, reply from HubSpot, pause it or cut it off.
 ---
 # HubSpot on the Home screen: connect it, follow it, cut it off
@@ -20,10 +20,18 @@ plug in: the contact record and the analysis of every conversation, the immediat
 human, the creation of tasks (otherwise properties only), the unreachable contact, replying to customers from
 HubSpot, your lists as campaign audiences. Each choice can then be changed with a switch.
 
-**Replying to customers from HubSpot** is off at first, and included from the Pro plan. Once on, anyone in the
+**Replying to customers from HubSpot** is off at first; it needs a linked HubSpot portal, which the Enterprise plan
+allows. Once on, anyone in the
 portal reads the conversation and replies from the Messaging Me card of the contact record, signed with their
 address, as long as the 24-hour window is open; “Hand back to the bot” gives control back to the agent. The card
-never replies to a contact who said STOP. A conversation held by a member can only be answered by them, an admin or
-a manager, and each person sends at most 20 replies a minute. With no portal linked, the Home screen only shows a
-line that sends you there. To unlink HubSpot, do the full disconnection from the HubSpot block (with no number,
+never writes to a contact who said STOP or to a blocked contact. A conversation held by a member can only be answered
+by them, an admin or a manager, and each person sends at most 20 replies a minute.
+
+**Sending templates from HubSpot** can be turned on once replying is on. When the customer has not written for 24
+hours, the card offers your approved templates, with their variables already filled in from the contact record: you
+check them, then “Send the template”. A Marketing template only goes to a contact who has agreed; the other
+templates go to any contact who has not said STOP and is not blocked. Meta charges for each template, and each person
+sends at most 5 a minute.
+
+With no portal linked, the Home screen only shows a line that sends you there. To unlink HubSpot, do the full disconnection from the HubSpot block (with no number,
 it is a button of the block, without the pause option).
