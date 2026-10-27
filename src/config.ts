@@ -851,18 +851,23 @@ const constantes = {
    * sans lui, deux campagnes en parallèle doubleraient le débit réel du numéro. Ne pas relever l'un sans
    * l'autre. Le plafond par espace reste à 1 : un client n'a qu'un numéro, deux de ses campagnes se
    * disputeraient le même budget. La concurrence sert à ce qu'un client n'attende pas la campagne d'un autre.
+   * 6 depuis le 2026-10-27 (4 avant), avec le pool du principal passé à 20 (voir `WEBHOOK_CONCURRENCY`).
    */
-  CAMPAIGN_RUN_CONCURRENCY: 4,
+  CAMPAIGN_RUN_CONCURRENCY: 6,
   /**
    * Concurrence de la file des messages entrants, pour qu'un envoi Meta lent chez un client ne fasse pas
    * attendre la réponse d'un autre.
    * Sûr seulement parce que l'enfilement pose une clé de groupe par contact et que `work` plafonne à un job
    * en vol par groupe : deux messages d'un même contact restent sérialisés. Ne pas relever l'un sans l'autre.
-   * 3 et pas plus : le worker tient déjà 4 runs de campagne, les accusés, les automations et les tours
-   * d'agent, sur le pool du worker principal (`DB_POOL_MAX` de `mba-worker`, `docker-compose.yml`). Relever ce
+   * 8 depuis le 2026-10-27 (3 avant, calé sur le pool de 8 que permettait le pooler de Supabase). Elle vaut aussi
+   * pour `application-entrant`. L'arithmétique : tout ce que le principal tient en vol (entrants, campagnes,
+   * accusés, automations, tours d'agent, distribution des événements) dépasse son pool, et c'est voulu, un job ne
+   * tient une connexion que le temps d'une requête ; le rapport passe d'environ 5,5 jobs en vol par connexion à 3,
+   * parce que le pool du principal monte à 20 chez Scaleway (`DB_POOL_MAX` de `mba-worker`,
+   * `ops/scaleway/docker-compose.workers.yml`, tenu par le budget de `tests/deploy-scaleway.test.ts`). Relever ce
    * nombre demande de refaire cette arithmétique.
    */
-  WEBHOOK_CONCURRENCY: 3,
+  WEBHOOK_CONCURRENCY: 8,
   /**
    * Analyses de conversation en vol. Le plafond par espace est de 1, posé dans le worker : c'est le groupe
    * qui compte, pour qu'un client qui importe dix mille contacts ne passe pas avant la première analyse de
@@ -871,9 +876,9 @@ const constantes = {
   ANALYZE_CONVERSATION_CONCURRENCY: 3,
   /**
    * Événements d'automation en vol, plafond par espace de 1 (même raison) : sans groupe, la rafale d'un
-   * client gèlerait tous les autres.
+   * client gèlerait tous les autres. 6 depuis le 2026-10-27 (3 avant), avec le pool du principal passé à 20.
    */
-  AUTOMATION_EVENT_CONCURRENCY: 3,
+  AUTOMATION_EVENT_CONCURRENCY: 6,
   /** Durée de validité d'un lien d'invitation (ms). Défaut 7 jours. */
   INVITE_TOKEN_TTL_MS: 7 * 24 * 60 * 60 * 1000,
   /** Durée de validité d'un lien de réinitialisation de mot de passe (ms). Défaut 1 h. */

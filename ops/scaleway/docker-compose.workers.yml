@@ -9,7 +9,8 @@
 # 600), jamais par le workflow (§13, point 18). Ses valeurs s'ecrivent SANS guillemets : `docker run --env-file` (la
 # migration) les garde tels quels, quand compose les retire.
 #
-# ⚠️ LES TAILLES DE POOL REPRENNENT CELLES DU COMPOSE DU VPS (`docker-compose.yml`). Le budget de connexions de la
+# ⚠️ LES TAILLES DE POOL REPRENNENT CELLES DU COMPOSE DU VPS (`docker-compose.yml`), SAUF CELLE DU PRINCIPAL : 20 ici
+# depuis le 2026-10-27, 8 sur le VPS, ou le pooler de Supabase la bornait (`WEBHOOK_CONCURRENCY`, `src/config.ts`). Le budget de connexions de la
 # base de production (200) compte chaque service de ce fichier avec les copies d'API de `conteneur-api.json`, dans
 # `tests/deploy-scaleway.test.ts` (2026-10-15) : un service ajoute ici y entre seul. Les limites de memoire et de processeur de chaque
 # worker (la condition d'une machine unique, §2) sont celles du VPS, mesurees le 2026-10-14 (lot 2b, le detail est
@@ -32,7 +33,7 @@ services:
         max-file: "5"
     environment:
       WORKER_ROLE: principal
-      DB_POOL_MAX: "8"
+      DB_POOL_MAX: "20"
       PGBOSS_MAX: "2"
     mem_limit: 1g
     # Un PLAFOND, pas une reservation : 2 coeurs pour le principal sur les 3 de la DEV1-M, 0,5 pour chacun des autres

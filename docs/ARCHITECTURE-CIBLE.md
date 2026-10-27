@@ -547,8 +547,9 @@ workers, pas seulement un pooler en mode transaction.
 
 ✅ **Chez Scaleway, le calcul est un test depuis le 2026-10-15** (`tests/deploy-scaleway.test.ts`), sur les chiffres
 relus à la création de la base de production : 200 connexions, dont 3 réservées (150 depuis son passage en DB-DEV-M
-le 2026-10-27 : Scaleway règle `max_connections` selon la gamme, le budget n'y permet plus que 4 copies). Les workers (compose de la machine :
-8 + 2 + 1 et 3 + 2 + 1, soit 17), une marge de 10, et chaque copie d'API pleine (10 + 4 de réception), COMPTÉE DEUX
+le 2026-10-27 : Scaleway règle `max_connections` selon la gamme, le budget n'y permet plus que 3 copies avec le pool du principal à 20, même date). Les workers (compose de la
+machine : 20 + 2 + 1 pour le principal depuis le 2026-10-27, 8 + 2 + 1 avant, et 3 + 2 + 1, plus le service application),
+une marge de 10, et chaque copie d'API pleine (10 + 4 de réception), COMPTÉE DEUX
 FOIS : pendant un déploiement, l'ancienne version sert jusqu'à ce que la nouvelle soit prête, et rien ne dit que le
 maximum borne la somme des deux. Le budget en permet donc 6 ; **Julien en a retenu 3** (environ 1 500 appels/s,
 EXTRAPOLÉ du banc d'une seule copie, à remesurer sur le conteneur serverless). Le maximum et les pools se déclarent

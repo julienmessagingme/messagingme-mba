@@ -136,7 +136,7 @@ describe('les valeurs par défaut sont celles qu’on a arrêtées', () => {
   it('les deux files de fond montent un peu, et surtout groupent', () => {
     // Des constantes depuis le 2026-09-25 (aucun déploiement ne les réglait) : elles se lisent sur `config`.
     expect(config.ANALYZE_CONVERSATION_CONCURRENCY).toBe(3);
-    expect(config.AUTOMATION_EVENT_CONCURRENCY).toBe(3);
+    expect(config.AUTOMATION_EVENT_CONCURRENCY).toBe(6);
     // Au-dessus de 1 : c'est la condition pour que le plafond par groupe existe vraiment.
     expect(config.ANALYZE_CONVERSATION_CONCURRENCY).toBeGreaterThan(1);
     expect(config.AUTOMATION_EVENT_CONCURRENCY).toBeGreaterThan(1);

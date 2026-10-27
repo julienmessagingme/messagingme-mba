@@ -322,14 +322,17 @@ describe('le compose de la machine des workers', () => {
     }
   });
 
-  it('⚠️ les deux rôles, avec les tailles de pool du VPS tant que le lot 4 ne les a pas recalculées', () => {
+  it('⚠️ les deux rôles, avec les tailles de pool du VPS, sauf le pool du principal recalculé pour Scaleway', () => {
     // Deux fichiers qui portent les mêmes nombres dérivent dès que l'un bouge seul : ce cas casse le jour où le
-    // budget du VPS change sans celui de Scaleway, et se réécrit le jour où le lot 4 pose ceux de Scaleway.
+    // budget du VPS change sans celui de Scaleway. Une exception voulue (2026-10-27) : le pool du principal vaut 20
+    // chez Scaleway, où la base accepte des connexions directes, et reste à 8 sur le VPS, borné par le pooler de
+    // Supabase (`tests/budget-pooler.test.ts`) ; le budget de connexions ci-dessous le tient chez Scaleway.
     for (const service of ['mba-worker', 'mba-worker-analyse']) {
       const scaleway = blocNiveau2(COMPOSE_SCALEWAY, service);
       const vps = blocNiveau2(COMPOSE_VPS, service);
       expect(vps, `${service} dans docker-compose.yml`).not.toBe('');
       for (const cle of ['WORKER_ROLE', 'DB_POOL_MAX', 'PGBOSS_MAX']) {
+        if (service === 'mba-worker' && cle === 'DB_POOL_MAX') continue;
         expect(valeur(scaleway, cle), `${service} ${cle}`).toBe(valeur(vps, cle));
       }
     }
