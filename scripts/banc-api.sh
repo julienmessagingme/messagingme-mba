@@ -100,9 +100,10 @@ EOF
 docker run --rm --label "$LBL" --network "$NET" --env-file "$E" -v "$D/src-banc/scripts:/app/scripts:ro" \
   "$IMG" npx tsx scripts/garde-banc-cli.mts
 docker run --rm --label "$LBL" --network "$NET" --env-file "$E" "$IMG" npm run migrate >"$R/migrate.log" 2>&1
-# Les tailles de pool de la production (docker-compose.yml) : le worker d'abord, il prépare pg-boss.
+# Les tailles de pool de la production (ops/scaleway/docker-compose.workers.yml, le principal à 20 depuis le 2026-10-27) :
+# le worker d'abord, il prépare pg-boss.
 docker run -d --name banc14-worker --label "$LBL" --network "$NET" --env-file "$E" \
-  -e WORKER_ROLE=principal -e DB_POOL_MAX=8 -e PGBOSS_MAX=2 "$IMG" npx tsx src/worker-cli.ts >/dev/null
+  -e WORKER_ROLE=principal -e DB_POOL_MAX=20 -e PGBOSS_MAX=2 "$IMG" npx tsx src/worker-cli.ts >/dev/null
 sleep 20
 
 lancer_api() {

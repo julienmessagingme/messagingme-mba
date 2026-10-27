@@ -30,7 +30,7 @@
  *   4. `.env.banc` aux secrets JETABLES (`openssl rand -hex 32`), jamais affichés, `DRY_RUN=true`, `DB_SSL=off`.
  *   5. `npm run migrate`, puis `db/seed.ts` deux fois par espace (`SEED_TENANT_NAME=banc30-NN`, une adresse par
  *      personne, `SEED_PHONE_NUMBER_ID=banc30-pn-NN`, `SEED_WABA_ID=banc30-waba-NN`).
- *   6. Les tailles de pool de la production : worker principal (`WORKER_ROLE=principal`, `DB_POOL_MAX=8`,
+ *   6. Les tailles de pool de la production : worker principal (`WORKER_ROLE=principal`, `DB_POOL_MAX=20` depuis le 2026-10-27,
  *      `PGBOSS_MAX=2`) et d'analyse (`3`, `2`) D'ABORD, puis l'API (`DB_POOL_MAX=10`), nommés `banc30-worker`,
  *      `banc30-worker-analyse` et `banc30-api`.
  *   7. Ce script, dans un conteneur de l'image sur le même réseau, avec le dossier `scripts` monté.
