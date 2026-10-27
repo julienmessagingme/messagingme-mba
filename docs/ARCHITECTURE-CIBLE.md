@@ -884,6 +884,9 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    sont en zone `nl-ams-2`, où la PRO2-XXS est en stock (relu le 2026-10-14).
    ✅ **Passée en PRO2-XXS le 2026-10-15** (accord de Julien) : 52 s de coupure, les trois conteneurs repartis seuls,
    le worker du connecteur en mode complet.
+   🔴 **Redescendue en DEV1-M le 2026-10-27** (3 vCPU partagés, 4 Go, environ 15 € par mois au lieu de 41 ; décision de
+   Julien sur le coût, la charge mesurée étant d'environ 240 Mo et 1 % de processeur par worker) : arrêt 21 s, démarrage
+   relancé 28 s après, adresse privée 172.16.0.4 gardée. Plafonds de processeur : 2 cœurs au principal, 0,5 aux autres.
 7. Déployer l'API : conteneur **privé**, **de 1 à 3 copies (décision de Julien), sous le budget du §7.5**, rattaché au réseau privé,
    secrets fournis par le gestionnaire de secrets de Scaleway (jamais dans l'image), contrôle de vie léger qui ne
    dépend pas de la base, délai d'arrêt très en deçà du bail de la clé d'idempotence (§3.5). ⚠️ **Le nom de chaque
@@ -1170,7 +1173,7 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
 16. **Le filtre « seul Cloudflare » sur `mm-hubspot.messagingme.app`** : tranché par Julien le 2026-10-14, posé sur le
     VPS dès le lot 7, sans attendre la bascule (§8).
 17. **La machine des workers** : tranché par Julien le 2026-10-14, PLAY2-NANO pendant les essais, PRO2-XXS (gamme
-    production) avant le jour J (§10, étape 6).
+    production) avant le jour J (§10, étape 6) ; redescendue en DEV1-M le 2026-10-27 pour le coût (même étape).
 18. **Le chemin des secrets de production** : tranché par Julien le 2026-10-14, posés une fois par Julien, jamais par
     GitHub ; le déploiement ne change que l'image et la taille déclarée du conteneur, sans secret (§10 bis).
 19. **La région de la cible** : tranché par Julien le 2026-10-14, **Amsterdam** (`nl-ams`, zone `nl-ams-2` pour les

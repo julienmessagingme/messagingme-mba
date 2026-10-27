@@ -35,7 +35,9 @@ services:
       DB_POOL_MAX: "8"
       PGBOSS_MAX: "2"
     mem_limit: 1g
-    cpus: 1.0
+    # Un PLAFOND, pas une reservation : 2 coeurs pour le principal sur les 3 de la DEV1-M, 0,5 pour chacun des autres
+    # (worker d'analyse, service application, worker de mm-hubspot) ; Julien, 2026-10-27.
+    cpus: 2.0
 
   mba-worker-analyse:
     image: rg.nl-ams.scw.cloud/messagingme/mba:${IMAGE_TAG:?IMAGE_TAG absent de /opt/messagingme/.env}
@@ -54,7 +56,7 @@ services:
       DB_POOL_MAX: "3"
       PGBOSS_MAX: "2"
     mem_limit: 1g
-    cpus: 1.0
+    cpus: 0.5
 
   # Le service de connexions de la filiere application (le detail est dans `docker-compose.yml`). 🔴 UN SEUL EXEMPLAIRE :
   # `APPLICATION_SERVICE_SECRET` ne se pose dans le .env.prod de cette machine qu'a la bascule, une fois celui du VPS
