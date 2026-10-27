@@ -194,6 +194,11 @@ export interface ChoixHubspot {
    * vaut que si la réponse est allumée : une porte d'envoi facturée par Meta, ouverte en plus de la réponse.
    */
   modeles: boolean;
+  /**
+   * Envoyer des modèles depuis les workflows HubSpot du client (l'action de workflow, migration 0259). Indépendant de la
+   * réponse : aucun humain n'est en jeu.
+   */
+  workflows: boolean;
   /** L'étape de choix a été validée ; nul, l'écran la propose. */
   valideLe: Date | null;
 }
@@ -212,6 +217,7 @@ function choixDeLaLigne(r: Record<string, unknown> | undefined): ChoixHubspot {
     reponse,
     // Les deux, toujours : la route du choix l'écrit à faux quand la réponse s'éteint, la lecture ne s'y fie pas seule.
     modeles: reponse && r?.hubspot_modeles === true,
+    workflows: r?.hubspot_workflows === true,
     valideLe: r?.hubspot_choix_valide_le instanceof Date ? r.hubspot_choix_valide_le : null,
   };
 }
@@ -224,6 +230,7 @@ export interface ChoixHubspotEcrit {
   reponse: boolean;
   /** Déjà ramené à faux par la route quand la réponse est éteinte. */
   modeles: boolean;
+  workflows: boolean;
   listes: boolean;
 }
 
@@ -269,16 +276,17 @@ export class PgTenantSettingsStore {
       const premiereValidation = (avant.rows[0]?.v ?? null) === null;
       const res = await client.query<Record<string, unknown>>(
         `insert into tenant_settings (tenant_id, hubspot_analyse, hubspot_passage, hubspot_injoignable, hubspot_reponse,
-                                      hubspot_lists_enabled, hubspot_modeles, hubspot_choix_valide_le, updated_at)
-         values ($1, $2, $3, $4, $5, $6, $7, now(), now())
+                                      hubspot_lists_enabled, hubspot_modeles, hubspot_workflows, hubspot_choix_valide_le, updated_at)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, now(), now())
          on conflict (tenant_id) do update set
            hubspot_analyse = excluded.hubspot_analyse, hubspot_passage = excluded.hubspot_passage,
            hubspot_injoignable = excluded.hubspot_injoignable, hubspot_reponse = excluded.hubspot_reponse,
            hubspot_lists_enabled = excluded.hubspot_lists_enabled, hubspot_modeles = excluded.hubspot_modeles,
+           hubspot_workflows = excluded.hubspot_workflows,
            hubspot_choix_valide_le = coalesce(tenant_settings.hubspot_choix_valide_le, excluded.hubspot_choix_valide_le),
            updated_at = now()
          returning *`,
-        [tenantId, c.analyse, c.passage, c.injoignable, c.reponse, c.listes, c.modeles],
+        [tenantId, c.analyse, c.passage, c.injoignable, c.reponse, c.listes, c.modeles, c.workflows],
       );
       const r = res.rows[0];
       return { choix: choixDeLaLigne(r), listes: r?.hubspot_lists_enabled === true, premiereValidation };

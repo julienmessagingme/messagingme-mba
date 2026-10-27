@@ -112,7 +112,7 @@ export function verdictModele(info: ModeleLu | null, langue: string): LectureMod
 /**
  * Une valeur de variable que Meta accepte : ni retour à la ligne, ni tabulation, ni plus de quatre espaces de suite
  * (erreur 132018, constatée à l'envoi, donc APRÈS un succès annoncé). Partagée par l'outil de Claude, qui l'annonce
- * dans son schéma, et par la carte HubSpot (sous-lot « relancer »).
+ * dans son schéma, par la carte HubSpot (sous-lot « relancer ») et par l'action de workflow HubSpot.
  */
 export const VALEUR_ACCEPTEE = /^(?!.*[\n\t])(?!.* {5,}).*$/s;
 

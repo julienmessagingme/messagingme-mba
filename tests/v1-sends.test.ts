@@ -19,6 +19,7 @@ import {
   type ResultatEnvoiPublic,
 } from '../src/api/envoi-public';
 import { envoyerShopify, type EnvoiShopify } from '../src/shopify/envoi';
+import { envoyerPourWorkflow, type EnvoiWorkflow } from '../src/hubspot-workflow/envoi';
 import type { BuiltRecipient, ContactEnvoi } from '../src/campaign/build';
 import type { EnvoiApiBrut } from '../src/campaign/store.pg';
 import type { ClesFiche, ModeCreation } from '../src/api/fiche';
@@ -855,6 +856,80 @@ describe('le connecteur Shopify, par le vrai cycle d’envoi public', () => {
   });
 });
 
+/**
+ * L'ACTION DE WORKFLOW HUBSPOT PASSE PAR LE VRAI CYCLE (cadrage du 2026-10-27, lot 1) : le corps de son adaptateur
+ * (`envoyerPourWorkflow`) est donné à `lancerEnvoiPublic` lui-même. 🔴 À l'inverse de Shopify, il ne porte AUCUN
+ * consentement (décision 3, l'inscription dans un workflow n'est pas un accord) : c'est ici que se prouve qu'aucun accord
+ * n'est écrit, qu'un modèle Marketing ne part pas et que la clé borne la répétition à 24 h (décision 11).
+ */
+describe('l’action de workflow HubSpot, par le vrai cycle d’envoi public', () => {
+  const branche = (sends: DepsEnvoiPublic) => (t: string, corps: unknown, compter: (n: number) => Promise<boolean>, options: OptionsEnvoiPublic) =>
+    lancerEnvoiPublic(sends, t, corps, undefined, compter, options);
+  const envoi = (over: Partial<EnvoiWorkflow> = {}): EnvoiWorkflow => ({
+    tenantId: 't1', telephone: PHONE(1), modele: 'confirmation', langue: 'fr', valeurs: [], workflowId: '1234567', ...over,
+  });
+  const libre = async () => null;
+
+  it('🔴 un Service à une fiche sans consentement part, et AUCUN consentement n’est écrit', async () => {
+    const { sends, cap } = app({}, { fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'unknown' })]]) });
+    const r = await envoyerPourWorkflow(branche(sends), envoi(), libre);
+    expect(r.issue).toBe('envoye');
+    expect(r.sendId).toBeTruthy();
+    expect([cap.consentements, cap.ecritures]).toEqual([[], []]);
+    expect(cap.sends[0]!.input).toMatchObject({ name: 'HubSpot · workflow 1234567', category: 'utility' });
+  });
+
+  it('🔴 un numéro inconnu : la fiche est créée SANS consentement, et le Service part', async () => {
+    const { sends, cap, m } = app();
+    expect((await envoyerPourWorkflow(branche(sends), envoi({ telephone: '+33699999999' }), libre)).issue).toBe('envoye');
+    expect([...m.fiches.values()].find((f) => f.phone_e164 === '+33699999999')?.optInStatus).toBe('unknown');
+    expect(cap.consentements).toEqual([]);
+    expect(cap.sends[0]!.recipients.map((r) => r.toE164)).toEqual(['+33699999999']);
+  });
+
+  it('🔴 un modèle que Meta dit Marketing : refusé, rien ne part ni ne s’écrit, la clé est libérée', async () => {
+    const { sends, cap, idem } = app({}, { modele: { statut: 'approuve', categorie: 'marketing', variables: 0 } });
+    expect(await envoyerPourWorkflow(branche(sends), envoi(), libre)).toEqual({ issue: 'marketing_refuse' });
+    expect([cap.sends, cap.consentements]).toEqual([[], []]);
+    expect(idem.size).toBe(0);
+  });
+
+  it('🔴 un contact qui a dit STOP : rien ne part, aucune ligne de Campagnes', async () => {
+    const { sends, cap, idem } = app({}, { fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'opted_out' })]]) });
+    expect(await envoyerPourWorkflow(branche(sends), envoi(), libre)).toEqual({ issue: 'stop' });
+    expect([cap.sends, idem.size]).toEqual([[], 0]);
+  });
+
+  it('🔴 24 h : le même corps rejoue le même envoi, d’autres valeurs rendent `deja_envoye`, rien ne repart ni n’est compté', async () => {
+    const { sends, cap } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 1 } });
+    const comptes: number[] = [];
+    const compter = async (n: number) => { comptes.push(n); return null; };
+    const r1 = await envoyerPourWorkflow(branche(sends), envoi({ valeurs: ['Julien'] }), compter);
+    const r2 = await envoyerPourWorkflow(branche(sends), envoi({ valeurs: ['Julien'], workflowId: '999' }), compter);
+    const r3 = await envoyerPourWorkflow(branche(sends), envoi({ valeurs: ['Marie'] }), compter);
+    expect(r1.issue).toBe('envoye');
+    expect(r2).toEqual(r1);
+    expect(r3).toEqual({ issue: 'deja_envoye' });
+    expect(cap.sends).toHaveLength(1);
+    // Le rejeu et l'envoi déjà fait sortent à la clé, avant le compteur : seul le premier compte.
+    expect(comptes).toEqual([1]);
+  });
+
+  it('🔴 la catégorie illisible chez Meta : `meta_indisponible` (HubSpot relance), la clé est libérée, rien ne part', async () => {
+    const { sends, cap, idem } = app({}, { modele: { statut: 'illisible' } });
+    expect(await envoyerPourWorkflow(branche(sends), envoi(), libre)).toEqual({ issue: 'meta_indisponible' });
+    expect([cap.sends, idem.size]).toEqual([[], 0]);
+  });
+
+  it('🔴 un plafond refuse : son issue, la clé est libérée et rien ne part ; le même envoi repart ensuite', async () => {
+    const { sends, cap, idem } = app();
+    expect(await envoyerPourWorkflow(branche(sends), envoi(), async () => 'jour')).toEqual({ issue: 'plafond_jour' });
+    expect(await envoyerPourWorkflow(branche(sends), envoi(), async () => 'minute')).toEqual({ issue: 'plafond_minute' });
+    expect([cap.sends, idem.size]).toEqual([[], 0]);
+    expect((await envoyerPourWorkflow(branche(sends), envoi(), libre)).issue).toBe('envoye');
+  });
+});
+
 describe('POST /v1/sends : idempotence', () => {
   const CORPS = { ...TPL, recipients: [{ contactId: C1 }] };
 
@@ -950,6 +1025,20 @@ describe('POST /v1/sends : idempotence', () => {
     // Sans l'option, le même envoi vide est scellé : une campagne à zéro destinataire, comme avant.
     expect(statutDe(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-vide-2', async () => true))).toBe(201);
     expect(cap.sends).toHaveLength(1);
+  });
+
+  it('🔴 Service seulement : un modèle que Meta dit Marketing est refusé en 422, rien n’est créé, la clé est libérée', async () => {
+    const { sends, idem, cap } = app({}, { modele: { statut: 'approuve', categorie: 'marketing', variables: 0 } });
+    const r = await lancerEnvoiPublic(sends, 't1', CORPS, 'k-service', async () => true, { serviceSeulement: true });
+    expect(r).toMatchObject({ statut: 422, corps: { code: 'template_rejected', categorie: 'marketing' } });
+    expect(cap.sends).toHaveLength(0);
+    expect(idem.has('k-service')).toBe(false);
+    // Sans l'option, le même Marketing part (aux consentants) : l'option ne vaut que pour son appelant.
+    expect(statutDe(await lancerEnvoiPublic(sends, 't1', CORPS, 'k-service', async () => true))).toBe(201);
+    // Et un Service part avec elle.
+    const service = app();
+    expect(statutDe(await lancerEnvoiPublic(service.sends, 't1', CORPS, 'k-s', async () => true, { serviceSeulement: true }))).toBe(201);
+    expect(service.cap.sends).toHaveLength(1);
   });
 
   it('le nom donné par l’adaptateur remplace `[API] <cible>` ; sans lui, la ligne garde le préfixe', async () => {

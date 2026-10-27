@@ -1,5 +1,26 @@
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
+import { parsePhoneNumberFromString as lireAvecTypes } from 'libphonenumber-js/max';
 import type { CountryCode } from 'libphonenumber-js';
+
+/**
+ * Les types de numéro que WhatsApp ne porte pas, partout : une ligne fixe, un numéro de service (gratuit, à coût
+ * partagé, surtaxé). Mesurés avec les métadonnées complètes le 2026-10-27.
+ */
+const TYPES_SANS_WHATSAPP = new Set(['FIXED_LINE', 'TOLL_FREE', 'SHARED_COST', 'PREMIUM_RATE']);
+
+/**
+ * Un numéro FIXE au sens large, que WhatsApp ne porte pas (les workflows HubSpot, cadrage du 2026-10-27, décision 2) :
+ * refusé avant d'écrire, plutôt qu'un échec de Meta invisible après. Seul un type certain compte : une plage « fixe ou
+ * mobile » (États-Unis) ou un type inconnu passe. En France, le 09 (VOIP, une box) est une ligne fixe dans les faits ;
+ * ailleurs une VOIP peut porter WhatsApp, elle passe. Le type demande les métadonnées complètes (`/max`), absentes de
+ * l'import par défaut.
+ */
+export function estUnFixe(e164: string): boolean {
+  const n = lireAvecTypes(e164);
+  const type = n?.getType();
+  if (type === undefined) return false;
+  return TYPES_SANS_WHATSAPP.has(type) || (type === 'VOIP' && n?.country === 'FR');
+}
 
 export interface PhoneResult {
   e164?: string;

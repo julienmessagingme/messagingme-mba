@@ -2758,6 +2758,44 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   migration 0096), même sans fiche reliée, et le blocage aussi sur la fiche, comme la console. L'ordre : les urgentes, puis l'attente la plus
   ancienne (l'escalade, sinon le premier message du client sans réponse), 200 au plus (`A_TRAITER_MAX`), le total.
   L'affectataire nommé sans son adresse (`affectataire`, la convention de `fil`).
+- **Un modèle WhatsApp envoyé par un workflow HubSpot du client** (l'action « Envoyer un modèle WhatsApp », cadrage
+  `~/mm-hubspot/docs/2026-10-27-action-workflow-modele-cadrage.md`, `src/http/hubspot-workflow.ts`,
+  `src/hubspot-workflow/envoi.ts` et `src/hubspot-workflow/plafonds.ts`, classe `signature-service`, montée avec
+  `HUBSPOT_SERVICE_SECRET`). Deux routes que seul le connecteur appelle, signées comme les autres :
+  `POST /hubspot/workflow/modeles` (la liste de l'action) et `POST /hubspot/workflow/modele` (l'envoi,
+  `{tenantId, telephone, modele, langue, valeurs, workflowId}`, l'espace ramené en minuscules). Un modèle est jugé par
+  `jugerPourWorkflow`, pour la liste ET pour l'envoi : le verdict de `GET /v1/templates` (`verdictModele(modeleLuDe(t))`,
+  variables = max des positions), puis Service seulement, sans carrousel, dix variables au plus. Trois sortes de réponses.
+  Les gardes de l'ESPACE, définitives : l'offre `crm` (402), le réglage `hubspot_workflows` (migration 0259, faux par
+  défaut, INDÉPENDANT de la réponse ; 403 `workflows_hubspot_eteints`), la ligne reliée (`etatLigneHubspot`, 409
+  `ligne_non_reliee` avec sa `raison`), la filière application (409 `whatsapp_app_no_template`). Les refus d'un ENVOI, en
+  200 avec une `issue` d'un jeu fermé (`IssueWorkflow`), que le connecteur montre dans l'historique du workflow : un
+  numéro vide ou illisible (`sans_numero` ; lu par `e164DepuisSaisie`, donc `447911123456` sans « + » passe), un numéro
+  que WhatsApp ne porte pas (`fixe`, `estUnFixe` : ligne fixe et numéros de service partout, le 09 en France, sur les
+  métadonnées complètes de libphonenumber ; une plage « fixe ou mobile » passe), une valeur que Meta refuserait ou une
+  variable manquante ou en trop (`valeur_invalide` ; retours à la ligne et tabulations ramenés à une espace, champs vides
+  de la fin retirés, puis le compte comparé à celui du modèle), un modèle Marketing (`marketing_refuse`) ou absent,
+  carrousel, non envoyable (`modele_refuse`). Ces refus-là se jugent AVANT la clé, sur le catalogue (en cache une
+  minute) : ils ne comptent rien. Enfin, ce que HubSpot doit RELANCER (décision 6), jamais en 409 : la minute pleine
+  (429 `rate_limited`), une clé en vol (429 `en_cours`, `RELANCE_EN_COURS_SEC`), Meta muet (503 `meta_indisponible`,
+  `RELANCE_META_SEC`, le catalogue qui lève comme la catégorie illisible au cœur), toujours avec `Retry-After` et
+  `retryAfterSec`. Puis le quatrième adaptateur de `lancerEnvoiPublic`, après `/v1/sends`, l'outil MCP et Shopify :
+  🔴 AUCUN `consent` dans le destinataire (l'inscription dans un workflow n'est pas un accord ; un numéro inconnu devient
+  une fiche sans consentement), et l'option `serviceSeulement` du cœur, qui refuse un modèle que Meta dit autre
+  qu'Utility (422 `template_rejected` avec sa `categorie`, la clé rendue, rien de créé). La catégorie y est lue chez
+  Meta par le cache de cinq minutes du moteur (`templateVarInfo`) : un modèle reclassé Marketing peut encore partir
+  quelques minutes, comme par `/v1/sends`. 🔴 La clé `hubspot-workflow:<numéro>:<modèle>:<langue>`, SANS le workflow ni
+  les valeurs : sa vie (`DUREE_CLE_IDEMPOTENCE_MS`, 24 h au moins, épinglée par un test car le `trop_tard` à 20 h du
+  connecteur en dépend) EST la garde « pas deux fois le même modèle au même contact en 24 h » ; le même corps rejoue le
+  rapport (même `sendId`), d'autres valeurs rendent `deja_envoye`. Une ligne de Campagnes par envoi, « HubSpot · workflow
+  <id> », aucune quand personne ne part (`sansCampagneVide`). Deux plafonds par espace, au total des copies, à part de
+  l'API, comptés ENSEMBLE en un seul appel au compteur (toutes les fenêtres ou aucune) : `HUBSPOT_WORKFLOWS_PAR_MINUTE`
+  (60) et `HUBSPOT_WORKFLOWS_PAR_JOUR` (2 000, le jour de Paris, comme les quotas de l'offre), 0 désactive, base muette :
+  laisse passer. Le cœur les appelle juste après la clé : ils comptent les TENTATIVES (un contact STOP ou bloqué, un
+  numéro délié aussi), jamais un rejeu ni un `deja_envoye`. Le jour plein l'emporte sur la minute et rend
+  `plafond_jour`. La route du choix écrit le réglage (champ `workflows` facultatif, fonction `crm`) et `GET /settings`
+  le rend (`hubspotWorkflows`) ; la ligne de la console et l'action dans HubSpot arrivent avec le connecteur (lot 2 du
+  plan du 2026-10-27). Le câblage est tenu par `tests/hubspot-workflow-cablage.test.ts`.
 - **Le visuel d'en-tête d'un modèle envoyé depuis l'Inbox part en `media id`** (`creerEnvoiModeleInbox`,
   `mediaDuModele`) : l'adresse que l'écran passe est celle du CDN de Meta, que l'invariant 9 dit refusée en 131053 ;
   le visuel du modèle se re-téléverse comme pour le bloc de scénario. Sans visuel au modèle, ou si la préparation
@@ -5215,7 +5253,7 @@ avec elle) garde son test de parité.
 | `src/server.ts` -> `modulesDeRoutes` | 🔴 le point de passage OBLIGÉ pour monter un module de routes. Chaque entrée déclare sa `ClasseDAcces` (six valeurs, pas deux), et la couverture du garde-fou d'authentification s'en DÉRIVE au lieu d'être recopiée, comme l'étape d'espace (posée par `entree` sur les seuls modules `tenant`). Monter une route ailleurs la sort du garde-fou et de l'étape : si elle lit l'espace par `espaceVerifie`, elle rend un 500 au lieu de servir, sinon aucune erreur ne le dit |
 | `src/mba/orchestration-publication.ts` -> `PublicationMba` | 🔴 le point de passage OBLIGÉ pour apercevoir et exécuter une publication chez Meta : résolution du numéro, instantané et recalcul du plan sous verrou, contexte typé commun aux gestes, prolongation et libération du verrou, classement des échecs. `src/http/mba-publication.ts` ne fait que traduire son `Issue` en HTTP |
 | `src/templates/gestion.ts` | 🔴 le cycle de vie d'un modèle WhatsApp, commun à la console, l'API et MCP : vérifications préalables, création, liste et reconstruction des liens suivis, modification, suppression, statuts, gardes des campagnes actives, compensations des liens. `src/http/templates.ts` n'est qu'un adaptateur |
-| `src/api/envoi-public.ts` -> `lancerEnvoiPublic` | 🔴 le cycle d'un envoi public, commun à `/v1` et MCP : schéma du corps, cible, destinataires et données, consentement et quotas, plafond de destinataires, idempotence et reprise d'un rapport existant, création du lot, enfilement à reprise bornée, rapport et erreurs publiques |
+| `src/api/envoi-public.ts` -> `lancerEnvoiPublic` | 🔴 le cycle d'un envoi public, commun à `/v1`, MCP, Shopify et l'action de workflow HubSpot : schéma du corps, cible, destinataires et données, consentement et quotas, plafond de destinataires, idempotence et reprise d'un rapport existant, création du lot, enfilement à reprise bornée, rapport et erreurs publiques |
 | `src/account/connexion-numero.ts` -> `connecterNumero`, `demanderCodeNumero`, `activerNumero` | 🔴 le protocole de connexion d'un numéro : échange du code Meta, découverte du WABA et du numéro, preuve d'appartenance, rattachement à l'espace, abonnement aux webhooks, enregistrement, identifiants et PIN, crédit offert, demande de code (délai partagé entre copies, `cleDemandeCode`), vérification et activation. `src/http/embedded-signup.ts` traduit les issues |
 | `src/numero/reserve.ts` -> `servirLAttente`, `droitAuNumero`, `numerosDisponibles` | la réserve de numéros fournis : un numéro qui y revient (rendu, libéré, sorti d'un espace supprimé ou déconnecté, déclaré dans `/ops`) va à l'abonné qui attend le sien depuis le plus longtemps, jamais à celui qui vient de le rendre. `servirLAttente` ne lève jamais : le geste d'avant a réussi. Pas de numéro avant le paiement, et un Pro ne prend pas celui d'un abonné qui attend |
 | `src/mba/client.ts` -> `ecrireRolloutPuisDrapeau` | « Meta d'abord, nous ensuite » pour l'allumage de l'agent de Meta (route `PUT .../rollout`, assistant) : un refus de Meta ne laisse pas notre drapeau dire le contraire. `appliquerActivation` reçoit les deux écritures en dépendances séparées |

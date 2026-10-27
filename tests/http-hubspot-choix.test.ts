@@ -42,7 +42,7 @@ function app(o: {
   premiere?: boolean;
   numero?: { id: string; hubspotConnected: boolean; hubspotPausedAt: string | null } | null;
   modeEchoue?: boolean;
-  avant?: { analyse: boolean; reponse: boolean; listes: boolean; modeles?: boolean };
+  avant?: { analyse: boolean; reponse: boolean; listes: boolean; modeles?: boolean; workflows?: boolean };
   synchroEchoue?: boolean;
 } = {}): { server: ReturnType<typeof buildServer>; b: Banc } {
   const b: Banc = { ecrits: [], synchros: [], modes: [] };
@@ -50,13 +50,13 @@ function app(o: {
     poserChoix: async (t, c) => {
       b.ecrits.push({ t, c });
       return {
-        choix: { analyse: c.analyse, passage: c.passage, injoignable: c.injoignable, reponse: c.reponse, modeles: c.modeles, valideLe: new Date('2026-10-23T18:00:00.000Z') },
+        choix: { analyse: c.analyse, passage: c.passage, injoignable: c.injoignable, reponse: c.reponse, modeles: c.modeles, workflows: c.workflows, valideLe: new Date('2026-10-23T18:00:00.000Z') },
         listes: c.listes,
         premiereValidation: o.premiere ?? true,
       };
     },
     fonctions: async () => o.fonctions ?? ENTREPRISE,
-    choixEnVigueur: async () => ({ modeles: false, ...(o.avant ?? { analyse: false, reponse: false, listes: false }), valideLe: (o.premiere ?? true) ? null : new Date('2026-10-20T10:00:00.000Z') }),
+    choixEnVigueur: async () => ({ modeles: false, workflows: false, ...(o.avant ?? { analyse: false, reponse: false, listes: false }), valideLe: (o.premiere ?? true) ? null : new Date('2026-10-20T10:00:00.000Z') }),
     portail: async () => { if (o.reveil) throw new ConnecteurEnReveil(); return { connected: o.relie ?? true }; },
     numeroPrincipal: async () => (o.numero === undefined ? { id: 'pn1', hubspotConnected: false, hubspotPausedAt: null } : o.numero),
     allumerSynchro: async (numero, t) => { if (o.synchroEchoue) throw new Error('base'); b.synchros.push({ numero, t }); },
@@ -124,11 +124,12 @@ describe('PUT /tenants/:t/hubspot/choix (lot 1bis)', () => {
     const { server, b } = app({ premiere: true });
     const res = await server.inject(put(adminTok, { ...TOUT, passage: false, taches: false }));
     expect(res.statusCode).toBe(200);
-    expect(b.ecrits).toEqual([{ t: 't1', c: { analyse: true, passage: false, injoignable: true, reponse: false, modeles: false, listes: false } }]);
+    expect(b.ecrits).toEqual([{ t: 't1', c: { analyse: true, passage: false, injoignable: true, reponse: false, modeles: false, workflows: false, listes: false } }]);
     expect(b.modes).toEqual([{ t: 't1', mode: 'hubspot_native' }]);
     expect(b.synchros).toEqual([{ numero: 'pn1', t: 't1' }]);
     expect(res.json()).toEqual({
-      hubspotAnalyse: true, hubspotPassage: false, hubspotInjoignable: true, hubspotReponse: false, hubspotModeles: false, hubspotListsEnabled: false,
+      hubspotAnalyse: true, hubspotPassage: false, hubspotInjoignable: true, hubspotReponse: false, hubspotModeles: false, hubspotWorkflows: false,
+      hubspotListsEnabled: false,
       hubspotChoixValideLe: '2026-10-23T18:00:00.000Z', routingMode: 'hubspot_native', tachesAppliquees: true, premiereValidation: true,
     });
     await server.close();
@@ -216,6 +217,38 @@ describe('PUT .../hubspot/choix : « Envoyer des modèles depuis HubSpot » (sou
     expect(refus.json()).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'inbox' });
     expect((await server.inject(put(adminTok, { ...TOUT, modeles: 'oui' }))).statusCode).toBe(400);
     expect(b.ecrits).toHaveLength(0);
+    await server.close();
+  });
+});
+
+describe('PUT .../hubspot/choix : « Workflows HubSpot : envoyer des modèles WhatsApp » (action de workflow, décision 8)', () => {
+  it('🔴 ABSENT du corps : il garde sa valeur ; il ne dépend pas de la réponse depuis HubSpot', async () => {
+    const { server, b } = app({ avant: { analyse: true, reponse: false, listes: false, workflows: true } });
+    const res = await server.inject(put(adminTok, { ...TOUT, reponse: false }));
+    expect(res.statusCode).toBe(200);
+    expect(b.ecrits[0]?.c.workflows).toBe(true);
+    expect(res.json()).toMatchObject({ hubspotReponse: false, hubspotWorkflows: true });
+    await server.close();
+  });
+
+  it('🔴 ALLUMER les workflows sans HubSpot dans l’offre : 402 ; un booléen attendu ; l’éteindre n’est jamais refusé', async () => {
+    const { server, b } = app({ fonctions: new Set<Fonction>(['analyse', 'inbox']) });
+    const refus = await server.inject(put(adminTok, { ...TOUT, workflows: true }));
+    expect(refus.statusCode).toBe(402);
+    expect(refus.json()).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'crm' });
+    expect((await server.inject(put(adminTok, { ...TOUT, workflows: 'oui' }))).statusCode).toBe(400);
+    expect(b.ecrits).toHaveLength(0);
+    await server.close();
+    const { server: s2, b: b2 } = app({ fonctions: new Set<Fonction>(['analyse', 'inbox']), avant: { analyse: true, reponse: false, listes: false, workflows: true } });
+    expect((await s2.inject(put(adminTok, { ...TOUT, workflows: false }))).statusCode).toBe(200);
+    expect(b2.ecrits[0]?.c.workflows).toBe(false);
+    await s2.close();
+  });
+
+  it('allumé avec HubSpot dans l’offre : écrit', async () => {
+    const { server, b } = app();
+    expect((await server.inject(put(adminTok, { ...TOUT, workflows: true }))).statusCode).toBe(200);
+    expect(b.ecrits[0]?.c.workflows).toBe(true);
     await server.close();
   });
 });

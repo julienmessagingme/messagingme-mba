@@ -82,6 +82,15 @@ export const schema = z.object({
    */
   HUBSPOT_MODELES_PAR_MINUTE: z.coerce.number().int().min(0).default(5),
   /**
+   * Les envois des workflows HubSpot du client (l'action de workflow, décision 9 du cadrage du 2026-10-27), par espace,
+   * au TOTAL des copies, à part de l'API : par minute (au-delà, 429 et HubSpot relance, rien ne se perd) et par jour de
+   * Paris (au-delà, un refus visible dans l'historique du workflow). Ils comptent les TENTATIVES qui ont pris leur clé,
+   * refus du cœur compris (STOP, blocage, numéro délié), jamais un rejeu (`src/hubspot-workflow/plafonds.ts`). Meta
+   * facture chaque modèle, et un workflow mal réglé inscrit des milliers de contacts d'un coup. 0 désactive.
+   */
+  HUBSPOT_WORKFLOWS_PAR_MINUTE: z.coerce.number().int().min(0).default(60),
+  HUBSPOT_WORKFLOWS_PAR_JOUR: z.coerce.number().int().min(0).default(2000),
+  /**
    * La relance HubSpot (lot 2b de la reprise humaine, décision C) : l'équipe tient la conversation, aucune escalade n'est
    * ouverte, et le dernier message du client attend une réponse depuis ce nombre de minutes ; une tâche « a réécrit,
    * sans réponse » part chez le conseiller. Pas de tâche à chaque message : une conversation vive en ferait une par

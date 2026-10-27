@@ -65,6 +65,7 @@ import type { PreHandler } from '../src/auth/middleware';
 import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { HubspotEventRouteDeps } from '../src/http/hubspot-events';
 import type { HubspotConversationDeps } from '../src/http/hubspot-conversation';
+import type { HubspotWorkflowDeps } from '../src/http/hubspot-workflow';
 import type { StripeWebhookRouteDeps } from '../src/http/credit-stripe';
 import type { ResendWebhookRouteDeps } from '../src/http/webhook-resend';
 import type { Receiver360Deps } from '../src/webhooks/receiver-360dialog';
@@ -292,6 +293,18 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     ligneHubspot: inconnu('hubspotConversation.ligneHubspot'),
     aTraiter: inconnu('hubspotConversation.aTraiter'),
   } satisfies HubspotConversationDeps,
+  // L'action de workflow HubSpot : le même vrai secret ; derrière lui, une offre sans `crm` et un réglage éteint, donc
+  // rien ne part, même pour une sonde qui passerait la signature.
+  hubspotWorkflow: {
+    secret: SECRET_SERVICE,
+    fonctions: async () => new Set<never>(),
+    workflowsBranches: async () => false,
+    ligneHubspot: inconnu('hubspotWorkflow.ligneHubspot'),
+    filiere: inconnu('hubspotWorkflow.filiere'),
+    envoyer: inconnu('hubspotWorkflow.envoyer'),
+    plafonds: inconnu('hubspotWorkflow.plafonds'),
+    catalogue: inconnu('hubspotWorkflow.catalogue'),
+  } satisfies HubspotWorkflowDeps,
   // Le webhook de Stripe : un VRAI secret aussi, et un dépôt qui ne crédite personne. Une signature fausse ou absente
   // doit tomber avant le dépôt (sonde 12).
   stripeWebhook: {

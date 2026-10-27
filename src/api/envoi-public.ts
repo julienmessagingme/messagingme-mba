@@ -366,13 +366,20 @@ export interface OptionsEnvoiPublic {
    * et le rapport rendu en 200, `sendId` vide. Sans elle, l'envoi vide est scellé : une campagne à zéro destinataire.
    */
   sansCampagneVide?: true;
+  /**
+   * Seuls les modèles Service (Utility) partent (les workflows HubSpot, cadrage du 2026-10-27, décision 3) : jugé sur la
+   * catégorie que Meta vient de rendre, jamais sur celle de l'appelant. Un autre modèle est refusé en 422
+   * `template_rejected` avec sa `categorie`, la clé libérée, rien de créé.
+   */
+  serviceSeulement?: true;
 }
 
 /** La même enveloppe que `refuser` (`{ error, code }`), rendue au lieu d'être envoyée. */
 const repondre = (statut: number, code: CodeApi, message: string): ReponseEnvoi => ({ statut, corps: { error: message, code } });
 
 /**
- * Le cycle complet d'un envoi public, partagé par les adaptateurs HTTP et MCP : validation, compteur,
+ * Le cycle complet d'un envoi public, partagé par ses quatre adaptateurs (`POST /v1/sends`, l'outil MCP, Shopify et
+ * l'action de workflow HubSpot) : validation, compteur,
  * idempotence, cible, gardes du numéro, modèles du mois, destinataires, consentement, campagne scellée avec sa
  * clé et enfilement. Une garde ajoutée ici vaut pour tous les appelants.
  * `compter` est le compteur de l'appelant (le garde d'usage pour la route, le plafond coûteux pour Claude), appelé
@@ -467,6 +474,13 @@ export async function lancerEnvoiPublic(
     if ('refus' in numero) return await libererEtRefuser(numero.refus);
     const cible = await resoudreCible(deps, tenantId, demandee, params);
     if ('refus' in cible) return await libererEtRefuser(cible.refus);
+    if (options.serviceSeulement && cible.category !== 'utility') {
+      await deps.idempotence.release(tenantId, idem.cle, jeton);
+      return {
+        statut: 422,
+        corps: { error: 'seuls les modèles Service (Utility) partent par ce chemin', code: 'template_rejected', categorie: cible.category },
+      };
+    }
     /**
      * Numéro délié : refusé ici en 409 `number_unlinked`, comme `POST /v1/messages/whatsapp` ; sinon l'envoi serait
      * accepté en 201 et ses messages partiraient au premier « Relier ». Seulement quand ce qui part en premier est

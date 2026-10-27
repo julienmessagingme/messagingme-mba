@@ -96,6 +96,8 @@ import { plafondLePlusBas } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages, lireHubspotPortal, poserModeTaches } from './crm/hubspot-service';
 import type { HubspotChoixRouteDeps } from './http/hubspot-choix';
 import { etatLigneHubspot, type HubspotConversationDeps } from './http/hubspot-conversation';
+import type { HubspotWorkflowDeps } from './http/hubspot-workflow';
+import { plafondsDesWorkflows } from './hubspot-workflow/plafonds';
 import { PgATraiterHubspot } from './inbox/a-traiter-hubspot.pg';
 import { PlafondPartage } from './auth/plafond-partage';
 import { getEtatPassage } from './analysis/enrichment';
@@ -1872,6 +1874,20 @@ async function main(): Promise<void> {
         ligneHubspot: async (t: string) => etatLigneHubspot(await phoneStatusStore.getPhoneNumber(t)),
         aTraiter: new PgATraiterHubspot(pool),
       } satisfies HubspotConversationDeps,
+      // L'action de workflow « Envoyer un modèle WhatsApp » (cadrage du 2026-10-27, lot 1) : le cœur d'envoi public, câblé
+      // comme pour Shopify (`options` transmises : Service seulement, sans campagne vide), et ses propres plafonds,
+      // minute et jour de Paris comptés ensemble (décision 9). Base muette : laisse passer (l'envoi lui-même a besoin de
+      // la base, la clé d'idempotence n'est jamais prise sans elle). Tenu par `tests/hubspot-workflow-cablage.test.ts`.
+      hubspotWorkflow: {
+        secret: config.HUBSPOT_SERVICE_SECRET,
+        fonctions: async (t: string) => (await offres.offreDe(t)).droits.fonctions,
+        workflowsBranches: async (t: string) => (await settingsStore.lireChoixHubspot(t)).workflows,
+        ligneHubspot: async (t: string) => etatLigneHubspot(await phoneStatusStore.getPhoneNumber(t)),
+        filiere: (t: string) => comptesApplication.filiereDe(t),
+        envoyer: (tenant, corps, compter, options) => lancerEnvoiPublic(depsEnvois, tenant, corps, undefined, compter, options),
+        plafonds: plafondsDesWorkflows(compteurDebit, { parMinute: config.HUBSPOT_WORKFLOWS_PAR_MINUTE, parJour: config.HUBSPOT_WORKFLOWS_PAR_JOUR }),
+        catalogue: listerModeles,
+      } satisfies HubspotWorkflowDeps,
     } : {}),
     /**
      * La recharge du crédit IA par Stripe (`src/http/credit-stripe.ts`). Toujours montée : sans clé, elle rend 503,
@@ -2037,7 +2053,7 @@ async function main(): Promise<void> {
             fonctions: async (t: string) => (await offres.offreDe(t)).droits.fonctions,
             choixEnVigueur: async (t: string) => {
               const [c, s] = await Promise.all([settingsStore.lireChoixHubspot(t), settingsStore.get(t)]);
-              return { analyse: c.analyse, reponse: c.reponse, modeles: c.modeles, listes: s.hubspotListsEnabled, valideLe: c.valideLe };
+              return { analyse: c.analyse, reponse: c.reponse, modeles: c.modeles, workflows: c.workflows, listes: s.hubspotListsEnabled, valideLe: c.valideLe };
             },
             portail: lirePortailHubspot,
             numeroPrincipal: (t: string) => phoneStatusStore.getPhoneNumber(t),

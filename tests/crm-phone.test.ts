@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { e164DepuisSaisie, normalizePhone, paysDuNumero } from '../src/crm/phone';
+import { e164DepuisSaisie, estUnFixe, normalizePhone, paysDuNumero } from '../src/crm/phone';
 
 describe('normalizePhone (FR par défaut)', () => {
   it('06 national -> E.164', () => {
@@ -57,5 +57,22 @@ describe('paysDuNumero : le pays de l’indicatif (champ système du bloc Condit
   });
   it('rien à déduire : `null`', () => {
     for (const v of [null, undefined, '', '  ', '+1', '+999123', 'pas un numéro']) expect(paysDuNumero(v)).toBeNull();
+  });
+});
+
+describe('estUnFixe : la ligne fixe que l’action de workflow refuse (décision 2)', () => {
+  it('une ligne fixe française ou allemande : oui ; un mobile : non', () => {
+    expect(estUnFixe('+33142685300')).toBe(true);
+    expect(estUnFixe('+493012345678')).toBe(true);
+    expect(estUnFixe('+33612345678')).toBe(false);
+    expect(estUnFixe('+33756123456')).toBe(false);
+  });
+  it('🔴 un 09 français (une box) et les numéros de service : oui, WhatsApp ne les porte pas', () => {
+    for (const n of ['+33970123456', '+33801234567', '+33811234567', '+33899123456']) expect(estUnFixe(n), n).toBe(true);
+  });
+  it('un numéro qui peut être l’un ou l’autre (États-Unis), une VOIP hors de France, un type inconnu : non, il part', () => {
+    expect(estUnFixe('+12025550123')).toBe(false);
+    expect(estUnFixe('+445612345678')).toBe(false);
+    expect(estUnFixe('+999123')).toBe(false);
   });
 });

@@ -116,6 +116,7 @@ export function registerSettings(
       hubspotInjoignable: choix.injoignable,
       hubspotReponse: choix.reponse,
       hubspotModeles: choix.modeles,
+      hubspotWorkflows: choix.workflows,
       hubspotChoixValideLe: choix.valideLe ? choix.valideLe.toISOString() : null,
     });
   });
