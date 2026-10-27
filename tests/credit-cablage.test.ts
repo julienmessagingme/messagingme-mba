@@ -46,8 +46,9 @@ describe('le câblage du crédit dans l’API', () => {
     expect(api.match(/const travauxEnVol = creerTravauxEnVol\(\);/g)).toHaveLength(1);
   });
 
-  it('🔴 les quatre portes du crédit remontent le plafond par la même fonction, sans montant (la cible se recalcule)', () => {
-    // L'achat, la recharge, le crédit offert par la connexion de Meta, et celui d'un compte de l'application relié (2026-10-22).
-    expect(api.match(/remonterPlafondApresRecharge\(provisionCle, tenant(Id)?\)/g)).toHaveLength(4);
+  it('🔴 les cinq portes du crédit remontent le plafond par la même fonction, sans montant (la cible se recalcule)', () => {
+    // L'achat, la recharge, le crédit offert par la connexion de Meta, celui d'un compte de l'application relié (2026-10-22),
+    // et le complément offert quand Julien pose le Business dans /ops (spec du 2026-10-27).
+    expect(api.match(/remonterPlafondApresRecharge\(provisionCle, tenant(Id)?\)/g)).toHaveLength(5);
   });
 });
