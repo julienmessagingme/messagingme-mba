@@ -8,7 +8,7 @@ import { DailyChart } from '@/components/DailyChart';
 import { Squelette } from '@/components/Squelette';
 import { alerte, brand, danger, ink } from '@/lib/couleurs';
 import { dayKey } from '@/lib/day';
-import { montees7Jours, parJour, retardParJour } from '@/lib/ops-capacite';
+import { copiesDeLHeure, MINUTES_MONTEE_MIN, montees7Jours, parJour, retardParJour } from '@/lib/ops-capacite';
 
 /**
  * L'ONGLET CAPACITÉ DE /OPS (refonte, lot 1) : trente jours, un point par jour, de ce qu'on mesure déjà (les copies
@@ -59,12 +59,12 @@ export function OpsCapacite({ jeton, onPerdue }: { jeton: string; onPerdue: () =
           summary="last"
           from={from}
           to={to}
-          series={[{ label: t('Copies', 'Copies'), color: brand[400], points: parJour(capacite.heures, (h) => h.copiesMax, 'max') }]}
+          series={[{ label: t('Copies', 'Copies'), color: brand[400], points: parJour(capacite.heures, copiesDeLHeure, 'max') }]}
         />
         <p className={note}>
           {t(
-            `Sur 7 jours : ${montees} montée(s) à 2 copies ou plus, ${heures} h en tout. Orange à 3 montées, rouge à 1 h : la copie de base est devenue trop petite.`,
-            `Over 7 days: ${montees} rise(s) to 2 copies or more, ${heures} h in total. Orange at 3 rises, red at 1 h: the base copy has become too small.`,
+            `Sur 7 jours : ${montees} montée(s) à 2 copies ou plus, ${heures} h en tout. Orange à 3 montées, rouge à 1 h : la copie de base est devenue trop petite. Moins de ${MINUTES_MONTEE_MIN} minutes à deux copies (un déploiement) ne compte pas.`,
+            `Over 7 days: ${montees} rise(s) to 2 copies or more, ${heures} h in total. Orange at 3 rises, red at 1 h: the base copy has become too small. Under ${MINUTES_MONTEE_MIN} minutes at two copies (a deployment) does not count.`,
           )}
         </p>
       </section>

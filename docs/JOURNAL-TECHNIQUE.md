@@ -4,6 +4,23 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-27 (soir) : la refonte de /ops, lot 1 (onglets, Santé, Capacité)
+
+Spec `docs/superpowers/specs/2026-10-27-ops-refonte-design.md`, plan `docs/superpowers/plans/2026-10-27-ops-refonte.md`.
+Fait en direct dans une copie à part, une relecture indépendante : aucun 🔴, onze jaunes, dont les utiles corrigés dans le
+commit suivant (une lecture en échec rendait la pastille verte ; Santé chargeait la vue d'ensemble pour rien ; un
+déploiement comptait comme une montée à deux copies).
+
+- **Migration 0258** (`mesures_files_heures`, une table neuve, clé `(file, heure)`), en `avant`. Mon déploiement de
+  `ea808ee4` (run 40571277856) a été annulé avant l'approbation, remplacé par celui d'une autre session à 21 h 06
+  (run 40575098787, `db2b4d04` : le lot 1 et deux commits Channels Me), lancé lui aussi en `avant` et approuvé par
+  Julien pour les deux. **Sonde avant**, en lecture seule par la machine des workers : 0257 déjà appliquée, 0258 seule en
+  attente, aucune transaction longue. **Relue après** : colonnes, types et nullabilité conformes, la clé primaire sous
+  son nom ; les lectures neuves exécutées par le vrai code sur un client en `begin read only` (connexions 17 sur 147,
+  derniers signaux de Meta, 172 heures de copies d'API, la lecture des files) ; la tâche `mesures-files` a tourné au
+  démarrage (une passe, aucun échec, 12 ms). La table est restée vide ce soir-là : aucun job pg-boss terminé depuis
+  17 h 43, faute de trafic. Les deux routes neuves rendent 401 sans session.
+
 ## 2026-10-27 (soir) : l'offre Business, sous-lot A (la mécanique serveur, rien de visible)
 
 Spec `docs/superpowers/specs/2026-10-27-offre-business-design.md`, plan `docs/superpowers/plans/2026-10-27-offre-business-lot-1.md`.

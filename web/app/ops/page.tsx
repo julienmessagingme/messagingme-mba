@@ -65,6 +65,8 @@ export default function OpsPage() {
   const [quotasDe, setQuotasDe] = useState<{ id: string; nom: string } | null>(null);
   const [offreDe, setOffreDe] = useState<{ id: string; nom: string; membres: number } | null>(null);
   const [onglet, setOnglet] = useState<Onglet>('sante');
+  /** La révision lue par l'onglet Santé, qui ne charge pas la vue d'ensemble. */
+  const [revisionSante, setRevisionSante] = useState<string | null>(null);
 
   useEffect(() => {
     // Relue ici et pas au rendu : le stockage du navigateur n'existe pas côté serveur. `getSessionOps` efface au
@@ -105,9 +107,12 @@ export default function OpsPage() {
     }
   }, [t, perdue]);
 
+  // La vue d'ensemble est lourde (charge et latence des files, lues dans la table des jobs de pg-boss) : l'onglet Santé,
+  // celui du téléphone et de l'incident, n'en a pas besoin. Elle se relit en arrivant sur un autre onglet.
+  const besoinVue = onglet !== 'sante';
   useEffect(() => {
-    if (session) void load(session.token);
-  }, [session, load]);
+    if (session && besoinVue) void load(session.token);
+  }, [session, besoinVue, load]);
 
   /**
    * Ouvre une session d'OBSERVATION dans l'espace d'un client, puis y bascule.
@@ -170,9 +175,9 @@ export default function OpsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <TitrePage>{t("Console d’exploitation", 'Operations console')}</TitrePage>
-            {data?.revision && (
+            {(data?.revision ?? revisionSante) && (
               <p className="-mt-2 text-xs text-ink-500" data-testid="ops-revision">
-                {t('API en production : révision', 'API in production: revision')} <span className="font-mono text-ink-900">{data.revision}</span>
+                {t('API en production : révision', 'API in production: revision')} <span className="font-mono text-ink-900">{data?.revision ?? revisionSante}</span>
               </p>
             )}
             <p className="text-sm text-ink-500">
@@ -194,16 +199,15 @@ export default function OpsPage() {
           onSelect={choisirOnglet}
         />
         {/* Santé et Capacité lisent leurs propres routes : elles n'attendent pas la vue d'ensemble. */}
-        {onglet === 'sante' && <OpsSante jeton={session.token} onPerdue={perdue} />}
+        {onglet === 'sante' && <OpsSante jeton={session.token} onPerdue={perdue} onRevision={setRevisionSante} />}
         {onglet === 'capacite' && <OpsCapacite jeton={session.token} onPerdue={perdue} />}
         {loading && !data ? (
           <Squelette forme="carte" />
         ) : data ? (
           <>
-            {onglet === 'sante' && <WorkerCard workers={data.workers ?? (data.worker ? [data.worker] : [])} />}
-
             {onglet === 'capacite' && (
               <>
+                <WorkerCard workers={data.workers ?? (data.worker ? [data.worker] : [])} />
                 <QueueCard queues={data.queues} />
                 <LatenceCard lignes={data.latences ?? []} />
                 <LatenceHttpCard lignes={data.latencesHttp ?? []} />

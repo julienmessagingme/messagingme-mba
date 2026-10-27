@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montees7Jours, parJour, retardParJour } from './ops-capacite';
+import { copiesDeLHeure, montees7Jours, parJour, retardParJour } from './ops-capacite';
 
 const heure = (iso: string, copiesMax: number, minutesDeuxCopiesOuPlus = 0) => ({
   heure: iso, copiesMax, minutesDeuxCopiesOuPlus, attentesApi: 1, attentesWorkers: 2, maxAttenteMs: 0,
@@ -40,5 +40,17 @@ describe('montees7Jours', () => {
 
   it('au-delà de sept jours, rien ne compte', () => {
     expect(montees7Jours([heure('2026-10-10T10:00:00.000Z', 3, 60)], maintenant)).toEqual({ montees: 0, heures: 0 });
+  });
+
+  it('🔴 un déploiement (deux copies quelques minutes) n’est pas une montée, ni sur la courbe', () => {
+    const deploiement = heure('2026-10-26T09:00:00.000Z', 2, 2);
+    expect(montees7Jours([heure('2026-10-26T08:00:00.000Z', 1), deploiement], maintenant)).toEqual({ montees: 0, heures: 0 });
+    expect(copiesDeLHeure(deploiement)).toBe(1);
+    expect(copiesDeLHeure(heure('2026-10-26T10:00:00.000Z', 3, 12))).toBe(3);
+  });
+
+  it('une heure sans mesure entre deux heures à deux copies : deux montées, pas une', () => {
+    const h = [heure('2026-10-26T09:00:00.000Z', 2, 30), heure('2026-10-26T11:00:00.000Z', 2, 30)];
+    expect(montees7Jours(h, maintenant)).toEqual({ montees: 2, heures: 1 });
   });
 });

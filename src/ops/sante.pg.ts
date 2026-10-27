@@ -21,16 +21,22 @@ export class PgSanteStore {
   }
 
   /**
-   * Quand Meta a parlé pour la dernière fois : un message reçu, un accusé. Un silence anormal (une heure sans rien
-   * en pleine journée) dit un webhook coupé chez Meta, qu'aucune autre mesure ne voit. Lu dans les événements gardés
-   * quelques jours (`webhook_events`), un par ligne, par la forme de leur clé (`src/webhooks/parse.ts`).
+   * Quand Meta a parlé pour la dernière fois : un message, un accusé. Un silence anormal (une heure sans rien en pleine
+   * journée) dit un webhook coupé chez Meta, qu'aucune autre mesure ne voit. Lu dans les événements gardés quelques
+   * jours (`webhook_events`), un par ligne, par la forme de leur clé (`src/webhooks/parse.ts`).
+   * ⚠️ Ces lignes sont écrites par le WORKER quand il traite l'événement (`received_at` à l'insertion) : une file en
+   * retard ressemble à un silence, d'où « enregistré » à l'écran, et la pastille des entrants pour départager.
+   * Une requête par préfixe, chacune arrêtée à la première ligne trouvée en remontant `webhook_events_received_idx`,
+   * plutôt qu'un `max` qui visiterait les sept jours à chaque ouverture de l'onglet.
    */
   async signauxMeta(): Promise<{ dernierMessage: string | null; dernierAccuse: string | null }> {
     const res = await this.pool.query<{ dernier_message: Date | null; dernier_accuse: Date | null }>(
-      `select max(received_at) filter (where meta_message_id like 'msg:%') as dernier_message,
-              max(received_at) filter (where meta_message_id like 'status:%') as dernier_accuse
-         from webhook_events
-        where received_at > now() - interval '7 days'`,
+      `select (select received_at from webhook_events
+                where meta_message_id like 'msg:%' and received_at > now() - interval '7 days'
+                order by received_at desc limit 1) as dernier_message,
+              (select received_at from webhook_events
+                where meta_message_id like 'status:%' and received_at > now() - interval '7 days'
+                order by received_at desc limit 1) as dernier_accuse`,
     );
     const ligne = res.rows[0];
     return {

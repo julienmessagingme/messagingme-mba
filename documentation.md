@@ -4514,20 +4514,34 @@ vides déclenchent une alerte Telegram. Le SLO vit dans [docs/SLO-2026-09-01.md]
 (par défaut, lisible au téléphone), Capacité, Clients (la table des espaces et ses fenêtres : observation, offre, quotas,
 suppression) et Réglages (grille de prix, numéros fournis, adresses d'exploitation). L'onglet vit dans l'adresse
 (`/ops?tab=capacite`). Santé et Capacité lisent leurs propres routes et disent « au prochain déploiement de l'API » sur
-un 404, parce que la console part au push et l'API plus tard.
+un 404, parce que la console part au push et l'API plus tard. Santé ne charge PAS la vue d'ensemble (`/ops/overview`,
+la lecture la plus lourde de la table des jobs) : c'est l'onglet qu'on ouvre pendant un incident ; elle se lit en
+arrivant sur un autre onglet, et Santé rend elle-même la révision affichée sous le titre.
 - `GET /ops/sante` : une pastille par brique (API, workers, base, entrants, accusés), une jauge de marge, les derniers
-  signaux de Meta (dernier message, dernier accusé reçus, sur 7 jours) et les incidents des 24 h. Le SERVEUR juge
-  (`evaluerSante`, `src/ops/sante.ts`) et rend ses seuils (`SEUILS_SANTE`) : l'écran ne fait que mettre en mots. Une
-  brique sans trafic est verte, pas inconnue. Chaque lecture est au mieux : une lecture en échec rend la brique sans
-  mesure, jamais une 500.
+  signaux de Meta et les incidents. Le SERVEUR juge (`evaluerSante`, `src/ops/sante.ts`) et rend ses seuils
+  (`SEUILS_SANTE`) : l'écran ne fait que mettre en mots.
+  - 🔴 « Pas de trafic » et « lecture impossible » ne se confondent pas : une brique sans trafic est verte, une brique
+    dont la lecture a échoué est ORANGE et marquée `indisponible`, et la jauge se dit `partielle`. Sous saturation, ce
+    sont justement ces lectures qui tombent. Jamais de 500 pour autant.
+  - Le retard des files se juge sur le dernier quart d'heure (le pire du p95 et de l'âge du plus vieux en attente).
+  - La part d'erreurs de l'API ne compte ni la sonde de vie (`/live`) ni `/ops`, et ne se juge qu'à partir de
+    `EFFECTIF_MIN_API` requêtes dans l'heure.
+  - Les signaux de Meta sont lus dans `webhook_events`, écrite par le WORKER quand il traite l'événement : l'écran dit
+    « enregistré », et une file en retard y ressemble à un silence (la pastille des entrants départage).
+  - Les compteurs d'incidents disent leur fenêtre : erreurs 5xx sur 24 h, jobs en échec gardés par pg-boss (7 jours),
+    jobs en attente dans les files d'échec.
 - `GET /ops/capacite?jours=` (1 à 30, 30 par défaut) : par heure, les copies d'API allumées (`pool_attentes`, une ligne
   par processus et par minute, la réception exclue) et les attentes du pool ; par file et par heure, le retard
-  (`mesures_files_heures`). L'écran en tire un point par jour de Paris et compte les montées à deux copies sur 7 jours
-  (`web/lib/ops-capacite.ts`).
+  (`mesures_files_heures`, les seules `FILES_DE_CAPACITE`). L'écran en tire un point par jour de Paris et compte les
+  montées à deux copies sur 7 jours (`web/lib/ops-capacite.ts`). Chaque copie écrit sous son propre nom
+  (`API_COPIE=auto`) : un déploiement fait recouvrir l'ancienne et la nouvelle une minute ou deux, donc une heure ne
+  compte « à deux copies » qu'à partir de `MINUTES_MONTEE_MIN` minutes.
 - `mesures_files_heures` (migration 0258) : le worker principal relève toutes les 15 minutes, depuis la table `job` de
   pg-boss, les jobs TERMINÉS de l'heure en cours et de la précédente (p95 d'attente, p95 et maximum de bout en bout) ;
   `on conflict` réécrit l'heure, donc une heure se complète d'une passe à l'autre. pg-boss efface ses jobs terminés
-  au bout de sept jours (son défaut, `deleteAfterSeconds`) : cette table est ce qui donne les 30 jours.
+  au bout de sept jours (son défaut, `deleteAfterSeconds`) : cette table est ce qui donne les 30 jours. Un relevé en
+  échec lève, et la carte « Tâches de fond » le compte. ⚠️ La table `job` n'a aucun index sur `completed_on` : le
+  relevé la parcourt, comme la carte de latence. Sa durée se lit dans « Tâches de fond » (`mesures-files`).
 - Les rétentions des mesures que lit l'onglet (`pool_attentes`, `http_latences`, `taches_mesures`,
   `mesures_files_heures`) sont de 30 jours ; leurs constantes font foi.
 

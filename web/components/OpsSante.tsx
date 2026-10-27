@@ -27,7 +27,10 @@ function duree(secondes: number): string {
   return `${Math.round(secondes / 3600)} h`;
 }
 
-export function OpsSante({ jeton, onPerdue }: { jeton: string; onPerdue: () => void }) {
+/** Les briques que cet écran sait mettre en mots ; une autre (ajoutée par une API plus récente) est ignorée. */
+const BRIQUES_CONNUES: ReadonlySet<string> = new Set(['api', 'workers', 'base', 'entrants', 'accuses']);
+
+export function OpsSante({ jeton, onPerdue, onRevision }: { jeton: string; onPerdue: () => void; onRevision?: (revision: string) => void }) {
   const t = useT();
   const { locale } = useLocale();
   const [sante, setSante] = useState<SanteOps | null>(null);
@@ -39,8 +42,10 @@ export function OpsSante({ jeton, onPerdue }: { jeton: string; onPerdue: () => v
       .then((s) => {
         if (!vivant) return;
         // Une API d'une autre version peut rendre une autre forme : l'onglet le dit au lieu de faire tomber la page.
-        if (Array.isArray(s?.briques) && s.jauge && s.seuils && s.meta && s.incidents) setSante(s);
-        else setErreur(t('Santé illisible pour l’instant.', 'Health unavailable right now.'));
+        if (Array.isArray(s?.briques) && s.jauge && s.seuils && s.meta && s.incidents) {
+          setSante(s);
+          if (typeof s.revision === 'string') onRevision?.(s.revision);
+        } else setErreur(t('Santé illisible pour l’instant.', 'Health unavailable right now.'));
       })
       .catch((e: unknown) => {
         if (!vivant) return;
@@ -51,7 +56,7 @@ export function OpsSante({ jeton, onPerdue }: { jeton: string; onPerdue: () => v
           : t('Santé illisible pour l’instant.', 'Health unavailable right now.'));
       });
     return () => { vivant = false; };
-  }, [jeton, onPerdue, t]);
+  }, [jeton, onPerdue, onRevision, t]);
 
   if (erreur) return <p className="rounded-carte border border-ink-200 bg-white p-5 text-sm text-ink-500" data-testid="ops-sante-erreur">{erreur}</p>;
   if (!sante) return <Squelette forme="carte" />;
@@ -62,19 +67,21 @@ export function OpsSante({ jeton, onPerdue }: { jeton: string; onPerdue: () => v
   const marge = sante.jauge.margePourcent;
   const teinteJauge = marge <= 0 ? TEINTE.rouge : marge < 40 ? TEINTE.orange : TEINTE.vert;
 
+  const illisible = t('lecture impossible : la base ou l’API est peut-être saturée', 'reading failed: the database or the API may be saturated');
+
   function libelle(b: BriqueSanteOps): { titre: string; raison: string } {
     const m = b.mesure;
     switch (b.cle) {
       case 'api':
-        return { titre: 'API', raison: m === null ? t('aucune requête dans l’heure', 'no request this hour') : t(`${fmtNum(Math.round(m * 10) / 10, locale)} % d’erreurs 5xx dans l’heure (rouge à ${s.erreurs.rouge} %)`, `${fmtNum(Math.round(m * 10) / 10, locale)}% 5xx errors this hour (red at ${s.erreurs.rouge}%)`) };
+        return { titre: 'API', raison: b.indisponible ? illisible : m === null ? t('moins de 20 requêtes dans l’heure : rien à juger', 'fewer than 20 requests this hour: nothing to judge') : t(`${fmtNum(Math.round(m * 10) / 10, locale)} % d’erreurs 5xx dans l’heure (rouge à ${s.erreurs.rouge} %)`, `${fmtNum(Math.round(m * 10) / 10, locale)}% 5xx errors this hour (red at ${s.erreurs.rouge}%)`) };
       case 'workers':
-        return { titre: t('Workers', 'Workers'), raison: m === null ? t('aucun worker n’a jamais battu', 'no worker has ever beaten') : t(`dernier battement du ${b.detail ?? ''} il y a ${duree(m)}`, `last beat from ${b.detail ?? ''} ${duree(m)} ago`) };
+        return { titre: t('Workers', 'Workers'), raison: b.indisponible ? illisible : m === null ? t('aucun worker n’a jamais battu', 'no worker has ever beaten') : t(`dernier battement du ${b.detail ?? ''} il y a ${duree(m)}`, `last beat from ${b.detail ?? ''} ${duree(m)} ago`) };
       case 'base':
-        return { titre: t('Base de données', 'Database'), raison: m === null ? t('connexions illisibles', 'connections unreadable') : t(`${Math.round(m)} % des connexions (${cx?.utilisees ?? '?'} sur ${cx?.max ?? '?'}, rouge à ${s.connexions.rouge} %)`, `${Math.round(m)}% of connections (${cx?.utilisees ?? '?'} of ${cx?.max ?? '?'}, red at ${s.connexions.rouge}%)`) };
+        return { titre: t('Base de données', 'Database'), raison: b.indisponible ? illisible : m === null ? t('connexions illisibles', 'connections unreadable') : t(`${Math.round(m)} % des connexions (${cx?.utilisees ?? '?'} sur ${cx?.max ?? '?'}, rouge à ${s.connexions.rouge} %)`, `${Math.round(m)}% of connections (${cx?.utilisees ?? '?'} of ${cx?.max ?? '?'}, red at ${s.connexions.rouge}%)`) };
       case 'entrants':
-        return { titre: t('Messages entrants', 'Inbound messages'), raison: m === null ? t('aucun dans l’heure', 'none this hour') : t(`retard ${duree(m)} (rouge à ${duree(s.entrants.rouge)})`, `delay ${duree(m)} (red at ${duree(s.entrants.rouge)})`) };
+        return { titre: t('Messages entrants', 'Inbound messages'), raison: b.indisponible ? illisible : m === null ? t('aucun en attente ni traité récemment', 'none waiting or recently handled') : t(`retard ${duree(m)} (rouge à ${duree(s.entrants.rouge)})`, `delay ${duree(m)} (red at ${duree(s.entrants.rouge)})`) };
       case 'accuses':
-        return { titre: t('Accusés de Meta', 'Meta receipts'), raison: m === null ? t('aucun dans l’heure', 'none this hour') : t(`retard ${duree(m)} (rouge à ${duree(s.accuses.rouge)})`, `delay ${duree(m)} (red at ${duree(s.accuses.rouge)})`) };
+        return { titre: t('Accusés de Meta', 'Meta receipts'), raison: b.indisponible ? illisible : m === null ? t('aucun en attente ni traité récemment', 'none waiting or recently handled') : t(`retard ${duree(m)} (rouge à ${duree(s.accuses.rouge)})`, `delay ${duree(m)} (red at ${duree(s.accuses.rouge)})`) };
     }
   }
 
@@ -94,10 +101,15 @@ export function OpsSante({ jeton, onPerdue }: { jeton: string; onPerdue: () => v
           <div className={`h-full rounded-full ${teinteJauge.pastille}`} style={{ width: `${Math.max(2, marge)}%` }} />
         </div>
         <p className="mt-2 text-xs text-ink-500">{t(`Signal le plus tendu : ${nomSignal}.`, `Tightest signal: ${nomSignal}.`)}</p>
+        {sante.jauge.partielle && (
+          <p className="mt-1 text-xs text-alerte-700" data-testid="ops-jauge-partielle">
+            {t('Marge partielle : une lecture a échoué, elle ne compte que les autres signaux.', 'Partial headroom: a reading failed, only the other signals count.')}
+          </p>
+        )}
       </section>
 
       <section className="grid gap-2 sm:grid-cols-2" data-testid="ops-briques">
-        {sante.briques.map((b) => {
+        {sante.briques.filter((b) => BRIQUES_CONNUES.has(b.cle) && b.etat in TEINTE).map((b) => {
           const { titre, raison } = libelle(b);
           const teinte = TEINTE[b.etat];
           return (
@@ -114,22 +126,25 @@ export function OpsSante({ jeton, onPerdue }: { jeton: string; onPerdue: () => v
 
       <section className="rounded-carte border border-ink-200 bg-white p-5" data-testid="ops-meta">
         <h2 className="text-sm font-semibold text-ink-900">{t('Derniers signaux de Meta', 'Latest signals from Meta')}</h2>
+        <p className="mt-1 text-xs text-ink-500">
+          {t('Enregistrés quand le worker les traite : si les entrants sont en retard, ces heures le sont aussi.', 'Recorded when the worker handles them: if inbound is delayed, these times are too.')}
+        </p>
         <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-          <dt className="text-ink-500">{t('Dernier message reçu', 'Last message received')}</dt>
+          <dt className="text-ink-500">{t('Dernier message enregistré', 'Last message recorded')}</dt>
           <dd className="text-ink-900">{quand(sante.meta.dernierMessage)}</dd>
-          <dt className="text-ink-500">{t('Dernier accusé', 'Last receipt')}</dt>
+          <dt className="text-ink-500">{t('Dernier accusé enregistré', 'Last receipt recorded')}</dt>
           <dd className="text-ink-900">{quand(sante.meta.dernierAccuse)}</dd>
         </dl>
       </section>
 
       <section className="rounded-carte border border-ink-200 bg-white p-5" data-testid="ops-incidents">
-        <h2 className="text-sm font-semibold text-ink-900">{t('Incidents des 24 h', 'Last 24 h incidents')}</h2>
+        <h2 className="text-sm font-semibold text-ink-900">{t('Incidents', 'Incidents')}</h2>
         <ul className="mt-2 space-y-1 text-sm text-ink-700">
-          <li>{t(`Erreurs 5xx : ${inc.erreurs5xx}`, `5xx errors: ${inc.erreurs5xx}`)}</li>
-          <li>{t(`Tâches en échec : ${inc.tachesEnEchec}`, `Failed tasks: ${inc.tachesEnEchec}`)}</li>
-          <li>{t(`File d’échec : ${inc.fileEchec}`, `Dead letter queue: ${inc.fileEchec}`)}</li>
+          <li>{t(`Erreurs 5xx de l’API (24 h) : ${inc.erreurs5xx}`, `API 5xx errors (24 h): ${inc.erreurs5xx}`)}</li>
+          <li>{t(`Jobs en échec gardés par pg-boss (7 jours) : ${inc.tachesEnEchec}`, `Failed jobs kept by pg-boss (7 days): ${inc.tachesEnEchec}`)}</li>
+          <li>{t(`En attente dans les files d’échec (à rejouer) : ${inc.fileEchec}`, `Waiting in dead letter queues (to replay): ${inc.fileEchec}`)}</li>
           {inc.demarrages.length === 0
-            ? <li>{t('Aucun démarrage de worker', 'No worker start')}</li>
+            ? <li>{t('Aucun démarrage de worker (24 h)', 'No worker start (24 h)')}</li>
             : inc.demarrages.map((d) => (
               <li key={d.role}>{t(`Worker ${d.role} démarré le ${quand(d.demarreLe)} (déploiement ou redémarrage)`, `Worker ${d.role} started ${quand(d.demarreLe)} (deployment or restart)`)}</li>
             ))}

@@ -303,12 +303,12 @@ export async function demarrerWorker(): Promise<void> {
 
   // La latence des files heure par heure, pour les trente jours de l'onglet Capacité de `/ops` (refonte, lot 1) :
   // pg-boss efface ses tâches terminées bien avant. Chaque passage recalcule l'heure en cours et la précédente.
-  taches.programmer('mesures-files', 15 * 60_000, async () => {
-    await mesuresFilesStore.relever(new Date(Date.now() - 60 * 60_000)).catch((err: unknown) => {
-      // eslint-disable-next-line no-console
-      console.error('mesures-files: relevé impossible:', messageDe(err));
-    });
-  }, { immediat: true });
+  // Un relevé en échec LÈVE : le registre le compte, et la carte « Tâches de fond » le montre.
+  taches.programmer('mesures-files', 15 * 60_000, () => mesuresFilesStore.relever(new Date(Date.now() - 60 * 60_000)), {
+    immediat: true,
+    // eslint-disable-next-line no-console
+    enEchec: (err) => console.error('mesures-files: relevé impossible:', messageDe(err)),
+  });
 
   // File webhook : le PgRecipientStore applique les statuts de livraison, le PgInboxStore enregistre les
   // entrants en conversations ; le report Flow -> champs du contact est isolé dans handleWebhookJob (il ne

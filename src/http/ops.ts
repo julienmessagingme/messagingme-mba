@@ -275,28 +275,36 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
    * sa brique sans valeur, jamais l'écran vide. Les seuils partent avec la réponse : l'écran n'en tient aucun.
    */
   app.get('/ops/sante', opts, async (_req, reply) => {
+    // Une lecture en échec rend `null`, jamais une liste vide : sous saturation, « illisible » n'est pas « aucun trafic ».
+    const auMieux = <T>(lecture: Promise<T>): Promise<T | null> => lecture.catch(() => null);
     const [workers, latencesFiles, chargeFiles, latencesHeure, latences24h, connexions, meta] = await Promise.all([
-      deps.heartbeat.lister().catch(() => []),
-      deps.exploitation.getQueueLatence(1).catch(() => []),
-      deps.exploitation.getQueueLoad().catch(() => []),
-      deps.latencesHttp.lire(1).catch(() => []),
+      auMieux(deps.heartbeat.lister()),
+      // Le dernier quart d'heure : un pic résolu ne garde pas la pastille rouge une heure.
+      auMieux(deps.exploitation.getQueueLatence(0.25)),
+      auMieux(deps.exploitation.getQueueLoad()),
+      auMieux(deps.latencesHttp.lire(1)),
       deps.latencesHttp.lire(24).catch(() => []),
-      deps.sante.connexionsBase().catch(() => null),
+      auMieux(deps.sante.connexionsBase()),
       deps.sante.signauxMeta().catch(() => ({ dernierMessage: null, dernierAccuse: null })),
     ]);
     const bilan = evaluerSante({ workers, latencesFiles, chargeFiles, latencesHttp: latencesHeure, connexions });
     const ilYa24h = Date.now() - 24 * 3600 * 1000;
-    const estDlq = (q: string): boolean => chargeFiles.some((c) => dlqName(c.queue) === q);
+    const charge = chargeFiles ?? [];
+    const estDlq = (q: string): boolean => charge.some((c) => dlqName(c.queue) === q);
     return reply.code(200).send({
       ...bilan,
+      // L'onglet Santé ne charge pas la vue d'ensemble : il lit la révision ici.
+      revision: process.env.REVISION || 'inconnue',
       connexions,
       meta,
       incidents: {
         erreurs5xx: latences24h.filter((l) => l.code >= 500).reduce((s, l) => s + l.requetes, 0),
-        tachesEnEchec: chargeFiles.filter((c) => !estDlq(c.queue)).reduce((s, c) => s + c.failed, 0),
-        fileEchec: chargeFiles.filter((c) => estDlq(c.queue)).reduce((s, c) => s + c.backlog, 0),
+        // Les jobs en échec que pg-boss garde encore (sept jours, `deleteAfterSeconds`), pas ceux des 24 h ; la copie
+        // d'un job mort dans sa file d'échec y compte aussi. Les clés gardent leur nom pour la console déjà publiée.
+        tachesEnEchec: charge.filter((c) => !estDlq(c.queue)).reduce((s, c) => s + c.failed, 0),
+        fileEchec: charge.filter((c) => estDlq(c.queue)).reduce((s, c) => s + c.backlog, 0),
         // Un démarrage récent : un déploiement ou un redémarrage, que l'écran ne sait pas distinguer.
-        demarrages: workers
+        demarrages: (workers ?? [])
           .filter((w) => w.bootedAt !== null && Date.parse(w.bootedAt) > ilYa24h)
           .map((w) => ({ role: w.role, demarreLe: w.bootedAt })),
       },

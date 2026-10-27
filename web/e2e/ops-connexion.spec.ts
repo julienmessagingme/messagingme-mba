@@ -59,7 +59,7 @@ test.describe('Ops : se connecter', () => {
     // La session d'exploitation n'est PAS une session de la console : elle n'y est jamais posée.
     expect(await stockage(page, 'mba.session')).toBeNull();
     // Et la vue se lit avec elle, en `Authorization`.
-    expect(appels.find((a) => a.chemin === '/ops/overview')?.autorisation).toBe('Bearer session-ops-e2e');
+    expect(appels.find((a) => a.chemin === '/ops/sante')?.autorisation).toBe('Bearer session-ops-e2e');
   });
 
   test('🔴 une adresse hors de la liste : le refus du serveur s’affiche, et aucune étape ne s’ouvre', async ({ page }) => {
@@ -89,7 +89,7 @@ test.describe('Ops : se connecter', () => {
 
   test('🔴 une session refusée (401) ramène au formulaire, et le dit', async ({ page }) => {
     await page.addInitScript(() => window.localStorage.setItem('mba.sessionOps', JSON.stringify({ token: 'session-perimee', email: 'exploitant@e2e.test' })));
-    await monter(page, (chemin) => (chemin === '/ops/overview' ? { status: 401, body: { error: 'ops: non autorisé' } } : undefined));
+    await monter(page, (chemin) => (chemin === '/ops/overview' || chemin === '/ops/sante' ? { status: 401, body: { error: 'ops: non autorisé' } } : undefined));
     await page.goto('/ops');
     await expect(page.getByTestId('ops-connexion')).toBeVisible();
     await expect(page.getByTestId('ops-connexion-erreur')).toHaveText(/reconnectez-vous|sign in again/);

@@ -409,13 +409,18 @@ export type CleBriqueOps = 'api' | 'workers' | 'base' | 'entrants' | 'accuses';
 export interface BriqueSanteOps {
   cle: CleBriqueOps;
   etat: 'vert' | 'orange' | 'rouge';
-  /** Dans l'unité du seuil de la brique ; `null` = rien à mesurer (aucun trafic). */
+  /** Dans l'unité du seuil de la brique ; `null` = rien à mesurer (aucun trafic, ou trop peu pour l'API). */
   mesure: number | null;
   detail?: string;
+  /** La lecture a échoué : la brique est orange, jamais verte. Absent d'une API d'avant ce champ. */
+  indisponible?: true;
 }
 export interface SanteOps {
   briques: BriqueSanteOps[];
-  jauge: { margePourcent: number; signal: 'base' | 'entrants' | 'accuses' };
+  /** `partielle` : une lecture de capacité a échoué (absent d'une API d'avant ce champ). */
+  jauge: { margePourcent: number; signal: 'base' | 'entrants' | 'accuses'; partielle?: boolean };
+  /** Absente d'une API d'avant ce champ. */
+  revision?: string;
   connexions: { utilisees: number; max: number } | null;
   meta: { dernierMessage: string | null; dernierAccuse: string | null };
   incidents: { erreurs5xx: number; tachesEnEchec: number; fileEchec: number; demarrages: Array<{ role: string; demarreLe: string }> };

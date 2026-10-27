@@ -316,7 +316,8 @@ export class PgOpsStore {
    * attente énorme et normale.
    */
   async getQueueLatence(fenetreHeures = 24): Promise<QueueLatenceRow[]> {
-    const heures = Math.min(24 * 30, Math.max(1, Math.round(fenetreHeures)));
+    // En minutes : l'onglet Santé juge le dernier quart d'heure (0,25), la carte de latence la journée.
+    const minutes = Math.min(30 * 24 * 60, Math.max(15, Math.round(fenetreHeures * 60)));
     try {
       const res = await this.pool.query<{
         name: string; n: string; p50: string | null; p95: string | null; p95_total: string | null; max_total: string | null;
@@ -333,9 +334,9 @@ export class PgOpsStore {
           where name = any($1)
             and state = 'completed'
             and started_on is not null and completed_on is not null
-            and completed_on > now() - make_interval(hours => $2::int)
+            and completed_on > now() - make_interval(mins => $2::int)
           group by name`,
-        [ALL_QUEUES, heures],
+        [ALL_QUEUES, minutes],
       );
       const nombre = (v: string | null): number => (v === null ? 0 : Math.max(0, Math.round(Number(v) * 1000) / 1000));
       return res.rows.map((r) => ({

@@ -34,16 +34,21 @@ const CAPACITE = {
   seuils: SEUILS,
 };
 
-async function monter(page: Page, routesNeuves = true): Promise<void> {
+async function monter(page: Page, routesNeuves = true, sante: unknown = SANTE): Promise<{ vue: number }> {
+  const appels = { vue: 0 };
   await page.addInitScript((s) => window.localStorage.setItem('mba.sessionOps', JSON.stringify(s)), SESSION_OPS);
   await page.route('**/api/backend/**', async (route) => {
     const chemin = route.request().url().split('?')[0]!;
     const json = (b: unknown, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(b) });
-    if (chemin.endsWith('/ops/overview')) return json({ tenants: [], daily: [], queues: [], workers: [] });
-    if (chemin.endsWith('/ops/sante')) return routesNeuves ? json(SANTE) : json({ error: 'Not Found' }, 404);
+    if (chemin.endsWith('/ops/overview')) {
+      appels.vue += 1;
+      return json({ tenants: [], daily: [], queues: [], workers: [] });
+    }
+    if (chemin.endsWith('/ops/sante')) return routesNeuves ? json(sante) : json({ error: 'Not Found' }, 404);
     if (chemin.endsWith('/ops/capacite')) return routesNeuves ? json(CAPACITE) : json({ error: 'Not Found' }, 404);
     return json({});
   });
+  return appels;
 }
 
 test.describe('Ops : Santé et Capacité', () => {
@@ -59,6 +64,35 @@ test.describe('Ops : Santé et Capacité', () => {
     await expect(page.getByTestId('ops-incidents')).toContainText('principal');
     // Les autres onglets ne sont pas rendus : la table des clients attend le sien.
     await expect(page.getByTestId('ops-capacite')).toHaveCount(0);
+  });
+
+  test('🔴 une lecture en échec : la brique est orange et le dit, jamais verte ; une brique inconnue est ignorée', async ({ page }) => {
+    await monter(page, true, {
+      ...SANTE,
+      briques: [
+        ...SANTE.briques.filter((b) => b.cle !== 'accuses'),
+        { cle: 'accuses', etat: 'orange', mesure: null, indisponible: true },
+        // Une brique qu'une API plus récente ajouterait : la console déjà publiée ne tombe pas.
+        { cle: 'porte-hubspot', etat: 'vert', mesure: null },
+      ],
+      jauge: { ...SANTE.jauge, partielle: true },
+      revision: 'def5678',
+    });
+    await page.goto('/ops');
+    await expect(page.getByTestId('ops-brique-accuses')).toHaveAttribute('data-etat', 'orange');
+    await expect(page.getByTestId('ops-brique-accuses')).toContainText(/lecture impossible|reading failed/);
+    await expect(page.getByTestId('ops-briques').locator('[data-etat]')).toHaveCount(5);
+    await expect(page.getByTestId('ops-jauge-partielle')).toBeVisible();
+    await expect(page.getByTestId('ops-revision')).toContainText('def5678');
+  });
+
+  test('🔴 Santé ne charge pas la vue d’ensemble ; un autre onglet, si', async ({ page }) => {
+    const appels = await monter(page);
+    await page.goto('/ops');
+    await expect(page.getByTestId('ops-brique-api')).toBeVisible();
+    expect(appels.vue).toBe(0);
+    await page.getByTestId('mba-tab-capacite').click();
+    await expect.poll(() => appels.vue).toBe(1);
   });
 
   test('🔴 l’onglet vit dans l’adresse : un clic la réécrit, et elle rouvre le même onglet', async ({ page }) => {

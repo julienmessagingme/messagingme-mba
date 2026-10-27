@@ -24,7 +24,7 @@ describe.skipIf(!url)('onglets Santé et Capacité de /ops (Postgres)', () => {
   afterAll(async () => {
     await pool.query(`delete from pool_attentes where process like 'api-itest%' or process like 'worker-itest%'`).catch(() => {});
     await pool.query(`delete from webhook_events where meta_message_id like '%itest-ops%'`).catch(() => {});
-    await pool.query(`delete from mesures_files_heures where file = 'webhook'`).catch(() => {});
+    await pool.query(`delete from mesures_files_heures where file = 'webhook' or file like 'itest-mf-%'`).catch(() => {});
     await pool.end().catch(() => {});
   });
 
@@ -72,17 +72,45 @@ describe.skipIf(!url)('onglets Santé et Capacité de /ops (Postgres)', () => {
       await queue.enqueue('webhook', { itest: true });
       await termine;
       const store = new PgMesuresFilesStore(pool, schema);
+      // Une heure déjà figée, trois heures plus tôt : le relevé de l'heure en cours et de la précédente n'y touche pas.
+      const figee = await pool.query<{ heure: Date }>(
+        `insert into mesures_files_heures (file, heure, echantillons, attente_p95_ms, bout_en_bout_p95_ms, bout_en_bout_max_ms)
+         values ('webhook', date_trunc('hour', now()) - interval '3 hours', 42, 1, 2, 3) returning heure`,
+      );
+      const heureFigee = figee.rows[0]!.heure.toISOString();
       // pg-boss marque la tâche terminée juste après le gestionnaire : on relève jusqu'à la voir.
       for (let i = 0; i < 20 && (await store.relever(new Date(Date.now() - 3600 * 1000))) === 0; i++) await new Promise((r) => setTimeout(r, 250));
       await store.relever(new Date(Date.now() - 3600 * 1000));
-      const lignes = (await store.lire(1)).filter((l) => l.file === 'webhook');
+      const lignes = (await store.lire(1)).filter((l) => l.file === 'webhook' && l.heure !== heureFigee);
       expect(lignes).toHaveLength(1);
       expect(lignes[0]!.echantillons).toBe(1);
       expect(lignes[0]!.boutEnBoutP95Secondes).toBeGreaterThanOrEqual(0);
       expect(lignes[0]!.boutEnBoutP95Secondes).toBeLessThan(60);
+      expect((await store.lire(1)).find((l) => l.heure === heureFigee)).toMatchObject({ file: 'webhook', echantillons: 42 });
     } finally {
       await queue.stop();
       await pool.query(`drop schema if exists ${schema} cascade`).catch(() => {});
     }
+  });
+
+  it('🔴 la lecture rend les files demandées, trente jours au plus ; la purge n’efface que ce qui a vieilli', async () => {
+    const store = new PgMesuresFilesStore(pool, 'pgboss');
+    await pool.query(
+      `insert into mesures_files_heures (file, heure, echantillons, attente_p95_ms, bout_en_bout_p95_ms, bout_en_bout_max_ms) values
+         ('itest-mf-a', date_trunc('hour', now()) - interval '2 hours', 3, 10, 2500, 30),
+         ('itest-mf-b', date_trunc('hour', now()) - interval '2 hours', 3, 10, 20, 30),
+         ('itest-mf-a', date_trunc('hour', now()) - interval '29 days', 1, 1, 1, 1),
+         ('itest-mf-a', date_trunc('hour', now()) - interval '40 days', 1, 1, 1, 1)`,
+    );
+    // Par défaut, seulement les files que l'onglet trace.
+    expect((await store.lire(30)).some((l) => l.file.startsWith('itest-mf'))).toBe(false);
+    const a = await store.lire(30, ['itest-mf-a']);
+    expect(a.map((l) => l.boutEnBoutP95Secondes)).toEqual([0.001, 2.5]);
+    // Au-delà de trente jours, la lecture s'arrête à trente ; un jour, c'est un jour.
+    expect(await store.lire(999, ['itest-mf-a'])).toHaveLength(2);
+    expect(await store.lire(1, ['itest-mf-a'])).toHaveLength(1);
+    await store.purgeOlderThan(30);
+    const reste = await pool.query<{ n: number }>(`select count(*)::int as n from mesures_files_heures where file like 'itest-mf-%'`);
+    expect(reste.rows[0]!.n).toBe(3);
   });
 });
