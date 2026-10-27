@@ -464,7 +464,8 @@ réel se mesure à la bascule (création de la base cible, recréation des conte
 
 La base managée porte ses propres sauvegardes. 🔴 **Les AUTOMATIQUES sont des INSTANTANÉS du volume** (disque SBS),
 nommés `<instance>_autobackup` : un par jour à l'heure de création de l'instance (12 h 40 UTC pour `mm-prod-db`, 20 h UTC
-pour `mm-hubspot-db`, `backup_schedule`), gardés 7 jours, dans la région. Ils se lisent par `scaleway-cli rdb snapshot
+pour `mm-hubspot-db`, `backup_schedule`), gardés 3 jours depuis le 2026-10-27 (7 avant, décision de Julien pour le
+coût), dans la région. Ils se lisent par `scaleway-cli rdb snapshot
 list instance-id=<base> region=nl-ams` : **`rdb backup list` ne les montre PAS** (lue seule, elle a fait croire le
 2026-10-26 que les deux bases n'avaient aucune sauvegarde). Un instantané se restaure en une NOUVELLE instance
 (`rdb snapshot restore`), chemin NON ÉPROUVÉ. Les sauvegardes LOGIQUES sont manuelles (`scaleway-cli rdb backup create
@@ -526,7 +527,7 @@ matin est supprimé. Le réseau privé et la base sont RÉGIONAUX : une ressourc
 | Espace de conteneurs | `messagingme` | `nl-ams` | le conteneur de l'API `mba-api` y est créé : privé, rattaché à `mm-prive` ; sa TAILLE se déclare dans `ops/scaleway/conteneur-api.json` (de 1 à 3 copies, décision de Julien du 2026-10-15 ; 1 120 mvCPU et 2 Go ; sonde HTTP sur `/live` ; pools et plafond), que le workflow applique à chaque déploiement en complétant les variables du script sans les remplacer. ⚠️ Le minimum à 1 garde aussi le conteneur d'ESSAI allumé (environ 40 € par mois) dès le prochain déploiement |
 | Passerelle | `mm-passerelle` (VPC-GW-S) | `nl-ams-2` | bastion SSH sur le port 61000, NAT et route par défaut vers `mm-prive` |
 | Base JETABLE | `mm-banc` (PostgreSQL 17, DB-DEV-M) | `nl-ams` | adresse privée seule, disque chiffré, sauvegardes en région ; mot de passe dans Secret Manager `mm-banc-db-admin` ; à supprimer après les lots 3 et 4 |
-| Base de PRODUCTION | `mm-prod-db` (PostgreSQL 17, DB-PRO2-XXS, créée le 2026-10-15) | `nl-ams` | adresse privée seule (172.16.0.8), disque bloc chiffré de 20 Go, sauvegardes quotidiennes en région gardées 7 jours ; 200 connexions dont 3 réservées ; mot de passe de `mba_admin` dans Secret Manager `mm-prod-db-admin` ; VIDE jusqu'au jour J, les données arrivent dans `rdb` |
+| Base de PRODUCTION | `mm-prod-db` (PostgreSQL 17, DB-PRO2-XXS, créée le 2026-10-15) | `nl-ams` | adresse privée seule (172.16.0.8), disque bloc chiffré de 20 Go, sauvegardes quotidiennes en région gardées 3 jours (7 jusqu'au 2026-10-27) ; 200 connexions dont 3 réservées ; mot de passe de `mba_admin` dans Secret Manager `mm-prod-db-admin` ; VIDE jusqu'au jour J, les données arrivent dans `rdb` |
 | Machine des workers | `mm-workers` (PRO2-XXS depuis le 2026-10-15, Ubuntu 24.04) | `nl-ams-2` | sans adresse publique, disque de 20 Go ; Docker et Compose posés au premier démarrage (cloud-init) ; passée de PLAY2-NANO en PRO2-XXS machine arrêtée, 52 s de coupure, conteneurs repartis seuls (`unless-stopped`) |
 
 Les identifiants se lisent par `scaleway-cli <produit> ... list` dans la région ou la zone ci-dessus, et les adresses

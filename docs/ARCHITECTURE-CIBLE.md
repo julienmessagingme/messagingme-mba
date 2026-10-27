@@ -1073,8 +1073,8 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   SHA-256, calculés sans affichage), et un secret chiffré se lit : un envoi Meta part.
 - La première sauvegarde automatique de Scaleway de la base de production est vue, et sa rétention relevée. Alors
   seulement, la tâche planifiée de sauvegarde du VPS (`scripts/sauvegarde-base.sh`, posée par Julien le 2026-10-14)
-  se retire. ✅ **Relevé le 2026-10-26** : ce sont des instantanés du volume, un par jour à 12 h 40 UTC, gardés 7 jours,
-  dans la région (`rdb snapshot list`, invisibles de `rdb backup list`) ; le dernier précède la bascule, le premier qui
+  se retire. ✅ **Relevé le 2026-10-26** : ce sont des instantanés du volume, un par jour à 12 h 40 UTC, gardés 7 jours
+  (3 depuis le 2026-10-27, décision de Julien), dans la région (`rdb snapshot list`, invisibles de `rdb backup list`) ; le dernier précède la bascule, le premier qui
   porte la production est celui du 2026-10-27. Une sauvegarde logique manuelle couvre la soirée (expire le 2 novembre).
   Reste à éprouver la restauration d'un instantané en une instance jetable (`rdb snapshot restore`).
 
