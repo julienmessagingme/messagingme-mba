@@ -4,6 +4,41 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-27 : les bancs de la nouvelle infrastructure (DB-DEV-M, machine DEV1-M, pool du principal à 20)
+
+Demandés par Julien après la descente de gamme du jour. Une base et une machine JETABLES à Amsterdam (accord de Julien),
+supprimées le soir même ; `scripts/banc-api.sh` (épreuves `paliers`, `accuses`, `panne`) sur `05553e03` et le banc des
+trente espaces sur `8f86800b`. Journaux : `docs/prive/bancs/2026-10-27/`.
+
+- 🔴 **La prise de tâches de pg-boss est en O(file)** : sans index qui suive son `order by priority desc, created_on, id`,
+  chaque prise relit et trie toute la file (`Seq Scan` sur `pgboss.job_common` puis `Sort`, 330 ms pour 28 000 accusés en
+  attente, `EXPLAIN ANALYZE` sur la base jetable). Plus la file grossit, plus chaque prise coûte : une spirale, que la
+  DB-DEV-M déclenche bien plus tôt que la DB-PRO2-XXS. À 24 numéros à plein débit, p95 de 879 s. Un index partiel
+  `(name, priority desc, created_on, id) where state < 'active' and not blocked`, posé en plein palier, a fait passer
+  le vidage de 12-14 à 37-40 accusés/s. Ce n'est PAS l'index 0242 du 2026-10-17 (`release_mba_apres_message`), en
+  production depuis. L'index de pg-boss n'est PAS en production : décision de Julien attendue.
+- **La limite suivante est le disque** (`IO:WalSync`, `LWLock:WALWrite` : chaque accusé fait 6 à 7 petites écritures
+  confirmées). Accusés, objectif 120 s au p95, 80 messages/min par numéro, 2 entrants/s à côté :
+  DB-DEV-M `sbs_5k` avec l'index, 12 numéros (87 s), 16 cassent (200 s) ; DB-DEV-M `sbs_15k` avec l'index, 20 tiennent
+  (61 s), 24 à la limite (119 s) ; DB-DEV-L `sbs_15k` avec l'index, 40 tiennent (28,5 s, le rythme de la file), limite
+  non atteinte. Les entrants sont restés entre 0,1 et 0,8 s dans tous les cas.
+- **La panne du worker** (DB-DEV-M `sbs_15k`, index, 12 numéros, worker arrêté 10 minutes) : 25 569 accusés en attente
+  au pic, résorbés en 666 s pendant que d'autres arrivaient (environ 78 accusés/s) ; les entrants retardés de la seule
+  durée de la panne.
+- **L'API** (une copie, machine du banc à cœurs dédiés PRO2-S, vraie base) : DB-DEV-M, copie de 1,12 vCPU, 200 appels/s
+  (p95 140 ms), 300 cassent (6,3 s) ; copie de 0,56 vCPU, au moins 150/s (269 ms), proche de son plafond de processeur ;
+  DB-DEV-L, au moins 500/s (157 ms), le niveau de la DB-PRO2-XXS du 2026-10-15. La réception de Meta reste sous 50 ms
+  grâce à son pool réservé. Trafic réel : environ 7 appels/s au pic.
+- **Les entrants, trente espaces** (DB-DEV-M `sbs_15k`, index) : écrans de l'Inbox à 18 ms au p95, messages écrits à 77 ms
+  au p95, aucune erreur ; rafale de 120 messages d'un coup, tous écrits sous 1,9 s (61,7 s le 2026-10-03) ; rafale de
+  300, sous 5,3 s.
+- **Ce qui n'a rien mesuré, et pourquoi** : la première série de paliers de l'API tournait sur une machine du banc à
+  cœurs partagés (DEV1-M, 13 à 18 % de vol de processeur) qui portait aussi le générateur ; une seconde, sans
+  `BANC_BASE_FICHIER`, est retombée sur le Postgres local du banc (sa première ligne dit « base à 10 ms » au lieu de
+  « base existante »). Le banc des trente espaces semait des espaces en Free, à qui la console est fermée depuis les offres
+  v2 (402 sur l'Inbox) : il faut les passer en Entreprise après le semis (`offre_entreprise`), et sa rafale est
+  plafonnée à 300 (un message par contact).
+
 ## 2026-10-27 : le coût de Scaleway, la machine et la base redescendues, le worker principal élargi
 
 Julien a demandé le coût réel de Scaleway après la bascule. Estimé sur les ressources en service et le catalogue public
