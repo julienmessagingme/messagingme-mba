@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { A_TRAITER_SQL } from './store.pg';
 import { FENETRE_SERVICE_MS } from '../workflow/engine';
+import { matchWaIdPredicat } from '../crm/contact-store.pg';
 
 /**
  * LES CONVERSATIONS QUI ATTENDENT UN HUMAIN, POUR LA PAGE « MESSAGING ME » DE HUBSPOT (lot 4 de la reprise humaine, plan
@@ -10,11 +11,13 @@ import { FENETRE_SERVICE_MS } from '../workflow/engine';
  *
  * Décision A : le dossier « À traiter » de la console (`A_TRAITER_SQL`, le même texte), restreint aux fils que tient
  * l'équipe (`app_human` : ceux de l'agent de Meta ont un robot qui répond), ni archivés, sans fin de parcours en attente
- * (`release_mba_apres_message`), d'un contact ni bloqué ni STOP. STOP et bloqué se lisent sur la fiche de la conversation,
- * comme la console, et non par le numéro comme les routes d'envoi : `matchWaIdPredicat` ne passe par aucun index, le lire
- * pour chaque ligne balaierait les contacts de l'espace autant de fois. Un écart entre les deux lectures ne peut qu'afficher
- * une ligne : l'envoi relit par le numéro et refuse. `is distinct from` et non `<>` : une conversation sans fiche
- * (`contact_id` nul) attend aussi, et un prédicat NULL l'exclurait en silence.
+ * (`release_mba_apres_message`), d'un contact ni bloqué ni STOP. 🔴 STOP ET BLOQUÉ SE LISENT PAR LE NUMÉRO, comme les
+ * routes d'envoi (`contactMuet` : `estDesabonneParWaId`, `isBlockedByWaId`), sur toute fiche du numéro : une conversation
+ * sans fiche (`contact_id` nul), ou dont la fiche n'est pas celle du numéro, reste dehors si le numéro a dit STOP. Le
+ * prédicat est `matchWaIdPredicat` lui-même, dont chaque branche a son index (la branche « chiffres nus » par
+ * `contacts_tenant_waid_digits_idx`, migration 0096, mesurée à 0,20 ms sur 200 000 fiches). Le blocage se lit en plus sur la
+ * fiche de la conversation, comme la console. `is distinct from` et non `<>` : sans fiche, un prédicat NULL exclurait
+ * la conversation en silence.
  *
  * Décision B : les urgentes d'abord, puis l'attente la plus ancienne. L'attente part de l'escalade, sinon du PREMIER
  * message du client resté sans réponse (un client qui insiste ne recule pas), sinon du dernier message. Par l'index
@@ -29,7 +32,10 @@ import { FENETRE_SERVICE_MS } from '../workflow/engine';
 export interface LigneATraiter {
   conversationId: string;
   nom: string | null;
-  /** Le numéro du client : celui de sa fiche, sinon le `wa_id` quand c'en est un (un BSUID n'en est pas). */
+  /**
+   * Le numéro du client : celui de sa fiche (même quand le `wa_id` est un BSUID : la fiche a le numéro), sinon le `wa_id`
+   * quand c'en est un.
+   */
   numero: string | null;
   apercu: string | null;
   attendDepuis: string;
@@ -75,6 +81,11 @@ export class PgATraiterHubspot {
             and c.release_mba_apres_message is null
             and ct.blocked_at is null
             and ct.opt_in_status is distinct from 'opted_out'
+            and not exists (
+              select 1 from contacts x
+               where x.tenant_id = c.tenant_id and ${matchWaIdPredicat('x.', 'c.wa_id')}
+                 and (x.opt_in_status = 'opted_out' or (x.blocked_at is not null and x.deleted_at is null))
+            )
        ), datees as (
          select r.*, coalesce(r.escaladee_le, ${premierSansReponse('r.id')}, r.last_message_at) as attend_depuis
            from retenues r
@@ -96,7 +107,8 @@ export class PgATraiterHubspot {
           conversationId: r.id,
           nom: r.profile_name,
           numero: r.phone_e164 ?? (/^\d{6,15}$/.test(r.wa_id) ? `+${r.wa_id}` : null),
-          apercu: r.last_preview === null ? null : r.last_preview.slice(0, APERCU_MAX),
+          // Par caractère et non par unité UTF-16 : un emoji n'est jamais coupé en deux.
+          apercu: r.last_preview === null ? null : Array.from(r.last_preview).slice(0, APERCU_MAX).join(''),
           attendDepuis: r.attend_depuis.toISOString(),
           motif: r.escaladee ? 'escalade' : 'message',
           fenetreOuverte: fin !== null && fin.getTime() > maintenant,

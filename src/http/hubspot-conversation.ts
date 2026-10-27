@@ -115,8 +115,9 @@ export interface HubspotConversationDeps {
 export type EtatLigneHubspot = 'reliee' | 'pause' | 'coupee' | 'sans_numero';
 
 /**
- * L'état de la ligne lu sur le numéro principal de l'espace, celui que la tâche du lot 1 lit (`getHubspotGateStatus`) :
- * une pause écrit `connected = false` ET pose sa date, une coupure ne pose rien.
+ * L'état de la ligne lu sur le numéro principal de l'espace (le premier par date, `getPhoneNumber`). La tâche du lot 1 lit
+ * le numéro de la conversation (`getHubspotGateStatus`) : le même tant qu'un espace n'a qu'un numéro, ce qu'aucune
+ * contrainte n'impose. Une pause écrit `connected = false` ET pose sa date, une coupure ne pose rien.
  */
 export function etatLigneHubspot(numero: Pick<PhoneNumberRecord, 'hubspotConnected' | 'hubspotPausedAt'> | null): EtatLigneHubspot {
   if (numero === null) return 'sans_numero';

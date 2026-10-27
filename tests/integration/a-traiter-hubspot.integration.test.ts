@@ -70,7 +70,17 @@ describe.skipIf(!url)('la liste « à traiter » de la page HubSpot (Postgres)',
     await fil('finParcours', t1, '33600001411', await contact(t1, '+33600001411'), { finParcours: true });
     await fil('repondue', t1, '33600001412', await contact(t1, '+33600001412'), { sens: 'out' });
     await fil('ailleurs', t2, '33600001413', await contact(t2, '+33600001413'), { dernier: '2026-10-08T07:00:00Z' });
+    // Sans fiche reliée, mais le NUMÉRO a dit STOP, ou a été bloqué, sur une fiche : dehors (la lecture des routes d'envoi).
+    await contact(t1, '+33600001414', { stop: true });
+    await fil('stopParNumero', t1, '33600001414', null);
+    await contact(t1, '+33600001415', { bloque: true });
+    await fil('bloqueParNumero', t1, '33600001415', null);
+    // Deux attentes égales : l'identifiant départage, la liste est stable d'une lecture à l'autre.
+    await fil('egalA', t1, '33600001416', await contact(t1, '+33600001416'), { sens: 'out', escaladee: '2026-10-08T09:45:00Z' });
+    await fil('egalB', t1, '33600001417', await contact(t1, '+33600001417'), { sens: 'out', escaladee: '2026-10-08T09:45:00Z' });
   });
+
+  const egales = () => [ids.egalA!, ids.egalB!].sort();
 
   afterAll(async () => {
     for (const t of [t1, t2]) if (t) await pool.query('delete from tenants where id = $1', [t]);
@@ -79,9 +89,15 @@ describe.skipIf(!url)('la liste « à traiter » de la page HubSpot (Postgres)',
 
   it('🔴 seules les conversations de l’espace qui attendent un humain, l’urgente d’abord puis la plus ancienne attente', async () => {
     const { total, lignes } = await depot().lister(t1, 200);
-    expect(lignes.map((l) => l.conversationId)).toEqual([ids.urgente, ids.client, ids.escalade, ids.sansFiche]);
-    expect(total).toBe(4);
+    expect(lignes.map((l) => l.conversationId)).toEqual([ids.urgente, ids.client, ids.escalade, ids.sansFiche, ...egales()]);
+    expect(total).toBe(6);
     expect(lignes.map((l) => l.conversationId)).not.toContain(ids.ailleurs);
+  });
+
+  it('🔴 un numéro qui a dit STOP, ou qui est bloqué, reste dehors même sans fiche reliée à la conversation', async () => {
+    const { lignes } = await depot().lister(t1, 200);
+    expect(lignes.map((l) => l.conversationId)).not.toContain(ids.stopParNumero);
+    expect(lignes.map((l) => l.conversationId)).not.toContain(ids.bloqueParNumero);
   });
 
   it('l’attente part du premier message sans réponse, ou de l’escalade ; la fenêtre suit le dernier message du client', async () => {
@@ -100,7 +116,7 @@ describe.skipIf(!url)('la liste « à traiter » de la page HubSpot (Postgres)',
   it('la borne garde l’ordre et le total compte toutes celles qui attendent', async () => {
     const { total, lignes } = await depot().lister(t1, 2);
     expect(lignes.map((l) => l.conversationId)).toEqual([ids.urgente, ids.client]);
-    expect(total).toBe(4);
+    expect(total).toBe(6);
   });
 
   it('🔴 l’autre espace ne voit que sa conversation', async () => {

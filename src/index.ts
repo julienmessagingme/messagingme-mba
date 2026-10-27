@@ -1815,7 +1815,7 @@ async function main(): Promise<void> {
           nom: 'hubspot.reponses', max: config.HUBSPOT_REPONSES_PAR_MINUTE, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer',
         }),
         lienConversation,
-        // Lot 4 : la page « Messaging Me » de HubSpot. La ligne est le numéro principal, celui que lit la tâche du lot 1.
+        // Lot 4 : la page « Messaging Me » de HubSpot. La ligne est le numéro principal de l'espace (`etatLigneHubspot`).
         ligneHubspot: async (t: string) => etatLigneHubspot(await phoneStatusStore.getPhoneNumber(t)),
         aTraiter: new PgATraiterHubspot(pool),
       } satisfies HubspotConversationDeps,
