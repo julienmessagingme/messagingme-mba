@@ -64,6 +64,23 @@ trois relectures à froid (le plan, les routes, l'extension), aucun 🔴, tous l
   un export où la page et l'en-tête restaient ceux d'avant, vérifiée par Julien), puis la page et l'en-tête « Messaging
   Me » (build #14).
 
+## 2026-10-27 (soir) : l'option A de l'infrastructure en production (disque rapide, index de prise, petite copie d'API)
+
+Décision de Julien sur les bancs du jour (entrée suivante), plan `docs/superpowers/plans/2026-10-27-option-a-infrastructure.md`.
+Un implémenteur, une relecture : aucun rouge, quatre jaunes, deux corrigés avant le déploiement, le reste au `todo.md`.
+
+- **Le disque de `mm-prod-db` en `sbs_15k`** (`rdb instance upgrade volume-type=sbs_15k`) : 7 minutes d'opération, `/health`
+  en 503 d'environ 18:22:50 à 18:23:42, même adresse, même certificat, `max_connections` toujours 150.
+- **L'index de prise de pg-boss** (`c203901b`) : posé par le worker principal à son démarrage
+  (`job_common_prise_ordonnee`, `concurrently`), relu valide en base, et le plan de la prise des accusés passe par lui
+  (`Index Scan using job_common_prise_ordonnee`, `EXPLAIN` en lecture seule). Pas une migration : la table appartient à
+  pg-boss et n'existe pas sur une base neuve. Un index invalide encore EN CONSTRUCTION (`pg_stat_progress_create_index`)
+  n'est pas supprimé (jaune de la relecture). En production, `job_common` faisait 849 lignes et 1 Mo, aucune tâche différée.
+- **La petite copie d'API** : 560 mvCPU et 1 Go (relu chez Scaleway), seuil de montée à 35 requêtes simultanées.
+  Conséquence relevée par la relecture : la lecture des fichiers déposés vit dans le même processus et avait droit à
+  1 Go, toute la copie. Son plafond passe à 512 Mo (`src/lib/hors-boucle.ts`) : le plus gros vrai CSV en demande 440, et
+  un CSV réel de 8 Mo (la limite de l'import) passe sous 256, mesuré sur le poste (637 211 numéros en 1,5 s).
+
 ## 2026-10-27 : les bancs de la nouvelle infrastructure (DB-DEV-M, machine DEV1-M, pool du principal à 20)
 
 Demandés par Julien après la descente de gamme du jour. Une base et une machine JETABLES à Amsterdam (accord de Julien),
