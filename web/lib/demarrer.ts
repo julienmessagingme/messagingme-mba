@@ -24,6 +24,8 @@ export const COMMANDES_PLUGIN = [
 ] as const;
 export const COMMANDE_DEMARRAGE = '/messagingme:demarrer';
 export const SERVEUR_PLUGIN_MCP = 'plugin:messagingme:messagingme';
+/** Le dépôt public où le plugin se publie : la vitrine y renvoie (le centre d'aide, le bout du guide du numéro). */
+export const DEPOT_PLUGIN = 'https://github.com/julienmessagingme/messagingme-plugin';
 
 /** La variable d'environnement où ranger la clé d'API de l'application : partagée avec le serveur (`create_api_key`). */
 export { VARIABLE_CLE } from './partage/droits-api';

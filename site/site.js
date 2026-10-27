@@ -291,10 +291,12 @@
 })();
 
 // Le guide du numéro de la page Boutiques Shopify : l'arbre de questions de Julien, en tunnel (2026-10-27). Sans script,
-// les questions restent cachées et toutes les issues se lisent en liste, chacune avec la situation qu'elle sert. Avec
-// lui, la question en cours s'affiche en grand sous l'étape et sa jauge ; chaque réponse (`data-vers`) replie sa question
-// en une ligne et montre la suivante ou une issue ; « Modifier » rouvre une question et efface tout ce qui la suivait ;
-// une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa question.
+// les questions restent cachées et toutes les issues se lisent en liste, chacune avec la situation qu'elle sert et les
+// boutons de chaque offre. Avec lui, la question en cours s'affiche en grand sous l'étape et sa jauge ; chaque réponse
+// (`data-vers`) replie sa question en une ligne (sa réponse dans `data-resume`) et montre la suivante ou une issue ; la
+// réponse qui choisit l'offre (`data-offre`) ne laisse aux issues que les boutons de cette offre ; « Modifier » rouvre une
+// question et efface tout ce qui la suivait ; une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa
+// question ; « Copier » met la demande à coller dans Claude Code dans le presse-papiers.
 (function () {
   [].slice.call(document.querySelectorAll('[data-guide-numero]')).forEach(function (g) {
     var questions = g.querySelector('.bt-questions');
@@ -320,7 +322,10 @@
     };
     var effacer = function (q) {
       q.classList.remove('repondue');
-      [].slice.call(q.querySelectorAll('[data-vers], [data-aide]')).forEach(function (b) { b.removeAttribute('tabindex'); });
+      var resume = q.querySelector('[data-resume]');
+      if (resume) resume.textContent = '';
+      // La question de l'offre rouverte : plus d'offre choisie, les issues retrouvent les boutons des deux.
+      if (q.querySelector('[data-offre]')) g.removeAttribute('data-offre');
       [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
       var aide = q.querySelector('.bt-aide');
       var bouton = q.querySelector('[data-aide]');
@@ -336,7 +341,29 @@
     questions.hidden = false;
     g.setAttribute('data-pret', '');
     avancer(false);
+    // « Copier » n'a de sens qu'avec le script : sans lui, la demande se sélectionne à la main.
+    [].slice.call(g.querySelectorAll('[data-copier]')).forEach(function (b) { b.hidden = false; });
+    var selectionner = function (cible) {
+      var plage = document.createRange();
+      plage.selectNodeContents(cible);
+      var choix = window.getSelection();
+      choix.removeAllRanges();
+      choix.addRange(plage);
+    };
     g.addEventListener('click', function (e) {
+      var copier = e.target.closest && e.target.closest('[data-copier]');
+      if (copier) {
+        var demande = document.getElementById(copier.getAttribute('data-copier'));
+        if (!demande) return;
+        var copie = function () { copier.textContent = copier.getAttribute('data-copie'); };
+        // Sans presse-papiers (page non sécurisée, refus du navigateur), la demande se sélectionne : un Ctrl+C suffit.
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(demande.textContent).then(copie, function () { selectionner(demande); });
+        } else {
+          selectionner(demande);
+        }
+        return;
+      }
       // « Modifier » rouvre une réponse donnée : tout ce qui la suivait s'efface, le tunnel revient à cette question.
       var modifier = e.target.closest && e.target.closest('[data-modifier]');
       if (modifier) {
@@ -363,11 +390,14 @@
         var vers = b.getAttribute('data-vers');
         couper(q);
         [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
-        // Une réponse peut porter une note (le « Non » au compte Meta Business n'arrête rien) : seule la sienne s'affiche.
+        // Une réponse peut porter une note (le Pro dit que le compte Meta Business se crée en chemin) : seule la sienne
+        // s'affiche.
         [].slice.call(q.querySelectorAll('.bt-note-reponse')).forEach(function (n) { n.hidden = n.id !== b.getAttribute('data-note'); });
+        if (b.hasAttribute('data-offre')) g.setAttribute('data-offre', b.getAttribute('data-offre'));
         // La question répondue se replie en une ligne (la question, la réponse, « Modifier ») : la suivante prend la place.
         q.classList.add('repondue');
-        [].slice.call(q.querySelectorAll('[data-vers], [data-aide]')).forEach(function (x) { x.setAttribute('tabindex', '-1'); });
+        var resume = q.querySelector('[data-resume]');
+        if (resume) resume.textContent = b.textContent;
         var aideOuverte = q.querySelector('.bt-aide');
         if (aideOuverte) aideOuverte.hidden = true;
         recommencer.hidden = false;
@@ -384,9 +414,9 @@
         } else {
           montrer(vers);
           avancer(true);
-          // L'issue est la fin du tunnel : le focus va à son premier bouton, et elle se montre en entier.
+          // L'issue est la fin du tunnel : le focus va au premier bouton de l'offre choisie, et elle se montre en entier.
           var issue = g.querySelector('[data-chemin="' + vers + '"]');
-          var bouton = issue && issue.querySelector('.bt-appels a');
+          var bouton = issue && issue.querySelector('.bt-appels[data-offre="' + g.getAttribute('data-offre') + '"] a');
           if (bouton) bouton.focus({ preventScroll: true });
           var doux = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
           if (issue) issue.scrollIntoView({ block: 'nearest', behavior: doux ? 'smooth' : 'auto' });

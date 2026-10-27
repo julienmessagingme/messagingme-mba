@@ -18,6 +18,7 @@ import { CARTE_CONSOLE } from '../../src/aide/carte-console';
 import { RUBRIQUES } from '../../src/aide/fiches';
 import { structureFiche, type BlocFiche } from '../../src/aide/structure';
 import { ESSAI_PRO_JOURS } from '../../src/offres/offres';
+import { DEPOT_PLUGIN } from '../../web/lib/demarrer';
 import { ACCUEIL, fichierDe, fil, page } from './cas';
 import { insecables } from './guide-meta';
 import { PAGES_CLAUDE, type PageClaude } from './aide-claude-textes';
@@ -437,7 +438,6 @@ const TC = {
     titreSite: 'Messaging Me Developers',
   },
 } as const;
-const DEPOT_PLUGIN = 'https://github.com/julienmessagingme/messagingme-plugin';
 const DEVELOPPEURS: Readonly<Record<Langue, string>> = { fr: '/developpeurs/', en: '/en/developers/' };
 const GUIDE_META: Readonly<Record<Langue, string>> = { fr: '/developpeurs/compte-meta-business/', en: '/en/developers/meta-business-account/' };
 

@@ -5,11 +5,13 @@
 //
 // 🔴 CE QUE LA PAGE AFFIRME SE RELIT DANS LE CODE (§ 4 de la conception) : les chiffres d'offre viennent de
 // `src/offres/offres.ts` ; le numéro fourni, de `src/stripe/abonnement.ts` (`tests/vitrine-boutique.test.ts` les
-// compare). Un numéro relié par QR code ne fait que RÉPONDRE (décision de Julien du 2026-10-24, après la mesure : écrire
-// en premier à un inconnu depuis un tel numéro le fait couper) : aucune phrase ne lui promet un message de la boutique.
-// La coexistence (garder son application WhatsApp Business) est ouverte depuis le 2026-10-25 : son issue renvoie à la
-// fiche d'aide `garder-mon-application-whatsapp-business`, le pas-à-pas des écrans de Meta. Le mot
-// « coexistence » ne s'écrit jamais face au client (Julien, 2026-10-25) : « garder votre application WhatsApp Business ».
+// compare). Le numéro WhatsApp Business, l'application reliée comme un appareil (techniquement le QR code, mot que la
+// page n'emploie plus depuis le 2026-10-27 : « personne comprend rien », Julien), ne fait que RÉPONDRE (décision du
+// 2026-10-24, après la mesure : écrire en premier à un inconnu depuis un tel numéro le fait couper) : aucune phrase ne
+// lui promet un message de la boutique, et seul le Free y mène. La coexistence (garder son application WhatsApp
+// Business) est ouverte depuis le 2026-10-25 : en Pro, son issue renvoie à la fiche d'aide
+// `garder-mon-application-whatsapp-business`. Le mot « coexistence » ne s'écrit jamais face au client (Julien,
+// 2026-10-25) : « garder votre application WhatsApp Business ».
 // ⚠️ Marque Shopify : compatibilité seulement (`tests/vitrine-marque-shopify.test.ts`).
 // Les textes sont du HTML écrit par nous (`&nbsp;` compris) ; le français reçoit ses espaces insécables à l'assemblage.
 
@@ -39,13 +41,20 @@ export interface BulleTel { readonly texte: string; readonly heure: string; read
 export interface Carte { readonly titre: string; readonly texte: string; readonly icone?: string; readonly offre?: string }
 export interface Etape { readonly titre: string; readonly texte: string }
 /** Une réponse mène à une autre question ou à une issue (`vers`) ; sans `vers`, elle montre l'aide de sa question.
- * `note` : une phrase qui s'affiche sous la question quand on la choisit (le « Non » au compte n'arrête rien). */
-export interface Reponse { readonly libelle: string; readonly vers?: string; readonly note?: string }
+ * `note` : une phrase qui s'affiche sous la question quand on la choisit (le Pro dit que le compte Meta se crée en
+ * chemin). `offre` : la réponse choisit l'offre, et chaque issue ne montre ensuite que les boutons de cette offre. */
+export interface Reponse { readonly libelle: string; readonly vers?: string; readonly note?: string; readonly offre?: 'free' | 'pro' }
+/** `voies` : des cartes côte à côte, et SOUS chacune la réponse de même rang (Julien, 2026-10-27 : sinon on ne sait
+ * pas quel bouton va avec quelle carte) ; une réponse sans `vers` (« Je ne sais pas ») reste dessous. */
 export interface Question { readonly id: string; readonly texte: string; readonly precision?: string; readonly aide?: string; readonly reponses: readonly Reponse[]; readonly voies?: readonly Voie[]; readonly logo?: string }
-/** Une des deux voies d'une issue à choix (QR code ou API), avec ce qu'elle apporte et ce qu'elle coûte. */
+/** Une carte d'un choix (une offre, un numéro), avec ce qu'elle apporte et ce qu'elle coûte. */
 export interface Voie { readonly titre: string; readonly plus: readonly string[]; readonly moins: readonly string[] }
-/** `situation` se lit sans script, quand toutes les issues s'affichent l'une sous l'autre. */
-export interface Issue { readonly id: string; readonly situation: string; readonly titre: string; readonly textes: readonly string[]; readonly voies?: readonly Voie[] }
+/**
+ * `situation` se lit sans script, quand toutes les issues s'affichent l'une sous l'autre. Le bout du tunnel : en Free,
+ * `demande`, la phrase à coller dans Claude Code après l'installation du plugin, qui reprend les réponses données ; en
+ * Pro, `pasAPas`, la fiche d'aide de ce chemin, absente quand l'issue n'existe pas en Pro (le numéro WhatsApp Business).
+ */
+export interface Issue { readonly id: string; readonly situation: string; readonly titre: string; readonly textes: readonly string[]; readonly voies?: readonly Voie[]; readonly demande: string; readonly pasAPas?: string }
 
 export interface TexteBoutique {
   readonly titre: string;
@@ -76,6 +85,11 @@ export interface TexteBoutique {
      * plus long parcours de l'arbre, que `boutique.ts` calcule), le mot de l'issue, et le lien qui rouvre une réponse.
      */
     readonly progression: string; readonly fin: string; readonly modifier: string;
+    /** Les mots des boutons de bout de tunnel : le titre de chaque offre, ses boutons, la demande et sa copie. */
+    readonly appels: {
+      readonly free: string; readonly pro: string; readonly plugin: string; readonly github: string;
+      readonly demande: string; readonly copier: string; readonly copie: string; readonly compte: string; readonly pasAPas: string;
+    };
   };
   readonly commencer: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly etapes: readonly Etape[]; readonly bouton: string; readonly aide: string };
   readonly prix: {
@@ -89,22 +103,33 @@ export interface TexteBoutique {
 
 const fr = (): TexteBoutique => {
   const numero = euros(PRIX_NUMERO_AFFICHE_HT_CENTIMES, 'fr');
-  // Les deux voies du seul choix où le QR code se propose (Julien, 2026-10-25) : sans compte Meta Business, pour un
-  // numéro à part ou un nouveau numéro. Le QR code (aucun compte, des réponses que Meta ne facture pas, mais rien ne part
-  // en premier) ou un compte Meta Business créé en chemin (un moyen de paiement, mais les messages partent). Avec un
-  // compte, et pour garder l'application, l'arbre ne le propose pas. Le mot « coexistence » ne s'écrit jamais face au
-  // client : on dit « garder l'application ».
-  const voiesSansCompte: readonly Voie[] = [
+  // L'arbre de Julien du 2026-10-27 : l'offre d'abord. Le Pro demande un numéro API (donc un compte Meta Business, que
+  // la fenêtre de Meta fait créer en chemin) ; la Free laisse choisir entre le numéro WhatsApp Business (l'application
+  // reliée comme un appareil, l'ancien « QR code » que personne ne comprenait : il ne fait que répondre) et le numéro API.
+  // Le mot « coexistence » ne s'écrit jamais face au client : on dit « garder l'application ».
+  const offres: readonly Voie[] = [
     {
-      titre: 'Par QR code, pour répondre',
-      plus: ['Aucun compte : ni profil Facebook, ni carte chez Meta.', 'Meta ne facture pas les réponses.', 'Plus tard, le même numéro peut garder l’application et passer par Meta, pour écrire en premier.'],
+      titre: 'Free, 0&nbsp;€ d’abonnement',
+      plus: ['Tout se fait en parlant à Claude Code : le numéro, la boutique, l’agent IA.', 'Votre agent IA répond, et avec un numéro API, les trois messages de votre boutique partent.'],
+      moins: ['Pas de console : vous pilotez depuis Claude Code.', `${milliers(limite('base', 'contacts'), 'fr')} contacts et ${milliers(limite('base', 'envoisModelesMois'), 'fr')} messages envoyés par mois.`],
+    },
+    {
+      titre: `Pro, ${euros(PRIX_PRO_HT_CENTIMES.mois, 'fr')} HT par mois`,
+      plus: ['La console complète : l’Inbox de l’équipe, les campagnes, la carte de votre boutique.', 'Un numéro fourni, inclus.', `${ESSAI_PRO_JOURS}&nbsp;jours d’essai la première fois, carte demandée.`],
+      moins: ['Un numéro API, donc un compte Meta Business, que la fenêtre de Meta vous fait créer en chemin.'],
+    },
+  ];
+  const numerosFree: readonly Voie[] = [
+    {
+      titre: 'Numéro WhatsApp Business, pour répondre',
+      plus: ['Aucun compte : ni profil Facebook, ni carte chez Meta.', 'Meta ne facture pas les réponses.', 'Plus tard, vous pourrez garder ce numéro et le transformer en numéro API, pour envoyer des messages à vos clients (relance de panier, confirmation de commande).'],
       moins: [
         'Votre agent IA répond aux clients qui écrivent, mais rien ne part en premier : ni confirmation, ni relance.',
-        'Le numéro doit être dans l’application WhatsApp Business d’un téléphone, et WhatsApp peut le couper.',
+        'Il faut télécharger l’application WhatsApp Business sur un téléphone, et WhatsApp peut couper le numéro.',
       ],
     },
     {
-      titre: 'Avec un compte Meta Business, l’API officielle',
+      titre: 'Numéro API, avec un compte Meta Business',
       plus: ['Les trois messages de votre boutique partent : confirmation, expédition, relance.', 'Votre agent IA répond.'],
       moins: [
         'Un compte Meta Business, que la fenêtre de Meta vous fait créer en chemin, et un moyen de paiement chez Meta.',
@@ -175,50 +200,41 @@ const fr = (): TexteBoutique => {
     numero: {
       surtitre: 'Votre numéro WhatsApp',
       titre: ['Votre branchement', 'commence ici.'],
-      chapeau: 'En cinq questions au plus sur votre compte Meta Business, votre application WhatsApp Business et votre numéro, vous savez quoi faire.',
+      chapeau: 'En cinq questions au plus sur votre offre, votre application WhatsApp Business et votre numéro, vous savez quoi faire.',
       lexique: {
-        titre: 'Les cinq mots employés ici',
+        titre: 'Les quatre mots employés ici',
         termes: [
           { terme: 'Le compte Meta Business', definition: 'Le compte de votre entreprise chez Meta (un «&nbsp;portefeuille&nbsp;», l’ancien Business Manager). Si vous faites de la publicité sur Facebook ou Instagram, vous en avez sans doute un. Sinon, rien à préparer : il est gratuit, et la fenêtre de Meta vous le fait créer en chemin, avec votre profil Facebook.' },
-          { terme: 'L’application WhatsApp Business', definition: 'L’application gratuite des professionnels, sur votre téléphone : le numéro de la boutique, son profil, les réponses que vous tapez. Elle n’envoie pas seule les messages de votre boutique.' },
-          { terme: 'L’API officielle', definition: 'Le même WhatsApp, piloté par un logiciel, sur un numéro relié par Meta : c’est elle qui envoie la confirmation, l’expédition et la relance, et Meta facture ses messages. Il faut un compte Meta Business, et le numéro quitte l’application, sauf si vous la gardez.' },
-          { terme: 'Garder votre application', definition: 'Votre numéro reste dans l’application WhatsApp Business et passe en même temps par Meta : vous répondez toujours depuis votre téléphone, et les messages de votre boutique partent de Messaging Me.' },
-          { terme: 'Le QR code', definition: 'Votre application WhatsApp Business reliée à Messaging Me comme un ordinateur («&nbsp;Appareils liés&nbsp;»), sans aucun compte (ni profil Facebook, ni carte chez Meta) : votre agent IA répond à ceux qui vous écrivent sans que Meta facture ses réponses, mais rien ne part en premier, et WhatsApp peut couper le numéro. Plus tard, le même numéro peut garder l’application et passer par Meta, pour écrire en premier.' },
+          { terme: 'Le numéro WhatsApp Business', definition: 'Le numéro de l’application WhatsApp Business, l’application des professionnels, à télécharger sur un téléphone. Il se relie à Messaging Me comme un ordinateur («&nbsp;Appareils liés&nbsp;»), sans aucun compte (ni profil Facebook, ni carte chez Meta) : votre agent IA répond à ceux qui vous écrivent sans que Meta facture ses réponses, mais rien ne part en premier, et WhatsApp peut couper le numéro. Plus tard, vous pourrez le transformer en numéro API.' },
+          { terme: 'Le numéro API', definition: 'Un numéro relié par Meta à l’API officielle de WhatsApp, que pilote Messaging Me : c’est lui qui envoie la confirmation, l’expédition et la relance, et Meta facture ses messages. Il faut un compte Meta Business, que la fenêtre de Meta vous fait créer en chemin.' },
+          { terme: 'Garder votre application', definition: 'Votre numéro WhatsApp Business devient aussi un numéro API, sans quitter l’application : vous répondez toujours depuis votre téléphone, et les messages de votre boutique partent de Messaging Me.' },
         ],
       },
-      // L'arbre de Julien, précisé le 2026-10-25 : l'application demandée à tous ; le QR code seulement sans compte Meta
-      // Business, pour un numéro à part ou un nouveau numéro (le choix « QR code ou compte Meta ? ») ; avec un compte, et
-      // pour garder l'application, l'API seule.
+      // L'arbre de Julien du 2026-10-27 : l'offre, puis, en Free, le numéro WhatsApp Business ou le numéro API ; le Pro
+      // et le numéro API se rejoignent sur l'application WhatsApp Business (la garder, ou un numéro à part).
       questions: [
         {
-          id: 'compte', texte: 'Avez-vous un compte Meta Business ?', precision: 'Un portefeuille d’entreprise, l’ancien Business Manager.',
-          aide: 'Connectez-vous sur business.facebook.com avec votre profil Facebook : le menu sous «&nbsp;Accueil&nbsp;», en haut à gauche, liste vos portefeuilles. Aucun ? Répondez «&nbsp;Non&nbsp;», ce n’est pas un problème.',
+          id: 'offre', texte: 'Quelle offre voulez-vous ?', precision: 'Vous pourrez en changer plus tard.',
+          aide: 'La Free suffit pour commencer : votre agent IA répond à vos clients, et avec un numéro API, les messages de votre boutique partent. Le Pro ajoute la console, pour vous et votre équipe, et un numéro fourni.',
+          voies: offres,
           reponses: [
-            { libelle: 'Oui', vers: 'application-compte' },
-            { libelle: 'Non', vers: 'application', note: 'Pas de souci : la fenêtre de Meta vous le fera créer en chemin, avec votre profil Facebook. Et pour un numéro à part, le QR code s’en passe, mais il ne fait que répondre.' },
+            { libelle: 'La Free', vers: 'type-numero', offre: 'free' },
+            { libelle: 'Le Pro', vers: 'application', offre: 'pro', note: 'Le Pro demande un numéro API, donc un compte Meta Business : la fenêtre de Meta vous le fait créer en chemin, avec votre profil Facebook.' },
             { libelle: 'Je ne sais pas' },
           ],
         },
         {
-          id: 'application-compte', texte: 'Avez-vous l’application WhatsApp Business sur le numéro de votre entreprise ?', precision: 'L’application des professionnels, distincte de WhatsApp.', logo: LOGO_APPLICATION,
-          reponses: [{ libelle: 'Oui', vers: 'garder-compte' }, { libelle: 'Non', vers: 'numero' }],
-        },
-        {
-          id: 'garder-compte', texte: 'Voulez-vous garder ce numéro dans l’application, ou prendre un numéro à part ?',
-          reponses: [{ libelle: 'Le garder dans l’application', vers: 'garder-application' }, { libelle: 'Un numéro à part', vers: 'numero' }],
+          id: 'type-numero', texte: 'Quel numéro pour votre boutique ?', precision: 'Avec la Free, deux numéros possibles :',
+          voies: numerosFree,
+          reponses: [{ libelle: 'Le numéro WhatsApp Business', vers: 'qr' }, { libelle: 'Le numéro API', vers: 'application' }],
         },
         {
           id: 'application', texte: 'Avez-vous l’application WhatsApp Business sur le numéro de votre entreprise ?', precision: 'L’application des professionnels, distincte de WhatsApp.', logo: LOGO_APPLICATION,
-          reponses: [{ libelle: 'Oui', vers: 'garder' }, { libelle: 'Non', vers: 'choix' }],
+          reponses: [{ libelle: 'Oui', vers: 'garder' }, { libelle: 'Non', vers: 'numero' }],
         },
         {
-          id: 'garder', texte: 'Voulez-vous garder ce numéro dans l’application, ou prendre un numéro à part ?',
-          reponses: [{ libelle: 'Le garder dans l’application', vers: 'garder-application' }, { libelle: 'Un numéro à part', vers: 'choix' }],
-        },
-        {
-          id: 'choix', texte: 'Par QR code, pour répondre, ou avec un compte Meta Business créé en chemin ?', precision: 'Sans compte Meta Business, pour un numéro à part ou un nouveau numéro, deux voies :',
-          voies: voiesSansCompte,
-          reponses: [{ libelle: 'Le QR code, pour répondre', vers: 'qr' }, { libelle: 'Créer le compte', vers: 'numero' }],
+          id: 'garder', texte: 'Voulez-vous garder ce numéro dans l’application, ou prendre un numéro à part ?', precision: 'Gardé, votre numéro WhatsApp Business devient aussi un numéro API.',
+          reponses: [{ libelle: 'Le garder', vers: 'garder-application' }, { libelle: 'Un numéro à part', vers: 'numero' }],
         },
         {
           id: 'numero', texte: 'Avez-vous un numéro libre ?', precision: 'Un numéro qui ne sert pas dans WhatsApp, ni dans l’application WhatsApp Business.',
@@ -229,38 +245,50 @@ const fr = (): TexteBoutique => {
         {
           id: 'garder-application', situation: 'Avec l’application WhatsApp Business, que vous voulez garder', titre: 'Gardez votre application WhatsApp Business',
           textes: [
-            'Votre numéro passe aussi par Meta sans quitter l’application : vous continuez d’y répondre depuis votre téléphone, et les messages de votre boutique partent de Messaging Me.',
+            'Votre numéro WhatsApp Business devient aussi un numéro API, sans quitter l’application : vous continuez d’y répondre depuis votre téléphone, et les messages de votre boutique partent de Messaging Me.',
             'La fenêtre de Meta prend votre compte Meta Business, ou vous le fait créer en chemin avec votre profil Facebook, puis vous propose un moyen de paiement. Meta facture les messages partis de Messaging Me, réponses comprises au-delà d’une franchise mensuelle ; ceux que vous tapez dans l’application restent gratuits.',
             'Quelques fonctions de l’application s’arrêtent, comme les listes de diffusion et le message d’absence, et il faut l’ouvrir au moins toutes les deux semaines. Ce que vous y tapez n’apparaît pas encore dans Messaging Me : votre agent IA ne voit pas vos réponses.',
-            'Demandez à Claude de garder votre application, ou cliquez «&nbsp;Garder mon application WhatsApp Business&nbsp;» sur l’Accueil de la console. Le pas-à-pas, écran par écran : <a href="/aide/garder-mon-application-whatsapp-business/">Garder mon application WhatsApp Business</a>.',
           ],
+          demande: 'Branche ma boutique Shopify sur WhatsApp avec l’offre Free de Messaging Me. Mon numéro est dans l’application WhatsApp Business et je veux la garder : relie-le par Meta pour qu’il devienne aussi un numéro API. Envoie la confirmation de commande, l’avis d’expédition et la relance de panier, et crée mon agent IA à partir de mon site.',
+          pasAPas: '/aide/garder-mon-application-whatsapp-business/',
         },
         {
-          id: 'api', situation: 'Avec un numéro libre, relié par Meta', titre: 'Votre numéro, relié par Meta',
+          id: 'api', situation: 'Avec un numéro libre, en numéro API', titre: 'Votre numéro libre devient un numéro API',
           textes: [
-            'Claude ouvre la fenêtre de Meta : vous y prenez votre compte Meta Business, ou vous le créez en chemin avec votre profil Facebook, puis vous reliez votre numéro.',
+            'La fenêtre de Meta prend votre compte Meta Business, ou vous le fait créer en chemin avec votre profil Facebook, puis relie votre numéro.',
             'Les trois messages de votre boutique partent, et votre agent IA répond. Meta facture les messages de votre boutique, et les réponses au-delà d’une franchise mensuelle : un moyen de paiement s’ajoute chez Meta.',
           ],
+          demande: 'Branche ma boutique Shopify sur WhatsApp avec l’offre Free de Messaging Me, sur mon numéro libre, relié par Meta en numéro API. Envoie la confirmation de commande, l’avis d’expédition et la relance de panier, et crée mon agent IA à partir de mon site.',
+          pasAPas: '/aide/connecter-mon-numero-whatsapp/',
         },
         {
-          id: 'api-fourni', situation: 'Sans numéro libre, avec un numéro fourni relié par Meta', titre: 'Un numéro fourni, relié par Meta',
+          id: 'api-fourni', situation: 'Sans numéro libre, avec un numéro fourni en numéro API', titre: 'Un numéro fourni, en numéro API',
           textes: [
-            `Prenez un numéro fourni, à ${numero} HT par mois avec l’offre Free, inclus dans le Pro : Claude le relie à votre compte Meta Business, que la fenêtre de Meta vous fait créer en chemin s’il vous manque.`,
+            `Prenez un numéro fourni, à ${numero} HT par mois avec la Free, inclus dans le Pro : il se relie à votre compte Meta Business, que la fenêtre de Meta vous fait créer en chemin s’il vous manque.`,
             'Les trois messages de votre boutique partent, et votre agent IA répond. Meta facture les messages de votre boutique, et les réponses au-delà d’une franchise mensuelle : un moyen de paiement s’ajoute chez Meta.',
           ],
+          demande: `Branche ma boutique Shopify sur WhatsApp avec l’offre Free de Messaging Me. Je n’ai pas de numéro libre : fournis-moi un numéro (${numero} HT par mois) et relie-le par Meta en numéro API. Envoie la confirmation de commande, l’avis d’expédition et la relance de panier, et crée mon agent IA à partir de mon site.`,
+          pasAPas: '/aide/connecter-mon-numero-whatsapp/',
         },
         {
-          id: 'qr', situation: 'Sans compte Meta Business, par QR code, pour répondre', titre: 'Votre numéro par QR code, pour répondre',
+          id: 'qr', situation: 'Avec la Free, un numéro WhatsApp Business, pour répondre', titre: 'Votre numéro WhatsApp Business, pour répondre',
           textes: [
-            `Reliez votre numéro, ou un numéro fourni à ${numero} HT par mois, par QR code et sans aucun compte : votre agent IA répond aux clients qui vous écrivent, et Meta ne facture pas ces réponses.`,
-            'Mais rien ne part en premier, ni confirmation, ni expédition, ni relance : WhatsApp peut couper un numéro relié ainsi qui écrit à des inconnus. Le numéro doit être dans l’application WhatsApp Business d’un téléphone, et un numéro fourni garde le vôtre à l’abri. L’offre Pro demande un compte Meta Business.',
-            'Plus tard, pour écrire en premier (les messages de votre boutique), vous garderez votre application et relierez le même numéro par Meta («&nbsp;Garder mon application WhatsApp Business&nbsp;», depuis Claude ou l’Accueil de la console) : la fenêtre de Meta vous fera créer le compte Meta Business, et vos conversations restent.',
+            `Téléchargez l’application WhatsApp Business sur un téléphone, avec votre numéro ou un numéro fourni à ${numero} HT par mois, puis reliez-la à Messaging Me en scannant un code, sans aucun compte : votre agent IA répond aux clients qui vous écrivent, et Meta ne facture pas ces réponses.`,
+            'Mais rien ne part en premier, ni confirmation, ni expédition, ni relance : WhatsApp peut couper un numéro relié ainsi qui écrit à des inconnus. Un numéro fourni garde le vôtre à l’abri.',
+            'Plus tard, vous pourrez garder ce numéro et le transformer en numéro API, pour envoyer des messages à vos clients (relance de panier, confirmation de commande) : la fenêtre de Meta vous fera créer le compte Meta Business, et vos conversations restent.',
           ],
+          demande: 'Relie mon numéro WhatsApp Business à Messaging Me avec l’offre Free, par le code à scanner depuis l’application de mon téléphone, sans compte Meta Business. Crée ensuite mon agent IA à partir de mon site, pour qu’il réponde aux clients qui m’écrivent.',
         },
       ],
       plus: 'Pour :', moins: 'Contre :',
       recommencer: 'Recommencer',
       progression: 'Question {n} sur {max} au plus', fin: 'Votre chemin', modifier: 'Modifier',
+      appels: {
+        free: 'Avec la Free, depuis Claude Code', pro: 'Avec le Pro, depuis la console',
+        plugin: 'Installer le plugin', github: 'Le dépôt GitHub',
+        demande: 'Votre demande à Claude, à coller une fois le plugin installé :', copier: 'Copier', copie: 'Copié',
+        compte: 'Créer mon compte', pasAPas: 'Le pas-à-pas',
+      },
     },
     commencer: {
       surtitre: 'Commencer avec Claude Code',
@@ -306,7 +334,7 @@ const fr = (): TexteBoutique => {
         { id: 'faq-prix', q: 'Combien coûte la relance des paniers abandonnés ?', r: `0&nbsp;€ d’abonnement avec l’offre Free, en la branchant depuis Claude Code. Meta facture chaque message envoyé à votre boutique, sans supplément de notre part. Il vous faut un numéro relié par Meta (le vôtre, ou un numéro fourni à ${numero} HT par mois), et votre agent IA consomme un crédit prépayé.` },
         { id: 'faq-app', q: 'Faut-il installer une app de l’App Store de Shopify ?', r: 'Non. Claude crée l’app dans votre propre organisation Shopify, sans validation de Shopify : vous n’avez qu’à cliquer « Installer ».' },
         { id: 'faq-reponse', q: 'Qui répond quand le client répond à la relance ?', r: 'Celui que vous avez choisi : votre agent IA, avec ce qu’il sait de votre boutique, ou votre équipe. L’agent n’a pas accès à vos commandes : pour un colis précis, il passe la main.' },
-        { id: 'faq-numero', q: 'Quel numéro WhatsApp utiliser ?', r: `Cela dépend de votre numéro et de votre application WhatsApp Business : le guide ci-dessus vous donne votre chemin. Les messages de votre boutique partent d’un numéro relié par Meta : le vôtre s’il est libre, un numéro fourni à ${numero} HT par mois, ou le numéro de votre application WhatsApp Business, que vous gardez. La fenêtre de Meta vous fait créer votre compte Meta Business en chemin s’il vous manque. Sans aucun compte, un numéro relié par QR code sert à répondre : WhatsApp peut couper un numéro relié ainsi qui écrit en premier. Plus tard, ce numéro pourra garder l’application et passer par Meta pour écrire en premier, en gardant ses conversations.` },
+        { id: 'faq-numero', q: 'Quel numéro WhatsApp utiliser ?', r: `Cela dépend de votre offre et de votre numéro : le guide ci-dessus vous donne votre chemin. Les messages de votre boutique partent d’un numéro API, relié par Meta : le vôtre s’il est libre, un numéro fourni à ${numero} HT par mois (inclus dans le Pro), ou le numéro de votre application WhatsApp Business, que vous gardez. La fenêtre de Meta vous fait créer votre compte Meta Business en chemin s’il vous manque. Avec la Free et sans aucun compte, votre numéro WhatsApp Business, relié depuis l’application, sert à répondre : WhatsApp peut couper un numéro relié ainsi qui écrit en premier. Plus tard, vous pourrez le transformer en numéro API pour écrire en premier, en gardant ses conversations.` },
         { id: 'faq-stop', q: 'Que devient le client qui répond STOP ?', r: 'Il ne reçoit plus rien de votre boutique. La relance porte en bas la mention « Répondez STOP pour ne plus recevoir ces messages ».' },
       ],
     },
@@ -320,17 +348,29 @@ const fr = (): TexteBoutique => {
 
 const en = (): TexteBoutique => {
   const numero = euros(PRIX_NUMERO_AFFICHE_HT_CENTIMES, 'en');
-  const voiesSansCompte: readonly Voie[] = [
+  const offres: readonly Voie[] = [
     {
-      titre: 'By QR code, to answer',
-      plus: ['No account at all: neither a Facebook profile nor a card at Meta.', 'Meta does not bill the replies.', 'Later, the same number can keep the app and go through Meta, to write first.'],
+      titre: 'Free, €0 a month',
+      plus: ['Everything happens by talking to Claude Code: the number, the store, the AI agent.', 'Your AI agent answers, and with an API number, your store’s three messages go out.'],
+      moins: ['No console: you drive everything from Claude Code.', `${milliers(limite('base', 'contacts'), 'en')} contacts and ${milliers(limite('base', 'envoisModelesMois'), 'en')} messages sent a month.`],
+    },
+    {
+      titre: `Pro, ${euros(PRIX_PRO_HT_CENTIMES.mois, 'en')} excl. VAT a month`,
+      plus: ['The full console: the team Inbox, campaigns, your store’s card.', 'A provided number, included.', `A ${ESSAI_PRO_JOURS}-day trial the first time, card required.`],
+      moins: ['An API number, so a Meta Business account, which Meta’s window has you create along the way.'],
+    },
+  ];
+  const numerosFree: readonly Voie[] = [
+    {
+      titre: 'WhatsApp Business number, to answer',
+      plus: ['No account at all: neither a Facebook profile nor a card at Meta.', 'Meta does not bill the replies.', 'Later, you will be able to keep this number and turn it into an API number, to send messages to your customers (checkout reminder, order confirmation).'],
       moins: [
         'Your AI agent answers the customers who write, but nothing goes out first: neither confirmation nor reminder.',
-        'The number must be in the WhatsApp Business app on a phone, and WhatsApp can cut it.',
+        'You need to download the WhatsApp Business app on a phone, and WhatsApp can cut the number.',
       ],
     },
     {
-      titre: 'With a Meta Business account, the official API',
+      titre: 'API number, with a Meta Business account',
       plus: ['Your store’s three messages go out: confirmation, shipping, reminder.', 'Your AI agent answers.'],
       moins: [
         'A Meta Business account, which Meta’s window has you create along the way, and a payment method at Meta.',
@@ -401,47 +441,39 @@ const en = (): TexteBoutique => {
     numero: {
       surtitre: 'Your WhatsApp number',
       titre: ['Your setup', 'starts here.'],
-      chapeau: 'In five questions at most about your Meta Business account, your WhatsApp Business app and your number, you know what to do.',
+      chapeau: 'In five questions at most about your plan, your WhatsApp Business app and your number, you know what to do.',
       lexique: {
-        titre: 'The five words used here',
+        titre: 'The four words used here',
         termes: [
           { terme: 'The Meta Business account', definition: 'Your business’s account at Meta (a “portfolio”, formerly Business Manager). If you advertise on Facebook or Instagram, you probably have one. Otherwise, nothing to prepare: it is free, and Meta’s window has you create it along the way, with your Facebook profile.' },
-          { terme: 'The WhatsApp Business app', definition: 'The free app for businesses, on your phone: your store’s number, its profile, the replies you type. It does not send your store’s messages on its own.' },
-          { terme: 'The official API', definition: 'The same WhatsApp, driven by software, on a number connected through Meta: it sends the confirmation, the shipping notice and the reminder, and Meta bills its messages. It needs a Meta Business account, and the number leaves the app, unless you keep it.' },
-          { terme: 'Keeping your app', definition: 'Your number stays in the WhatsApp Business app and goes through Meta at the same time: you still reply from your phone, and your store’s messages go out from Messaging Me.' },
-          { terme: 'The QR code', definition: 'Your WhatsApp Business app linked to Messaging Me like a computer (“Linked devices”), with no account at all (no Facebook profile, no card at Meta): your AI agent answers those who write to you without Meta billing its replies, but nothing goes out first, and WhatsApp can cut the number. Later, the same number can keep the app and go through Meta, to write first.' },
+          { terme: 'The WhatsApp Business number', definition: 'The number of the WhatsApp Business app, the app for businesses, to download on a phone. It links to Messaging Me like a computer (“Linked devices”), with no account at all (no Facebook profile, no card at Meta): your AI agent answers those who write to you without Meta billing its replies, but nothing goes out first, and WhatsApp can cut the number. Later, you will be able to turn it into an API number.' },
+          { terme: 'The API number', definition: 'A number connected through Meta to the official WhatsApp API, driven by Messaging Me: it sends the confirmation, the shipping notice and the reminder, and Meta bills its messages. It needs a Meta Business account, which Meta’s window has you create along the way.' },
+          { terme: 'Keeping your app', definition: 'Your WhatsApp Business number also becomes an API number, without leaving the app: you still reply from your phone, and your store’s messages go out from Messaging Me.' },
         ],
       },
       questions: [
         {
-          id: 'compte', texte: 'Do you have a Meta Business account?', precision: 'A business portfolio, formerly Business Manager.',
-          aide: 'Sign in to business.facebook.com with your Facebook profile: the menu under “Home”, at the top left, lists your portfolios. None? Answer “No”, that is not a problem.',
+          id: 'offre', texte: 'Which plan do you want?', precision: 'You can change it later.',
+          aide: 'The Free plan is enough to start: your AI agent answers your customers, and with an API number, your store’s messages go out. Pro adds the console, for you and your team, and a provided number.',
+          voies: offres,
           reponses: [
-            { libelle: 'Yes', vers: 'application-compte' },
-            { libelle: 'No', vers: 'application', note: 'No problem: Meta’s window will have you create it along the way, with your Facebook profile. And for a separate number, the QR code does without it, but it only answers.' },
+            { libelle: 'The Free plan', vers: 'type-numero', offre: 'free' },
+            { libelle: 'The Pro plan', vers: 'application', offre: 'pro', note: 'Pro needs an API number, so a Meta Business account: Meta’s window has you create it along the way, with your Facebook profile.' },
             { libelle: 'I don’t know' },
           ],
         },
         {
-          id: 'application-compte', texte: 'Do you have the WhatsApp Business app on your business’s number?', precision: 'The app for businesses, separate from WhatsApp.', logo: LOGO_APPLICATION,
-          reponses: [{ libelle: 'Yes', vers: 'garder-compte' }, { libelle: 'No', vers: 'numero' }],
-        },
-        {
-          id: 'garder-compte', texte: 'Do you want to keep this number in the app, or take a separate number?',
-          reponses: [{ libelle: 'Keep it in the app', vers: 'garder-application' }, { libelle: 'A separate number', vers: 'numero' }],
+          id: 'type-numero', texte: 'Which number for your store?', precision: 'With the Free plan, two numbers are possible:',
+          voies: numerosFree,
+          reponses: [{ libelle: 'The WhatsApp Business number', vers: 'qr' }, { libelle: 'The API number', vers: 'application' }],
         },
         {
           id: 'application', texte: 'Do you have the WhatsApp Business app on your business’s number?', precision: 'The app for businesses, separate from WhatsApp.', logo: LOGO_APPLICATION,
-          reponses: [{ libelle: 'Yes', vers: 'garder' }, { libelle: 'No', vers: 'choix' }],
+          reponses: [{ libelle: 'Yes', vers: 'garder' }, { libelle: 'No', vers: 'numero' }],
         },
         {
-          id: 'garder', texte: 'Do you want to keep this number in the app, or take a separate number?',
-          reponses: [{ libelle: 'Keep it in the app', vers: 'garder-application' }, { libelle: 'A separate number', vers: 'choix' }],
-        },
-        {
-          id: 'choix', texte: 'By QR code, to answer, or with a Meta Business account created along the way?', precision: 'Without a Meta Business account, for a separate or a new number, two ways:',
-          voies: voiesSansCompte,
-          reponses: [{ libelle: 'The QR code, to answer', vers: 'qr' }, { libelle: 'Create the account', vers: 'numero' }],
+          id: 'garder', texte: 'Do you want to keep this number in the app, or take a separate number?', precision: 'Kept, your WhatsApp Business number also becomes an API number.',
+          reponses: [{ libelle: 'Keep it', vers: 'garder-application' }, { libelle: 'A separate number', vers: 'numero' }],
         },
         {
           id: 'numero', texte: 'Do you have an available number?', precision: 'A number that is not used in WhatsApp, nor in the WhatsApp Business app.',
@@ -452,38 +484,50 @@ const en = (): TexteBoutique => {
         {
           id: 'garder-application', situation: 'With the WhatsApp Business app, which you want to keep', titre: 'Keep your WhatsApp Business app',
           textes: [
-            'Your number also goes through Meta without leaving the app: you keep replying from your phone, and your store’s messages go out from Messaging Me.',
+            'Your WhatsApp Business number also becomes an API number, without leaving the app: you keep replying from your phone, and your store’s messages go out from Messaging Me.',
             'Meta’s window takes your Meta Business account, or has you create it along the way with your Facebook profile, then offers a payment method. Meta bills the messages sent from Messaging Me, replies included beyond a monthly allowance; those you type in the app stay free.',
             'A few app features stop, such as broadcast lists and the away message, and you need to open the app at least every two weeks. What you type there does not show in Messaging Me yet: your AI agent does not see your replies.',
-            'Ask Claude to keep your app, or click “Keep my WhatsApp Business app” on the console’s Home screen. The step-by-step guide, screen by screen: <a href="/en/help/keep-my-whatsapp-business-app/">Keep my WhatsApp Business app</a>.',
           ],
+          demande: 'Connect my Shopify store to WhatsApp with the Messaging Me Free plan. My number is in the WhatsApp Business app and I want to keep it: connect it through Meta so it also becomes an API number. Send the order confirmation, the shipping notice and the checkout reminder, and create my AI agent from my website.',
+          pasAPas: '/en/help/keep-my-whatsapp-business-app/',
         },
         {
-          id: 'api', situation: 'With an available number, connected through Meta', titre: 'Your number, connected through Meta',
+          id: 'api', situation: 'With an available number, as an API number', titre: 'Your available number becomes an API number',
           textes: [
-            'Claude opens Meta’s window: you choose your Meta Business account there, or create it along the way with your Facebook profile, then connect your number.',
+            'Meta’s window takes your Meta Business account, or has you create it along the way with your Facebook profile, then connects your number.',
             'Your store’s three messages go out, and your AI agent answers. Meta bills your store’s messages, and replies beyond a monthly allowance: a payment method is added at Meta.',
           ],
+          demande: 'Connect my Shopify store to WhatsApp with the Messaging Me Free plan, on my available number, connected through Meta as an API number. Send the order confirmation, the shipping notice and the checkout reminder, and create my AI agent from my website.',
+          pasAPas: '/en/help/connect-my-whatsapp-number/',
         },
         {
-          id: 'api-fourni', situation: 'Without an available number, with a provided number connected through Meta', titre: 'A provided number, connected through Meta',
+          id: 'api-fourni', situation: 'Without an available number, with a provided API number', titre: 'A provided number, as an API number',
           textes: [
-            `Take a provided number, at ${numero} excl. VAT a month with the Free plan, included in Pro: Claude connects it to your Meta Business account, which Meta’s window has you create along the way if you lack one.`,
+            `Take a provided number, at ${numero} excl. VAT a month with the Free plan, included in Pro: it connects to your Meta Business account, which Meta’s window has you create along the way if you lack one.`,
             'Your store’s three messages go out, and your AI agent answers. Meta bills your store’s messages, and replies beyond a monthly allowance: a payment method is added at Meta.',
           ],
+          demande: `Connect my Shopify store to WhatsApp with the Messaging Me Free plan. I have no available number: provide one (${numero} excl. VAT a month) and connect it through Meta as an API number. Send the order confirmation, the shipping notice and the checkout reminder, and create my AI agent from my website.`,
+          pasAPas: '/en/help/connect-my-whatsapp-number/',
         },
         {
-          id: 'qr', situation: 'Without a Meta Business account, by QR code, to answer', titre: 'Your number by QR code, to answer',
+          id: 'qr', situation: 'With the Free plan, a WhatsApp Business number, to answer', titre: 'Your WhatsApp Business number, to answer',
           textes: [
-            `Link your number, or a provided number at ${numero} excl. VAT a month, by QR code and with no account at all: your AI agent answers the customers who write to you, and Meta does not bill those replies.`,
-            'But nothing goes out first, neither confirmation, nor shipping notice, nor reminder: WhatsApp can cut a number linked this way that writes to strangers. The number must be in the WhatsApp Business app on a phone, and a provided number keeps yours safe. The Pro plan needs a Meta Business account.',
-            'Later, to write first (your store’s messages), you will keep your app and connect the same number through Meta (“Keep my WhatsApp Business app”, from Claude or the console’s Home): Meta’s window will have you create the Meta Business account, and your conversations stay.',
+            `Download the WhatsApp Business app on a phone, with your number or a provided number at ${numero} excl. VAT a month, then link it to Messaging Me by scanning a code, with no account at all: your AI agent answers the customers who write to you, and Meta does not bill those replies.`,
+            'But nothing goes out first, neither confirmation, nor shipping notice, nor reminder: WhatsApp can cut a number linked this way that writes to strangers. A provided number keeps yours safe.',
+            'Later, you will be able to keep this number and turn it into an API number, to send messages to your customers (checkout reminder, order confirmation): Meta’s window will have you create the Meta Business account, and your conversations stay.',
           ],
+          demande: 'Link my WhatsApp Business number to Messaging Me with the Free plan, with the code to scan from the app on my phone, without a Meta Business account. Then create my AI agent from my website, so it answers the customers who write to me.',
         },
       ],
       plus: 'For:', moins: 'Against:',
       recommencer: 'Start again',
       progression: 'Question {n} of {max} at most', fin: 'Your path', modifier: 'Change',
+      appels: {
+        free: 'With the Free plan, from Claude Code', pro: 'With the Pro plan, from the console',
+        plugin: 'Install the plugin', github: 'The GitHub repository',
+        demande: 'Your request to Claude, to paste once the plugin is installed:', copier: 'Copy', copie: 'Copied',
+        compte: 'Create my account', pasAPas: 'The step-by-step guide',
+      },
     },
     commencer: {
       surtitre: 'Start with Claude Code',
@@ -529,7 +573,7 @@ const en = (): TexteBoutique => {
         { id: 'faq-prix', q: 'How much does the abandoned checkout reminder cost?', r: `€0 a month with the Free plan, by connecting it from Claude Code. Meta bills each message sent to your store, with no surcharge from us. You need a number connected through Meta (yours, or a provided number at ${numero} excl. VAT a month), and your AI agent uses prepaid credit.` },
         { id: 'faq-app', q: 'Do I need to install an app from the Shopify App Store?', r: 'No. Claude creates the app in your own Shopify organization, with no Shopify review: all you have to do is click “Install”.' },
         { id: 'faq-reponse', q: 'Who answers when the customer replies to the reminder?', r: 'The one you chose: your AI agent, with what it knows about your store, or your team. The agent has no access to your orders: for a specific parcel, it hands over.' },
-        { id: 'faq-numero', q: 'Which WhatsApp number should I use?', r: `It depends on your number and your WhatsApp Business app: the guide above gives you your path. Your store’s messages go out from a number connected through Meta: yours if it is available, a provided number at ${numero} excl. VAT a month, or the number of your WhatsApp Business app, which you keep. Meta’s window has you create your Meta Business account along the way if you lack one. With no account at all, a number linked by QR code serves to answer: WhatsApp can cut a number linked this way that writes first. Later, this number will be able to keep the app and go through Meta to write first, keeping its conversations.` },
+        { id: 'faq-numero', q: 'Which WhatsApp number should I use?', r: `It depends on your plan and your number: the guide above gives you your path. Your store’s messages go out from an API number, connected through Meta: yours if it is available, a provided number at ${numero} excl. VAT a month (included in Pro), or the number of your WhatsApp Business app, which you keep. Meta’s window has you create your Meta Business account along the way if you lack one. With the Free plan and no account at all, your WhatsApp Business number, linked from the app, serves to answer: WhatsApp can cut a number linked this way that writes first. Later, you will be able to turn it into an API number to write first, keeping its conversations.` },
         { id: 'faq-stop', q: 'What happens to a customer who replies STOP?', r: 'They no longer receive anything from your store. The reminder carries at the bottom the line “Reply STOP to stop these messages”.' },
       ],
     },

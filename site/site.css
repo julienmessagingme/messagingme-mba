@@ -766,20 +766,25 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .bt-question legend.bt-avec-logo{position:relative;padding-left:66px;min-height:52px}
 .bt-logo{position:absolute;left:0;top:0;width:52px;height:52px}
 .bt-reponses{clear:both;display:flex;flex-wrap:wrap;align-items:center;gap:12px}
-.bt-reponses .bouton{font-family:inherit;cursor:pointer}
-.bt-reponses .bouton-trait{min-width:9em;justify-content:center;padding:1em 1.8em;border-color:rgb(255 255 255 / .34);background:rgb(255 255 255 / .06);font-size:1.08rem;font-weight:700}
-.bt-reponses .bouton-trait:hover{border-color:var(--action-ink);background:var(--action-wash);color:var(--ink)}
-.bt-reponses .bouton:focus-visible,.bt-modifier:focus-visible,.bt-recommencer:focus-visible{outline:3px solid var(--action-ink);outline-offset:3px}
+.bt-question .bouton{font-family:inherit;cursor:pointer}
+.bt-question .bouton-trait{min-width:9em;justify-content:center;padding:1em 1.8em;border-color:rgb(255 255 255 / .34);background:rgb(255 255 255 / .06);font-size:1.08rem;font-weight:700}
+.bt-question .bouton-trait:hover{border-color:var(--action-ink);background:var(--action-wash);color:var(--ink)}
+.bt-guide .bouton:focus-visible,.bt-modifier:focus-visible,.bt-recommencer:focus-visible{outline:3px solid var(--action-ink);outline-offset:3px}
 .bt-reponses .bouton-texte{margin-left:6px;background:none;border:0;font:inherit;font-weight:600;font-size:1rem;text-decoration:underline;color:var(--action-ink)}
-.bt-reponses [aria-pressed="true"]{background:var(--action);border-color:transparent;color:var(--on-action)}
+.bt-question [aria-pressed="true"]{background:var(--action);border-color:transparent;color:var(--on-action)}
+/* Une question à cartes : sous chaque carte, son bouton, à sa largeur ; les cartes d'une rangée gardent la même hauteur. */
+.bt-question .bt-voies{clear:both;margin:0}
+.bt-voie-choix{display:grid;grid-template-rows:1fr auto;gap:12px}
+.bt-voie-choix .bouton-trait{width:100%;min-width:0}
+.bt-voies + .bt-reponses{margin-top:14px}
+.bt-resume{display:none}
 .bt-modifier{display:none;margin-left:auto;padding:0;border:0;background:none;color:var(--action-ink);font:inherit;font-size:.92rem;font-weight:600;text-decoration:underline;cursor:pointer}
 /* Une question répondue : une ligne, sa réponse en pastille, « Modifier » au bout, et la note de la réponse si elle en a une. */
 .bt-question.repondue{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 18px;padding:0 0 18px;border-bottom:1px solid var(--line)}
 .bt-question.repondue legend{float:none;width:auto;margin:0;font-size:1rem;font-weight:600;letter-spacing:0;color:var(--muted)}
 .bt-question.repondue legend.bt-avec-logo{padding-left:0;min-height:0}
-.bt-question.repondue :is(.bt-logo,.bt-precision,.bt-aide,.bt-voies,[data-aide],[aria-pressed="false"]){display:none}
-.bt-question.repondue .bt-reponses{clear:none}
-.bt-question.repondue [aria-pressed="true"]{min-width:0;padding:.3em .95em;font-size:.9rem;pointer-events:none}
+.bt-question.repondue :is(.bt-logo,.bt-precision,.bt-aide,.bt-voies,.bt-reponses){display:none}
+.bt-question.repondue .bt-resume{display:inline-flex;padding:.3em .95em;border-radius:999px;background:var(--action);color:var(--on-action);font-size:.9rem;font-weight:700}
 .bt-question.repondue .bt-modifier{display:inline}
 .bt-question.repondue .bt-note-reponse{flex-basis:100%;margin:2px 0 0}
 /* `hidden` doit gagner sur les `display` du guide : sans script, l'étape et sa jauge ne s'affichent pas. */
@@ -789,7 +794,16 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .bt-chemin h3{margin:4px 0 8px;font-size:1.15rem}
 .bt-chemin p{margin:0 0 8px;color:var(--muted)}
 .bt-chemin .bt-situation{margin:0;font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--action-ink)}
-.bt-appels{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:22px 0 0}
+/* Le bout du tunnel, par offre : ses boutons, puis en Free la demande à coller dans Claude Code. */
+.bt-appels{margin:22px 0 0;padding-top:20px;border-top:1px solid var(--line)}
+.bt-chemin .bt-appels-titre{margin:0 0 12px;font-weight:700;color:var(--ink)}
+.bt-appels-boutons{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+.bt-chemin .bt-demande-titre{margin:18px 0 8px;font-size:.92rem}
+.bt-demande{display:flex;align-items:flex-start;gap:14px;padding:14px 16px;border:1px dashed rgb(111 194 254 / .45);border-radius:14px;background:rgb(0 2 20 / .35)}
+.bt-chemin .bt-demande p{flex:1;margin:0;color:var(--ink);font-size:.95rem}
+.bt-demande .bouton{flex:none;font-family:inherit;cursor:pointer}
+/* L'offre choisie ne laisse que ses boutons ; sans script, les deux offres restent l'une sous l'autre. */
+.js .bt-guide[data-offre="free"] .bt-appels[data-offre="pro"],.js .bt-guide[data-offre="pro"] .bt-appels[data-offre="free"]{display:none}
 .js .bt-guide[data-pret] .bt-chemins{margin:0}
 .js .bt-guide[data-pret] .bt-chemin{display:none}
 .js .bt-guide[data-pret] .bt-chemin.actif{display:block;margin:26px 0 0;padding:clamp(20px,3.5vw,30px);border-color:rgb(37 211 102 / .5);background:rgb(37 211 102 / .07)}
@@ -811,7 +825,7 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
   .js .bt-guide[data-pret] .bt-question:not(.repondue):not([hidden]),.js .bt-guide[data-pret] .bt-chemin.actif{animation:bt-entree .35s cubic-bezier(.2,.7,.2,1) both}
 }
 @media (prefers-reduced-motion:reduce){.bt-jauge{transition:none}}
-@media (max-width:520px){.bt-reponses .bouton-trait{flex:1 1 40%;min-width:0;padding:.95em 1em}.bt-progression{gap:12px;margin-bottom:22px}}
+@media (max-width:520px){.bt-reponses .bouton-trait{flex:1 1 40%;min-width:0;padding:.95em 1em}.bt-progression{gap:12px;margin-bottom:22px}.bt-demande{flex-direction:column}}
 .bt-voies{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin:12px 0 0}
 .bt-voie{padding:16px;border:1px solid var(--line);border-radius:14px}
 .bt-voie h4{margin:0 0 10px;font-size:1rem}

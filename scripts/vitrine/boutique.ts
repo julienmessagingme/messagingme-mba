@@ -4,11 +4,12 @@
 // `docs/superpowers/plans/2026-10-24-boutiques-shopify.md`. Une troisième nature de page : ni références clients, ni film,
 // ni cas de terrain, mais deux portes (Claude Code, la console) et le guide du numéro, que `site.js` rend interactif et
 // qui reste lisible sans script (ses issues en liste).
+import { DEPOT_PLUGIN } from '../../web/lib/demarrer';
 import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
 import { ACCUEIL, fichierDe, fil, page } from './cas';
 import type { Langue } from './cas-textes';
 import { insecables } from './guide-meta';
-import { TEXTES_BOUTIQUES, type Carte, type Etape, type Issue, type Question, type TexteBoutique, type Voie } from './boutique-textes';
+import { TEXTES_BOUTIQUES, type Carte, type Etape, type Issue, type Question, type Reponse, type TexteBoutique, type Voie } from './boutique-textes';
 
 const CONSOLE = 'https://console.messagingme.app';
 const BAYMARD = 'https://baymard.com/lists/cart-abandonment-rate';
@@ -55,16 +56,18 @@ const etapes = (liste: readonly Etape[]) => [
 ];
 
 /**
- * Le guide du numéro : l'arbre de Julien (2026-10-24, précisé le 25), en tunnel depuis le 2026-10-27 (« c'est le début
- * de l'onboarding ») : une carte, la question en cours en grand et l'étape au-dessus (`{n}` sur le plus long parcours de
- * l'arbre), puis les mots qu'il emploie, repliés dessous. Sans script, les questions restent cachées et ses issues se
- * lisent l'une sous l'autre, chacune précédée de la situation qu'elle sert ; avec `site.js`, la première question
- * s'affiche, chaque réponse montre la question suivante (`data-vers`) ou une issue (`data-chemin`), la question répondue
- * se replie en une ligne que « Modifier » rouvre, et une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de
- * sa question. Une question peut montrer, avant ses réponses, les deux voies entre lesquelles elle fait choisir (`voies`).
+ * Le guide du numéro : l'arbre de Julien, en tunnel depuis le 2026-10-27 (« c'est le début de l'onboarding ») : une
+ * carte, la question en cours en grand et l'étape au-dessus (`{n}` sur le plus long parcours de l'arbre), puis les mots
+ * qu'il emploie, repliés dessous. L'offre ouvre le tunnel ; une question à cartes (`voies`) porte SOUS chaque carte la
+ * réponse de même rang. Sans script, les questions restent cachées et ses issues se lisent l'une sous l'autre, chacune
+ * précédée de la situation qu'elle sert et suivie des boutons de chaque offre ; avec `site.js`, chaque réponse montre la
+ * question suivante (`data-vers`) ou une issue (`data-chemin`), la question répondue se replie en une ligne (sa réponse
+ * dans `data-resume`) que « Modifier » rouvre, l'offre choisie (`data-offre`) ne laisse que ses boutons, et une réponse
+ * sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa question.
  */
 function guide(t: TexteBoutique, langue: Langue): string[] {
   const n = t.numero;
+  const a = n.appels;
   // Le plus long parcours, en questions : la jauge et « Question n sur … » le lisent dans l'arbre, jamais écrit à la main.
   const profondeur = (id: string): number => {
     const q = n.questions.find((x) => x.id === id);
@@ -72,42 +75,66 @@ function guide(t: TexteBoutique, langue: Langue): string[] {
   };
   const max = profondeur(n.questions[0]!.id);
   const progression = n.progression.replace('{max}', String(max));
-  // Le bout du tunnel : chaque issue mène à un geste. Le QR code ne se fait que par Claude Code (`/brancher`).
-  const portes = (id: string) => [
-    `<a class="bouton bouton-plein" href="#commencer">${t.boutonClaude}</a>`,
-    ...(id === 'qr' ? [] : [`<a class="bouton bouton-trait" href="${CONSOLE}/signup${langue === 'en' ? '?lang=en' : ''}">${t.boutonConsole}</a>`]),
-  ];
+  const bouton = (q: Question, r: Reponse, k: number) => (r.vers
+    ? `<button type="button" class="bouton bouton-trait" data-vers="${r.vers}"${r.offre ? ` data-offre="${r.offre}"` : ''}${r.note ? ` data-note="note-${q.id}-${k}"` : ''} aria-pressed="false">${r.libelle}</button>`
+    : `<button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">${r.libelle}</button>`);
+  // Une question à cartes : sous chaque carte, la réponse de même rang ; ce qui reste (« Je ne sais pas ») vient dessous.
+  const reponses = (q: Question): string[] => {
+    const toutes = q.reponses.map((r, k) => ({ r, k }));
+    if (!q.voies) return [`            <div class="bt-reponses">${toutes.map(({ r, k }) => bouton(q, r, k)).join('')}</div>`];
+    const menent = toutes.filter(({ r }) => r.vers);
+    const autres = toutes.filter(({ r }) => !r.vers);
+    if (menent.length !== q.voies.length) throw new Error(`boutique : ${q.id} a ${q.voies.length} cartes et ${menent.length} réponses qui mènent quelque part`);
+    return [
+      `            <div class="bt-voies" id="voies-${q.id}">`,
+      ...q.voies.flatMap((v, i) => ['              <div class="bt-voie-choix">', ...voie(v), `                ${bouton(q, menent[i]!.r, menent[i]!.k)}`, '              </div>']),
+      '            </div>',
+      ...(autres.length > 0 ? [`            <div class="bt-reponses">${autres.map(({ r, k }) => bouton(q, r, k)).join('')}</div>`] : []),
+    ];
+  };
   const question = (q: Question, i: number) => [
     `          <fieldset class="bt-question" data-question="${q.id}"${q.voies ? ` aria-describedby="voies-${q.id}"` : ''}${i > 0 ? ' hidden' : ''}>`,
     `            <legend${q.logo ? ' class="bt-avec-logo"' : ''}>${q.logo ? `<img class="bt-logo" src="${q.logo}" alt="" width="40" height="40">` : ''}${q.texte}${q.precision ? `<span class="bt-precision">${q.precision}</span>` : ''}</legend>`,
-    // Les voies sont lues avec la question, même quand le focus saute directement à sa première réponse.
-    ...(q.voies ? [`            <div class="bt-voies" id="voies-${q.id}">`, ...q.voies.flatMap(voie), '            </div>'] : []),
-    `            <div class="bt-reponses">${q.reponses.map((r, k) => r.vers
-      ? `<button type="button" class="bouton bouton-trait" data-vers="${r.vers}"${r.note ? ` data-note="note-${q.id}-${k}"` : ''} aria-pressed="false">${r.libelle}</button>`
-      : `<button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">${r.libelle}</button>`).join('')}</div>`,
+    // Repliée, la question montre ici la réponse donnée, puis « Modifier ».
+    '            <span class="bt-resume" data-resume></span>',
+    ...reponses(q),
     `            <button type="button" class="bt-modifier" data-modifier>${n.modifier}</button>`,
     ...(q.aide ? [`            <p class="bt-aide" hidden>${q.aide}</p>`] : []),
     ...q.reponses.flatMap((r, k) => (r.note ? [`            <p class="bt-note-reponse" id="note-${q.id}-${k}" role="status" hidden>${r.note}</p>`] : [])),
     '          </fieldset>',
   ];
   const ligne = (classe: string, icone: string, sr: string) => (x: string) =>
-    `                <li class="${classe}"><svg class="ic" aria-hidden="true"><use href="#${icone}"/></svg><span class="bt-sr">${sr} </span>${x}</li>`;
+    `                    <li class="${classe}"><svg class="ic" aria-hidden="true"><use href="#${icone}"/></svg><span class="bt-sr">${sr} </span>${x}</li>`;
   const voie = (v: Voie) => [
-    '            <section class="bt-voie">',
-    `              <h4>${v.titre}</h4>`,
-    '              <ul>',
+    '                <section class="bt-voie">',
+    `                  <h4>${v.titre}</h4>`,
+    '                  <ul>',
     ...v.plus.map(ligne('bt-plus', 'i-check', n.plus)),
     ...v.moins.map(ligne('bt-moins', 'i-x', n.moins)),
-    '              </ul>',
-    '            </section>',
+    '                  </ul>',
+    '                </section>',
   ];
+  const inscription = `${CONSOLE}/signup${langue === 'en' ? '?lang=en' : ''}`;
+  // Le bout du tunnel, par offre (Julien, 2026-10-27) : en Free, le plugin, son dépôt et la demande à coller dans Claude
+  // Code ; en Pro, la console et le pas-à-pas de ce chemin. Une issue sans pas-à-pas n'existe pas en Pro.
   const issue = (x: Issue) => [
     `        <article class="bt-chemin" data-chemin="${x.id}" id="numero-${x.id}">`,
     `          <p class="bt-situation">${x.situation}</p>`,
     `          <h3>${x.titre}</h3>`,
     ...x.textes.map((p) => `          <p>${p}</p>`),
     ...(x.voies ? ['          <div class="bt-voies">', ...x.voies.flatMap(voie), '          </div>'] : []),
-    `          <div class="bt-appels">${portes(x.id).join('')}</div>`,
+    '          <div class="bt-appels" data-offre="free">',
+    `            <p class="bt-appels-titre">${a.free}</p>`,
+    `            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="${PLUGIN[langue]}">${a.plugin}</a><a class="bouton bouton-trait" href="${DEPOT_PLUGIN}" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#i-github"/></svg>${a.github}</a></div>`,
+    `            <p class="bt-demande-titre">${a.demande}</p>`,
+    `            <div class="bt-demande"><p id="demande-${x.id}">${x.demande}</p><button type="button" class="bouton bouton-trait" data-copier="demande-${x.id}" data-copie="${a.copie}" hidden>${a.copier}</button></div>`,
+    '          </div>',
+    ...(x.pasAPas ? [
+      '          <div class="bt-appels" data-offre="pro">',
+      `            <p class="bt-appels-titre">${a.pro}</p>`,
+      `            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="${inscription}">${a.compte}</a><a class="bouton bouton-trait" href="${x.pasAPas}">${a.pasAPas}</a></div>`,
+      '          </div>',
+    ] : []),
     '        </article>',
   ];
   return [

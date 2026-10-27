@@ -6,7 +6,8 @@ import { ENTREES } from '../web/lib/registre-vitrine';
 import { fichierDe } from '../scripts/vitrine/cas';
 import { lire, pagesHtml, texte } from './vitrine-lecture';
 import { FAQ } from '../scripts/plugin/faq';
-import { readFileSync } from 'node:fs';
+import { DEPOT_PLUGIN } from '../web/lib/demarrer';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -45,13 +46,9 @@ describe('la page Boutiques Shopify', () => {
     expect(fr).toContain('dès 5 € HT');
   });
 
-  it('🔴 toute phrase qui nomme le QR code dit qu’il sert à RÉPONDRE, dans les deux langues', () => {
+  it('🔴 la page ne dit plus « QR code » : face au client, c’est le numéro WhatsApp Business (Julien, 2026-10-27)', () => {
     for (const e of boutiques) {
-      for (const [langue, adresse, verbe] of [['fr', e.fr.adresse, /répond/i], ['en', e.en.adresse, /answer/i]] as const) {
-        const qr = phrases(corps(lire(fichierDe(adresse)))).filter((x) => /QR/.test(x) && !x.endsWith('?'));
-        expect(qr.length, `${langue} : la page parle du QR code`).toBeGreaterThan(0);
-        for (const x of qr) expect(x, `${langue} : ${x}`).toMatch(verbe);
-      }
+      for (const adresse of [e.fr.adresse, e.en.adresse]) expect(corps(lire(fichierDe(adresse))), adresse).not.toMatch(/QR/);
     }
   });
 
@@ -99,39 +96,44 @@ describe('la page Boutiques Shopify', () => {
     }
   });
 
-  it('🔴 la voie QR code d’une issue à choix ne promet aucun message qui part, et dit que rien ne part en premier', () => {
-    for (const [langue, part, rien] of [['fr', /partent|envoie/i, /rien ne part en premier/i], ['en', /go out|sends/i, /nothing goes out first/i]] as const) {
+  it('🔴 le numéro WhatsApp Business (l’application reliée comme un appareil) ne promet aucun message qui part, et dit que rien ne part en premier', () => {
+    for (const [langue, part, rien, mot] of [
+      ['fr', /partent|envoie/i, /rien ne part en premier/i, /numéro WhatsApp Business/],
+      ['en', /go out|sends/i, /nothing goes out first/i, /WhatsApp Business number/],
+    ] as const) {
       const { questions, issues, lexique } = TEXTES_BOUTIQUES.shopify![langue].numero;
-      // Les voies vivent sur le choix « QR code ou compte Meta ? » (une question), et peuvent vivre sur une issue.
-      const choix = [...questions, ...issues].filter((x) => x.voies);
-      expect(choix.length, langue).toBeGreaterThan(0);
-      for (const x of choix) {
-        const qr = x.voies!.filter((v) => /QR/.test(v.titre));
-        expect(qr.length, `${langue} : ${x.id}`).toBe(1);
-        for (const ligne of qr[0]!.plus) expect(ligne, `${langue} : ${x.id}`).not.toMatch(part);
-        expect(qr[0]!.moins.some((l) => rien.test(l)), `${langue} : ${x.id}`).toBe(true);
-      }
-      // Le mot « QR code » du lexique le dit aussi.
-      expect(lexique.termes.find((t) => /QR/.test(t.terme))!.definition, langue).toMatch(rien);
+      // Sa carte : celle dont le bouton mène à l'issue `qr`.
+      const choix = questions.find((q) => q.reponses.some((r) => r.vers === 'qr'));
+      expect(choix?.voies, langue).toBeDefined();
+      const carte = choix!.voies![choix!.reponses.filter((r) => r.vers).findIndex((r) => r.vers === 'qr')]!;
+      for (const ligne of carte.plus) expect(ligne, `${langue} : ${carte.titre}`).not.toMatch(part);
+      expect(carte.moins.some((l) => rien.test(l)), `${langue} : ${carte.titre}`).toBe(true);
+      // Son issue, et son mot du lexique, le disent aussi.
+      expect(issues.find((x) => x.id === 'qr')!.textes.some((t) => rien.test(t)), langue).toBe(true);
+      expect(lexique.termes.find((t) => mot.test(t.terme))!.definition, langue).toMatch(rien);
+      // Et la demande à coller ne lui fait envoyer aucun message de la boutique.
+      expect(issues.find((x) => x.id === 'qr')!.demande, langue).not.toMatch(/relance|confirmation|expédition|reminder|shipping/i);
     }
   });
 
-  it('🔴 avec un compte Meta Business, et pour garder l’application, le QR code ne se propose jamais (Julien, 2026-10-25)', () => {
+  it('🔴 seule la Free mène au numéro WhatsApp Business : le Pro demande un numéro API (Julien, 2026-10-27)', () => {
     for (const langue of ['fr', 'en'] as const) {
       const { questions, issues } = TEXTES_BOUTIQUES.shopify![langue].numero;
-      const atteints = new Set<string>();
-      const aller = (id: string): void => {
-        if (atteints.has(id)) return;
-        atteints.add(id);
-        for (const r of questions.find((x) => x.id === id)?.reponses ?? []) if (r.vers) aller(r.vers);
+      const depuis = (offre: 'free' | 'pro'): Set<string> => {
+        const atteints = new Set<string>();
+        const aller = (id: string): void => {
+          if (atteints.has(id)) return;
+          atteints.add(id);
+          for (const r of questions.find((x) => x.id === id)?.reponses ?? []) if (r.vers) aller(r.vers);
+        };
+        aller(questions[0]!.reponses.find((r) => r.offre === offre)!.vers!);
+        return atteints;
       };
-      // La première réponse de la première question est le « Oui » au compte.
-      aller(questions[0]!.reponses[0]!.vers!);
-      expect(atteints.size, langue).toBeGreaterThan(2);
-      for (const id of atteints) {
-        expect(JSON.stringify(questions.find((x) => x.id === id) ?? issues.find((x) => x.id === id)), `${langue} : ${id}`).not.toMatch(/QR/);
-      }
-      expect(JSON.stringify(issues.find((x) => x.id === 'garder-application')), langue).not.toMatch(/QR/);
+      expect(depuis('pro').has('qr'), langue).toBe(false);
+      expect(depuis('free').has('qr'), langue).toBe(true);
+      // Le bout du tunnel en Pro (la console et le pas-à-pas) existe exactement pour les issues que le Pro atteint.
+      const pro = depuis('pro');
+      for (const x of issues) expect(Boolean(x.pasAPas), `${langue} : ${x.id}`).toBe(pro.has(x.id));
     }
   });
 
@@ -162,7 +164,7 @@ describe('la page Boutiques Shopify', () => {
     for (const e of boutiques) {
       for (const [langue, adresse] of [['fr', e.fr.adresse], ['en', e.en.adresse]] as const) {
         const html = lire(fichierDe(adresse));
-        // Le « Non » au compte Meta Business porte la sienne : rien n'est à préparer.
+        // Le Pro porte la sienne : le compte Meta Business qu'il demande se crée en chemin.
         expect(TEXTES_BOUTIQUES.shopify![langue].numero.questions.some((q) => q.reponses.some((r) => r.note)), langue).toBe(true);
         for (const q of TEXTES_BOUTIQUES.shopify![langue].numero.questions) {
           q.reponses.forEach((r, k) => {
@@ -195,20 +197,53 @@ describe('la page Boutiques Shopify', () => {
     expect(lire('site.css')).toContain('.bt-guide [hidden]{display:none}');
   });
 
-  it('chaque issue du guide finit sur ses boutons : Claude Code partout, la console sauf pour le QR code', () => {
+  it('une question à cartes porte, sous chaque carte, le bouton de même rang (Julien, 2026-10-27)', () => {
     for (const e of boutiques) {
       for (const [langue, adresse] of [['fr', e.fr.adresse], ['en', e.en.adresse]] as const) {
         const html = lire(fichierDe(adresse));
-        const { issues } = TEXTES_BOUTIQUES.shopify![langue].numero;
-        // L'exception porte sur l'identifiant `qr` : qu'il change, et le test le dit au lieu de passer en silence.
-        expect(issues.map((x) => x.id), langue).toContain('qr');
-        for (const x of issues) {
+        const aCartes = TEXTES_BOUTIQUES.shopify![langue].numero.questions.filter((q) => q.voies);
+        // L'offre, puis le numéro de la Free.
+        expect(aCartes.map((q) => q.id), langue).toEqual(['offre', 'type-numero']);
+        for (const q of aCartes) {
+          const menent = q.reponses.filter((r) => r.vers);
+          expect(menent.length, `${langue} : ${q.id}`).toBe(q.voies!.length);
+          const fieldset = html.match(new RegExp(`<fieldset class="bt-question" data-question="${q.id}"[\\s\\S]*?</fieldset>`))?.[0] ?? '';
+          const cartes = fieldset.split('<div class="bt-voie-choix">').slice(1);
+          expect(cartes.length, `${langue} : ${q.id}`).toBe(q.voies!.length);
+          cartes.forEach((c, i) => {
+            expect(c, `${langue} : ${q.id}, carte ${i + 1}`).toContain('<section class="bt-voie">');
+            expect(c.match(/data-vers="([^"]+)"/)?.[1], `${langue} : ${q.id}, carte ${i + 1}`).toBe(menent[i]!.vers);
+          });
+        }
+      }
+    }
+  });
+
+  it('chaque issue finit sur les boutons de son offre : en Free le plugin, son dépôt et la demande à coller, en Pro la console et le pas-à-pas', () => {
+    for (const e of boutiques) {
+      for (const [langue, adresse, plugin, offre] of [
+        ['fr', e.fr.adresse, '/developpeurs/installer-le-plugin/', /offre Free/],
+        ['en', e.en.adresse, '/en/developers/install-the-plugin/', /Free plan/],
+      ] as const) {
+        const html = lire(fichierDe(adresse));
+        for (const x of TEXTES_BOUTIQUES.shopify![langue].numero.issues) {
           const article = html.match(new RegExp(`<article class="bt-chemin" data-chemin="${x.id}"[\\s\\S]*?</article>`))?.[0] ?? '';
-          const appels = article.match(/<div class="bt-appels">([\s\S]*?)<\/div>/)?.[1] ?? '';
-          expect(appels, `${langue} : ${x.id}`).toContain('href="#commencer"');
-          // Le QR code ne se relie que par Claude Code (la page `/brancher` de son lien) : la console n'a pas ce chemin.
-          if (x.id === 'qr') expect(appels, `${langue} : ${x.id}`).not.toContain('console.messagingme.app');
-          else expect(appels, `${langue} : ${x.id}`).toContain('console.messagingme.app/signup');
+          const blocs = new Map(article.split('<div class="bt-appels" data-offre="').slice(1).map((b) => [b.slice(0, b.indexOf('"')), b] as const));
+          const free = blocs.get('free') ?? '';
+          expect(free, `${langue} : ${x.id}`).toContain(`href="${plugin}"`);
+          expect(free, `${langue} : ${x.id}`).toContain(`href="${DEPOT_PLUGIN}"`);
+          expect(free, `${langue} : ${x.id}`).toContain(`<p id="demande-${x.id}">`);
+          expect(free, `${langue} : ${x.id}`).toContain(`data-copier="demande-${x.id}"`);
+          // La demande reprend ce que le tunnel a déduit, l'offre la première.
+          expect(x.demande, `${langue} : ${x.id}`).toMatch(offre);
+          if (x.pasAPas) {
+            const pro = blocs.get('pro') ?? '';
+            expect(pro, `${langue} : ${x.id}`).toContain('href="https://console.messagingme.app/signup');
+            expect(pro, `${langue} : ${x.id}`).toContain(`href="${x.pasAPas}"`);
+            expect(existsSync(join(process.cwd(), 'site', x.pasAPas, 'index.html')), x.pasAPas).toBe(true);
+          } else {
+            expect(blocs.has('pro'), `${langue} : ${x.id} n'existe pas en Pro`).toBe(false);
+          }
         }
       }
     }
@@ -219,5 +254,8 @@ describe('la page Boutiques Shopify', () => {
     expect(en.scenario.etapes.length).toBe(fr.scenario.etapes.length);
     expect(en.faq.questions.map((q) => q.id)).toEqual(fr.faq.questions.map((q) => q.id));
     expect(en.ensuite.cartes.map((c) => Boolean(c.offre))).toEqual(fr.ensuite.cartes.map((c) => Boolean(c.offre)));
+    const offres = (t: typeof fr) => t.numero.questions.flatMap((q) => q.reponses.map((r) => r.offre ?? ''));
+    expect(offres(en)).toEqual(offres(fr));
+    expect(en.numero.issues.map((x) => Boolean(x.pasAPas))).toEqual(fr.numero.issues.map((x) => Boolean(x.pasAPas)));
   });
 });

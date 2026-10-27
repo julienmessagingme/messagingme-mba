@@ -120,19 +120,22 @@ dans le Pro. Shopify n'y apparaît qu'en compatibilité (Messaging Me n'est pas 
 `/en/solutions/shopify-stores/`, au menu « Solutions » après les secteurs. Pour les marchands : la relance de panier et
 les messages de commande sur WhatsApp, branchés en le demandant à Claude Code avec l'offre Free (0 € d'abonnement), ou
 depuis la console avec le Pro. Le scénario du panier abandonné en cinq temps, ce qui se branche, ce que la conversation
-rend possible (chaque carte étiquetée de son offre), puis le guide du numéro, l'arbre de Julien (2026-10-24, revu le
-2026-10-25 après l'essai 161), en tunnel depuis le 2026-10-27 : « Votre branchement commence ici. », et une carte qui
-pose une question à la fois, en grand, sous l'étape (« Question 1 sur 5 au plus ») et sa jauge. Une réponse donnée se
-replie en une ligne que « Modifier » rouvre. Les questions (un compte Meta Business ? un « Non » n'arrête rien ;
-l'application WhatsApp Business sur le numéro de l'entreprise ? la garder, ou un numéro à part ? un numéro libre ?)
-mènent à garder son application, à son numéro libre ou à un numéro fourni, par Meta, et chaque issue finit sur ses
-boutons : Claude Code, et la console sauf pour le QR code, qui ne se relie que par Claude Code. Les mots employés
-(compte Meta Business, application WhatsApp Business, API officielle, garder son application, QR code) se déplient
-sous la carte. Le QR code ne se propose que sans compte Meta Business, pour un numéro à part ou un nouveau numéro : un choix
-« QR code ou compte Meta ? » y montre ce que chaque voie apporte et coûte. Le mot « coexistence » n'y apparaît
-jamais : face au client, c'est « garder votre application WhatsApp Business ». Suivent les quatre étapes depuis Claude Code,
-le prix et une FAQ. Un numéro relié par QR code n'y sert qu'à répondre aux clients qui écrivent. Le même arbre guide
-Claude dans la mise en service (la skill `mise-en-service` du plugin), et le README du plugin et sa FAQ l'expliquent.
+rend possible (chaque carte étiquetée de son offre), puis le guide du numéro, en tunnel depuis le 2026-10-27 :
+« Votre branchement commence ici. », et une carte qui pose une question à la fois, en grand, sous l'étape (« Question 1
+sur 5 au plus ») et sa jauge. Une réponse donnée se replie en une ligne que « Modifier » rouvre. L'arbre de Julien du
+2026-10-27 part de l'offre : deux cartes, Free (0 €, depuis Claude Code, sans console) et Pro (49 € HT par mois, la
+console, un numéro fourni, 14 jours d'essai), chacune avec son bouton dessous. Le Pro demande un numéro API, donc un
+compte Meta Business, que la fenêtre de Meta fait créer en chemin. La Free fait choisir, sur deux cartes, entre le
+numéro WhatsApp Business (l'application à télécharger, reliée comme un appareil : elle ne fait que répondre, et le mot
+« QR code », que personne ne comprenait, n'est plus employé) et le numéro API. Le numéro API, en Free comme en Pro,
+mène à l'application WhatsApp Business sur le numéro de l'entreprise (la garder, et il devient aussi un numéro API, ou
+un numéro à part), puis à un numéro libre ou à un numéro fourni. Chaque issue finit sur les boutons de l'offre
+choisie : en Free, le plugin, son dépôt GitHub et la demande à coller dans Claude Code, qui reprend les réponses
+données (« Copier ») ; en Pro, « Créer mon compte » et le pas-à-pas de ce chemin. Les quatre mots employés (compte Meta
+Business, numéro WhatsApp Business, numéro API, garder son application) se déplient sous la carte. Le mot
+« coexistence » n'y apparaît jamais : face au client, c'est « garder votre application WhatsApp Business ». Suivent les
+quatre étapes depuis Claude Code, le prix et une FAQ. ⚠️ Le plugin (la skill `mise-en-service`, son README, sa FAQ) suit
+encore l'arbre du 2026-10-25 et dit « QR code » : il reprendra celui-ci dans un lot à part, avec une nouvelle version.
 Le film viendra plus tard.
 
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
