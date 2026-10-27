@@ -57,6 +57,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { signSession } from '../src/auth/token';
+import { pgSsl } from '../src/db/ssl';
 import { PgHttpLatencesStore } from '../src/ops/latence-http.pg';
 import { exigerBaseJetable } from './garde-banc';
 
@@ -526,7 +527,8 @@ async function derouler(pool: Pool, epreuve: Exclude<Epreuve, 'preparer' | 'rafa
 }
 
 async function main(): Promise<void> {
-  const pool = new Pool({ connectionString: URL_BASE, max: 2, application_name: 'banc30-script' });
+  // TLS comme les autres processus (`DB_SSL_CA_FILE`) : chez Scaleway, la base jetable est une base managée.
+  const pool = new Pool({ connectionString: URL_BASE, max: 2, application_name: 'banc30-script', ssl: pgSsl(URL_BASE) });
   try {
     if (EPREUVE === 'preparer') await preparer(pool);
     else if (EPREUVE === 'rafale') await rafale(pool);
