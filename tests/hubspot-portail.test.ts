@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { lireHubspotPortal, HubspotServiceError, type ConnectorDeps } from '../src/crm/hubspot-service';
+import { lireHubspotPortal, HubspotServiceError, ConnecteurEnReveil, type ConnectorDeps } from '../src/crm/hubspot-service';
 import type { HttpResponse } from '../src/meta/http';
 
 /**
@@ -68,6 +68,19 @@ describe('lireHubspotPortal : le portail lu par le connecteur', () => {
     await expect(lireHubspotPortal(deps, 't1')).rejects.toBeInstanceOf(HubspotServiceError);
     expect(appels).toHaveLength(1);
     expect(appels[0]!.echeance).toBeInstanceOf(AbortSignal);
+  });
+
+  it('🔴 une échéance dépassée est un RÉVEIL (la porte du connecteur dort, 2026-10-27), jamais « pas relié » ni une panne', async () => {
+    // L'échéance de l'appelant fait rejeter `fetch` avec un `TimeoutError` (`estAbandon`, `src/meta/http.ts`).
+    const deps: ConnectorDeps = {
+      baseUrl: 'http://mm-hubspot-api:8096',
+      secret: 'secret-du-canal',
+      transport: { post: async () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); } },
+    };
+    await expect(lireHubspotPortal(deps, 't1')).rejects.toBeInstanceOf(ConnecteurEnReveil);
+    // Une autre erreur réseau reste une panne, que l'écran affiche « non connecté ».
+    const panne: ConnectorDeps = { ...deps, transport: { post: async () => { throw new Error('ECONNREFUSED'); } } };
+    await expect(lireHubspotPortal(panne, 't1')).rejects.not.toBeInstanceOf(ConnecteurEnReveil);
   });
 });
 

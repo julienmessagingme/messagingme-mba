@@ -4,6 +4,7 @@ import { pullFromInfo, pullFromError } from '../src/account/pull';
 import { MetaPhoneNumberClient } from '../src/meta/phone-number';
 import { MetaApiError } from '../src/meta/errors';
 import { buildServer } from '../src/server';
+import { ConnecteurEnReveil } from '../src/crm/hubspot-service';
 import { FakeQueue } from './fake-queue';
 import { signSession } from '../src/auth/token';
 import type { FetchLike } from '../src/meta/templates';
@@ -443,6 +444,14 @@ describe('route account-status', () => {
     const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
     expect(res.statusCode).toBe(200);
     expect(res.json<{ hubspotPortal: { connected: boolean } }>().hubspotPortal).toEqual({ connected: false });
+    await server.close();
+  });
+
+  it('🔴 un connecteur qui se réveille est rendu `reveil`, pour que l’Accueil ne propose pas « Connecter HubSpot »', async () => {
+    const { server } = app({ hubspotPortal: async () => { throw new ConnecteurEnReveil(); } });
+    const res = await server.inject({ method: 'GET', url: '/tenants/t1/account-status', ...h(adminTok) });
+    expect(res.statusCode).toBe(200);
+    expect(res.json<{ hubspotPortal: unknown }>().hubspotPortal).toEqual({ connected: false, reveil: true });
     await server.close();
   });
 });

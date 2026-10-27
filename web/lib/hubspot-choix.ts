@@ -6,11 +6,15 @@ import { phraseInclusDans, type FonctionOffre, type VueOffre } from './offre';
  * pures, testées dans `hubspot-choix.test.ts`.
  */
 
-/** Où en est l'écran : lecture, rien de relié, étape de choix à valider, ou choix déjà fait. */
-export type EtapeHubspot = 'lecture' | 'echec' | 'connecter' | 'choisir' | 'regle';
+/**
+ * Où en est l'écran : lecture, connecteur qui se réveille (on ne sait pas encore), rien de relié, étape de choix à
+ * valider, ou choix déjà fait.
+ */
+export type EtapeHubspot = 'lecture' | 'reveil' | 'echec' | 'connecter' | 'choisir' | 'regle';
 
-export function etapeHubspot(p: { lecture: 'en_cours' | 'ok' | 'echec'; relie: boolean | undefined; valideLe: string | null | undefined }): EtapeHubspot {
+export function etapeHubspot(p: { lecture: 'en_cours' | 'ok' | 'echec'; relie: boolean | undefined; valideLe: string | null | undefined; reveil?: boolean }): EtapeHubspot {
   if (p.lecture === 'en_cours') return 'lecture';
+  if (p.lecture === 'ok' && p.reveil === true && p.relie === undefined) return 'reveil';
   if (p.lecture === 'echec' || p.relie === undefined) return 'echec';
   if (!p.relie) return 'connecter';
   // Une API antérieure au lot 1bis ne rend pas la date (`undefined`) : on ne propose pas une étape qu'elle ne sait

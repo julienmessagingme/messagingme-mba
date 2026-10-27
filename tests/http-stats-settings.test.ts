@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { sansPortailHubspot } from './hubspot';
+import { ConnecteurEnReveil } from '../src/crm/hubspot-service';
 import { GRILLE_DEFAUT } from '../src/stats/prix';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
@@ -607,6 +608,21 @@ describe('settings route', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json<{ mbaEnabled: boolean }>().mbaEnabled).toBe(true);
     await a.close();
+  });
+
+  it('🔴 GET /settings : un connecteur qui se réveille n’est ni relié ni délié (`hubspotReveil`), une panne reste « pas relié »', async () => {
+    const reveil = app({ settings: { hubspotPortalConnecte: async () => { throw new ConnecteurEnReveil(); } } });
+    const r1 = await reveil.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) });
+    expect(r1.statusCode).toBe(200);
+    const b1 = r1.json<{ hubspotPortalConnecte?: boolean; hubspotReveil?: boolean }>();
+    expect(b1.hubspotReveil).toBe(true);
+    expect(b1).not.toHaveProperty('hubspotPortalConnecte');
+    await reveil.close();
+    const panne = app({ settings: { hubspotPortalConnecte: async () => { throw new Error('ECONNREFUSED'); } } });
+    const b2 = (await panne.inject({ method: 'GET', url: '/tenants/t1/settings', ...h(adminTok) })).json<{ hubspotPortalConnecte?: boolean; hubspotReveil?: boolean }>();
+    expect(b2.hubspotPortalConnecte).toBe(false);
+    expect(b2).not.toHaveProperty('hubspotReveil');
+    await panne.close();
   });
 
   it('PATCH /settings/timezone : IANA valide -> 200 + posé ; invalide -> 400 ; agent -> 403', async () => {

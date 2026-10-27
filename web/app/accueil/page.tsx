@@ -203,6 +203,18 @@ function AccueilInner({ session }: { session: Session }) {
   // Un effet par chargeur : le statut du numéro (deux appels à Meta) ne se relit pas quand le verdict de l'offre arrive.
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadAccount(); }, [loadAccount]);
+  // La porte du connecteur HubSpot dort quand personne ne s'en sert et se réveille en une quinzaine de secondes
+  // (2026-10-27) : le statut lu pendant son réveil le dit (`reveil`). On le relit en silence, sans l'état de
+  // chargement qui ferait clignoter la carte, toutes les 10 s et trois fois au plus.
+  const [relecturesHubspot, setRelecturesHubspot] = useState(0);
+  useEffect(() => {
+    if (account?.hubspotPortal?.reveil !== true || relecturesHubspot >= 3) return;
+    const minuteur = setTimeout(() => {
+      setRelecturesHubspot((n) => n + 1);
+      getAccountStatus(session.tenantId).then(setAccount).catch(() => {});
+    }, 10_000);
+    return () => clearTimeout(minuteur);
+  }, [account, relecturesHubspot, session.tenantId]);
   useEffect(() => { void loadKpis(); }, [loadKpis]);
 
   /**
@@ -400,7 +412,8 @@ function AccueilInner({ session }: { session: Session }) {
   // Après « Onboard with 360dialog » ou une clé recollée : relire le compte, comme après la fenêtre de Meta.
   const recharger360 = (): void => { setAvertissementsConnexion([]); setConnexionRenouvelee(false); setLoading(true); void load(); void loadAccount(); };
   const affichageHubspot = account
-    ? affichageHubspotAccueil({ actif: hubspotActif, aUnNumero: account.hasNumber, portailRelie: account.hubspotPortal?.connected === true })
+    // Un connecteur qui se réveille compte comme relié ici : le bloc s'affiche, et c'est lui qui dit « connexion en cours ».
+    ? affichageHubspotAccueil({ actif: hubspotActif, aUnNumero: account.hasNumber, portailRelie: account.hubspotPortal?.connected === true || account.hubspotPortal?.reveil === true })
     : 'rien';
 
   // L'état de l'agent chez Meta, sous le titre de sa carte. `null` : rien à dire (il est allumé et répond aux
@@ -878,7 +891,16 @@ function AccueilInner({ session }: { session: Session }) {
                   </div>
                 </div>
               )}
-              {account.hubspotPortal && !account.hubspotPortal.connected && (
+              {account.hubspotPortal?.reveil && (
+                // Le connecteur se réveillait : on ne sait pas encore s'il est relié, donc ni l'interrupteur ni « Connecter ».
+                <div className="mt-4 flex items-center gap-2 border-t border-ink-100 pt-3 text-sm text-ink-500" data-testid="hubspot-reveil">
+                  <LogoHubSpot className="h-[18px] w-[18px] shrink-0" />
+                  {relecturesHubspot < 3
+                    ? t('Connexion à HubSpot en cours…', 'Connecting to HubSpot…')
+                    : t('HubSpot ne répond pas pour l’instant. Réessayez dans quelques minutes.', 'HubSpot is not responding right now. Try again in a few minutes.')}
+                </div>
+              )}
+              {account.hubspotPortal && !account.hubspotPortal.connected && !account.hubspotPortal.reveil && (
                 // Aucun portail relié : on ne montre PAS le toggle par numéro (pousser sans portail ne fait rien).
                 // Le CTA lance l'install OAuth du connecteur en liant CE tenant (admin uniquement).
                 <div className="mt-4 flex items-center justify-between gap-3 border-t border-ink-100 pt-3">

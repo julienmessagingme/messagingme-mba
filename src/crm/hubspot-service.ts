@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { signRequest } from '../lib/signature';
 import type { HubspotPortalLink, ModeTaches } from '../account/types';
-import { withRetry } from '../meta/http';
+import { estAbandon, withRetry } from '../meta/http';
 import type { HttpTransport } from '../meta/http';
 import { importContacts } from './import';
 import type { ImportDeps } from './import';
@@ -183,6 +183,19 @@ export function flagSelonLeChoix(
 /** L'échéance d'une lecture du portail : deux requêtes indexées chez le connecteur, quelques millisecondes d'habitude. */
 export const DELAI_PORTAIL_MS = 3_000;
 
+/**
+ * La lecture du portail a dépassé `DELAI_PORTAIL_MS`. Depuis le 2026-10-27, la porte du connecteur dort quand personne
+ * ne s'en sert (zéro copie minimum) et met une quinzaine de secondes à se réveiller (mesuré : 15,5 à 16,6 s) : l'appel
+ * qui expire l'a réveillée. Ce n'est ni « relié » ni « pas relié » : l'écran dit que la connexion est en cours, et
+ * relit. Un connecteur figé donne la même erreur, et l'écran finit par le dire après ses relectures.
+ */
+export class ConnecteurEnReveil extends Error {
+  constructor() {
+    super('connecteur_en_reveil');
+    this.name = 'ConnecteurEnReveil';
+  }
+}
+
 /** La réponse de `POST /service/portal`, validée : rien d'autre ne passe. */
 const reponsePortail = z.union([
   z.object({ connected: z.literal(false) }),
@@ -219,10 +232,14 @@ export async function poserModeTaches(deps: ConnectorDeps, tenantId: string, mod
  *   rend « on ne sait pas », l'écran du compte affiche « non connecté ».
  * Un seul essai, sous `DELAI_PORTAIL_MS` : l'Accueil et les réglages l'attendent, et un connecteur figé les aurait tenus
  * jusqu'à deux minutes et demie (30 s par essai, cinq essais). L'interrupteur répond alors 503, et l'on réessaie.
+ * Le délai dépassé lève `ConnecteurEnReveil`, que l'Accueil et les réglages affichent comme une connexion en cours.
  */
 export async function lireHubspotPortal(deps: ConnectorDeps | null, tenantId: string): Promise<HubspotPortalLink> {
   if (deps === null) return { connected: false };
-  const reponse = reponsePortail.safeParse(await callService<unknown>(deps, '/service/portal', { tenantId }, DELAI_PORTAIL_MS));
+  const brut = await callService<unknown>(deps, '/service/portal', { tenantId }, DELAI_PORTAIL_MS).catch((err: unknown) => {
+    throw estAbandon(err) ? new ConnecteurEnReveil() : err;
+  });
+  const reponse = reponsePortail.safeParse(brut);
   if (!reponse.success) throw new HubspotServiceError(502, 'reponse_invalide', false);
   return reponse.data;
 }

@@ -707,6 +707,11 @@ export interface TenantSettings {
    */
   hubspotPortalConnecte?: boolean;
   /**
+   * La porte du connecteur se réveillait pendant la lecture (une quinzaine de secondes, 2026-10-27) : on ne sait pas
+   * encore si un portail est relié, `hubspotPortalConnecte` est alors absent. L'écran dit « connexion en cours » et relit.
+   */
+  hubspotReveil?: boolean;
+  /**
    * L'INTERRUPTEUR HUBSPOT DE L'ESPACE (migration 0179, Tools > Intégrations). Allumé, le bloc HubSpot
    * s'affiche sur l'Accueil, numéro ou pas.
    *

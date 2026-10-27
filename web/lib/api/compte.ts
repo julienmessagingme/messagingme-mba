@@ -79,7 +79,8 @@ export interface AccountStatusResponse {
   hubspotPausedAt: string | null;
   /** Portail HubSpot lié au tenant, lu par le connecteur. connected=false -> proposer « Connecter HubSpot ».
    *  listsScopeGranted -> le portail a accordé crm.lists.read (import de listes sans re-consentement). */
-  hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null; listsScopeGranted?: boolean; routingMode?: 'mm_routing' | 'hubspot_native' };
+  /** `reveil` : le connecteur se réveillait (une quinzaine de secondes), `connected` n'en sait rien : « connexion en cours ». */
+  hubspotPortal: { connected: boolean; hubId?: string; hubDomain?: string | null; listsScopeGranted?: boolean; routingMode?: 'mm_routing' | 'hubspot_native'; reveil?: boolean };
   /**
    * Instant où le numéro a été DÉLIÉ de l'espace (migration 0180, ISO). `null` = relié. OPTIONNEL à la lecture :
    * une API plus ancienne ne l'envoie pas, et l'absence veut dire « relié », ce qu'il était forcément.

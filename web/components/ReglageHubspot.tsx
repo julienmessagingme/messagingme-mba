@@ -46,6 +46,9 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
   const [statut, setStatut] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [erreur, setErreur] = useState<string | null>(null);
   const [tachesNonAppliquees, setTachesNonAppliquees] = useState(false);
+  // La porte du connecteur se réveillait pendant la lecture (`hubspotReveil`) : on relit toutes les 10 s, trois fois au plus.
+  const [reveil, setReveil] = useState(false);
+  const [relecturesReveil, setRelecturesReveil] = useState(0);
   const vivant = useRef(true);
   // Une relecture partie avant un enregistrement ne doit pas écraser ce qu'il a écrit (le retour du focus pendant un
   // enregistrement) : chaque enregistrement change la version, une lecture d'une version périmée est ignorée.
@@ -68,6 +71,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
         const estRelie = typeof s.hubspotPortalConnecte === 'boolean' ? s.hubspotPortalConnecte : undefined;
         const date = s.hubspotChoixValideLe;
         setRelie(estRelie);
+        setReveil(s.hubspotReveil === true);
         setValideLe(date);
         setNomPortail(portail?.connected ? (portail.hubDomain ?? portail.hubId ?? null) : null);
         setListesAutorisees(portail?.listsScopeGranted === true);
@@ -116,7 +120,14 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
     } : c));
   }, [fonctions]);
 
-  const etape = etapeHubspot({ lecture, relie, valideLe });
+  const etape = etapeHubspot({ lecture, relie, valideLe, reveil });
+
+  // Le connecteur met une quinzaine de secondes à se réveiller : la relecture le trouve debout.
+  useEffect(() => {
+    if (etape !== 'reveil' || relecturesReveil >= 3) return;
+    const minuteur = setTimeout(() => { setRelecturesReveil((n) => n + 1); lire(); }, 10_000);
+    return () => clearTimeout(minuteur);
+  }, [etape, relecturesReveil, lire]);
 
   const enregistrer = useCallback((suivant: ChoixHubspot, precedent: ChoixHubspot | null, envoyerTaches: boolean) => {
     setStatut('saving');
@@ -204,6 +215,9 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
           <h3 className="text-sm font-semibold text-ink-900">HubSpot</h3>
           <p className="mt-1 text-sm text-ink-500" data-testid="integration-hubspot-etat">
             {etape === 'lecture' && t('Lecture…', 'Loading…')}
+            {etape === 'reveil' && (relecturesReveil < 3
+              ? t('Connexion à HubSpot en cours…', 'Connecting to HubSpot…')
+              : t('HubSpot ne répond pas pour l’instant. Réessayez dans quelques minutes.', 'HubSpot is not responding right now. Try again in a few minutes.'))}
             {etape === 'echec' && t('État inconnu : la lecture a échoué.', 'Unknown state: the read failed.')}
             {etape === 'connecter' && t('Aucun portail HubSpot relié.', 'No HubSpot portal linked.')}
             {(etape === 'choisir' || etape === 'regle') && (nomPortail

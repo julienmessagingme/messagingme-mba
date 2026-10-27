@@ -49,6 +49,11 @@ export interface HubspotPortalLink {
    * `hubspot_native` n'écrit que les propriétés. Absent d'un connecteur plus ancien.
    */
   routingMode?: ModeTaches;
+  /**
+   * Le connecteur se réveille (`ConnecteurEnReveil`) : on ne sait pas encore si un portail est relié, et `connected`
+   * vaut `false` sans le dire. L'écran affiche une connexion en cours et relit, jamais « non connecté ».
+   */
+  reveil?: true;
 }
 
 /** Le mode des tâches d'un portail HubSpot (lot 1bis). Il vaut pour tout le portail, donc pour ses espaces. */

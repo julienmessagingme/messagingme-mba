@@ -20,6 +20,13 @@ describe('etapeHubspot (lot 1bis)', () => {
     expect(etapeHubspot({ lecture: 'echec', relie: undefined, valideLe: undefined })).toBe('echec');
     expect(etapeHubspot({ lecture: 'ok', relie: undefined, valideLe: null })).toBe('echec');
   });
+
+  it('🔴 un connecteur qui se réveille : « connexion en cours », jamais « Connecter HubSpot » (2026-10-27)', () => {
+    expect(etapeHubspot({ lecture: 'ok', relie: undefined, valideLe: null, reveil: true })).toBe('reveil');
+    // Une réponse qui dit relié ou délié l'emporte sur un réveil : il est fini.
+    expect(etapeHubspot({ lecture: 'ok', relie: true, valideLe: '2026-10-20', reveil: true })).toBe('regle');
+    expect(etapeHubspot({ lecture: 'ok', relie: false, valideLe: null, reveil: true })).toBe('connecter');
+  });
 });
 
 describe('fermeeParLOffre', () => {

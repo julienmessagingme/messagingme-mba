@@ -4,6 +4,7 @@ import { computeAccountStatus, normalizeQuality, type AccountSignals, type Quali
 import type { PullResult, PhoneStatusPatch } from '../account/pull';
 import type { PhoneNumberRecord, HubspotPortalLink } from '../account/types';
 import { espaceVerifie } from './scope';
+import { ConnecteurEnReveil } from '../crm/hubspot-service';
 import { messageDe } from '../lib/erreur';
 import type { Fournisseur } from '../meta/credentials';
 
@@ -23,7 +24,8 @@ export interface AccountRouteDeps {
   enqueueHubspotCatchup(tenantId: string): Promise<void>;
   /**
    * Le portail HubSpot relié à l'espace, lu par le connecteur (`lireHubspotPortal`). Une panne lève : cette route
-   * l'affiche « non connecté », ce qui n'est qu'un affichage.
+   * l'affiche « non connecté », ce qui n'est qu'un affichage ; un connecteur qui se réveille (`ConnecteurEnReveil`),
+   * elle le rend avec `reveil`, pour que l'écran dise « connexion en cours » et relise.
    */
   hubspotPortal(tenantId: string): Promise<HubspotPortalLink>;
   /** Déconnexion complète : délie le portail HubSpot côté connecteur (mm-hubspot révoque le token si dernier tenant).
@@ -155,7 +157,8 @@ export function registerAccount(app: FastifyInstance, deps: AccountRouteDeps, ga
     // échouer la route -> on retombe sur « non connecté », comme le pull. Ce n'est qu'un affichage. Lu EN MÊME TEMPS
     // que le numéro : l'attente du connecteur ne s'ajoute pas à celle de la base.
     const [hubspotPortal, pn] = await Promise.all([
-      deps.hubspotPortal(tenant).catch(() => ({ connected: false as const })),
+      deps.hubspotPortal(tenant).catch((err: unknown): HubspotPortalLink =>
+        err instanceof ConnecteurEnReveil ? { connected: false, reveil: true } : { connected: false }),
       deps.numeros.getPhoneNumber(tenant),
     ]);
     if (!pn) {

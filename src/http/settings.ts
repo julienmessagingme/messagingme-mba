@@ -9,6 +9,7 @@ import { isValidTimeZone, normalizeBusinessHours, reglerModeTransfert } from '..
 import { corpsDuRefus } from '../lib/issue';
 import { valideGrille, BORNES_GRILLE } from '../stats/prix';
 import { makeJournal, type AuditSink } from '../audit/journal';
+import { ConnecteurEnReveil } from '../crm/hubspot-service';
 
 /** Ce que les routes lisent et écrivent des réglages de l'espace. */
 export interface ReglagesDep {
@@ -98,11 +99,17 @@ export function registerSettings(
     const settings = await deps.reglages.get(tenant);
     const rcsEnabled = await deps.rcs.hasAgent(tenant);
     // Une panne de lecture vaut « pas relié » ici seulement : c'est un drapeau d'affichage, l'écran ne doit
-    // pas tomber pour lui. L'extinction de l'interrupteur, elle, refuse (plus bas).
-    const hubspotPortalConnecte = await deps.hubspotPortalConnecte(tenant).catch(() => false);
+    // pas tomber pour lui. L'extinction de l'interrupteur, elle, refuse (plus bas). Un connecteur qui se réveille
+    // n'est ni relié ni délié : le drapeau reste absent, et `hubspotReveil` le dit à l'écran, qui relit.
+    let hubspotReveil = false;
+    const hubspotPortalConnecte = await deps.hubspotPortalConnecte(tenant).catch((err: unknown) => {
+      if (!(err instanceof ConnecteurEnReveil)) return false;
+      hubspotReveil = true;
+      return undefined;
+    });
     const choix = await deps.choixHubspot(tenant);
     return reply.code(200).send({
-      ...settings, rcsEnabled, hubspotPortalConnecte,
+      ...settings, rcsEnabled, hubspotPortalConnecte, ...(hubspotReveil ? { hubspotReveil: true } : {}),
       // Lot 1bis : le choix des fonctions HubSpot (l'écran Tools > Intégrations > HubSpot et son étape de choix).
       hubspotAnalyse: choix.analyse,
       hubspotPassage: choix.passage,
