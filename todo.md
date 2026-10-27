@@ -1,5 +1,18 @@
 # todo.md : backlog
 
+## 🟡 Les restes de la relecture du parallélisme du worker principal (pool à 20, accusés à 4, 2026-10-27)
+
+- **Un événement de nœud compté deux fois** : `recordStatusForMessage` (`src/workflow/node-events.pg.ts`) s'appuie sur
+  un `not exists` sans index unique (celui de `0063_workflow_node_events.sql` ne l'est pas). Deux accusés du même
+  statut traités ensemble (un paquet sans groupe redélivré pendant l'original) insèrent deux lignes, et « Mes
+  tableaux » compte en trop. Préexistant, plus probable avec les accusés à 4. Parade : un index unique, puis
+  `on conflict do nothing`.
+- **`PGBOSS_MAX` reste à 2** alors que le principal passe d'environ 45 à 63 boucles : chaque lecture et fin de job, et
+  un `send` depuis un handler, y passent. Pas de risque mesuré à ces volumes, mais l'arithmétique que demande le
+  commentaire de `src/config.ts` n'est écrite nulle part : la faire au prochain banc, avec les attentes du pool.
+- **Les signaux `delivered` et `read` d'un même message** peuvent partir dans l'ordre inverse vers l'outil d'un
+  client (paquet sans groupe ou rejeu) : à dire dans la doc des webhooks sortants si un client s'en plaint.
+
 ## 🟡 Les restes du lot D de l'audit de structure (console, 2026-10-26)
 
 - Quatre pages sans session gardent leur propre cadre, d'une forme un peu différente (`login`, `autoriser`, `brancher`,

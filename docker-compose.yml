@@ -60,6 +60,9 @@ services:
     environment:
       WORKER_ROLE: principal
       # Ses tailles, explicites comme celles de chaque service (budget : `tests/budget-pooler.test.ts`).
+      # ⚠️ RETOUR ARRIÈRE : depuis le 2026-10-27, les concurrences du principal (`src/config.ts`) sont calées sur les
+      # 20 connexions qu'il a chez Scaleway. Relancer ce code ici, avec 8, donnerait environ 8 jobs en vol par
+      # connexion et le délai d'acquisition de 8 s : y reprendre l'image d'avant, ou baisser ces constantes.
       DB_POOL_MAX: "8"
       PGBOSS_MAX: "2"
     # 🔴 SES LIMITES (lot 2b de la bascule, docs/ARCHITECTURE-CIBLE.md §2) : la condition pour que les deux workers

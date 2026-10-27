@@ -287,7 +287,7 @@ describe('cadence de polling par file', () => {
     for (const q of BASE_QUEUES.filter((x) => x !== 'webhook' && x !== 'webhook-status')) expect(videeEnContinu(q), q).toBe(false);
   });
 
-  it('🔴 la file des accusés vide son paquet d’un coup, sans être réveillée à l’arrivée ni gagner de boucle', () => {
+  it('🔴 la file des accusés vide son paquet d’un coup, sans être réveillée à l’arrivée', () => {
     // Mesuré du 15 au 21 octobre (`pgboss.job`) : un paquet de quatre accusés pris un par lecture de 30 s, 98 s pour le
     // dernier. Le vidage le prend d'une traite après la première lecture.
     expect(videeEnContinu('webhook-status')).toBe(true);

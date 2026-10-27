@@ -163,13 +163,27 @@ describe('🔴 le battement de cœur des tâches (banc des trente espaces, 2026-
     expect(etat.reglages).toContainEqual(['webhook-status', { retryDelay: DELAI_REJEU_VIDAGE_SECONDES }]);
   });
 
-  it('🔴 la file des accusés : UNE boucle à 30 s, réveillée après chaque accusé pour vider son paquet (2026-10-21)', async () => {
+  it('🔴 la file des accusés, sans options : une boucle à 30 s, réveillée après chaque accusé pour vider son paquet (2026-10-21)', async () => {
     const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
     await q.work('webhook-status', async () => {});
     expect(etat.travaux).toHaveLength(1);
     expect(etat.travaux[0]![1]).toMatchObject({ localConcurrency: 1, pollingIntervalSeconds: 30, batchSize: 1 });
     await etat.travaux[0]![2]([{ data: {} }]);
     expect(etat.reveils).toEqual(['boucle-1']);
+  });
+
+  it('🔴 la file des accusés comme le worker l’enregistre : une boucle par unité, un accusé à la fois par contact, toutes réveillées', async () => {
+    // Les options de `src/worker.ts` depuis le 2026-10-27 (`WEBHOOK_STATUS_CONCURRENCY`) : chaque boucle garde la
+    // cadence de 30 s et le plafond par contact, et un accusé traité réveille toutes les boucles pour vider le paquet.
+    const q = new PgBossQueue('postgres://u:p@h:5432/db', 'pgboss', { max: 2 });
+    await q.work('webhook-status', async () => {}, { concurrency: 4, groupConcurrency: 1 });
+    expect(etat.travaux).toHaveLength(4);
+    for (const [nom, o] of etat.travaux) {
+      expect(nom).toBe('webhook-status');
+      expect(o).toMatchObject({ localConcurrency: 1, localGroupConcurrency: 1, pollingIntervalSeconds: 30, batchSize: 1 });
+    }
+    await etat.travaux[0]![2]([{ data: {} }]);
+    expect(etat.reveils).toHaveLength(4);
   });
 
   it('🔴 la file des entrants : une boucle par registration, et chaque message traité réveille les trois', async () => {

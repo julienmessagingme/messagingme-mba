@@ -346,7 +346,7 @@ export const schema = z.object({
    * tour à la fois pour toute la flotte.
    * 12 est sûr par arithmétique : un tour passe l'essentiel de son temps à attendre le modèle sans tenir de
    * connexion (`pool.query` prend et rend la connexion par instruction), donc douze tours ne réservent pas
-   * douze connexions du pool de 8. Ce serait faux le jour où un tour ouvrirait une transaction autour de
+   * douze connexions du pool du worker principal. Ce serait faux le jour où un tour ouvrirait une transaction autour de
    * l'appel au modèle.
    * Quatre par espace, pour qu'un client bavard ne prenne pas les douze places. Les deux vont ensemble :
    * `groupConcurrency` est un no-op tant que `concurrency` vaut 1. Point de départ prudent, en configuration.
@@ -870,8 +870,9 @@ const constantes = {
   WEBHOOK_CONCURRENCY: 8,
   /**
    * Accusés de Meta traités en parallèle (`webhook-status`), un seul par contact : le receveur pose la même clé de
-   * groupe que pour les entrants (`cleDeContact`, numéro et contact), donc les accusés d'un même message restent dans
-   * l'ordre. 1 jusqu'au 2026-10-27, quand le pool du principal tenait en 8 connexions : la file plafonnait autour
+   * groupe que pour les entrants (`cleDeContact`, numéro et contact), donc deux accusés d'un même contact ne tournent
+   * jamais ensemble ; leur ordre, lui, n'est pas une condition de justesse, les statuts ne reculent pas
+   * (`updateDeliveryByMessageId`). 1 jusqu'au 2026-10-27, quand le pool du principal tenait en 8 connexions : la file plafonnait autour
    * de 24 numéros à plein débit (banc du 2026-10-17). 🔴 Toujours STRICTEMENT sous `WEBHOOK_CONCURRENCY` : une rafale
    * d'accusés ne doit jamais prendre plus de connexions que les messages d'un client qui attend
    * (`tests/queue-names.test.ts`).

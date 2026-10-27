@@ -751,10 +751,11 @@ export async function demarrerWorker(): Promise<void> {
    * réponse d'un vrai client. Même fonction de traitement, avec les seules dépendances de livraison.
    *
    * L'ordre relatif entre un accusé et un entrant n'est plus garanti : ils touchent des lignes différentes,
-   * aucun invariant n'en dépend. Deux accusés du même message (sent puis delivered) s'appliquent dans l'ordre :
-   * la concurrence est plafonnée à un job par GROUPE, et le groupe est le contact (`cleDeContact`, posé par les deux
-   * receveurs). Un paquet sans groupe (plusieurs contacts) peut croiser un accusé isolé d'un de ses contacts : les
-   * statuts ne reculent pas (`updateDeliveryByMessageId`), l'ordre n'y est donc pas une condition de justesse.
+   * aucun invariant n'en dépend. Deux accusés d'un même contact ne tournent jamais ensemble : la concurrence est
+   * plafonnée à un job par GROUPE, et le groupe est le contact (`cleDeContact`, posé par les deux receveurs). Ce
+   * n'est PAS une garantie d'ordre : un accusé rejoué après un échec, ou un paquet sans groupe (plusieurs contacts),
+   * passe après ses suivants. Ce qui rend l'ordre indifférent, c'est que les statuts ne reculent pas (le `where` par
+   * rang de `updateDeliveryByMessageId`).
    */
   await queue.work('webhook-status', async (data) => {
     // Trois dépendances nommées : ce qui est absent l'est volontairement (aucune conversation, aucune
