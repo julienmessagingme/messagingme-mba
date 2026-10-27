@@ -25,26 +25,59 @@ const RETENTION = readFileSync(join(RACINE, 'src', 'inbox', 'retention.ts'), 'ut
 describe('🔴 la conservation de la Base (lot 6, C) : 30 jours, mais seulement 30 jours apres l’entree en Base', () => {
   const MAINTENANT = new Date('2026-12-01T00:00:00Z');
   const ilYa = (jours: number) => new Date(MAINTENANT.getTime() - jours * 24 * 3_600_000);
+  const base = (depuis: Date) => ({ nom: 'base' as const, descenteLe: depuis });
 
   it('la grace passee, la Base garde 30 jours (la grille), quel que soit le reglage ou le defaut', () => {
-    expect(retentionEffective(90, null, { depuis: ilYa(31) }, MAINTENANT)).toBe(DROITS.base.limites.conservationJours);
-    expect(retentionEffective(90, 365, { depuis: ilYa(31) }, MAINTENANT)).toBe(30);
+    expect(retentionEffective(90, null, base(ilYa(31)), MAINTENANT)).toBe(DROITS.base.limites.conservationJours);
+    expect(retentionEffective(90, 365, base(ilYa(31)), MAINTENANT)).toBe(30);
   });
 
   it('🔴 pendant la grace, rien ne change : la regle d’avant (le reglage, sinon le defaut) ; changer d’offre ne purge pas', () => {
-    expect(retentionEffective(90, null, { depuis: ilYa(29) }, MAINTENANT)).toBe(90);
-    expect(retentionEffective(90, 365, { depuis: ilYa(29) }, MAINTENANT)).toBe(365);
+    expect(retentionEffective(90, null, base(ilYa(29)), MAINTENANT)).toBe(90);
+    expect(retentionEffective(90, 365, base(ilYa(29)), MAINTENANT)).toBe(365);
     expect(GRACE_RETOUR_BASE_JOURS).toBe(30);
   });
 
   it('🔴 J5 : un réglage PLUS COURT que 30 jours reste respecté en Base ; « jamais » ou plus long ne passe pas les 30 jours', () => {
-    expect(retentionEffective(90, 7, { depuis: ilYa(31) }, MAINTENANT)).toBe(7);
-    expect(retentionEffective(90, 0, { depuis: ilYa(31) }, MAINTENANT)).toBe(30);
-    expect(retentionEffective(90, 365, { depuis: ilYa(31) }, MAINTENANT)).toBe(30);
+    expect(retentionEffective(90, 7, base(ilYa(31)), MAINTENANT)).toBe(7);
+    expect(retentionEffective(90, 0, base(ilYa(31)), MAINTENANT)).toBe(30);
+    expect(retentionEffective(90, 365, base(ilYa(31)), MAINTENANT)).toBe(30);
   });
 
   it('🔴 le levier d’urgence gagne aussi sur la Base', () => {
-    expect(retentionEffective(0, null, { depuis: ilYa(400) }, MAINTENANT)).toBe(0);
+    expect(retentionEffective(0, null, base(ilYa(400)), MAINTENANT)).toBe(0);
+  });
+});
+
+describe('🔴 le Pro et le Business prennent la duree de la GRILLE (spec Business), avec la grace depuis leur descente', () => {
+  const MAINTENANT = new Date('2026-12-01T00:00:00Z');
+  const ilYa = (jours: number) => new Date(MAINTENANT.getTime() - jours * 24 * 3_600_000);
+  const PRO = DROITS.pro.limites.conservationJours;
+  const BUSINESS = DROITS.business.limites.conservationJours;
+
+  it('sans descente, la grille tout de suite : la duree de l instance n y compte plus', () => {
+    expect(retentionEffective(365, null, { nom: 'pro', descenteLe: null }, MAINTENANT)).toBe(PRO);
+    expect(retentionEffective(365, null, { nom: 'business', descenteLe: null }, MAINTENANT)).toBe(BUSINESS);
+  });
+
+  it('🔴 un reglage plus court reste respecte ; « jamais » ou plus long ne depasse pas la grille', () => {
+    expect(retentionEffective(365, 7, { nom: 'pro', descenteLe: null }, MAINTENANT)).toBe(7);
+    expect(retentionEffective(365, 0, { nom: 'pro', descenteLe: null }, MAINTENANT)).toBe(PRO);
+    expect(retentionEffective(365, 3650, { nom: 'business', descenteLe: null }, MAINTENANT)).toBe(BUSINESS);
+  });
+
+  it('🔴 descendu depuis moins de 30 jours (du Business au Pro, de l Entreprise au Business) : la regle d avant, rien ne se purge', () => {
+    expect(retentionEffective(365, null, { nom: 'pro', descenteLe: ilYa(10) }, MAINTENANT)).toBe(365);
+    expect(retentionEffective(90, 400, { nom: 'business', descenteLe: ilYa(29) }, MAINTENANT)).toBe(400);
+    // La grace passee, la grille.
+    expect(retentionEffective(365, null, { nom: 'pro', descenteLe: ilYa(31) }, MAINTENANT)).toBe(PRO);
+  });
+
+  it('l Entreprise garde son reglage de /ops, sinon le defaut ; le levier d urgence gagne partout', () => {
+    expect(retentionEffective(90, 730, { nom: 'entreprise', descenteLe: null }, MAINTENANT)).toBe(730);
+    expect(retentionEffective(90, null, { nom: 'entreprise', descenteLe: null }, MAINTENANT)).toBe(90);
+    expect(retentionEffective(0, null, { nom: 'pro', descenteLe: null }, MAINTENANT)).toBe(0);
+    expect(retentionEffective(0, 7, { nom: 'business', descenteLe: null }, MAINTENANT)).toBe(0);
   });
 });
 
@@ -106,10 +139,12 @@ describe('la purge porte la MEME regle que retentionEffective', () => {
     // Jaune 3 de la relecture de C : `hors_retention` gardait l'ancienne regle quand la purge lisait la nouvelle.
     expect(PURGE).toContain('${dureeConservationSql(');
     expect(COUTS).toContain('${dureeConservationSql(');
-    expect(PURGE).toMatch(/GRACE_RETOUR_BASE_JOURS, DROITS\.base\.limites\.conservationJours/);
-    expect(COUTS).toMatch(/GRACE_RETOUR_BASE_JOURS, DROITS\.base\.limites\.conservationJours/);
-    expect(RETENTION).toContain("offre_de_l_espace(t.id) = 'base'");
+    expect(PURGE).toMatch(/GRACE_RETOUR_BASE_JOURS, DROITS\.base\.limites\.conservationJours,\s+DROITS\.pro\.limites\.conservationJours, DROITS\.business\.limites\.conservationJours/);
+    expect(COUTS).toMatch(/GRACE_RETOUR_BASE_JOURS, DROITS\.base\.limites\.conservationJours,\s+DROITS\.pro\.limites\.conservationJours, DROITS\.business\.limites\.conservationJours/);
+    // Spec Business : la grille vaut pour la Free, le Pro et le Business, chacun depuis sa descente.
+    expect(RETENTION).toContain("in ('base', 'pro', 'business')");
     expect(RETENTION).toContain('${BASE_DEPUIS_SQL}');
+    expect(RETENTION).toContain('greatest(t.entreprise_quittee_le, t.business_quitte_le)');
   });
 
   it('🔴 jaune 6 : la duree de chaque espace est MATERIALISEE une fois, pas recalculee par conversation', () => {

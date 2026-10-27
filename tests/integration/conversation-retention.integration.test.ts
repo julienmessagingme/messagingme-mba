@@ -208,6 +208,23 @@ describe.skipIf(!url)('rétention des conversations : la Base (Postgres)', () =>
     expect(await existe(entreprise)).toBe(true);
   });
 
+  it('🔴 spec Business : un Business purge à la durée de sa grille même quand l’instance garde 365 jours ; descendu depuis moins de 30 jours, rien ne part', async () => {
+    const dernier = () => espaces[espaces.length - 1]!;
+    const business = await espace('itest-ret-business', { creeIlYa: 400 });
+    await pool.query('update tenants set offre_business = true where id = $1', [dernier()]);
+    const businessSortiEntreprise = await espace('itest-ret-business-ent-5', { creeIlYa: 400, quitteIlYa: 5 });
+    await pool.query('update tenants set offre_business = true where id = $1', [dernier()]);
+    const proDescendu = await espace('itest-ret-pro-biz-5', { creeIlYa: 400, proVivant: true });
+    await pool.query("update tenants set business_quitte_le = now() - interval '5 days' where id = $1", [dernier()]);
+    for (const id of [business, businessSortiEntreprise, proDescendu]) {
+      await pool.query(`update conversations set last_message_at = now() - interval '100 days' where id = $1`, [id]);
+    }
+    await new PgInboxStore(pool).purgeConversationsOlderThan(365, 100_000);
+    expect(await existe(business)).toBe(false);
+    expect(await existe(businessSortiEntreprise)).toBe(true);
+    expect(await existe(proDescendu)).toBe(true);
+  });
+
   it('🔴 J5 : en Base après la grâce, un réglage plus COURT que 30 jours reste respecté ; un réglage « jamais » ne protège plus', async () => {
     const court = await espace('itest-ret-base-court', { creeIlYa: 60 });
     const jamais = await espace('itest-ret-base-jamais', { creeIlYa: 60 });

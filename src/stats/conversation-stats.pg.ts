@@ -1,7 +1,8 @@
 import type { Pool } from 'pg';
 import { STATS_TZ, BOUNDS_CTE } from './range';
 import type { DateRange } from './range';
-import { BASE_DEPUIS_SQL, retentionEffective } from '../inbox/retention';
+import { descenteDepuisSql, retentionEffective } from '../inbox/retention';
+import { estOffre } from '../offres/offres';
 import { originesQuiRepondent } from '../inbox/origine';
 import type { Intent } from '../analysis/schema';
 
@@ -192,7 +193,7 @@ export class PgConversationStatsStore {
       c_lt50: string; c_50_70: string; c_70_90: string; c_gte90: string;
       retention_espace: number | null;
       offre: string;
-      base_depuis: Date | null;
+      descente_depuis: Date | null;
     }>(
       `with ${BOUNDS_CTE}
        select
@@ -200,9 +201,9 @@ export class PgConversationStatsStore {
          -- phrase qui l'annonce est affichee juste sous eux. null = l'espace n'a rien regle, et c'est
          -- retentionEffective qui tranche ensuite, pas ce select.
          (select ts.conversation_retention_days from tenant_settings ts where ts.tenant_id = $1) as retention_espace,
-         -- L offre et l entree en Base (lot 6, C) : la meme regle que la purge, pour annoncer la meme duree.
+         -- L offre et sa descente (lot 6, C ; spec Business) : la meme regle que la purge, pour annoncer la meme duree.
          offre_de_l_espace($1::uuid) as offre,
-         (select ${BASE_DEPUIS_SQL} from tenants t where t.id = $1) as base_depuis,
+         (select ${descenteDepuisSql('offre_de_l_espace(t.id)')} from tenants t where t.id = $1) as descente_depuis,
          count(*)::int as total,
          count(*) filter (where sentiment = 'positif')::int as s_pos,
          count(*) filter (where sentiment = 'neutre')::int as s_neu,
@@ -291,7 +292,7 @@ export class PgConversationStatsStore {
        * tous) : la règle à deux niveaux vit dans `retentionEffective`, partagée avec la purge.
        */
       retentionDays: retentionEffective(this.retentionDays, r.retention_espace ?? null,
-        r.offre === 'base' && r.base_depuis ? { depuis: r.base_depuis } : null),
+        estOffre(r.offre) ? { nom: r.offre, descenteLe: r.descente_depuis ?? null } : null),
       total,
       sentiment: { positif: Number(r.s_pos), neutre: Number(r.s_neu), negatif: Number(r.s_neg) },
       intent: {

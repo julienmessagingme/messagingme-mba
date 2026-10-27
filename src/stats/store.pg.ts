@@ -1161,7 +1161,7 @@ export class PgStatsStore {
        from garde g
        join campaigns c on c.id = g.campaign_id and c.tenant_id = $1
        left join lateral (
-         select ${dureeConservationSql({ instance: '$7', grace: '$8', base: '$9' })} as jours
+         select ${dureeConservationSql({ instance: '$7', grace: '$8', base: '$9', pro: '$10', business: '$11' })} as jours
            from tenants t
            left join tenant_settings ts on ts.tenant_id = t.id
           where t.id = $1
@@ -1169,7 +1169,8 @@ export class PgStatsStore {
        left join v on v.campaign_id = g.campaign_id
        left join e on e.campaign_id = g.campaign_id`,
       [tenantId, from, to, TZ, PLAFOND_CAMPAGNES_SYNTHESE + 1, opts.inclureArchivees === true,
-       Math.max(0, Math.floor(opts.retentionJours ?? 0)), GRACE_RETOUR_BASE_JOURS, DROITS.base.limites.conservationJours],
+       Math.max(0, Math.floor(opts.retentionJours ?? 0)), GRACE_RETOUR_BASE_JOURS, DROITS.base.limites.conservationJours,
+       DROITS.pro.limites.conservationJours, DROITS.business.limites.conservationJours],
     );
     return res.rows.map((r) => ({
       campaignId: r.campaign_id, nom: r.nom, template: r.template, canal: r.canal,

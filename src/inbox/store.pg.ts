@@ -1154,7 +1154,7 @@ export class PgInboxStore implements InboxStore {
      */
     const res = await this.pool.query(
       `with durees as materialized (
-         select t.id as tenant_id, ${dureeConservationSql({ instance: '$1', grace: '$3', base: '$4' })} as jours
+         select t.id as tenant_id, ${dureeConservationSql({ instance: '$1', grace: '$3', base: '$4', pro: '$5', business: '$6' })} as jours
            from tenants t
            left join tenant_settings ts on ts.tenant_id = t.id
        )
@@ -1167,7 +1167,8 @@ export class PgInboxStore implements InboxStore {
              and cv.last_message_at < now() - make_interval(days => d.jours)
            limit $2
         )`,
-      [Math.floor(days), Math.max(1, maxParPassage), GRACE_RETOUR_BASE_JOURS, DROITS.base.limites.conservationJours],
+      [Math.floor(days), Math.max(1, maxParPassage), GRACE_RETOUR_BASE_JOURS, DROITS.base.limites.conservationJours,
+        DROITS.pro.limites.conservationJours, DROITS.business.limites.conservationJours],
     );
     return res.rowCount ?? 0;
   }
