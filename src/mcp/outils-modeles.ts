@@ -11,6 +11,7 @@ import { creerModeleDepuisMeta, estNomDeModele, refusDeMeta, statutsDuModele, ty
 import { modifierUnModele, supprimerUnModele, type RefusGestionModele } from '../templates/gestion';
 import { codeDuLienTrace } from '../links/rewrite';
 import type { TemplateSummary } from '../meta/templates';
+import { VALEUR_ACCEPTEE } from '../api/modele-envoi';
 import { LOURDE, plafondCouteux, signataire } from './outils-agent';
 
 /**
@@ -75,12 +76,6 @@ function phraseDeRefus(r: ReponseEnvoi): string {
   const phrase = typeof c?.error === 'string' ? c.error : `refus ${r.statut}`;
   return typeof c?.code === 'string' ? `${phrase} (${c.code})` : phrase;
 }
-
-/**
- * Une valeur de variable que Meta accepte : ni retour à la ligne, ni tabulation, ni plus de quatre espaces de suite
- * (erreur 132018, constatée à l'envoi, donc APRÈS un succès annoncé). Annoncée dans le schéma de l'outil.
- */
-const VALEUR_ACCEPTEE = /^(?!.*[\n\t])(?!.* {5,}).*$/s;
 
 const NOM = { type: 'string' as const, minLength: 1, maxLength: BORNES_MODELE.nom, pattern: '^[a-z0-9_]+$', description: 'The template name (lowercase letters, digits and _).' };
 const lecture = (title: string): AnnotationsMcp => ({ title, readOnlyHint: true, openWorldHint: false });

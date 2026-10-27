@@ -108,6 +108,7 @@ export function registerSettings(
       hubspotPassage: choix.passage,
       hubspotInjoignable: choix.injoignable,
       hubspotReponse: choix.reponse,
+      hubspotModeles: choix.modeles,
       hubspotChoixValideLe: choix.valideLe ? choix.valideLe.toISOString() : null,
     });
   });

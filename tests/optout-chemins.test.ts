@@ -88,7 +88,9 @@ const CLASSEMENT: Record<string, { verdict: Verdict; pourquoi: string }> = {
       + '`envoyerModeleDansLeFil` (`src/inbox/envoi-operateur.ts`), que la route appelle, avant l’envoi : un contact '
       + 'désabonné ne reçoit qu’un modèle de SERVICE, sur la catégorie lue chez Meta (`categorieDuModele`). Mesuré en '
       + 'suivant l’appel : `creerEnvoiModeleInbox` n’est branchée que sur `sendTemplateMessage`, que seul '
-      + '`envoyerModeleDansLeFil` appelle.',
+      + '`envoyerModeleDansLeFil` appelle. Celle-ci a DEUX appelants depuis le sous-lot « relancer » : la route de '
+      + 'l’Inbox et `POST /hubspot/conversation/modele` (`src/http/hubspot-conversation.ts`), plus stricte, qui refuse '
+      + 'AVANT tout modèle à un contact désabonné ou bloqué, Service compris, et un marketing sans accord (`optInAllows`).',
   },
   'src/rcs/envoyer-libre.ts': {
     verdict: 'bloque',

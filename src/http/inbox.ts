@@ -36,6 +36,11 @@ export interface OutboundTemplate {
   bodyParams: string[];
   /** URL publique du média de header (image/vidéo/document), si le template en a un. */
   headerMediaUrl?: string;
+  /**
+   * `media id` du média de header, re-téléversé sur le numéro d'envoi (invariant 9 : l'URL du CDN de Meta est acceptée
+   * puis refusée en 131053). Prioritaire sur `headerMediaUrl`. Posé par la carte HubSpot (sous-lot « relancer »).
+   */
+  headerMediaId?: string;
   /** Format du header média, pour construire le bon type de paramètre côté Meta. */
   headerFormat?: 'IMAGE' | 'VIDEO' | 'DOCUMENT';
   /** Cartes d'un template carousel, visuels déjà re-téléversés (`mediaId`). Absent = template classique. */

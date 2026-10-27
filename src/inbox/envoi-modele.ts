@@ -25,6 +25,13 @@ export interface DepsEnvoiModeleInbox {
   }>;
   /** Les liens tracés du template, et le jeton public du contact. */
   trackedLinks: Pick<PgTrackedLinkStore, 'listByTemplates' | 'jetonPourE164'>;
+  /**
+   * 🔴 Le `media id` du visuel d'en-tête du MODÈLE, re-téléversé sur le numéro d'envoi (`prepareHeaderMedia`), ou `null`
+   * si le modèle n'a pas de visuel à lui. L'URL que l'écran passe est celle du CDN de Meta, lue dans la liste : acceptée
+   * puis refusée deux secondes plus tard en 131053 (invariant 9 du manuel, relecture du sous-lot « relancer »). Le bloc
+   * de scénario et la campagne envoyaient déjà le `media id` ; l'Inbox, non.
+   */
+  mediaDuModele(tenantId: string, name: string, language: string): Promise<string | null>;
 }
 
 export function creerEnvoiModeleInbox(deps: DepsEnvoiModeleInbox): InboxRouteDeps['sendTemplateMessage'] {
@@ -39,8 +46,19 @@ export function creerEnvoiModeleInbox(deps: DepsEnvoiModeleInbox): InboxRouteDep
       // eslint-disable-next-line no-console
       console.error(`inbox sendTemplate: liens tracés de « ${tpl.name} » illisibles:`, messageDe(err));
     }
+    // L'en-tête du modèle part en `media id` ; une préparation impossible retombe sur l'adresse de l'écran, comme avant.
+    let headerMediaId = tpl.headerMediaId;
+    if (!headerMediaId && tpl.headerMediaUrl && !tpl.carousel) {
+      try {
+        headerMediaId = (await deps.mediaDuModele(tenant, tpl.name, tpl.language)) ?? undefined;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`inbox sendTemplate: visuel d'en-tête de « ${tpl.name} » non préparé, envoi par l'adresse :`, messageDe(err));
+      }
+    }
     const components = buildTemplateComponents({
       bodyParams: tpl.bodyParams,
+      ...(headerMediaId ? { headerMediaId } : {}),
       ...(tpl.headerMediaUrl ? { headerMediaUrl: tpl.headerMediaUrl } : {}),
       ...(tpl.headerFormat ? { headerFormat: tpl.headerFormat } : {}),
       ...(tpl.carousel ? { carousel: tpl.carousel } : {}),

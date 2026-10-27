@@ -22,7 +22,7 @@ export interface HubspotChoixRouteDeps {
    * espace descendu d'offre doit pouvoir tout éteindre sans renvoyer le reste à faux), et la date décide de l'allumage
    * de la synchro.
    */
-  choixEnVigueur(tenantId: string): Promise<{ analyse: boolean; reponse: boolean; listes: boolean; valideLe: Date | null }>;
+  choixEnVigueur(tenantId: string): Promise<{ analyse: boolean; reponse: boolean; modeles: boolean; listes: boolean; valideLe: Date | null }>;
   /** Le portail relié, lu par le connecteur (`lireHubspotPortal`). Une panne LÈVE. */
   portail(tenantId: string): Promise<HubspotPortalLink>;
   /** Le numéro principal de l'espace et l'état de sa synchro HubSpot, null sans numéro. */
@@ -39,6 +39,10 @@ export interface HubspotChoixRouteDeps {
  * et la console ne le connaît que par une lecture qui peut échouer : le renvoyer à chaque bascule d'une AUTRE ligne
  * l'écraserait depuis une valeur devinée ou périmée (relecture du lot 1bis, le seul rouge). La console ne l'envoie
  * qu'à la validation de l'étape de choix, s'il est connu, ou quand c'est sa ligne qu'on bascule.
+ * 🔴 `modeles` (sous-lot « relancer ») FACULTATIF aussi : absent, il garde sa valeur. Une console d'avant le sous-lot,
+ * restée ouverte, envoie cinq champs ; requis, il lui ferait refuser toute bascule, et lu absent comme faux, chaque bascule
+ * d'une autre ligne l'éteindrait. Il ne vaut que réponse allumée : éteindre la réponse l'écrit à faux, pour que la
+ * rallumer ne rouvre pas les modèles en silence.
  */
 const corpsChoix = z.object({
   analyse: z.boolean(),
@@ -47,13 +51,15 @@ const corpsChoix = z.object({
   reponse: z.boolean(),
   listes: z.boolean(),
   taches: z.boolean().optional(),
+  modeles: z.boolean().optional(),
 }).strict();
 
 /** Ce que l'offre doit ouvrir pour ALLUMER une fonction. Éteindre, ou laisser allumé ce qui l'était, n'est jamais refusé. */
-const FONCTION_REQUISE: ReadonlyArray<['analyse' | 'listes' | 'reponse', Fonction]> = [
+const FONCTION_REQUISE: ReadonlyArray<['analyse' | 'listes' | 'reponse' | 'modeles', Fonction]> = [
   ['analyse', 'analyse'],
   ['listes', 'crm'],
   ['reponse', 'inbox'],
+  ['modeles', 'inbox'],
 ];
 
 /**
@@ -71,10 +77,12 @@ export function registerHubspotChoix(app: FastifyInstance, deps: HubspotChoixRou
   app.put('/tenants/:tenantId/hubspot/choix', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
     const parsed = corpsChoix.safeParse(req.body);
-    if (!parsed.success) return reply.code(400).send({ error: 'corps invalide : analyse, passage, injoignable, reponse et listes (booléens) sont requis, taches (booléen) est facultatif' });
-    const c = parsed.data;
+    if (!parsed.success) return reply.code(400).send({ error: 'corps invalide : analyse, passage, injoignable, reponse et listes (booléens) sont requis, taches et modeles (booléens) sont facultatifs' });
+    const brut = parsed.data;
 
     const [fonctions, avant] = await Promise.all([deps.fonctions(tenant), deps.choixEnVigueur(tenant)]);
+    // L'état EFFECTIF après écriture (`modeles` absent = inchangé, réponse éteinte = éteint), sur lequel juger l'offre.
+    const c = { ...brut, modeles: brut.reponse && (brut.modeles ?? avant.modeles) };
     for (const [champ, fonction] of FONCTION_REQUISE) {
       if (c[champ] && !avant[champ] && !fonctions.has(fonction)) return reply.code(402).send(corpsRefusFonction(fonction));
     }
@@ -90,7 +98,7 @@ export function registerHubspotChoix(app: FastifyInstance, deps: HubspotChoixRou
     }
 
     const { choix, listes, premiereValidation } = await deps.poserChoix(tenant, {
-      analyse: c.analyse, passage: c.passage, injoignable: c.injoignable, reponse: c.reponse, listes: c.listes,
+      analyse: c.analyse, passage: c.passage, injoignable: c.injoignable, reponse: c.reponse, modeles: c.modeles, listes: c.listes,
     });
 
     let routingMode: ModeTaches | null = null;
@@ -107,6 +115,7 @@ export function registerHubspotChoix(app: FastifyInstance, deps: HubspotChoixRou
       hubspotPassage: choix.passage,
       hubspotInjoignable: choix.injoignable,
       hubspotReponse: choix.reponse,
+      hubspotModeles: choix.modeles,
       hubspotListsEnabled: listes,
       hubspotChoixValideLe: choix.valideLe ? choix.valideLe.toISOString() : null,
       // Le mode posé par CETTE requête, null s'il n'était pas demandé ou s'il a échoué ; `tachesAppliquees` ne dit faux

@@ -162,6 +162,11 @@ export interface ConversationMessage {
    * PUBLIC du message (`idPublic`), celui que lit `get_message_status`. Optionnel pour les faux de test.
    */
   metaMessageId?: string | null;
+  /**
+   * Le statut que Meta a annoncé pour un message sortant (`sent`, `delivered`, `read`, `failed`, migration 0225), nul
+   * tant qu'aucun accusé n'est arrivé et pour un message reçu. Optionnel pour les faux de test.
+   */
+  statut?: string | null;
   /** Auteur d'un message sortant (name sinon partie locale de l'email). null = pas d'auteur (legacy/auto).
    *  Optionnel : les mocks de test qui omettent le champ restent valides. */
   senderName?: string | null;
@@ -245,13 +250,15 @@ const SELECT_MESSAGES_SQL = `select m.id, m.meta_message_id, m.direction, m.type
               -- sans quoi ce select rend 42703 et le fil entier tombe, toutes les 4 s.
               (m.media_id is not null and ${MEDIA_EXPIRE_SQL}) as media_expire, m.media_nom,
               m.traduction, m.traduction_langue, m.redaction_origine,
+              -- statut (migration 0225, déjà appliquée) : la carte HubSpot dit un modèle non délivré (sous-lot « relancer »).
+              m.statut,
               to_char(m.created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as curseur,
               coalesce(nullif(u.name, ''), split_part(u.email, '@', 1)) as sender_name
        from conversation_messages m
        left join users u on u.id = m.sender_user_id`;
 
 interface LigneMessage {
-  id: string; meta_message_id: string | null; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; media_expire: boolean; media_nom: string | null; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null; redaction_origine: string | null;
+  id: string; meta_message_id: string | null; direction: 'in' | 'out'; type: string | null; body: string | null; button_payload: string | null; created_at: Date; curseur: string; sender_name: string | null; channel: string | null; a_media: boolean; media_expire: boolean; media_nom: string | null; transcription: string | null; transcription_langue: string | null; traduction: string | null; traduction_langue: string | null; redaction_origine: string | null; statut: string | null;
 }
 
 function messageDeLigne(r: LigneMessage): ConversationMessage {
@@ -275,6 +282,7 @@ function messageDeLigne(r: LigneMessage): ConversationMessage {
     traduction: r.traduction,
     traductionLangue: r.traduction_langue,
     redactionOrigine: r.redaction_origine,
+    statut: r.statut,
   };
 }
 

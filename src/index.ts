@@ -136,6 +136,7 @@ import { ouvrirAbonnement, ouvrirPortail, programmerFinDuNumero, type DepsAbonne
 import { reglerModeHandoff } from './mba/handoff';
 import { carouselSendBlocker } from './meta/template-components';
 import { creerEnvoiModeleInbox } from './inbox/envoi-modele';
+import type { DepsEnvoiModeleDansLeFil } from './inbox/envoi-operateur';
 import { PgRcsMessageStore } from './rcs/message-store.pg';
 import { PgRcsMediaStore } from './rcs/media-store.pg';
 import { typeFichier, urlFichier } from './medias/fichier';
@@ -1480,6 +1481,49 @@ async function main(): Promise<void> {
     ...(traduireFilInbox ? { traduireFil: traduireFilInbox } : {}),
   });
 
+  /**
+   * L'envoi d'un modèle par une PERSONNE (`envoyerModeleDansLeFil`), branché une fois pour ses deux appelants : l'Inbox
+   * (`POST .../send-template`) et la carte HubSpot (sous-lot « relancer »). Une garde qui change ici change pour les deux.
+   * `satisfies` porte le contrôle des clés en trop, qui ne traverse pas le spread de l'Inbox.
+   */
+  const envoiModeleOperateur = {
+    // Avec les suffixes des boutons tracés (`src/inbox/envoi-modele.ts`) : sans eux, un template à lien tracé
+    // partait sans son `{{1}}` et Meta le refusait (131008).
+    sendTemplateMessage: creerEnvoiModeleInbox({
+      client: (tenant, phoneNumberId) => metaFactory.clientForTenant(tenant, phoneNumberId), // token par tenant, repli global
+      trackedLinks: trackedLinkStore,
+      // Le visuel d'en-tête du modèle, lu par la lecture partagée et re-téléversé (invariant 9) : la même préparation que
+      // le bloc de scénario. La carte HubSpot passe déjà le sien (`headerMediaId`), préparé et borné par sa route.
+      mediaDuModele: async (tenant, name, language) => {
+        const url = (await workflowRuntime.templateVarInfo(tenant, name, language))?.headerMediaUrl;
+        return url ? workflowRuntime.prepareHeaderMedia(tenant, url) : null;
+      },
+    }),
+    /**
+     * 🔴 La garde d'opt-out de l'envoi de modèle depuis l'Inbox, en deux morceaux : le statut du contact
+     * (`estDesabonne`, branché par `depsRepondre`) et la catégorie réelle du modèle. Le `templateCategory` du
+     * corps vient du navigateur et ne sert qu'aux statistiques et au choix de l'envoi : s'en servir laisserait n'importe qui se
+     * déclarer « utility ». `templateVarInfo` est la lecture du worker, avec son cache court.
+     */
+    categorieDuModele: async (tenant: string, name: string, language: string) => {
+      const cat = (await workflowRuntime.templateVarInfo(tenant, name, language))?.category;
+      return cat === 'utility' ? 'utility' : cat === 'marketing' ? 'marketing' : null;
+    },
+    /**
+     * Cartes d'un template carousel, relues chez Meta et visuels re-téléversés pour l'envoi. `null` si le
+     * template n'est pas un carousel : l'envoi classique reste inchangé.
+     */
+    prepareCarousel: async (tenant: string, name: string, language: string) => {
+      // Même lecture que le worker (`templateVarInfo` de la fabrique partagée : nom+langue, repli sur le nom
+      // seul, cache court).
+      const lu = (await workflowRuntime.templateVarInfo(tenant, name, language))?.carousel;
+      if (!lu) return null;
+      const cards = await workflowRuntime.prepareCarouselMedia(tenant, lu.cards);
+      const refus = carouselSendBlocker(cards);
+      return refus === null ? { cards } : { refus: `Carousel non envoyable : ${refus}` };
+    },
+  } satisfies Pick<DepsEnvoiModeleDansLeFil, 'sendTemplateMessage' | 'categorieDuModele' | 'prepareCarousel'>;
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -1701,35 +1745,8 @@ async function main(): Promise<void> {
        */
       startWorkflow: (tenant, workflowId, waId, fenetreOuverte) =>
         workflowRuntime.lancements.lancer({ type: 'inbox', tenantId: tenant, workflowId, waId, fenetreOuverte }),
-      // Avec les suffixes des boutons tracés (`src/inbox/envoi-modele.ts`) : sans eux, un template à lien tracé
-      // partait sans son `{{1}}` et Meta le refusait (131008).
-      sendTemplateMessage: creerEnvoiModeleInbox({
-        client: (tenant, phoneNumberId) => metaFactory.clientForTenant(tenant, phoneNumberId), // token par tenant, repli global
-        trackedLinks: trackedLinkStore,
-      }),
-      /**
-       * 🔴 La garde d'opt-out de l'envoi de modèle depuis l'Inbox, en deux morceaux : le statut du contact
-       * (`estDesabonne`, branché par `depsRepondre`) et la catégorie réelle du modèle. Le `templateCategory` du
-       * corps vient du navigateur et ne sert qu'aux statistiques et au choix de l'envoi : s'en servir laisserait n'importe qui se
-       * déclarer « utility ». `templateVarInfo` est la lecture du worker, avec son cache court.
-       */
-      categorieDuModele: async (tenant, name, language) => {
-        const cat = (await workflowRuntime.templateVarInfo(tenant, name, language))?.category;
-        return cat === 'utility' ? 'utility' : cat === 'marketing' ? 'marketing' : null;
-      },
-      /**
-       * Cartes d'un template carousel, relues chez Meta et visuels re-téléversés pour l'envoi. `null` si le
-       * template n'est pas un carousel : l'envoi classique reste inchangé.
-       */
-      prepareCarousel: async (tenant, name, language) => {
-        // Même lecture que le worker (`templateVarInfo` de la fabrique partagée : nom+langue, repli sur le nom
-        // seul, cache court).
-        const lu = (await workflowRuntime.templateVarInfo(tenant, name, language))?.carousel;
-        if (!lu) return null;
-        const cards = await workflowRuntime.prepareCarouselMedia(tenant, lu.cards);
-        const refus = carouselSendBlocker(cards);
-        return refus === null ? { cards } : { refus: `Carousel non envoyable : ${refus}` };
-      },
+      // L'envoi d'un modèle par une personne : les mêmes instances que la carte HubSpot (`envoiModeleOperateur`).
+      ...envoiModeleOperateur,
     },
     // Canal entrant depuis le connecteur HubSpot. Même secret partagé que le canal sortant (SERVICE_SECRET
     // côté connecteur) et même format de signature : pas de troisième schéma.
@@ -1751,6 +1768,37 @@ async function main(): Promise<void> {
         escaladeeLe: async (t: string, waId: string) => (await getEtatPassage(pool, t, waId))?.escaladeeLe ?? null,
         membres: (t: string) => userStore.list(t),
         repondre: depsRepondre,
+        estBloque: (t: string, waId: string) => contactStore.isBlockedByWaId(t, waId),
+        // Sous-lot « relancer » : un modèle quand la fenêtre est fermée, par le chemin de l'Inbox (`envoiModeleOperateur`).
+        modeles: {
+          branches: async (t: string) => (await settingsStore.lireChoixHubspot(t)).modeles,
+          catalogue: listerModeles,
+          indices: (t: string) => templateHintStore.listerParEspace(t),
+          fiche: async (t: string, waId: string) => {
+            const e = await contactStore.getContactStateByWaId(t, waId);
+            return e ? { optIn: e.optIn, fiche: { phone_e164: e.phone, bsuid: e.bsuid, profile_name: e.name, fields: e.fields } } : null;
+          },
+          lire: async (t: string, name: string, language: string) => {
+            try {
+              const info = await workflowRuntime.templateVarInfo(t, name, language);
+              return {
+                verdict: verdictModele(info, language),
+                carrousel: !!info?.carousel,
+                entete: info?.headerMediaUrl && info.headerFormat ? { url: info.headerMediaUrl, format: info.headerFormat } : null,
+              };
+            } catch (err) {
+              // Comme `/v1/sends` : une panne de lecture est « illisible », jamais « utility », et elle se trace.
+              journaliser('error', 'hubspot_modele_illisible', { err, tenantId: t });
+              return { verdict: { statut: 'illisible' as const }, carrousel: false, entete: null };
+            }
+          },
+          preparerEntete: (t: string, url: string) => workflowRuntime.prepareHeaderMedia(t, url),
+          envoi: { ...envoiModeleOperateur, repo, estDesabonne: depsRepondre.estDesabonne, takeControl: fil.prisEnEcrivant, inbox: inboxStore },
+          // Plus bas que les réponses : un modèle est facturé par Meta (décision D). Base muette : laisse passer.
+          plafond: new PlafondPartage(compteurDebit, {
+            nom: 'hubspot.modeles', max: config.HUBSPOT_MODELES_PAR_MINUTE, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer',
+          }),
+        },
         idempotence: idempotencyStore,
         fil,
         // Lot 3 : les réponses par personne et par espace, au total des copies. Base muette : laisse passer (la réponse
@@ -1925,7 +1973,7 @@ async function main(): Promise<void> {
             fonctions: async (t: string) => (await offres.offreDe(t)).droits.fonctions,
             choixEnVigueur: async (t: string) => {
               const [c, s] = await Promise.all([settingsStore.lireChoixHubspot(t), settingsStore.get(t)]);
-              return { analyse: c.analyse, reponse: c.reponse, listes: s.hubspotListsEnabled, valideLe: c.valideLe };
+              return { analyse: c.analyse, reponse: c.reponse, modeles: c.modeles, listes: s.hubspotListsEnabled, valideLe: c.valideLe };
             },
             portail: lirePortailHubspot,
             numeroPrincipal: (t: string) => phoneStatusStore.getPhoneNumber(t),

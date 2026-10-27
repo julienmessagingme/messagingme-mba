@@ -109,6 +109,13 @@ export function verdictModele(info: ModeleLu | null, langue: string): LectureMod
   return { statut: 'illisible' };
 }
 
+/**
+ * Une valeur de variable que Meta accepte : ni retour à la ligne, ni tabulation, ni plus de quatre espaces de suite
+ * (erreur 132018, constatée à l'envoi, donc APRÈS un succès annoncé). Partagée par l'outil de Claude, qui l'annonce
+ * dans son schéma, et par la carte HubSpot (sous-lot « relancer »).
+ */
+export const VALEUR_ACCEPTEE = /^(?!.*[\n\t])(?!.* {5,}).*$/s;
+
 /** Un refus d'envoi, dans le vocabulaire de l'API publique : son statut HTTP, son code, sa phrase. */
 export type RefusEnvoi = { refus: { statut: 400 | 404 | 409 | 422; code: CodeApi; message: string } };
 

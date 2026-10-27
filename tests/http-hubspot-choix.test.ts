@@ -40,7 +40,7 @@ function app(o: {
   premiere?: boolean;
   numero?: { id: string; hubspotConnected: boolean; hubspotPausedAt: string | null } | null;
   modeEchoue?: boolean;
-  avant?: { analyse: boolean; reponse: boolean; listes: boolean };
+  avant?: { analyse: boolean; reponse: boolean; listes: boolean; modeles?: boolean };
   synchroEchoue?: boolean;
 } = {}): { server: ReturnType<typeof buildServer>; b: Banc } {
   const b: Banc = { ecrits: [], synchros: [], modes: [] };
@@ -48,13 +48,13 @@ function app(o: {
     poserChoix: async (t, c) => {
       b.ecrits.push({ t, c });
       return {
-        choix: { analyse: c.analyse, passage: c.passage, injoignable: c.injoignable, reponse: c.reponse, valideLe: new Date('2026-10-23T18:00:00.000Z') },
+        choix: { analyse: c.analyse, passage: c.passage, injoignable: c.injoignable, reponse: c.reponse, modeles: c.modeles, valideLe: new Date('2026-10-23T18:00:00.000Z') },
         listes: c.listes,
         premiereValidation: o.premiere ?? true,
       };
     },
     fonctions: async () => o.fonctions ?? ENTREPRISE,
-    choixEnVigueur: async () => ({ ...(o.avant ?? { analyse: false, reponse: false, listes: false }), valideLe: (o.premiere ?? true) ? null : new Date('2026-10-20T10:00:00.000Z') }),
+    choixEnVigueur: async () => ({ modeles: false, ...(o.avant ?? { analyse: false, reponse: false, listes: false }), valideLe: (o.premiere ?? true) ? null : new Date('2026-10-20T10:00:00.000Z') }),
     portail: async () => ({ connected: o.relie ?? true }),
     numeroPrincipal: async () => (o.numero === undefined ? { id: 'pn1', hubspotConnected: false, hubspotPausedAt: null } : o.numero),
     allumerSynchro: async (numero, t) => { if (o.synchroEchoue) throw new Error('base'); b.synchros.push({ numero, t }); },
@@ -113,11 +113,11 @@ describe('PUT /tenants/:t/hubspot/choix (lot 1bis)', () => {
     const { server, b } = app({ premiere: true });
     const res = await server.inject(put(adminTok, { ...TOUT, passage: false, taches: false }));
     expect(res.statusCode).toBe(200);
-    expect(b.ecrits).toEqual([{ t: 't1', c: { analyse: true, passage: false, injoignable: true, reponse: false, listes: false } }]);
+    expect(b.ecrits).toEqual([{ t: 't1', c: { analyse: true, passage: false, injoignable: true, reponse: false, modeles: false, listes: false } }]);
     expect(b.modes).toEqual([{ t: 't1', mode: 'hubspot_native' }]);
     expect(b.synchros).toEqual([{ numero: 'pn1', t: 't1' }]);
     expect(res.json()).toEqual({
-      hubspotAnalyse: true, hubspotPassage: false, hubspotInjoignable: true, hubspotReponse: false, hubspotListsEnabled: false,
+      hubspotAnalyse: true, hubspotPassage: false, hubspotInjoignable: true, hubspotReponse: false, hubspotModeles: false, hubspotListsEnabled: false,
       hubspotChoixValideLe: '2026-10-23T18:00:00.000Z', routingMode: 'hubspot_native', tachesAppliquees: true, premiereValidation: true,
     });
     await server.close();
@@ -171,6 +171,39 @@ describe('PUT .../hubspot/choix : les correctifs de la relecture du lot 1bis', (
     const { server, b } = app({ premiere: true, synchroEchoue: true });
     const res = await server.inject(put(adminTok, TOUT));
     expect(res.statusCode).toBeGreaterThanOrEqual(500);
+    expect(b.ecrits).toHaveLength(0);
+    await server.close();
+  });
+});
+
+describe('PUT .../hubspot/choix : « Envoyer des modèles depuis HubSpot » (sous-lot relancer, décision E)', () => {
+  it('🔴 ABSENT du corps : il garde sa valeur (une console d’avant le sous-lot ne l’efface pas en basculant une autre ligne)', async () => {
+    const { server, b } = app({ avant: { analyse: true, reponse: true, listes: false, modeles: true } });
+    const res = await server.inject(put(adminTok, { ...TOUT, reponse: true }));
+    expect(res.statusCode).toBe(200);
+    expect(b.ecrits[0]?.c.modeles).toBe(true);
+    expect(res.json()).toMatchObject({ hubspotReponse: true, hubspotModeles: true });
+    await server.close();
+  });
+
+  it('🔴 éteindre la réponse éteint les modèles, même demandés ; une réponse rallumée ne les rouvre pas en silence', async () => {
+    const { server, b } = app({ avant: { analyse: true, reponse: true, listes: false, modeles: true } });
+    await server.inject(put(adminTok, { ...TOUT, reponse: false, modeles: true }));
+    expect(b.ecrits[0]?.c.modeles).toBe(false);
+    await server.close();
+    // L'état qu'a laissé cette écriture (réponse et modèles éteints) : rallumer la réponse sans nommer les modèles les laisse éteints.
+    const { server: s2, b: b2 } = app({ avant: { analyse: true, reponse: false, listes: false, modeles: false } });
+    await s2.inject(put(adminTok, { ...TOUT, reponse: true }));
+    expect(b2.ecrits[0]?.c.modeles).toBe(false);
+    await s2.close();
+  });
+
+  it('🔴 ALLUMER les modèles sans l’Inbox dans l’offre : 402 ; un booléen attendu', async () => {
+    const { server, b } = app({ fonctions: new Set<Fonction>(['analyse', 'crm']), avant: { analyse: true, reponse: true, listes: false, modeles: false } });
+    const refus = await server.inject(put(adminTok, { ...TOUT, reponse: true, modeles: true }));
+    expect(refus.statusCode).toBe(402);
+    expect(refus.json()).toMatchObject({ code: 'plan_feature_unavailable', fonction: 'inbox' });
+    expect((await server.inject(put(adminTok, { ...TOUT, modeles: 'oui' }))).statusCode).toBe(400);
     expect(b.ecrits).toHaveLength(0);
     await server.close();
   });

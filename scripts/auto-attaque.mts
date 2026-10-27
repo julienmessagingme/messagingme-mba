@@ -283,6 +283,8 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     escaladeeLe: async () => null,
     membres: async () => [],
     repondre: inconnu('hubspotConversation.repondre'),
+    estBloque: inconnu('hubspotConversation.estBloque'),
+    modeles: inconnu('hubspotConversation.modeles'),
     idempotence: inconnu('hubspotConversation.idempotence'),
     fil: inconnu('hubspotConversation.fil'),
     plafondReponses: inconnu('hubspotConversation.plafondReponses'),

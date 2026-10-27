@@ -16,7 +16,11 @@ function lien(over: Partial<LienTrace> = {}): LienTrace {
   return { code: 'ab12cd34ef56', templateName: 'suivi', templateLanguage: 'fr', cardIndex: null, buttonIndex: 1, destination: 'https://client.fr/commande/{numero_commande}', avecJeton: true, ...over };
 }
 
-function envoi(liens: () => Promise<LienTrace[]>, jeton: () => Promise<string | null> = async () => JETON) {
+function envoi(
+  liens: () => Promise<LienTrace[]>,
+  jeton: () => Promise<string | null> = async () => JETON,
+  media: (tenant: string, name: string, language: string) => Promise<string | null> = async () => null,
+) {
   const envoyes: Array<{ to: string; spec: TemplateSpec }> = [];
   const marketing: MarketingParams[] = [];
   const lectures: Array<{ tenant: string; e164: string }> = [];
@@ -29,6 +33,7 @@ function envoi(liens: () => Promise<LienTrace[]>, jeton: () => Promise<string | 
       listByTemplates: async () => liens(),
       jetonPourE164: async (tenant, e164) => { lectures.push({ tenant, e164 }); return jeton(); },
     },
+    mediaDuModele: media,
   });
   return { send, envoyes, marketing, lectures };
 }
@@ -89,5 +94,51 @@ describe('envoi manuel d’un template depuis l’Inbox', () => {
     const { send, envoyes } = envoi(async () => { throw new Error('base indisponible'); });
     expect(await send('t1', 'pn1', '33612345678', { name: 'suivi', language: 'fr', bodyParams: [] })).toBe('wamid.1');
     expect(envoyes[0]!.spec).toEqual({ name: 'suivi', language: 'fr' });
+  });
+});
+
+/**
+ * L'EN-TÊTE MÉDIA EN `media id` (sous-lot « relancer » de la carte HubSpot, invariant 9) : l'URL du CDN de Meta est
+ * acceptée puis refusée en 131053 deux secondes plus tard. Un `headerMediaId` part en `{ id }`, prioritaire sur l'URL.
+ */
+describe('envoi manuel d’un template : l’en-tête média', () => {
+  it('🔴 un headerMediaId part en { id }, jamais en link, même avec une URL à côté', async () => {
+    const { send, envoyes } = envoi(async () => []);
+    await send('t1', 'pn1', '33612345678', {
+      name: 'suivi', language: 'fr', bodyParams: [], headerMediaId: 'media-9', headerMediaUrl: 'https://cdn.meta.example/v.jpg', headerFormat: 'IMAGE',
+    });
+    expect(envoyes[0]?.spec.components).toEqual([{ type: 'header', parameters: [{ type: 'image', image: { id: 'media-9' } }] }]);
+  });
+});
+
+/**
+ * L'INBOX ENVOIE AUSSI LE VISUEL DU MODÈLE EN `media id` (relecture du sous-lot « relancer », invariant 9) : l'adresse que
+ * l'écran passe est celle du CDN de Meta, acceptée puis refusée en 131053. Une préparation impossible retombe sur elle.
+ */
+describe('envoi manuel d’un template depuis l’Inbox : le visuel du modèle', () => {
+  const AVEC_VISUEL = { name: 'suivi', language: 'fr', bodyParams: [], headerMediaUrl: 'https://cdn.meta.example/v.jpg', headerFormat: 'IMAGE' as const };
+
+  it('🔴 le modèle a son visuel : il part en { id }, jamais par l’adresse du CDN', async () => {
+    const preparations: string[] = [];
+    const { send, envoyes } = envoi(async () => [], undefined, async (_t, name) => { preparations.push(name); return 'media-7'; });
+    await send('t1', 'pn1', '33612345678', AVEC_VISUEL);
+    expect(preparations).toEqual(['suivi']);
+    expect(envoyes[0]?.spec.components).toEqual([{ type: 'header', parameters: [{ type: 'image', image: { id: 'media-7' } }] }]);
+  });
+
+  it('pas de visuel au modèle, ou une préparation qui échoue : l’adresse de l’écran, comme avant', async () => {
+    const sans = envoi(async () => [], undefined, async () => null);
+    await sans.send('t1', 'pn1', '33612345678', AVEC_VISUEL);
+    expect(sans.envoyes[0]?.spec.components).toEqual([{ type: 'header', parameters: [{ type: 'image', image: { link: 'https://cdn.meta.example/v.jpg' } }] }]);
+    const panne = envoi(async () => [], undefined, async () => { throw new Error('Meta injoignable'); });
+    await panne.send('t1', 'pn1', '33612345678', AVEC_VISUEL);
+    expect(panne.envoyes[0]?.spec.components).toEqual([{ type: 'header', parameters: [{ type: 'image', image: { link: 'https://cdn.meta.example/v.jpg' } }] }]);
+  });
+
+  it('sans en-tête média, rien n’est préparé', async () => {
+    const preparations: string[] = [];
+    const { send } = envoi(async () => [], undefined, async (_t, name) => { preparations.push(name); return 'media-7'; });
+    await send('t1', 'pn1', '33612345678', { name: 'suivi', language: 'fr', bodyParams: ['Marie'] });
+    expect(preparations).toEqual([]);
   });
 });

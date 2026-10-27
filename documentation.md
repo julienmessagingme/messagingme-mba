@@ -2708,6 +2708,36 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   une clé, une par clic, sous le préfixe `hubspot-rendre:` : au-delà de 8 s le connecteur rend 504 et `hubspot.fetch`
   rejoue, et le rejeu rend la réponse du premier geste au lieu de réécrire le fil. Un geste qui n'a rien changé (refus
   de Meta, contact muet, aucun numéro) rend la clé. L'audit de latence les range avec l'Inbox (`groupeDeRoute`).
+  🔴 Un contact BLOQUÉ ne reçoit rien non plus depuis HubSpot (409 `contact_bloque`, `estBloque`), réponse comprise ; le
+  fil le dit (`contactBloque`) et `peutRepondre` le compte. Un numéro délié ou suspendu, levé AVANT Meta, rend la clé avec
+  son code (`refusAvantEnvoi`, `src/http/hubspot-modeles.ts`), comme un refus explicite de Meta.
+- **Un modèle envoyé depuis la carte HubSpot, fenêtre fermée** (sous-lot « relancer » de la reprise humaine,
+  `src/http/hubspot-conversation.ts` et `src/http/hubspot-modeles.ts`). Deux routes de plus, sous les mêmes gardes
+  communes : `POST /hubspot/conversation/modeles` (les modèles du catalogue de `GET /v1/templates`, invariant 35, sans
+  carrousel, jugés pour CE contact : un marketing ne peut partir qu'à une fiche `opted_in`, `optInAllows` ; les valeurs
+  pré-remplies par `resolveHintParams`, la fiche et les indices lus une fois) et `.../modele` (l'envoi). Un réglage à
+  part, `hubspot_modeles` (migration 0255, faux par défaut), qui ne vaut que réponse allumée : la route du choix l'écrit
+  à faux quand la réponse s'éteint, et le garde quand le corps ne le nomme pas (403 `modeles_hubspot_eteints`).
+  L'envoi, dans cet ordre : gardes communes, réglage, affectation, STOP ou bloqué (409), filière application (409
+  `whatsapp_app_no_template`, elle n'envoie pas de modèle), le modèle relu par `templateVarInfo` et `verdictModele`
+  (jamais reçu de la carte : catégorie et nombre de variables viennent de Meta ; carrousel 422), le consentement (409
+  `no_consent`), une valeur que Meta refuserait (`VALEUR_ACCEPTEE`, plus de 1 024 caractères ; 422 `invalid_value`
+  avec sa position), l'en-tête média préparé en `media id` (`prepareHeaderMedia`, invariant 9) et BORNÉ
+  (`DELAI_ENTETE_DEFAUT_MS`, 5 s, sous les 8 s du connecteur ; 422 `header_media_slow`, journalisé
+  `hubspot_entete_lent`), puis seulement la clé (`hubspot-modele:`), le plafond `HUBSPOT_MODELES_PAR_MINUTE` (défaut 5,
+  `hubspot.modeles`, à part des réponses ; APRÈS la clé, pour qu'un rejeu ne compte pas, et un refus rend la clé),
+  `possede`, et STOP ou blocage relus une dernière fois (la clé est alors rendue). 🔴 Tout ce qui peut traîner passe
+  AVANT la clé : passé son bail de cinq minutes, une clé « en cours » se reprend, et une préparation lente aurait fait
+  partir deux modèles. Pour la même raison, la clé d'un geste fait (réponse, modèle, rendre) se scelle en trois essais
+  (`sceller`) : non scellée, elle se reprendrait au bout du bail et un nouvel essai referait le geste. Le fil rend le
+  `statut` de Meta de chaque message (`conversation_messages.statut`, migration 0225) : la carte dit un modèle non
+  délivré au lieu de « Modèle envoyé ».
+- **Le visuel d'en-tête d'un modèle envoyé depuis l'Inbox part en `media id`** (`creerEnvoiModeleInbox`,
+  `mediaDuModele`) : l'adresse que l'écran passe est celle du CDN de Meta, que l'invariant 9 dit refusée en 131053 ;
+  le visuel du modèle se re-téléverse comme pour le bloc de scénario. Sans visuel au modèle, ou si la préparation
+  échoue, l'adresse de l'écran part comme avant. L'envoi est celui de l'Inbox (`envoyerModeleDansLeFil`, dépendances partagées
+  `envoiModeleOperateur` de `src/index.ts`) : il prend le fil, signé du membre, en origine `humain`, donc clôt
+  l'escalade ; chaque refus porte un code, que le connecteur transmet tel quel.
 - **L'accompagnement** (`src/emails-produit/accompagnement.ts`, balayage `emails-produit-accompagnement`, trente
   minutes, des modèles `commercial`) : la bienvenue (moins de 48 h après la création), puis trois relances à occasion
   fixe, donc une fois chacune : le numéro absent après 24 h, le répondeur effectif `equipe` (`modeEffectif` sous

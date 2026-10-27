@@ -35,7 +35,7 @@ function app(o: { cable?: boolean } = {}) {
     ...reglagesInertes,
     // Aucun portail lie : c est le defaut, et la fixture le DIT (cf. `tests/hubspot.ts`).
     hubspotPortalConnecte: sansPortailHubspot,
-    choixHubspot: async () => ({ analyse: true, passage: true, injoignable: true, reponse: false, valideLe: null }),
+    choixHubspot: async () => ({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, valideLe: null }),
     reglages: {
       ...reglagesDepInertes,
       get: async () => ({

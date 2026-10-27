@@ -10,7 +10,6 @@ import { empreinte, repondreDansLaFenetre, type DepsRepondre, type RefusReponse 
 import { refuserTropDeRequetes } from '../auth/rate-limit';
 import type { PlafondPartage } from '../auth/plafond-partage';
 import type { AuteurDuChangement } from '../inbox/evenements';
-import { MetaApiError } from '../meta/errors';
 import { AgentDeMetaGardeLeFil, type ControleDuFil } from '../inbox/fil';
 import type { ConversationMessage, ControlOwner } from '../inbox/store.pg';
 import { decoderCurseur, encoderCurseur } from '../api/conversations-v1';
@@ -18,6 +17,12 @@ import { empreinteCorps } from '../api/idempotence';
 import type { IdempotencyClaim } from '../api/idempotency-store.pg';
 import { PHRASE_FORMAT_APPLICATION, phraseApplicationIndisponible, phrasePremierMessage } from '../application/envoi';
 import { TEXTE_MAX_CARACTERES } from '../traduction/traduire';
+import { envoyerModeleDansLeFil } from '../inbox/envoi-operateur';
+import { VALEUR_ACCEPTEE } from '../api/modele-envoi';
+import {
+  PHRASE_SANS_CONSENTEMENT, VALEURS_MAX, VALEUR_MAX_CARACTERES, enteteBornee, modelesPourLeContact, refusAvantEnvoi, refusDuModele,
+  type DepsModelesHubspot, type RefusModele,
+} from './hubspot-modeles';
 
 /**
  * LA CONVERSATION LUE ET RÉPONDUE DEPUIS HUBSPOT (lot 2 de la reprise humaine, plan
@@ -29,9 +34,14 @@ import { TEXTE_MAX_CARACTERES } from '../traduction/traduire';
  * 🔴 UNE RÉPONSE PASSE PAR LE CHEMIN D'ENVOI DE LA CONSOLE (`repondreDansLaFenetre`), en origine `humain` : la même
  * fenêtre, la même isolation, la même prise du fil, la même clôture d'escalade. L'affectation est celle de la console
  * (décision 6, `peutEcrire` sur l'identité signée). STOP non : HubSpot ne répond jamais à un contact désabonné (décision 5
- * amendée par Julien le 2026-10-26, voir la route de réponse).
+ * amendée par Julien le 2026-10-26, voir la route de réponse), ni à un contact bloqué (sous-lot « relancer », décision B).
  * Chaque route lit l'offre (`inbox`) et le réglage « Répondre depuis HubSpot » (lot 1bis) : l'étape d'offre du
  * registre ne s'applique pas à une route signée.
+ *
+ * DEUX ROUTES DE PLUS POUR LA FENÊTRE FERMÉE (sous-lot « relancer », plan
+ * `~/mm-hubspot/docs/2026-10-26-sous-lot-relancer-modele-plan.md`, décisions A à H validées par Julien le 2026-10-26) :
+ * les modèles proposés pour un contact, et l'envoi de l'un d'eux, par le chemin d'un modèle de l'Inbox
+ * (`envoyerModeleDansLeFil`), sous un réglage à part (« Envoyer des modèles depuis HubSpot »).
  */
 export interface HubspotConversationDeps {
   /** Secret partagé avec le connecteur (== SERVICE_SECRET de mm-hubspot). Vide -> module non monté. */
@@ -54,11 +64,20 @@ export interface HubspotConversationDeps {
   membres(tenantId: string): Promise<Array<{ id: string; name: string | null; email: string; role: string; disabled: boolean; pending: boolean }>>;
   /** Le chemin d'envoi de la console, tel quel (`depsRepondre` de `src/index.ts`). */
   repondre: DepsRepondre;
+  /**
+   * Le contact est-il bloqué (`isBlockedByWaId`) ? Le STOP se lit par `repondre.estDesabonne`. Bloqué, rien ne part depuis
+   * HubSpot, ni réponse ni modèle (décision B du sous-lot « relancer »), comme pour nos robots (`machineSeTaitParWaId`).
+   */
+  estBloque(tenantId: string, waId: string): Promise<boolean>;
+  /** L'envoi d'un modèle quand la fenêtre est fermée (sous-lot « relancer »). */
+  modeles: DepsModelesHubspot;
   /** L'idempotence de `/v1/sends` (`PgApiIdempotencyStore`) : pose atomique, bail, jeton de garde. */
   idempotence: {
     claim(tenantId: string, key: string, empreinte: string): Promise<IdempotencyClaim>;
     complete(tenantId: string, key: string, jeton: string, sendId: string, response: unknown): Promise<boolean>;
     release(tenantId: string, key: string, jeton: string): Promise<void>;
+    /** La clé est-elle encore à ce jeton, sans réponse ? Relu juste avant d'envoyer un modèle (le motif de `/v1/sends`). */
+    possede(tenantId: string, key: string, jeton: string): Promise<boolean>;
   };
   /**
    * « Rendre la main » d'un appelant qui n'est pas la console : un contact STOP ou bloqué n'est jamais confié à l'agent de
@@ -80,7 +99,7 @@ export interface HubspotConversationDeps {
   windowMs?: number;
 }
 
-/** Le préfixe des trois routes : l'audit de latence les range avec l'Inbox (`groupeDeRoute`). */
+/** Le préfixe des routes de la carte : l'audit de latence les range avec l'Inbox (`groupeDeRoute`). */
 export const PREFIXE_CONVERSATION_HUBSPOT = '/hubspot/conversation/';
 
 /** Les messages d'une page de la carte : assez pour lire un échange, peu pour une carte. */
@@ -94,6 +113,11 @@ export const MESSAGES_PAR_PAGE = 20;
 const PREFIXE_CLE = 'hubspot:';
 /** Les clés de « rendre la main » (lot 3) : un autre préfixe, une réponse et un geste ne partagent jamais une clé. */
 const PREFIXE_CLE_RENDRE = 'hubspot-rendre:';
+/** Les clés d'un modèle (sous-lot « relancer ») : un troisième préfixe, pour la même raison. */
+const PREFIXE_CLE_MODELE = 'hubspot-modele:';
+/** Le scellement d'une clé, essayé trois fois, à 100 puis 200 ms : moins d'une seconde de plus, bien sous les 8 s du connecteur. */
+const ESSAIS_SCELLEMENT = 3;
+const PAUSE_SCELLEMENT_MS = 100;
 
 /** Une clé fabriquée par la carte pour UN geste ; ses caractères deviennent une clé de base. */
 const cleDeCarte = z.string().min(1).max(200).regex(/^[A-Za-z0-9._:-]+$/);
@@ -124,6 +148,29 @@ const corpsRendre = z.object({
   cle: cleDeCarte,
 }).strict();
 
+const corpsModeles = z.object({
+  tenantId: UUID,
+  conversationId: UUID,
+  auteurEmail: adresse,
+}).strict();
+
+/**
+ * Un modèle : son nom, sa langue et ses valeurs, rien d'autre. Sa catégorie, son nombre de variables et son en-tête se
+ * relisent chez Meta (décision F) : la carte ne peut pas déclarer un marketing « Service ».
+ */
+const corpsModele = z.object({
+  tenantId: UUID,
+  conversationId: UUID,
+  auteurEmail: adresse,
+  name: z.string().min(1).max(512),
+  language: z.string().min(1).max(20),
+  // La forme ici, la règle de Meta (`VALEUR_ACCEPTEE`) dans la route : une valeur pré-remplie de la fiche qui la viole
+  // doit rendre un refus codé que la carte montre, jamais un 400 nu que le connecteur ferait passer pour une panne.
+  // La longueur de Meta aussi se juge dans la route (au-delà, un refus codé) ; ici une borne large, contre un corps démesuré.
+  valeurs: z.array(z.string().min(1).max(4 * VALEUR_MAX_CARACTERES)).max(VALEURS_MAX),
+  cle: cleDeCarte,
+}).strict();
+
 type WithRawBody = FastifyRequest & { rawBody?: Buffer };
 
 /** La personne qui agit : le membre ACTIF de l'espace dont HubSpot a signé l'adresse, sinon personne (décision 6). */
@@ -137,7 +184,7 @@ interface Personne { acteur: ActeurConversation; auteur: string | null }
 function refusDeReponse(r: RefusReponse): { statut: number; corps: { error: string; code: string } } {
   switch (r.motif) {
     case 'conversation_inconnue': return { statut: 404, corps: { error: 'conversation inconnue', code: 'conversation_not_found' } };
-    case 'fenetre_fermee': return { statut: 422, corps: { error: 'Fenêtre de 24 h fermée : seul un modèle peut partir, depuis la console Messaging Me.', code: 'window_closed' } };
+    case 'fenetre_fermee': return { statut: 422, corps: { error: 'Fenêtre de 24 h fermée : seul un modèle approuvé peut partir.', code: 'window_closed' } };
     case 'aucun_numero': return { statut: 409, corps: { error: 'Aucun numéro WhatsApp n’est connecté à cet espace.', code: 'no_number' } };
     case 'contact_desabonne': return { statut: 409, corps: { error: 'Ce contact a demandé à ne plus recevoir de messages.', code: 'contact_desabonne' } };
     case 'application_indisponible': return { statut: 409, corps: { error: phraseApplicationIndisponible(r.raison), code: 'whatsapp_app_unavailable' } };
@@ -191,6 +238,68 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
 
   const refusAffectation = { error: 'Cette conversation est affectée à un autre membre de l’équipe.', code: 'assigned_to_other' };
 
+  /**
+   * 🔴 STOP OU BLOQUÉ : RIEN NE PART DEPUIS HUBSPOT, ni réponse ni modèle (STOP : décision de Julien du 2026-10-26 ;
+   * bloqué : décision B du sous-lot « relancer », la lecture de nos robots). Posée avant le plafond et la clé : rien n'est
+   * réservé. `null` : le contact peut recevoir.
+   */
+  async function contactMuet(tenantId: string, waId: string): Promise<{ error: string; code: string } | null> {
+    if (await deps.repondre.estDesabonne(tenantId, waId)) {
+      return { error: 'Ce contact a demandé à ne plus recevoir de messages : on ne lui écrit pas depuis HubSpot.', code: 'contact_desabonne' };
+    }
+    if (await deps.estBloque(tenantId, waId)) return { error: 'Ce contact est bloqué : on ne lui écrit pas depuis HubSpot.', code: 'contact_bloque' };
+    return null;
+  }
+
+  /**
+   * Les gardes propres aux modèles, communes à la liste et à l'envoi, après les gardes communes : le réglage (décision E),
+   * l'affectation, STOP ou bloqué, et la filière (l'application WhatsApp Business n'envoie pas de modèle). `null` : la
+   * réponse est déjà partie.
+   */
+  async function gardesModele(reply: FastifyReply, tenantId: string, g: NonNullable<Awaited<ReturnType<typeof gardes>>>) {
+    if (!(await deps.modeles.branches(tenantId))) {
+      reply.code(403).send({ error: 'L’envoi de modèles depuis HubSpot n’est pas branché pour cet espace (Tools > Intégrations > HubSpot).', code: 'modeles_hubspot_eteints' });
+      return null;
+    }
+    if (!peutEcrire(g.personne.acteur, g.assignee)) {
+      reply.code(403).send(refusAffectation);
+      return null;
+    }
+    const muet = await contactMuet(tenantId, g.ctx.waId);
+    if (muet) {
+      reply.code(409).send(muet);
+      return null;
+    }
+    if ((await deps.repondre.application.filiere(tenantId)) === 'application') {
+      reply.code(409).send({ error: 'Cet espace envoie par l’application WhatsApp Business, qui n’envoie pas de modèle : écrivez depuis la console.', code: 'whatsapp_app_no_template' });
+      return null;
+    }
+    return g;
+  }
+
+  const refuser = (reply: FastifyReply, r: RefusModele) => reply.code(r.statut).send(r.corps);
+
+  /**
+   * Scelle la clé d'un geste FAIT (le message, le modèle est parti ; la main est rendue), avec trois essais. 🔴 Une clé
+   * non scellée reste « en cours » jusqu'à son bail, puis se reprend : un nouvel essai de la carte, plus de cinq minutes
+   * après un 504, referait le geste (relecture du sous-lot « relancer »). Les essais couvrent une base qui hoquette ; un
+   * échec durable se trace, et ne change pas la réponse : le geste est fait.
+   */
+  async function sceller(tenantId: string, key: string, jeton: string, corps: unknown, conversationId: string, geste: string): Promise<void> {
+    for (let essai = 1; ; essai += 1) {
+      try {
+        await deps.idempotence.complete(tenantId, key, jeton, randomUUID(), corps);
+        return;
+      } catch (err) {
+        if (essai >= ESSAIS_SCELLEMENT) {
+          journaliser('error', 'hubspot_cle_non_scellee', { err, tenantId, conversationId, geste, essais: essai });
+          return;
+        }
+        await new Promise((resolve) => { setTimeout(resolve, PAUSE_SCELLEMENT_MS * essai); });
+      }
+    }
+  }
+
   /** Rend la clé. Un échec ne lève pas (la réponse part déjà), il se trace : sans lui, « en cours » durerait le bail sans raison dite. */
   const liberer = (tenantId: string, key: string, jeton: string, conversationId: string): Promise<void> =>
     deps.idempotence.release(tenantId, key, jeton).catch((err: unknown) => {
@@ -207,12 +316,13 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
 
     const g = await gardes(reply, tenantId, conversationId, auteurEmail);
     if (!g) return reply;
-    const [lus, tenuPar, escaladeeLe, desabonne] = await Promise.all([
+    const [lus, tenuPar, escaladeeLe, desabonne, bloque] = await Promise.all([
       // Un de plus que rendu : c'est lui qui dit s'il en reste avant, sans compter le fil entier.
       deps.inbox.getDerniersMessages(conversationId, MESSAGES_PAR_PAGE + 1, avant ?? undefined),
       deps.inbox.getControlOwner(tenantId, g.ctx.waId),
       deps.escaladeeLe(tenantId, g.ctx.waId),
       deps.repondre.estDesabonne(tenantId, g.ctx.waId),
+      deps.estBloque(tenantId, g.ctx.waId),
     ]);
     const rendus = lus.slice(-MESSAGES_PAR_PAGE);
     const premier = rendus[0];
@@ -228,12 +338,15 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
       // pas chez HubSpot, où le portail peut compter des personnes sans compte Messaging Me.
       affecteA: g.assignee === null ? null : { id: g.assignee, nom: affecte ? (affecte.name ?? affecte.email.split('@')[0] ?? null) : null },
       contactDesabonne: desabonne,
-      // Ce que la carte propose à CETTE personne : les mêmes règles que la réponse, posées à nouveau à l'envoi.
-      peutRepondre: !desabonne && peutEcrire(g.personne.acteur, g.assignee),
+      contactBloque: bloque,
+      // Ce que la carte propose à CETTE personne : les mêmes règles que la réponse et le modèle, posées à nouveau à l'envoi.
+      peutRepondre: !desabonne && !bloque && peutEcrire(g.personne.acteur, g.assignee),
       // Comme l'analyse poussée (`buildEvent`) : seulement une adresse https, celle qu'une carte peut ouvrir.
       lien: lien.startsWith('https://') ? lien : null,
       messages: rendus.map((m) => ({
         id: m.id, direction: m.direction, type: m.type, texte: m.body, le: m.createdAt, auteur: m.senderName ?? null,
+        // Le statut de Meta (`failed` : la carte dit un modèle non délivré au lieu de « Modèle envoyé », sous-lot « relancer »).
+        statut: m.statut ?? null,
       })),
       // Le point d'où remonter : le plus ancien message rendu, à la microseconde (`curseur`, jamais `createdAt`).
       avant: lus.length > MESSAGES_PAR_PAGE && premier?.curseur ? encoderCurseur({ at: premier.curseur, id: premier.id }) : null,
@@ -255,9 +368,8 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
      * être une personne du portail sans compte, et sur la filière application rien d'autre (ni fenêtre de 24 h, ni porte
      * « écrire en premier ») n'arrêterait une réponse des semaines plus tard. Posée avant la clé : rien n'est réservé.
      */
-    if (await deps.repondre.estDesabonne(tenantId, g.ctx.waId)) {
-      return reply.code(409).send({ error: 'Ce contact a demandé à ne plus recevoir de messages : on ne lui répond pas depuis HubSpot.', code: 'contact_desabonne' });
-    }
+    const muet = await contactMuet(tenantId, g.ctx.waId);
+    if (muet) return reply.code(409).send(muet);
     // Le plafond par personne (lot 3), avant la clé : une réponse refusée pour le débit ne réserve rien. La personne est
     // désignée par l'EMPREINTE de son adresse, jamais l'adresse en clair (la clé du compteur vit en base).
     const debit = await deps.plafondReponses.consommer(`${tenantId}:${empreinte(auteurEmail ?? 'personne')}`);
@@ -284,16 +396,16 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
       res = await repondreDansLaFenetre(deps.repondre, tenantId, conversationId, texte, g.personne.auteur, 'humain');
     } catch (err) {
       /**
-       * 🔴 Un refus EXPLICITE de Meta (`MetaApiError`) n'a rien envoyé : la clé est rendue, un nouvel essai peut partir.
+       * 🔴 Un refus EXPLICITE de Meta (`MetaApiError`), ou un numéro délié ou suspendu (levé AVANT Meta par la fabrique),
+       * n'a rien envoyé : la clé est rendue, un nouvel essai peut partir (`refusAvantEnvoi`, sous-lot « relancer »).
        * Toute autre erreur (délai, réseau, service de connexions) laisse un doute : Meta a peut-être pris le message. La
        * clé reste alors « en cours » jusqu'à son bail (`DUREE_CLE_EN_COURS_MAX_MS`), et un nouvel essai attend : mieux
        * vaut faire patienter quelques minutes qu'écrire deux fois au client (relecture du lot 2).
        */
-      if (!(err instanceof MetaApiError)) throw err;
+      const refus = refusAvantEnvoi(err);
+      if (!refus) throw err;
       await liberer(tenantId, key, pose.jeton, conversationId);
-      // La phrase de Meta pour la personne (comme le gestionnaire commun), avec un code : la carte la montre telle quelle.
-      const detail = (err.userMessage ?? err.message).replace(/\s+/g, ' ').trim().slice(0, 200);
-      return reply.code(422).send({ error: `Meta a refusé le message : ${detail}`, code: 'meta_rejected' });
+      return reply.code(refus.statut).send(refus.corps);
     }
     if ('refus' in res) {
       await liberer(tenantId, key, pose.jeton, conversationId);
@@ -305,10 +417,7 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
     const corps = 'differe' in res
       ? { differe: true, prevuLe: res.differe.prevuLe }
       : { messageId: res.messageId, journal: res.journal };
-    await deps.idempotence.complete(tenantId, key, pose.jeton, randomUUID(), corps).catch((err: unknown) => {
-      // Le message est parti : un scellement raté ne doit pas faire croire l'inverse. Le bail de la clé la libérera.
-      journaliser('error', 'hubspot_cle_non_scellee', { err, tenantId, conversationId, geste: 'repondre' });
-    });
+    await sceller(tenantId, key, pose.jeton, corps, conversationId, 'repondre');
     return reply.code(200).send(corps);
   });
 
@@ -359,10 +468,135 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
       return reply.code(409).send({ error: 'Aucun numéro WhatsApp n’est connecté : la conversation reste à l’équipe.', code: 'no_number' });
     }
     const corps = { tenuPar: detenteur };
-    await deps.idempotence.complete(tenantId, key, pose.jeton, randomUUID(), corps).catch((err: unknown) => {
-      // Le geste est fait : un scellement raté ne doit pas faire croire l'inverse. Le bail de la clé la libérera.
-      journaliser('error', 'hubspot_cle_non_scellee', { err, tenantId, conversationId, geste: 'rendre' });
-    });
+    await sceller(tenantId, key, pose.jeton, corps, conversationId, 'rendre');
+    return reply.code(200).send(corps);
+  });
+
+  /**
+   * Les modèles que la carte propose pour CE contact (décisions C et F) : le catalogue de `GET /v1/templates` sans
+   * carrousel, le marketing grisé pour un contact sans accord, les valeurs pré-remplies depuis la fiche. La fiche et les
+   * indices sont lus une fois pour toute la liste.
+   */
+  app.post(`${PREFIXE_CONVERSATION_HUBSPOT}modeles`, async (req, reply) => {
+    if (!signee(req)) return reply.code(401).send({ error: 'invalid signature' });
+    const lu = corpsModeles.safeParse(req.body);
+    if (!lu.success) return reply.code(400).send({ error: 'payload invalide' });
+    const { tenantId, conversationId, auteurEmail } = lu.data;
+
+    const g0 = await gardes(reply, tenantId, conversationId, auteurEmail);
+    if (!g0) return reply;
+    const g = await gardesModele(reply, tenantId, g0);
+    if (!g) return reply;
+    const [templates, indices, fiche] = await Promise.all([
+      deps.modeles.catalogue(tenantId),
+      deps.modeles.indices(tenantId),
+      deps.modeles.fiche(tenantId, g.ctx.waId),
+    ]);
+    // Un contact hors base (fiche effacée depuis l'arrivée de la conversation) : consentement inconnu, rien à pré-remplir.
+    const contact = fiche ?? { optIn: 'unknown', fiche: {} };
+    return reply.code(200).send({ modeles: modelesPourLeContact(templates, indices, contact, new Date(now())) });
+  });
+
+  /**
+   * 🔴 ENVOYER UN MODÈLE DEPUIS HUBSPOT (décisions A à H). Dans cet ordre : les gardes, le modèle relu chez Meta (jamais
+   * reçu de la carte), le consentement, le plafond, l'en-tête préparé et BORNÉ, puis seulement la clé, relue juste avant
+   * l'envoi. Tout ce qui peut traîner se fait avant la clé : passé son bail, une clé « en cours » se reprend, et une
+   * préparation lente aurait fait partir deux modèles (relecture du plan, le rouge).
+   */
+  app.post(`${PREFIXE_CONVERSATION_HUBSPOT}modele`, async (req, reply) => {
+    if (!signee(req)) return reply.code(401).send({ error: 'invalid signature' });
+    const lu = corpsModele.safeParse(req.body);
+    if (!lu.success) return reply.code(400).send({ error: 'payload invalide' });
+    const { tenantId, conversationId, auteurEmail, name, language, valeurs, cle } = lu.data;
+
+    const g0 = await gardes(reply, tenantId, conversationId, auteurEmail);
+    if (!g0) return reply;
+    const g = await gardesModele(reply, tenantId, g0);
+    if (!g) return reply;
+
+    const modele = await deps.modeles.lire(tenantId, name, language);
+    const juge = refusDuModele(modele, valeurs.length);
+    if ('statut' in juge) return refuser(reply, juge);
+    const trop = valeurs.findIndex((v) => v.length > VALEUR_MAX_CARACTERES);
+    if (trop >= 0) {
+      return reply.code(422).send({
+        error: `La valeur de la variable {{${trop + 1}}} dépasse ${VALEUR_MAX_CARACTERES} caractères : Meta la refuserait.`,
+        code: 'invalid_value',
+      });
+    }
+    const interdite = valeurs.findIndex((v) => !VALEUR_ACCEPTEE.test(v));
+    if (interdite >= 0) {
+      return reply.code(422).send({
+        error: `La valeur de la variable {{${interdite + 1}}} contient un retour à la ligne, une tabulation ou plus de quatre espaces de suite : Meta la refuserait.`,
+        code: 'invalid_value',
+      });
+    }
+    if (juge.categorie === 'marketing') {
+      // Décision C : un marketing ne part qu'à un contact qui a donné son accord, la règle des campagnes et de l'API.
+      const fiche = await deps.modeles.fiche(tenantId, g.ctx.waId);
+      if (fiche?.optIn !== 'opted_in') return reply.code(409).send({ error: PHRASE_SANS_CONSENTEMENT, code: 'no_consent' });
+    }
+
+    let enteteId: string | undefined;
+    if (modele.entete) {
+      const prepare = await enteteBornee(deps.modeles, tenantId, modele.entete);
+      if ('statut' in prepare) return refuser(reply, prepare);
+      enteteId = prepare.mediaId;
+    }
+
+    const key = `${PREFIXE_CLE_MODELE}${cle}`;
+    const pose = await deps.idempotence.claim(tenantId, key, empreinteCorps({ conversationId, name, language, valeurs, auteurEmail }));
+    if (!pose.claimed) {
+      if ('reused' in pose) return reply.code(422).send({ error: 'cette clé a déjà servi pour un autre envoi', code: 'idempotency_key_reused' });
+      if ('pending' in pose) return reply.code(409).send({ error: 'ce modèle est en cours d’envoi : réessayez dans un instant', code: 'idempotency_key_in_progress' });
+      return reply.code(200).send(pose.response);
+    }
+    // Le plafond APRÈS la pose (relecture du lot) : le rejeu d'un envoi déjà fait rend sa réponse ci-dessus sans compter,
+    // et un refus pour le débit rend la clé, rien n'est parti.
+    const debit = await deps.modeles.plafond.consommer(`${tenantId}:${empreinte(auteurEmail ?? 'personne')}`);
+    if (!debit.accepte) {
+      await liberer(tenantId, key, pose.jeton, conversationId);
+      await refuserTropDeRequetes(reply, debit.attenteMs, 'Trop de modèles envoyés depuis HubSpot : patientez une minute.', 'rate_limited');
+      return reply;
+    }
+    // Un filet, pas la garde principale (elle est d'avoir tout ce qui traîne avant la pose) : une clé reprise entre la pose
+    // et ici, si le processus s'était figé plus que son bail, ne fait rien partir.
+    if (!(await deps.idempotence.possede(tenantId, key, pose.jeton))) {
+      return reply.code(409).send({ error: 'ce modèle est en cours d’envoi : réessayez dans un instant', code: 'idempotency_key_in_progress' });
+    }
+    /**
+     * 🔴 STOP OU BLOQUÉ, RELU AU DERNIER MOMENT (décision B, relecture du lot). La lecture des gardes précède la relecture
+     * du modèle, le plafond et l'en-tête (quelques secondes) ; `envoyerModeleDansLeFil` ne relit que le STOP, et laisse
+     * partir un Service (la règle de la console). Un STOP ou un blocage arrivé entre-temps rend la clé : rien ne part.
+     */
+    const muetMaintenant = await contactMuet(tenantId, g.ctx.waId);
+    if (muetMaintenant) {
+      await liberer(tenantId, key, pose.jeton, conversationId);
+      return reply.code(409).send(muetMaintenant);
+    }
+
+    let res: Awaited<ReturnType<typeof envoyerModeleDansLeFil>>;
+    try {
+      // « humain » par le chemin de l'Inbox : il prend le fil, signé du membre, et clôt l'escalade (décision A).
+      res = await envoyerModeleDansLeFil(deps.modeles.envoi, tenantId, { conversationId, waId: g.ctx.waId }, {
+        name, language, bodyParams: valeurs, templateCategory: juge.categorie,
+        ...(enteteId && modele.entete ? { headerMediaId: enteteId, headerFormat: modele.entete.format } : {}),
+      }, g.personne.auteur);
+    } catch (err) {
+      // Le même partage que la réponse : un refus qui n'a rien envoyé rend la clé, un doute la garde.
+      const refus = refusAvantEnvoi(err);
+      if (!refus) throw err;
+      await liberer(tenantId, key, pose.jeton, conversationId);
+      return refuser(reply, refus);
+    }
+    if (!res.ok) {
+      await liberer(tenantId, key, pose.jeton, conversationId);
+      // Chaque refus porte un code, que le connecteur transmet tel quel (sans code, il deviendrait un 502 « réessayez »).
+      if (res.statut === 400) return reply.code(409).send({ error: 'Aucun numéro WhatsApp n’est connecté à cet espace.', code: 'no_number' });
+      return reply.code(res.statut).send({ error: res.error, code: res.code ?? 'template_refused' });
+    }
+    const corps = { messageId: res.messageId, journal: res.journal };
+    await sceller(tenantId, key, pose.jeton, corps, conversationId, 'modele');
     return reply.code(200).send(corps);
   });
 }

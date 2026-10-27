@@ -76,6 +76,12 @@ export const schema = z.object({
    */
   HUBSPOT_REPONSES_PAR_MINUTE: z.coerce.number().int().min(0).default(20),
   /**
+   * Les modèles envoyés depuis la carte HubSpot quand la fenêtre est fermée (sous-lot « relancer », décision D), par
+   * personne et par espace, et par minute : un seau à part, plus bas que les réponses, parce que Meta facture chaque
+   * modèle et qu'une personne du portail sans compte peut en envoyer. Compté au TOTAL des copies. 0 désactive.
+   */
+  HUBSPOT_MODELES_PAR_MINUTE: z.coerce.number().int().min(0).default(5),
+  /**
    * La relance HubSpot (lot 2b de la reprise humaine, décision C) : l'équipe tient la conversation, aucune escalade n'est
    * ouverte, et le dernier message du client attend une réponse depuis ce nombre de minutes ; une tâche « a réécrit,
    * sans réponse » part chez le conseiller. Pas de tâche à chaque message : une conversation vive en ferait une par
