@@ -46,6 +46,8 @@ const EFFACEMENTS_SIMULTANES = 8;
  * que là où S3 les exige : depuis sa version 3.729, le SDK en ajoute par défaut à chaque dépôt et à chaque lecture, ce
  * que les stockages compatibles S3 ne savent pas tous lire. Et l'effacement d'un préfixe passe par des effacements
  * UNITAIRES, jamais par `DeleteObjects`, que S3 veut signé d'une somme de contrôle précisément.
+ * ⚠️ Des délais BORNÉS : ceux du SDK valent 0 (sans fin) par défaut, et une connexion muette tiendrait un dépôt, une
+ * suppression d'espace ou la rétention jusqu'au keepalive TCP, de l'ordre de deux heures.
  */
 export function creerMagasinObjets(c: ConfigObjets | null): MagasinObjets | null {
   if (c === null) return null;
@@ -56,14 +58,17 @@ export function creerMagasinObjets(c: ConfigObjets | null): MagasinObjets | null
     credentials: { accessKeyId: c.cle, secretAccessKey: c.secret },
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
+    requestHandler: { connectionTimeout: 5_000, requestTimeout: 60_000 },
   });
   const Bucket = c.bucket;
   const lire = async (cle: string) => {
     try {
       return await s3.send(new GetObjectCommand({ Bucket, Key: cle }));
     } catch (err) {
-      // `NoSuchKey` chez AWS ; un stockage compatible peut ne rendre qu'un 404 sans ce nom.
+      // `NoSuchKey` chez AWS ; un stockage compatible peut ne rendre qu'un 404 sans ce nom. Mais un bucket introuvable
+      // (nom faux) n'est pas un fichier absent : il lève, comme le dépôt, au lieu de rendre des 404 muets.
       const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
+      if (e.name === 'NoSuchBucket') throw err;
       if (e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404) return null;
       throw err;
     }
@@ -84,20 +89,25 @@ export function creerMagasinObjets(c: ConfigObjets | null): MagasinObjets | null
       return r?.Body ? Buffer.from(await r.Body.transformToByteArray()) : null;
     },
     effacer,
+    /**
+     * Liste depuis le début, efface la page, et recommence jusqu'à une liste vide : rien ne dépend de la façon dont le
+     * stockage écrit son jeton de suite (un jeton par décalage sautait des clés une fois les premières effacées).
+     */
     effacerPrefixe: async (prefixe) => {
       if (!prefixe.endsWith('/')) throw new Error(`préfixe sans « / » final refusé : ${prefixe}`);
       let total = 0;
-      let suite: string | undefined;
-      do {
-        const page = await s3.send(new ListObjectsV2Command({ Bucket, Prefix: prefixe, ContinuationToken: suite }));
+      let premiere: string | undefined;
+      for (;;) {
+        const page = await s3.send(new ListObjectsV2Command({ Bucket, Prefix: prefixe }));
         const cles = (page.Contents ?? []).map((o) => o.Key).filter((k): k is string => typeof k === 'string');
+        if (cles.length === 0) return total;
+        if (cles[0] === premiere) throw new Error(`effacement sans effet sous ${prefixe} : ${cles[0]} est toujours listée`);
+        premiere = cles[0];
         for (let i = 0; i < cles.length; i += EFFACEMENTS_SIMULTANES) {
           await Promise.all(cles.slice(i, i + EFFACEMENTS_SIMULTANES).map(effacer));
         }
         total += cles.length;
-        suite = page.IsTruncated ? page.NextContinuationToken : undefined;
-      } while (suite);
-      return total;
+      }
     },
   };
 }

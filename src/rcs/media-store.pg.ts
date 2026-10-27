@@ -83,8 +83,9 @@ export class PgRcsMediaStore {
    * au-dessus du quota ; sinon le quota (`null` = sans limite) est vérifié avant l'insertion. Refus :
    * `LimiteOffreError('stockageOctets')`, rien n'est écrit.
    * Au bucket, l'objet se dépose AVANT la transaction : un fichier de 16 Mo ne tient ni le verrou ni une connexion
-   * pendant son envoi. Si la fiche n'est pas écrite (doublon, quota, erreur), l'objet déposé est effacé ; un objet
-   * orphelin ne naît que d'une copie arrêtée entre les deux.
+   * pendant son envoi. Un contrôle rapide du quota, sans verrou, l'évite quand il serait refusé (un doublon passe : il
+   * rend sa fiche, même au-dessus du quota). Si la fiche n'est pas écrite (doublon, quota, erreur), l'objet déposé est
+   * effacé ; un objet orphelin ne naît que d'une copie arrêtée entre les deux.
    */
   async deposer(
     tenantId: string,
@@ -92,7 +93,18 @@ export class PgRcsMediaStore {
     quota: number | null,
   ): Promise<{ media: RcsMediaResume; existant: boolean }> {
     const magasin = this.magasin;
-    if (magasin === null) return this.inscrire(tenantId, input, quota, null);
+    const empreinte = createHash('sha256').update(input.bytes).digest('hex');
+    if (magasin === null) return this.inscrire(tenantId, input, quota, null, empreinte);
+    if (quota !== null) {
+      const { rows } = await this.pool.query<{ occupation: string; doublon: boolean | null }>(
+        `select coalesce(sum(taille), 0)::text as occupation, bool_or(empreinte = $2) as doublon
+           from rcs_media where tenant_id = $1 and supprime_le is null`,
+        [tenantId, empreinte],
+      );
+      if (!rows[0]?.doublon && Number(rows[0]?.occupation ?? 0) + input.bytes.length > quota) {
+        throw new LimiteOffreError(tenantId, 'stockageOctets', quota);
+      }
+    }
     const cle = cleObjet(tenantId, input.code, input.mime);
     await magasin.deposer(cle, input.bytes, input.mime);
     const oublier = () => magasin.effacer(cle).catch((err: unknown) => {
@@ -100,11 +112,15 @@ export class PgRcsMediaStore {
       console.error('medias: objet depose sans fiche, non efface :', cle, texteDe(err));
     });
     try {
-      const r = await this.inscrire(tenantId, input, quota, cle);
+      const r = await this.inscrire(tenantId, input, quota, cle, empreinte);
       if (r.existant) await oublier();
       return r;
     } catch (err) {
-      await oublier();
+      // Un COMMIT dont l'issue est inconnue (connexion coupée pendant lui) a pu écrire la fiche : l'objet ne s'efface
+      // que si aucune fiche ne porte ce code, sinon elle pointerait un objet absent. Dans le doute, il reste.
+      const ecrite = await this.pool.query('select 1 from rcs_media where code = $1', [input.code])
+        .then((r) => (r.rowCount ?? 0) > 0, () => true);
+      if (!ecrite) await oublier();
       throw err;
     }
   }
@@ -115,8 +131,8 @@ export class PgRcsMediaStore {
     input: { code: string; mime: MimeFichier; bytes: Buffer; nom: string | null },
     quota: number | null,
     cle: string | null,
+    empreinte: string,
   ): Promise<{ media: RcsMediaResume; existant: boolean }> {
-    const empreinte = createHash('sha256').update(input.bytes).digest('hex');
     return enTransaction(this.pool, async (client) => {
       await client.query(`select pg_advisory_xact_lock(hashtext('rcs_media:' || $1))`, [tenantId]);
       const deja = await client.query<Ligne>(

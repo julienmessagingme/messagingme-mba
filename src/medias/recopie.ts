@@ -47,6 +47,9 @@ export async function recopierVersObjets(
       const cle = cleObjet(f.tenantId, f.code, f.mime);
       try {
         await magasin.deposer(cle, f.bytes, f.mime);
+        // Vider la base est irréversible une fois les instantanés passés : l'objet se RELIT avant, octet par octet.
+        const relu = await magasin.lireOctets(cle);
+        if (relu === null || !relu.equals(f.bytes)) throw new Error('objet relu différent du fichier en base, la fiche reste');
         if (await source.poser(f.id, cle)) recopiees += 1;
       } catch (err) {
         echecs += 1;

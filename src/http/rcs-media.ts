@@ -131,7 +131,7 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
       return reply.code(404).send({ error: 'introuvable' });
     }
 
-    return reply
+    reply
       .code(200)
       .header('content-type', fichierStocke.mime)
       .header('content-length', fichierStocke.taille)
@@ -142,7 +142,12 @@ export function registerRcsMedia(app: FastifyInstance, deps: RcsMediaRouteDeps, 
        * Un jour, pas un an en `immutable` : Cloudflare met ces images en cache au bord et servirait un visuel effacé
        * (suppression de l'espace) alors que l'origine rend 404. Un jour couvre la rafale de lectures d'une campagne et borne l'exposition.
        */
-      .header('cache-control', 'public, max-age=86400')
-      .send(fichierStocke.contenu);
+      .header('cache-control', 'public, max-age=86400');
+    // Un flux du bucket qui casse avant son premier octet devient un 500 qui garderait ce `max-age` : Cloudflare le
+    // garderait un jour, et un visuel déjà distribué resterait cassé. Ce gestionnaire passe avant celui de Fastify.
+    if (!Buffer.isBuffer(fichierStocke.contenu)) {
+      fichierStocke.contenu.once('error', () => { if (!reply.sent) reply.header('cache-control', 'no-store'); });
+    }
+    return reply.send(fichierStocke.contenu);
   });
 }

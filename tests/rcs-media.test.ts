@@ -74,7 +74,7 @@ async function jeton(role: 'admin' | 'agent'): Promise<string> {
 }
 
 function appWith(
-  stocke: { bytes: Buffer; mime: MimeImage; auBucket?: boolean } | null,
+  stocke: { bytes: Buffer; mime: MimeImage; auBucket?: boolean; fluxCasse?: boolean } | null,
   o: { quotaAtteint?: boolean; suppression?: IssueSuppression; prive?: { bytes: Buffer; mime: MimeFichier; nom: string | null } } = {},
 ) {
   const crees: Array<{ mime: MimeFichier; taille: number; nom: string | null }> = [];
@@ -89,7 +89,10 @@ function appWith(
         getByCode: async (code): Promise<RcsMediaServi | null> => {
           if (code !== CODE || !stocke) return null;
           if (!stocke.auBucket) return { contenu: stocke.bytes, mime: stocke.mime, taille: stocke.bytes.length };
-          const f = Readable.from([stocke.bytes]);
+          // Un flux qui casse avant son premier octet : une connexion au bucket coupée.
+          const f = stocke.fluxCasse
+            ? new Readable({ read() { this.destroy(new Error('connexion au bucket coupée')); } })
+            : Readable.from([stocke.bytes]);
           flux.push(f);
           return { contenu: f, mime: stocke.mime, taille: stocke.bytes.length };
         },
@@ -260,6 +263,13 @@ describe('Servir un visuel RCS (route PUBLIQUE)', () => {
     expect(r.headers['cache-control']).toBe('public, max-age=86400');
     expect(r.headers['content-length']).toBe(String(PNG.length));
     expect(r.rawPayload.equals(PNG)).toBe(true);
+  });
+
+  it('🔴 un flux du bucket casse avant son premier octet : l erreur ne garde PAS le cache public d un jour', async () => {
+    const { app } = appWith({ bytes: PNG, mime: 'image/png', auBucket: true, fluxCasse: true });
+    const r = await app.inject({ method: 'GET', url: `/m/${CODE}.png` });
+    expect(r.statusCode).toBe(500);
+    expect(r.headers['cache-control']).not.toContain('public');
   });
 
   it('un flux du bucket ouvert pour une mauvaise extension est FERME (sa connexion ne reste pas prise)', async () => {

@@ -574,11 +574,14 @@ du 2026-10-14 reste sur la machine en `.env.prod.essai`. Le conteneur et la mach
 `AUTH_SECRET` : une différence entre eux casse le déchiffrement ou les sessions.
 6. Une application IAM `cloudflare-origine`, avec `ContainersPrivateAccess` pour seul droit : sa clé secrète va dans
    la règle Cloudflare qui écrase `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` §7.3).
-7. Une application IAM `mm-medias` SANS AUCUN droit IAM : c'est la politique du bucket `mm-medias-prod`, posée par
-   Claude avec l'IDENTIFIANT de l'application (jamais sa clé), qui l'autorise à lire, écrire et effacer ce seul bucket.
-   Sa clé et les quatre autres variables `OBJETS_*` (`https://s3.nl-ams.scw.cloud`, `nl-ams`, `mm-medias-prod`)
-   partent ENSEMBLE dans les secrets du conteneur et dans le `.env.prod` de la machine : le démarrage refuse un réglage
-   partiel. La suite : « Les médias au bucket », plus bas.
+7. Une application IAM `mm-medias`, avec pour seuls droits, sur le projet, ceux des OBJETS : les lire, les écrire,
+   les effacer et les LISTER (sans le listage, la suppression d'un espace ne retrouve pas ses fichiers), jamais créer,
+   supprimer ni régler un bucket. Chez Scaleway, une politique de bucket ne remplace pas ces droits, elle s'y ajoute, et
+   elle coupe l'accès à tout principal qu'elle ne nomme pas : elle n'est pas utilisée. Ce qui borne la clé, c'est que
+   `mm-medias-prod` est le SEUL bucket du projet ; un autre bucket dans ce projet remettrait ce choix en cause. Sa clé et
+   les quatre autres variables `OBJETS_*` (`https://s3.nl-ams.scw.cloud`, `nl-ams`, `mm-medias-prod`) partent ENSEMBLE
+   dans les secrets du conteneur et dans le `.env.prod` de la machine : le démarrage refuse un réglage partiel. La
+   suite : « Les médias au bucket », plus bas.
 
 ⚠️ **Chaque clé d'API Scaleway a une date d'expiration** (`github-deploy`, `workers-registre`, `cloudflare-origine`),
 lisible dans IAM, onglet API keys : la renouveler AVANT, sinon le déploiement, la mise à jour des workers ou l'accès de
@@ -622,19 +625,28 @@ run `waiting` se règle d'abord, et Julien reçoit les deux liens.
 L'ordre, et ce que chaque pas laisse si on s'arrête là :
 1. Déployer le code avec `migration=avant` (0256 : `bytes` nullable, `cle_objet`, le CHECK « l'un ou l'autre »). Sans
    les variables `OBJETS_*`, il fait exactement comme avant : tout reste en base.
-2. Poser les cinq variables (geste 7), puis recréer les workers. Dès lors, tout fichier NEUF va au bucket, et la
-   lecture sait faire les deux.
-3. Sonder le bucket depuis la machine, avec la vraie clé : déposer, lire, effacer sous `essais/`, et le refus de tout
-   autre bucket.
-4. Recopier l'existant, sur la machine : `docker run --rm --env-file /opt/messagingme/.env.prod <image> npx tsx
-   scripts/medias-vers-objets.mts --espaces=<un espace de test>`, puis sans `--espaces`. Rejouable ; la sortie dit
-   « encore en base 0 », sinon on relance et on lit ses échecs.
+2. Poser les cinq variables (geste 7, `docs/prive/medias/poser-objets.cjs verifier` puis `poser`, hors dépôt) : les
+   WORKERS d'abord (le `.env.prod` de la machine, puis leur recréation), le conteneur de l'API ENSUITE. Un worker qui a
+   le magasin lit la base comme avant ; une API qui déposerait au bucket avant eux laisserait un worker incapable de
+   lire un fichier neuf, et un bloc « message rapide » qui le porte refuserait l'envoi. Dès lors, tout fichier NEUF va
+   au bucket, et la lecture sait faire les deux.
+3. Sonder le bucket depuis la machine, avec la vraie clé : déposer, lire, lister, effacer sous `essais/`, et le refus
+   de créer un bucket. Puis prouver que l'API lit et écrit le bucket : une image NEUVE déposée par la console, donc
+   jamais vue de Cloudflare, ouverte par son adresse `/m/` : 200 et `cf-cache-status` à `MISS`, et sa fiche porte une
+   `cle_objet`. Une image déjà vue répond depuis le cache de Cloudflare sans toucher l'origine, et ne prouve rien.
+4. Recopier l'existant, sur la machine. L'image ne porte pas `scripts/` : y copier le script de la révision déployée,
+   puis le monter : `docker run --rm --env-file /opt/messagingme/.env.prod -v
+   /opt/messagingme/sondes/medias-vers-objets.mts:/app/scripts/medias-vers-objets.mts:ro <image> npx tsx
+   scripts/medias-vers-objets.mts` (`--espaces=<id>` pour un premier espace seul). Rejouable ; chaque objet est relu,
+   octet par octet, avant que la base ne soit vidée ; la sortie dit « encore en base 0 », sinon on relance et on lit
+   ses échecs.
 5. Rejouer l'épreuve de la médiathèque froide (`docs/ARCHITECTURE-CIBLE.md` § 11) : aucune attente du pool de l'API.
 6. Plus tard, dans un déploiement à part : la migration A2 retire `bytes`, et les variables deviennent obligatoires.
 
-⚠️ Retirer les variables `OBJETS_*` après la recopie ne ramène PAS les fichiers en base : ceux du bucket ne se lisent
-plus (erreur à chaque lecture, jamais un 404 muet). Le retour arrière du lot, c'est une image d'avant 0256 TANT QUE la
-recopie n'a pas tourné ; après elle, on avance.
+🔴 **Le retour arrière par l'image s'arrête au pas 2.** Dès qu'une fiche porte une `cle_objet` (le premier dépôt après
+la pose des variables), une image d'avant 0256 servirait ces fichiers en 200 VIDES, que Cloudflare garderait un jour,
+et sa purge effacerait leurs fiches sans leurs objets. Après le pas 2, on avance. Retirer les variables ne ramène pas
+non plus les fichiers en base : ceux du bucket ne se lisent plus (erreur à chaque lecture, jamais un 404 muet).
 
 ### Le connecteur HubSpot chez Scaleway (lot 5, 2026-10-15)
 

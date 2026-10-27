@@ -47,7 +47,8 @@ export class PgStockageStore {
           order by pg_total_relation_size(c.oid) desc limit 8`,
       ),
       this.pool.query<{ n: number; octets: string; disque: string }>(
-        `select count(*)::int as n, coalesce(sum(octet_length(bytes)), 0)::text as octets,
+        // Les seules fiches encore EN BASE : celles au bucket (lot A des médias) n'ont plus d'octets ici.
+        `select count(bytes)::int as n, coalesce(sum(octet_length(bytes)), 0)::text as octets,
                 pg_total_relation_size('rcs_media')::text as disque from rcs_media`,
       ),
       this.pool.query<{ n: number; octets: string; disque: string }>(

@@ -63,7 +63,11 @@ restent à Julien. Écarts au plan : le magasin est un paramètre REQUIS de `PgR
 dans le socle et passé aussi au runtime de scénario, qui lit les vidéos et les PDF ; la purge du worker efface l'objet
 avant la fiche (le plan ne la nommait pas) ; `effacerPrefixe` efface objet par objet, jamais par `DeleteObjects`, dont
 S3 exige une somme de contrôle que les stockages compatibles ne lisent pas tous ; la recopie accepte `--espaces` pour un
-premier espace d'essai. La carte de `/ops` (tâche 5) est reportée au `todo.md`.
+premier espace d'essai, et relit chaque objet avant de vider la base. La carte de `/ops` (tâche 5) est reportée au
+`todo.md`. **Mesure 2, tranchée** : chez Scaleway, une politique de bucket s'AJOUTE aux droits IAM au lieu de les
+remplacer, et coupe l'accès à tout principal qu'elle ne nomme pas. La clé est donc bornée par l'IAM aux seuls droits
+sur les objets (lire, écrire, effacer, lister), et `mm-medias-prod` reste le seul bucket du projet ; la sonde vérifie
+qu'elle ne sait pas créer de bucket (DEPLOY.md, « Les médias au bucket »).
 
 Prérequis : la bascule faite, la mesure 1 de la spec (§ 6, taille maximale d'une requête vers le conteneur) connue.
 Julien crée le bucket et la clé, pose les variables dans les secrets de la cible. Mesure 2 de la spec : borner la

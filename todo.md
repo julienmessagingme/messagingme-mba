@@ -3079,6 +3079,11 @@ Le lot A (les fichiers sortent de Postgres) est EN COURS : `wip.md`. Ce qui rest
 - **La carte « octets en base » de `/ops`** (tâche A5, reportée) : elle ne compte plus que ce qui reste en base.
   Montrer aussi le volume au bucket, la somme des `taille` des fiches qui ont une `cle_objet`, sans appel au bucket,
   et revoir le seuil rouge pour un stockage objet.
+- 🟡 **Supprimer un espace sur une copie SANS les variables `OBJETS_*`, alors que des fiches de l'espace sont déjà au
+  bucket** (relecture du lot A, 2026-10-27) : l'étape `fichiers` est « sautée » avec un motif faux (« la purge les
+  emporte ») et leurs objets restent au bucket à vie. Le bilan peut compter les fiches qui ont une `cle_objet` et dire
+  « impossible » ; il faudrait aussi de quoi rejouer l'étape après coup, le préfixe se déduisant de l'identifiant que la
+  ligne de trace garde. Sans objet tant que la production porte les variables.
 
 Ce que les relectures des lots B et C laissent, aucun ne casse la production :
 

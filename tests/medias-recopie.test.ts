@@ -59,4 +59,14 @@ describe('la recopie des fichiers en base vers le bucket', () => {
     panne = false;
     expect(await recopierVersObjets(source, magasin)).toEqual({ recopiees: 1, echecs: 0, restantes: 0 });
   });
+
+  it('🔴 un objet relu DIFFÉRENT des octets en base : la fiche reste en base, rien n’est vidé', async () => {
+    const { source, fiches } = sourceFausse(2);
+    const { magasin } = magasinFaux();
+    const abime = { ...magasin, lireOctets: async (cle: string) => (cle.endsWith('code1.png') ? Buffer.from('abîmé') : magasin.lireOctets(cle)) };
+    const journal: string[] = [];
+    expect(await recopierVersObjets(source, abime, (l) => journal.push(l))).toEqual({ recopiees: 1, echecs: 1, restantes: 1 });
+    expect(fiches[1]!.bytes?.toString()).toBe('octets 1');
+    expect(journal[0]).toContain('relu différent');
+  });
 });

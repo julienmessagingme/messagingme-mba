@@ -530,16 +530,16 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   });
 
   /**
-   * Exécuteur de scénarios et ce qui l'accompagne (`workflow/wiring.ts`) : le worker le fait avancer (réponse d'un
-   * contact, campagne, réveil), l'API le lance depuis l'Inbox et doit savoir tout de suite si c'est parti.
-   */
-  /**
    * Le bucket des fichiers de la médiathèque (lot A des médias), ou null sans les variables `OBJETS_*`. Un seul par
    * processus : le runtime de scénario y lit une vidéo ou un PDF à envoyer, l'API et le worker le donnent à leur
    * médiathèque (`PgRcsMediaStore`).
    */
   const magasinObjets = creerMagasinObjets(configObjets(config));
 
+  /**
+   * Exécuteur de scénarios et ce qui l'accompagne (`workflow/wiring.ts`) : le worker le fait avancer (réponse d'un
+   * contact, campagne, réveil), l'API le lance depuis l'Inbox et doit savoir tout de suite si c'est parti.
+   */
   const workflowRuntime = buildWorkflowRuntime({
     pool, queue, dryRun, repo, contactStore, inboxStore, settingsStore, workflowStore, metaCredentials, metaFactory,
     rcsProvider: config.RCS_PROVIDER,
