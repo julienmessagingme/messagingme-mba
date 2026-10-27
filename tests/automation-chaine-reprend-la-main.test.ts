@@ -154,7 +154,7 @@ describe('la constante que le SQL recopie, et le type de chaque propriétaire', 
     const src = lire('src', 'worker.ts');
     const i = src.indexOf('startWorkflow: async (demande: DemandeAutomatisme) =>');
     expect(i, 'le câblage d’automation a changé de forme : ce test ne garde plus rien, le remettre à jour').toBeGreaterThan(-1);
-    const ligne = src.slice(i, src.indexOf('\n', i));
+    const ligne = src.slice(i, src.indexOf('\n', i)).trimEnd();
     expect(ligne, 'le câblage ne transmet plus la demande du runner telle quelle : le type viendrait d’ailleurs que de `typeDeLancementDe`')
       .toBe('startWorkflow: async (demande: DemandeAutomatisme) => (await lancements.lancer(demande)) ?? false,');
   });
@@ -167,9 +167,9 @@ describe('la constante que le SQL recopie, et le type de chaque propriétaire', 
     // propres automations, et l'écran des chaînes se viderait sans qu'aucun type ne bouge.
     const store = lire('src', 'channels-me', 'link-store.pg.ts');
     expect(store).toContain(`possede_par = '${POSSESSEUR_LIEN_CHAINE}'`);
-    // Et c'est bien cette valeur-là qui est ÉCRITE à la création, sinon les deux moitiés ne se rencontreraient
-    // jamais malgré leur accord apparent.
-    expect(lire('src', 'index.ts')).toContain(`possedePar: '${POSSESSEUR_LIEN_CHAINE}'`);
+    // Et c'est bien la constante elle-même qui est ÉCRITE à la création, dans le module qui possède désormais
+    // le cycle de publication. Chercher le littéral dans `index.ts` garderait l'ancien câblage, plus l'invariant.
+    expect(lire('src', 'channels-me', 'publication.ts')).toContain('possedePar: POSSESSEUR_LIEN_CHAINE');
   });
 
   it('🔴 la constante des PUBLICITÉS et les gardes SQL de leur store disent la MÊME chaîne', () => {
