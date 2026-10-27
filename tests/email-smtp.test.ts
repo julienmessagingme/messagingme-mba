@@ -163,15 +163,17 @@ describe('buildTransport : la connexion passe par la socket vérifiée', () => {
       resoudre: (h, rappel) => rappel(null, h === 'smtp.client.test' ? [{ address: '127.0.0.1', family: 4 }] : []),
       estInterdite: () => false,
     });
+    // Des adresses hors de l'alphabet hexadécimal : le Message-ID aléatoire (`<uuid@ex.fr>`) finissait parfois par
+    // « b1@ex.fr », et le test tombait une fois sur 128 sans qu'aucune copie cachée ne fuie (2026-10-27).
     await sendSmtpEmail(buildTransport(boite(), ouvrir), boite(), {
-      to: 'seul@ex.fr', bcc: ['b1@ex.fr', 'b2@ex.fr'], subject: 'S', text: 'corps',
+      to: 'seul@ex.fr', bcc: ['cache-un@ex.fr', 'cache-deux@ex.fr'], subject: 'S', text: 'corps',
     });
-    expect(destinataires).toEqual(expect.arrayContaining(['<seul@ex.fr>', '<b1@ex.fr>', '<b2@ex.fr>']));
+    expect(destinataires).toEqual(expect.arrayContaining(['<seul@ex.fr>', '<cache-un@ex.fr>', '<cache-deux@ex.fr>']));
     const ecrit = message.join('\n');
     expect(ecrit).toMatch(/^To: seul@ex\.fr$/m);
     expect(ecrit).not.toMatch(/^bcc:/im);
-    expect(ecrit).not.toContain('b1@ex.fr');
-    expect(ecrit).not.toContain('b2@ex.fr');
+    expect(ecrit).not.toContain('cache-un@ex.fr');
+    expect(ecrit).not.toContain('cache-deux@ex.fr');
   });
 
   it('🔴 par défaut, un hôte interne est refusé AVANT toute connexion, et le refus se reconnaît', async () => {
