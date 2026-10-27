@@ -10,6 +10,7 @@ import { PgCompteurDebit } from '../../src/db/debit.pg';
 import { QuotaModeles } from '../../src/offres/compteurs';
 import { PgAbonnementsNumeroStore } from '../../src/stripe/abonnements.pg';
 import { PgAbonnementsOffreStore } from '../../src/offres/abonnements-offre.pg';
+import { PgRcsAgentStore } from '../../src/rcs/store.pg';
 
 /**
  * L'OFFRE CALCULÉE (migration 0218, lot 6 livraison A), sur une vraie base.
@@ -178,6 +179,21 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     } finally {
       await pool.query('delete from numeros_fournis where numero = $1', [numero]);
     }
+  });
+
+  it('🔴 l’agent RCS ne se résout que pour une offre qui ouvre le RCS : un espace descendu au Business n’en a plus (spec Business)', async () => {
+    const t = await espace('itest-offre-rcs', true);
+    const suffixe = `${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
+    await pool.query(
+      `insert into rcs_agents (tenant_id, agent_id, brand_name, webhook_code, client_token_enc) values ($1, $2, 'itest', $3, 'x')`,
+      [t, `agent-itest-${suffixe}`, `code-itest-${suffixe}`],
+    );
+    const agents = new PgRcsAgentStore(pool);
+    expect(await agents.agentIdForTenant(t)).toBe(`agent-itest-${suffixe}`);
+    expect(await agents.rcsOuvert(t)).toBe(true);
+    await pool.query('update tenants set offre_entreprise = false, offre_business = true where id = $1', [t]);
+    expect(await agents.agentIdForTenant(t)).toBeNull();
+    expect(await agents.rcsOuvert(t)).toBe(false);
   });
 
   it('🔴 0257 : la limite d’utilisateurs du Business est positive, ou vide', async () => {

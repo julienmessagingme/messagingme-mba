@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import type { RcsOptoutStore } from './sender';
+import { OFFRES_RCS } from '../offres/offres';
 
 /**
  * Agents RCS d'un tenant (`rcs_agents`). 🔴 Ce mapping porte l'isolation multi-tenant du canal : le
@@ -10,13 +11,25 @@ export class PgRcsAgentStore {
   constructor(private readonly pool: Pool) {}
 
   /** Agent RCS du tenant. null = aucun agent configuré. Le plus ancien d'abord (un seul agent par tenant
-   *  aujourd'hui ; l'ordre rend le choix déterministe le jour où il y en aura plusieurs). */
+   *  aujourd'hui ; l'ordre rend le choix déterministe le jour où il y en aura plusieurs).
+   *  🔴 null aussi quand l'offre de l'espace n'ouvre pas le RCS (spec Business, `OFFRES_RCS`) : le scénario, l'API et
+   *  les envois d'opérateur passent tous par ici, un espace descendu de l'Entreprise n'envoie donc plus de RCS. */
   async agentIdForTenant(tenantId: string): Promise<string | null> {
     const res = await this.pool.query<{ agent_id: string }>(
-      'select agent_id from rcs_agents where tenant_id = $1 order by created_at asc limit 1',
-      [tenantId],
+      `select agent_id from rcs_agents
+        where tenant_id = $1 and offre_de_l_espace($1::uuid) = any($2::text[])
+        order by created_at asc limit 1`,
+      [tenantId, [...OFFRES_RCS]],
     );
     return res.rows[0]?.agent_id ?? null;
+  }
+
+  /** L'offre de l'espace ouvre-t-elle le RCS (`OFFRES_RCS`) ? Pour une campagne, dont l'agent est figé à sa création. */
+  async rcsOuvert(tenantId: string): Promise<boolean> {
+    const res = await this.pool.query<{ ouvert: boolean }>(
+      'select offre_de_l_espace($1::uuid) = any($2::text[]) as ouvert', [tenantId, [...OFFRES_RCS]],
+    );
+    return res.rows[0]?.ouvert === true;
   }
 
   /** Agents du tenant, pour le sélecteur de l'assistant de campagne. Scopé tenant, comme tout le reste ici. */

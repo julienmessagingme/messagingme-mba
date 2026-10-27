@@ -178,6 +178,14 @@ export const OFFRES_NUMERO_INCLUS: readonly Offre[] = (['base', 'pro', 'business
   .filter((o) => DROITS[o].limites.numeroInclus);
 
 /**
+ * Les offres qui ouvrent le RCS (la fonction `rcs`) : l'Entreprise seule. La résolution de l'agent RCS d'un espace et
+ * l'expéditeur d'une campagne RCS les lisent en SQL (`src/rcs/store.pg.ts`) : un espace descendu de l'Entreprise garde
+ * son agent en base, mais n'envoie plus de RCS par aucun chemin (spec Business, 2026-10-27).
+ */
+export const OFFRES_RCS: readonly Offre[] = (['base', 'pro', 'business', 'entreprise'] as const)
+  .filter((o) => DROITS[o].fonctions.has('rcs'));
+
+/**
  * La conservation de la Base ne s'applique que 30 jours après l'entrée en Base (spec § 7, lot 6, C) : la création de
  * l'espace, la fin de son dernier Pro, ou sa sortie de l'Entreprise (`tenants.entreprise_quittee_le`, migration 0221).
  * Le temps de se réabonner ou d'exporter : changer d'offre ne purge jamais sur le coup. Lu par la purge et par l'écran

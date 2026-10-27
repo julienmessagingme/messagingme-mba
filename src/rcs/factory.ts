@@ -85,6 +85,8 @@ export function buildRcsStack(
       const agentId = campaign.rcsAgentId;
       const message = (messageDeLEtage ?? campaign.rcsMessage) as RcsOutbound | null | undefined;
       if (!agentId || !message) return null;
+      // 🔴 L'agent figé ne suffit pas (spec Business) : un espace descendu de l'Entreprise n'envoie plus de RCS.
+      if (!(await agents.rcsOuvert(campaign.tenantId))) return null;
       return makeCampaignSender({
         channel: 'rcs',
         tenantId: campaign.tenantId,

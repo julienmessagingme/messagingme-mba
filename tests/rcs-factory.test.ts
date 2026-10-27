@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildRcsStack } from '../src/rcs/factory';
+import { PgRcsAgentStore } from '../src/rcs/store.pg';
+import { OFFRES_RCS } from '../src/offres/offres';
 import type { Pool } from 'pg';
 import type { Campaign } from '../src/campaign/types';
 
@@ -45,8 +47,38 @@ describe('buildRcsStack', () => {
   });
 
   it('senderForCampaign rend un sender exploitable pour une campagne complete', async () => {
-    const stack = buildRcsStack(pool, 'fake', false);
+    const stack = buildRcsStack(offre(true).pool, 'fake', false);
     const sender = await stack.senderForCampaign(campagne);
     expect(sender).not.toBeNull();
   });
+
+  it('🔴 une campagne RCS d’un espace dont l’offre n’ouvre plus le RCS (descendu de l’Entreprise) : aucun expéditeur (spec Business)', async () => {
+    // L'agent est figé sur la campagne : sans cette relecture, un espace descendu au Business enverrait encore du RCS.
+    const ferme = offre(false);
+    expect(await buildRcsStack(ferme.pool, 'fake', false).senderForCampaign(campagne)).toBeNull();
+    expect(ferme.requetes[0]!.params).toEqual(['t1', ['entreprise']]);
+  });
 });
+
+/** Un pool qui répond à la seule question de l'offre : le RCS est-il ouvert à l'espace ? */
+function offre(ouvert: boolean) {
+  const requetes: Array<{ sql: string; params: unknown[] }> = [];
+  const pool = {
+    query: async (sql: string, params?: unknown[]) => {
+      requetes.push({ sql, params: params ?? [] });
+      return { rows: [{ ouvert, agent_id: ouvert ? 'agent-1' : null }], rowCount: 1 };
+    },
+  } as unknown as Pool;
+  return { pool, requetes };
+}
+
+describe('l’agent RCS d’un espace', () => {
+  it('🔴 ne se résout que si l’offre de l’espace ouvre le RCS, lue dans la grille, en SQL (spec Business)', async () => {
+    const { pool: p, requetes } = offre(true);
+    expect(await new PgRcsAgentStore(p).agentIdForTenant('t1')).toBe('agent-1');
+    expect(requetes[0]!.sql).toMatch(/offre_de_l_espace\(\$1::uuid\) = any\(\$2::text\[\]\)/);
+    expect(requetes[0]!.params).toEqual(['t1', [...OFFRES_RCS]]);
+    expect([...OFFRES_RCS]).toEqual(['entreprise']);
+  });
+});
+
