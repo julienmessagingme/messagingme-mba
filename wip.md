@@ -27,17 +27,16 @@ qui est en ligne se lit dans [features.md](features.md) (« Le centre d'aide pub
   console sont livrés (`~/engageme-motion/engageme-aide`) ;
 - l'essai réel de Julien (`docs/prive/ESSAIS-REELS.md`), qui clôt le plan.
 
-## LE LOT A DES MÉDIAS : LES FICHIERS SORTENT DE POSTGRES (EN COURS)
+## LE LOT A DES MÉDIAS : EN PRODUCTION DEPUIS LE 2026-10-27, RESTE L'ESSAI RÉEL ET A2
 
-Plan `docs/superpowers/plans/2026-10-14-medias-message-rapide.md` (section « Lot A »), spec du même jour. Avancé avant
-l'ouverture du site : l'épreuve de la médiathèque froide a échoué le 2026-10-26 (`docs/ARCHITECTURE-CIBLE.md` § 11).
-- ✅ Le bucket `mm-medias-prod` (Amsterdam, privé, sans versions), créé le 2026-10-27.
-- ✅ Le code (tâches A1 à A4) : le magasin d'objets, la migration 0256, la médiathèque qui écrit au bucket et lit aux
-  deux endroits, `/m/` en flux, la purge et la suppression d'un espace qui effacent les objets, la recopie
-  (`scripts/medias-vers-objets.mts`). La carte de `/ops` (A5) et la migration A2 sont au `todo.md`.
-- La suite, dans l'ordre de `DEPLOY.md` (« Les médias au bucket ») : déploiement `migration=avant`, l'application
-  `mm-medias` et sa clé (Julien), la politique du bucket, la sonde, la recopie, puis l'épreuve rejouée.
-- **Essai réel** qui clôt le lot : une image `/m/` envoyée avant la recopie s'affiche encore après.
+Plan `docs/superpowers/plans/2026-10-14-medias-message-rapide.md` (section « Lot A »), spec du même jour ; récit au
+journal, même date.
+- ✅ Déployé (`060e6461`, migration 0256), les variables `OBJETS_*` posées, la sonde du bucket passée, la recopie faite :
+  0 fichier en base, 34 au bucket. L'épreuve de la médiathèque froide est rejouée : aucune attente du pool de l'API.
+- **Essai réel** qui clôt le lot : une image déposée par la console (bloc image d'un scénario) s'affiche, et une adresse
+  `/m/` envoyée avant la recopie s'affiche encore après A2.
+- **Plus tard** : la migration A2 (retrait de `bytes`, variables obligatoires) dans un déploiement à part, et la carte
+  de `/ops` (A5), au `todo.md`.
 
 ## LA BASCULE SCALEWAY : FAITE, EN OBSERVATION
 

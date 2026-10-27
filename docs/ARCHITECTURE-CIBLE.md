@@ -1069,6 +1069,11 @@ geste qui met l'API et les workers en ligne (aujourd'hui `git pull`, `compose bu
   ensemble à froid ; `GET /m/:fichier` à 657 ms de moyenne et 1,7 s au pire, côté serveur ; le pool de l'API à 12
   attentes sur 42 prises, 1,6 s au pire ; le pool de réception, sans aucune attente. Le protocole et ses pièges :
   `docs/prive/ESSAIS-REELS.md`. Le lot A passe donc avant l'ouverture.
+  ✅ **Rejoué le 2026-10-27, le lot A en service** (les 34 fichiers au bucket) : 29 images jamais servies depuis la règle
+  de cache, lues ensemble, toutes depuis l'origine ; **aucune attente du pool de l'API**. `/m/` reste vers 640 ms par
+  image côté serveur, mais ce n'est plus le pool : le bucket répond en 100 ms environ, le reste vient de l'ouverture de
+  connexions neuves à la base sous une rafale (jusqu'à 1,3 s) et de l'envoi d'environ 400 Ko par image. Le critère qui
+  bloquait l'ouverture est rempli ; l'ouverture des connexions est au `todo.md`.
 
 **Les deux workers**
 - Tuer le worker d'analyse ne ralentit ni les entrants ni les campagnes.

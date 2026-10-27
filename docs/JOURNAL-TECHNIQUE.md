@@ -4,6 +4,45 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-27 : le lot A des médias, les fichiers sortent de Postgres vers le bucket mm-medias-prod
+
+Plan `docs/superpowers/plans/2026-10-14-medias-message-rapide.md` (section « Lot A » et sa révision du jour), avancé
+avant l'ouverture du site par l'échec de l'épreuve de la médiathèque froide la veille (`docs/ARCHITECTURE-CIBLE.md` §
+11). Un implémenteur, une relecture : aucun rouge, onze jaunes, dont tous ceux de la mise en service et du code
+corrigés avant le déploiement ; un seul au `todo.md`.
+
+- **Le bucket** `mm-medias-prod` (Object Storage, Amsterdam, privé, sans versions), créé par Claude à la demande de
+  Julien. **L'application** `mm-medias` et sa clé, par Julien : quatre droits sur le projet (`ObjectStorageBucketsRead`,
+  `ObjectStorageObjectsRead`, `ObjectStorageObjectsWrite`, `ObjectStorageObjectsDelete`), la clé rattachée au projet
+  pour Object Storage. Pas de politique de bucket : chez Scaleway elle s'ajoute aux droits IAM et coupe l'accès à tout
+  principal qu'elle ne nomme pas ; c'est le bucket unique du projet qui borne la clé.
+- **Le code** (`65e23040`, `060e6461`) : le magasin d'objets (S3 standard, `@aws-sdk/client-s3` 3.1149.0, choisi de plus
+  de deux semaines), la migration 0256 (`bytes` nullable, `cle_objet`, CHECK `rcs_media_bytes_ou_objet`), le dépôt au
+  bucket avant la transaction, `/m/` en flux, la purge et la suppression d'un espace qui effacent les objets, la
+  recopie relue octet par octet. Déployé le matin (`migration=avant`, approuvé par Julien), avec les limites de cœurs
+  des workers de la session des coûts (`b728bf3d`) ; la migration relue en base point par point, le vrai code lisant
+  une image depuis la base, la fumée verte. Un test instable (`email-smtp`, un identifiant aléatoire qui contenait
+  l'adresse interdite, environ une fois sur 128) a rougi `unit` une fois : relancé, corrigé par la session HubSpot.
+- **Les variables**, par un script de Julien (`docs/prive/medias/poser-objets.cjs`, hors dépôt), en une commande.
+  L'API de Scaleway ne rend jamais la valeur d'un secret, seulement son empreinte argon2id, et rien ne dit qu'elle
+  fusionne un envoi partiel : le script renvoie la table entière, après avoir PROUVÉ par les empreintes que les 62
+  secrets de la machine étaient identiques à ceux du conteneur. Les workers d'abord, l'API ensuite.
+- **La sonde du bucket**, avec la vraie clé depuis la machine : dépôt, lecture entière et en flux, objet absent, effacement,
+  effacement d'un préfixe, et la clé qui ne sait pas créer de bucket. Workers recréés sans une erreur.
+- **La recopie** (`docs/prive/medias/recopier.cjs`, lancée par Julien : le garde-fou de Claude Code refuse à Claude une
+  écriture de données en production) : un canari d'abord, une image jamais servie par Cloudflare depuis sa nouvelle
+  règle, recopiée puis ouverte par son adresse publique (200, servie par l'origine, au bon poids), puis tout le reste.
+  Relu en base : 0 fichier en base, 34 au bucket.
+- **L'épreuve de la médiathèque froide, rejouée** : 29 images jamais servies depuis la règle, demandées ensemble, toutes
+  en 200 depuis l'origine ; **aucune attente du pool de l'API** (12 sur 42 la veille). `/m/` reste vers 640 ms par image
+  côté serveur : le bucket répond en 100 ms environ (mesuré depuis la machine, cinq à la fois en 210 ms), le reste
+  vient de l'ouverture de connexions neuves à la base quand une dizaine de requêtes arrivent sur un pool presque vide
+  (jusqu'à 1,3 s, base en DB-DEV-M depuis le matin), et de l'envoi d'environ 400 Ko par image.
+- **Appris** : une table de secrets illisible se renvoie entière seulement après avoir prouvé, par ses empreintes,
+  qu'on renvoie les mêmes valeurs ; un cache qui a changé de clé se mesure à froid sur des objets jamais servis depuis
+  le changement ; et l'ordre « workers puis API » ferme la fenêtre où l'API écrirait au bucket sans que les workers
+  sachent le lire.
+
 ## 2026-10-27 : la reprise humaine dans HubSpot, sous-lot « relancer » (un modèle depuis la carte, fenêtre fermée)
 
 Plan `mm-hubspot/docs/2026-10-26-sous-lot-relancer-modele-plan.md`, décisions A à H validées par Julien ; un

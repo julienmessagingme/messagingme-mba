@@ -3072,7 +3072,11 @@ Ces points vivaient dans des sections de lots déployés. Ils n’ont rien à y 
 
 ## 🟠 Médias : la fin du lot A, et ce que les lots B et C laissent
 
-Le lot A (les fichiers sortent de Postgres) est EN COURS : `wip.md`. Ce qui reste après lui, à faire plus tard :
+Le lot A (les fichiers sortent de Postgres) est EN PRODUCTION depuis le 2026-10-27 : `wip.md`. Ce qui reste, à faire plus tard :
+- 🟡 **Une rafale sur un pool presque vide ouvre ses connexions toutes à la fois** : l'épreuve de la médiathèque froide
+  rejouée (`docs/ARCHITECTURE-CIBLE.md` § 11) n'attend plus le pool, mais une dizaine de prises y coûtent jusqu'à 1,3 s,
+  chacune ouvrant sa connexion TLS à la base (DB-DEV-M depuis le 2026-10-27). À regarder avec le réglage des pools :
+  garder quelques connexions ouvertes, ou en ouvrir moins à la fois. Signalé à la session des coûts Scaleway.
 - **La migration A2**, dans un déploiement à part, une fois la recopie à 0 et plus aucun code qui lise `bytes` : retrait
   de la colonne, le CHECK devient « `cle_objet` non nul », les variables `OBJETS_*` deviennent obligatoires (plan des
   médias, tâche A6 ; `tests/integration` ne nomme plus `bytes`).

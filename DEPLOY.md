@@ -574,9 +574,11 @@ du 2026-10-14 reste sur la machine en `.env.prod.essai`. Le conteneur et la mach
 `AUTH_SECRET` : une différence entre eux casse le déchiffrement ou les sessions.
 6. Une application IAM `cloudflare-origine`, avec `ContainersPrivateAccess` pour seul droit : sa clé secrète va dans
    la règle Cloudflare qui écrase `X-Auth-Token` (`docs/ARCHITECTURE-CIBLE.md` §7.3).
-7. Une application IAM `mm-medias`, avec pour seuls droits, sur le projet, ceux des OBJETS : les lire, les écrire,
-   les effacer et les LISTER (sans le listage, la suppression d'un espace ne retrouve pas ses fichiers), jamais créer,
-   supprimer ni régler un bucket. Chez Scaleway, une politique de bucket ne remplace pas ces droits, elle s'y ajoute, et
+7. ✅ (2026-10-27) Une application IAM `mm-medias`, avec pour seuls droits, sur le projet « Messaging Me App », ceux des
+   OBJETS : `ObjectStorageBucketsRead` (le listage : sans lui, la suppression d'un espace ne retrouve pas ses fichiers),
+   `ObjectStorageObjectsRead`, `ObjectStorageObjectsWrite`, `ObjectStorageObjectsDelete` ; jamais créer, supprimer ni
+   régler un bucket. Sa clé est rattachée au projet « Messaging Me App » pour Object Storage (la question posée à sa
+   création) : rattachée ailleurs, elle ne verrait pas le bucket. Chez Scaleway, une politique de bucket ne remplace pas ces droits, elle s'y ajoute, et
    elle coupe l'accès à tout principal qu'elle ne nomme pas : elle n'est pas utilisée. Ce qui borne la clé, c'est que
    `mm-medias-prod` est le SEUL bucket du projet ; un autre bucket dans ce projet remettrait ce choix en cause. Sa clé et
    les quatre autres variables `OBJETS_*` (`https://s3.nl-ams.scw.cloud`, `nl-ams`, `mm-medias-prod`) partent ENSEMBLE
@@ -625,7 +627,8 @@ run `waiting` se règle d'abord, et Julien reçoit les deux liens.
 L'ordre, et ce que chaque pas laisse si on s'arrête là :
 1. Déployer le code avec `migration=avant` (0256 : `bytes` nullable, `cle_objet`, le CHECK « l'un ou l'autre »). Sans
    les variables `OBJETS_*`, il fait exactement comme avant : tout reste en base.
-2. Poser les cinq variables (geste 7, `docs/prive/medias/poser-objets.cjs verifier` puis `poser`, hors dépôt) : les
+2. Poser les cinq variables (geste 7, `node docs/prive/medias/poser-objets.cjs`, hors dépôt, qui demande les deux clés
+   puis prouve par leurs empreintes argon2id que les secrets renvoyés sont ceux du conteneur) : les
    WORKERS d'abord (le `.env.prod` de la machine, puis leur recréation), le conteneur de l'API ENSUITE. Un worker qui a
    le magasin lit la base comme avant ; une API qui déposerait au bucket avant eux laisserait un worker incapable de
    lire un fichier neuf, et un bloc « message rapide » qui le porte refuserait l'envoi. Dès lors, tout fichier NEUF va
@@ -639,7 +642,8 @@ L'ordre, et ce que chaque pas laisse si on s'arrête là :
    /opt/messagingme/sondes/medias-vers-objets.mts:/app/scripts/medias-vers-objets.mts:ro <image> npx tsx
    scripts/medias-vers-objets.mts` (`--espaces=<id>` pour un premier espace seul). Rejouable ; chaque objet est relu,
    octet par octet, avant que la base ne soit vidée ; la sortie dit « encore en base 0 », sinon on relance et on lit
-   ses échecs.
+   ses échecs. Le 2026-10-27, `node docs/prive/medias/recopier.cjs` (hors dépôt, lancé par Julien) a tout enchaîné : un
+   canari d'une image, cette image ouverte par son adresse publique (servie par l'origine), puis le reste.
 5. Rejouer l'épreuve de la médiathèque froide (`docs/ARCHITECTURE-CIBLE.md` § 11) : aucune attente du pool de l'API.
 6. Plus tard, dans un déploiement à part : la migration A2 retire `bytes`, et les variables deviennent obligatoires.
 
