@@ -4,6 +4,41 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-27 (soir) : l'offre Business, sous-lot A (la mécanique serveur, rien de visible)
+
+Spec `docs/superpowers/specs/2026-10-27-offre-business-design.md`, plan `docs/superpowers/plans/2026-10-27-offre-business-lot-1.md`.
+Huit tâches faites en direct dans une copie à part (worktree détaché), une relecture indépendante de l'ensemble : un
+🔴, corrigé ; douze jaunes reportés au sous-lot B, qui les relira.
+
+- **Migration 0257** (`tenants.offre_business`, `business_utilisateurs` et `business_quitte_le` ; les deux colonnes du
+  complément de crédit dans `credits_offerts` ; le CHECK `abonnements_numero_id_chk` relâché à `^(sub|ops)_` ; la
+  fonction `offre_de_l_espace` qui range le Business entre l'Entreprise et le Pro), en `avant` avec `b10f981c` (run
+  40546826452) : elle n'ajoute que des colonnes et ne fait que relâcher une contrainte, l'ancien code y survit, et aucun
+  Business ne peut exister avant la route `/ops` neuve. Seule en attente dans l'image. **Sonde avant**, en lecture seule
+  par la machine des workers : aucun Pro, aucune conservation réglée, la seule Entreprise qui a eu un numéro l'a libéré,
+  aucune campagne en pause `numero_suspendu`, aucune transaction longue. **Relue après par le vrai code**, chargé par
+  `node --import tsx --input-type=module -` dans `mba-worker` (le script arrive par l'entrée standard, rien n'est écrit
+  dans le conteneur), sur un client dédié en `begin read only` que les stores reçoivent comme pool : colonnes, types,
+  nullabilité et défauts conformes, les deux CHECK sous leur nom, la définition de la fonction ; `offreDe`, `lireEntreprise`,
+  `alertes` et `etatDeLEspace` sur chaque espace (7 Entreprise, 3 Free, la même répartition que le SQL, aucune anomalie) ;
+  la durée de conservation de chaque espace par le texte même de la purge, et rien de plus à purger qu'avant.
+- **Le 🔴 de la relecture** : `BASE_DEPUIS_SQL` ignorait la sortie du Business, donc un Business retiré vers la Free était
+  « en Free depuis sa création » et perdait au balayage suivant ses conversations de 30 à 90 jours, sans grâce (le
+  critère d'échec écrit dans la spec). Corrigé avec un test unitaire vu rouge puis vert et un cas d'intégration. **Le sens
+  « échoue sans le correctif » du cas d'intégration, prouvé sans la CI** : l'ancien et le nouveau texte de la durée,
+  générés par le module lui-même, évalués en lecture seule en production sur deux espaces FICTIFS tenus dans une CTE
+  (aucune ligne écrite) : ancien texte, 30 jours pour un espace sorti du Business il y a 5 jours ; nouveau, 365 pendant la
+  grâce. La technique resservira à tout SQL qu'un test d'intégration est seul à exercer.
+- **CI** : le job `integration` rouge sur `81072714`, quatre `toEqual` de `lireEntreprise` écrits avant A (la lecture rend
+  désormais les champs du Business), corrigés par `b10f981c`. C'est la règle « changer ce que rend un store, chercher ses
+  `toEqual` en intégration », retombée dans son propre piège : la liste des tests touchés venait des tests unitaires.
+- **Après le déploiement** : fumée publique conforme et fiches OAuth conformes (la première lecture de celle de Claude
+  Code a échoué sur un `fetch failed` vers claude.ai, la seconde est conforme), lancées après le passage du disque de
+  `mm-prod-db` en sbs_15k par une session voisine (55 s de `/health` en 503 pendant l'opération, sans lien avec A).
+- **L'essai partiel** (poser puis retirer un Business sur un espace de test) se fait avec l'écran `/ops` du sous-lot B,
+  décision de Julien : A n'a pas d'écran pour le Business, et un appel direct à la route aurait demandé sa session
+  d'exploitation à la main. Aucun Business n'est posé d'ici là.
+
 ## 2026-10-27 (soir) : la reprise humaine dans HubSpot, lot 4 (la page « Messaging Me »)
 
 Plan `mm-hubspot/docs/2026-10-27-lot4-page-messaging-me-plan.md`, décisions A à G validées par Julien ; un implémenteur,

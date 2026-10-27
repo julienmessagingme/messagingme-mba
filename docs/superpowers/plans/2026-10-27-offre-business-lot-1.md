@@ -348,10 +348,11 @@ auto-attaque, suite `web/` ; relecture indépendante du diff de B ; rendu valid�
 2. **A** : `gh run list` et ses jobs lus un par un ; `gh workflow run deploy-scaleway.yml --ref main -f migration=avant`,
    approuvé par Julien ; avant `migrate`, la liste des migrations de l'image vérifiée ; après, relecture en base (colonnes,
    CHECK sous leur nom, définition de `offre_de_l_espace`) et chemin chaud exécuté par le vrai code en lecture seule.
-3. **Essai partiel** : Business posé puis retiré sur un espace de test (offre, numéro, crédit, alertes). 🔴 Aucun Business
-   n'est posé avant que l'API ET les workers de A soient en service : l'ancien code lit une offre inconnue comme la Free, et
-   d'anciens workers purgeraient ses conversations à 30 jours.
-4. **B** : rendu validé ; push (la vitrine et la console sont publiées au push ; la console appelle la route `/ops` de A, déjà
+3. **B** : rendu validé ; push (la vitrine et la console sont publiées au push ; la console appelle la route `/ops` de A, déjà
    en service) ; CI lue ; `deploy-scaleway.yml` avec `migration=aucune` ; `aide:charger` ; `plugin.yml` après le déploiement,
    version montée.
+4. **Essai partiel**, avec l'écran `/ops` de B (décision de Julien du 2026-10-27, A déployé sans écran pour le Business) :
+   Business posé puis retiré sur un espace de test (offre, numéro, crédit, alertes, gestes affichés). 🔴 Aucun Business
+   n'est posé avant que l'API ET les workers de A soient en service : l'ancien code lit une offre inconnue comme la Free, et
+   d'anciens workers purgeraient ses conversations à 30 jours (A est en service depuis le 2026-10-27, `b10f981c`).
 5. **Essai réel** (section « Méthode de livraison »), puis le journal technique.
