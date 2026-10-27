@@ -751,14 +751,16 @@ export async function demarrerWorker(): Promise<void> {
    * réponse d'un vrai client. Même fonction de traitement, avec les seules dépendances de livraison.
    *
    * L'ordre relatif entre un accusé et un entrant n'est plus garanti : ils touchent des lignes différentes,
-   * aucun invariant n'en dépend. Pas de concurrence : deux accusés du même message (sent puis delivered)
-   * doivent s'appliquer dans l'ordre.
+   * aucun invariant n'en dépend. Deux accusés du même message (sent puis delivered) s'appliquent dans l'ordre :
+   * la concurrence est plafonnée à un job par GROUPE, et le groupe est le contact (`cleDeContact`, posé par les deux
+   * receveurs). Un paquet sans groupe (plusieurs contacts) peut croiser un accusé isolé d'un de ses contacts : les
+   * statuts ne reculent pas (`updateDeliveryByMessageId`), l'ordre n'y est donc pas une condition de justesse.
    */
   await queue.work('webhook-status', async (data) => {
     // Trois dépendances nommées : ce qui est absent l'est volontairement (aucune conversation, aucune
     // automation, aucun scénario ne se déclenche sur un accusé).
     await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: fil.remettreSurAccuse, tarifsMeta: tarifsMetaStore, echecsLibres: echecsMessages, signauxAccuse: puitsSignaux.accuse });
-  });
+  }, { concurrency: config.WEBHOOK_STATUS_CONCURRENCY, groupConcurrency: 1 });
 
   // File campaign-run. DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu par tenant,
   // avec intercepteur d'auth (un token révoqué invalide le WABA au lieu de brûler des appels).

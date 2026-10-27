@@ -869,6 +869,15 @@ const constantes = {
    */
   WEBHOOK_CONCURRENCY: 8,
   /**
+   * Accusés de Meta traités en parallèle (`webhook-status`), un seul par contact : le receveur pose la même clé de
+   * groupe que pour les entrants (`cleDeContact`, numéro et contact), donc les accusés d'un même message restent dans
+   * l'ordre. 1 jusqu'au 2026-10-27, quand le pool du principal tenait en 8 connexions : la file plafonnait autour
+   * de 24 numéros à plein débit (banc du 2026-10-17). 🔴 Toujours STRICTEMENT sous `WEBHOOK_CONCURRENCY` : une rafale
+   * d'accusés ne doit jamais prendre plus de connexions que les messages d'un client qui attend
+   * (`tests/queue-names.test.ts`).
+   */
+  WEBHOOK_STATUS_CONCURRENCY: 4,
+  /**
    * Analyses de conversation en vol. Le plafond par espace est de 1, posé dans le worker : c'est le groupe
    * qui compte, pour qu'un client qui importe dix mille contacts ne passe pas avant la première analyse de
    * tous les autres.

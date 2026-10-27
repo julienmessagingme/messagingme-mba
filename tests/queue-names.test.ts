@@ -6,6 +6,7 @@ import {
   SURVEILLANCE_FILES_SECONDES, videeEnContinu, MONITEUR_FILES_SECONDES, DELAI_REJEU_VIDAGE_SECONDES,
 } from '../src/queue/names';
 import { FILE_SIGNAUX_BATCH } from '../src/signaux/batch';
+import { config } from '../src/config';
 import { FILE_EVENEMENTS_DISTRIBUTION } from '../src/evenements/distribution';
 import { FILE_EVENEMENTS_ENVOI } from '../src/evenements/envoi';
 import { FILE_EMAILS_PRODUIT } from '../src/emails-produit/emission';
@@ -331,13 +332,17 @@ describe('cadence de polling par file', () => {
 
   it('🔴 la rafale ne touche PAS la concurrence : c’est elle qui protège les entrants', () => {
     // La distinction qui rend le réglage sûr. La cadence décide de la VITESSE de vidage, la concurrence
-    // décide de combien de jobs tournent ENSEMBLE. Accélérer une rafale d'accusés n'autorise pas à en
-    // traiter deux en même temps, sinon on rouvre exactement ce que le lot 6 avait fermé.
+    // décide de combien de jobs tournent ENSEMBLE. Depuis le 2026-10-27 les accusés tournent à plusieurs, un par
+    // contact, mais toujours MOINS que les entrants : une rafale d'accusés ne prend jamais plus de connexions que
+    // les messages d'un client qui attend (ce que le lot 6 avait fermé).
     const worker = sansCommentaires(readFileSync(new URL('../src/worker.ts', import.meta.url), 'utf8'));
     const debut = worker.indexOf("queue.work('webhook-status'");
     const registration = debut === -1 ? '' : worker.slice(debut, debut + 600);
     expect(registration, 'la registration de webhook-status doit être trouvée').not.toBe('');
-    expect(registration, 'webhook-status ne doit toujours traiter qu’un accusé à la fois').not.toMatch(/concurrency:/);
+    expect(registration, 'webhook-status suit sa propre constante, un accusé à la fois par contact')
+      .toMatch(/\{ concurrency: config\.WEBHOOK_STATUS_CONCURRENCY, groupConcurrency: 1 \}/);
+    expect(config.WEBHOOK_STATUS_CONCURRENCY, 'les accusés ne doivent jamais tourner plus nombreux que les entrants')
+      .toBeLessThan(config.WEBHOOK_CONCURRENCY);
   });
 
   it('🔴 seul le worker ECOUTE : l’API empile, un ecouteur y prendrait une connexion pour rien', () => {

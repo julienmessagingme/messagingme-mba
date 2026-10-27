@@ -109,11 +109,11 @@ describe('la consommation applique la concurrence ET le plafond par groupe', () 
   });
 
   it('les files de FOND restent volontairement à un job : le nombre n’y sert à rien', () => {
-    // `webhook-status` est lente EXPRÈS (les accusés ne doivent pas affamer les entrants), `push-analysis` et
-    // `hubspot-catchup` ont un volume faible et ne sont pas du temps réel. Monter leur concurrence coûterait
-    // du polling à vide pour rien : chaque unité lance un poller indépendant.
+    // `push-analysis` et `hubspot-catchup` ont un volume faible et ne sont pas du temps réel. Monter leur
+    // concurrence coûterait du polling à vide pour rien : chaque unité lance un poller indépendant.
+    // `webhook-status` en est sortie le 2026-10-27 (plusieurs à la fois, un par contact : `tests/queue-names.test.ts`).
     const src = sansCommentaires(lireWorker());
-    for (const file of ['webhook-status', 'push-analysis', 'hubspot-catchup']) {
+    for (const file of ['push-analysis', 'hubspot-catchup']) {
       const i = src.indexOf(`queue.work('${file}'`);
       expect(i, `la file ${file} n'est plus travaillée : ce test ne garde plus rien`).toBeGreaterThan(-1);
       // La fin de l'appel : on cherche la présence d'options de concurrence dans les 800 caractères suivants.

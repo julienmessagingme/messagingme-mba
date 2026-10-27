@@ -76,7 +76,7 @@ export const FILES_NOTIFIEES: Record<(typeof BASE_QUEUES)[number], boolean> = {
   'agent-turn': true, // idem, c'est le même chemin conversationnel
   'campaign-run': true, // l'opérateur vient de cliquer et regarde l'écran
   'automation-event': true, // démarrage de scénario sur mot-clé / tag, chemin conversationnel
-  'webhook-status': false, // accusés Meta : un paquet attend la lecture suivante (30 s), puis se vide en continu ; une seule boucle protège les entrants
+  'webhook-status': false, // accusés Meta : un paquet attend la lecture suivante (30 s), puis se vide en continu ; sa concurrence bornée protège les entrants
   'analyze-conversation': false, // traitement de fond
   'push-analysis': false, // traitement de fond
   'hubspot-catchup': false, // traitement de fond
@@ -110,7 +110,7 @@ export const SEUIL_RAFALE = 20;
  * message) : sous le seuil par défaut, il se viderait à un job toutes les 30 s.
  * La comparaison de pg-boss est stricte (`getReadyCount() > burstWhenReadyExceeds`) : `2` veut dire « à partir de
  * trois en attente ». Un seuil bas reste sûr grâce à la garde de pg-boss (une prise à vide coupe la rafale) :
- * l'egress au repos est inchangé, et la concurrence de 1 borne la file à une connexion du pool.
+ * l'egress au repos est inchangé, et la concurrence (`WEBHOOK_STATUS_CONCURRENCY`) borne la file en connexions.
  * Les autres files de fond restent au défaut tant que leurs paquets n'ont pas été mesurés.
  * ⚠️ Ce seuil ne suffisait pas, mesuré en production (le compte qu'il compare est en cache 60 s) : depuis le
  * 2026-10-21, c'est le vidage continu (`FILES_VIDEES_EN_CONTINU`) qui vide le paquet. Gardé : inoffensif, et il
@@ -156,8 +156,8 @@ export const SONDAGE_FILET_NOTIFIE = 60;
  * pas assez tôt pour rafaler. La file les prenait un par lecture de 30 s : 98 s d'attente pour le dernier d'un paquet,
  * 95 % sous 65 s seulement, mesuré du 15 au 21 octobre (`pgboss.job`), et la remise d'une conversation à l'agent de Meta
  * attend l'accusé. Le vidage ne la réveille pas à l'arrivée (elle reste hors de `FILES_NOTIFIEES`, sa cadence de 30 s
- * reste la même) : il vide le paquet une fois la première lecture faite. Sa concurrence reste à 1, donc une seule
- * connexion, et une grosse campagne se vide au même rythme que sous la rafale d'avant. ⚠️ Un accusé en échec est
+ * reste la même) : il vide le paquet une fois la première lecture faite. Sa concurrence est bornée
+ * (`WEBHOOK_STATUS_CONCURRENCY`, un job par contact), donc ses connexions aussi. ⚠️ Un accusé en échec est
  * rejoué 10 à 20 s plus tard (`DELAI_REJEU_VIDAGE_SECONDES`), donc APRÈS les suivants, là où il repassait devant
  * eux. Les statuts le supportent : ils ne reculent pas et un échec est définitif, sur le message comme sur le
  * destinataire de campagne et son journal (`updateDeliveryByMessageId`, `src/campaign/store.pg.ts` ; la garde des
