@@ -591,13 +591,13 @@ describe('le câblage', () => {
   });
 
   it('🔴 le contrôle des liens de chaîne lit les phrases des widgets', () => {
-    const b = bloc('\n    channelsMe: {');
+    const b = bloc('\n  const depsPublicationChannelsMe = {');
     expect(b).toContain('phraseEnConflit: conflitDansLEspace(');
     expect(b).toContain('phrasesDesWidgets: (tenant) => widgetStore.phrasesDesWidgets(tenant)');
   });
 
   it('🔴 les liens de chaîne et les widgets lisent l’état d’un scénario par la MÊME fonction (lot 5)', () => {
-    expect(bloc('\n    channelsMe: {')).toContain(
+    expect(bloc('\n  const depsPublicationChannelsMe = {')).toContain(
       'scenarioEtat: async (tenant, wfId) => etatDuScenario(await workflowStore.getById(wfId, tenant))',
     );
   });

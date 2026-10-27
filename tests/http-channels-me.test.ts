@@ -13,6 +13,17 @@ import type { PostRow } from '../src/channels-me/post-store.pg';
 import { lienWaMe } from '../src/lib/wa-me';
 import { textePreRempli } from '../src/channels-me/jeton';
 import { ChannelsMeClient, ChannelsMeApiError } from '../src/channels-me/client';
+import type { AutomationInput } from '../src/automation/store.pg';
+import {
+  creerPublicationChannelsMe,
+  type AutomationsPublicationChannelsMe,
+  type ClientPublicationChannelsMe,
+  type ConnexionsPublicationChannelsMe,
+  type LiensPublicationChannelsMe,
+  type PostsPublicationChannelsMe,
+  type PublicationChannelsMe,
+  type PublicationChannelsMeDeps,
+} from '../src/channels-me/publication';
 
 /**
  * Les routes de la chaine WhatsApp (Channels Me). Aucune base, aucun reseau : de faux stores et un faux
@@ -38,9 +49,9 @@ import { ChannelsMeClient, ChannelsMeApiError } from '../src/channels-me/client'
  *     INDEPENDANTES (celle d'un appel ne doit pas empecher l'autre). `POST /links/:id/enable` est la
  *     contrepartie de `disable` qui ferme le chemin de reparation d'un allumage rate.
  *
- * ⚠️ Le `enabled: false` de la CREATION de l'automation vit dans le cablage (`src/index.ts`), pas dans la
- * route : ce fichier prouve seulement qu'AUCUNE bascule n'a lieu a la creation d'un lien. Le cablage est
- * garde par son propre cas, plus bas (lecture de la source, comme `tests/scope-tenant.test.ts`). La garde
+ * ⚠️ Le `enabled: false` de la CREATION de l'automation vit dans le module de publication, pas dans la
+ * route : ce fichier prouve aussi qu'AUCUNE bascule n'a lieu a la creation d'un lien. Le contrat est
+ * garde par son propre cas, plus bas. La garde
  * `possede_par` elle-meme (l'automation NON possedee reste inaccessible) est deja prouvee contre un vrai
  * Postgres par `tests/integration/channels-me-stores.integration.test.ts`.
  */
@@ -81,17 +92,36 @@ const CANAL = { id: 'chan-1', name: 'Ma chaine' } as unknown as MessageChannel;
 const MESSAGE = { id: 'cm-msg-1' } as unknown as Message;
 
 /** Les tranches se surchargent membre par membre. */
-type Surcharges = Partial<Omit<ChannelsMeRouteDeps, 'connexions' | 'client' | 'liens' | 'posts'>> & {
-  connexions?: Partial<ConnexionsChannelsMe>; client?: Partial<ClientChannelsMe>; liens?: Partial<LiensChannelsMe>; posts?: Partial<PostsChannelsMe>;
+type ConnexionsTest = ConnexionsChannelsMe & ConnexionsPublicationChannelsMe;
+type ClientTest = ClientChannelsMe & ClientPublicationChannelsMe;
+type LiensTest = LiensChannelsMe & LiensPublicationChannelsMe;
+type PostsTest = PostsChannelsMe & PostsPublicationChannelsMe;
+
+type Surcharges = {
+  connexions?: Partial<ConnexionsTest>;
+  client?: Partial<ClientTest>;
+  liens?: Partial<LiensTest>;
+  posts?: Partial<PostsTest>;
+  publication?: PublicationChannelsMe;
+  phraseEnConflit?: PublicationChannelsMeDeps['phraseEnConflit'];
+  scenarioEtat?: PublicationChannelsMeDeps['scenarioEtat'];
+  getDisplayPhoneNumber?: PublicationChannelsMeDeps['getDisplayPhoneNumber'];
+  demanderActivation?: ChannelsMeRouteDeps['demanderActivation'];
 };
 
 function app(over: Surcharges = {}) {
-  const { connexions: surConnexions, client: surClient, liens: surLiens, posts: surPosts, ...reste } = over;
+  const {
+    connexions: surConnexions,
+    client: surClient,
+    liens: surLiens,
+    posts: surPosts,
+    publication: surPublication,
+  } = over;
   const cap = {
     upserts: [] as Connexion[],
     verifies: [] as string[],
     liens: [] as Array<Record<string, unknown>>,
-    automations: [] as Array<Record<string, unknown>>,
+    automations: [] as AutomationInput[],
     allumees: [] as string[],
     eteintes: [] as string[],
     publies: [] as Array<{ text: string; mediaUrl?: string }>,
@@ -101,23 +131,22 @@ function app(over: Surcharges = {}) {
     automationsSupprimees: [] as string[],
     debranches: [] as string[],
   };
-  const deps: ChannelsMeRouteDeps = {
-    connexions: {
+  const connexions: ConnexionsTest = {
       get: async () => ({ orgId: 'org-1', channelId: 'chan-1', hasApiKey: true, hasSecret: true, verifiedAt: null }),
       getSecrets: async () => CX,
       upsert: async (_t, c) => { cap.upserts.push(c); },
       markVerified: async (t) => { cap.verifies.push(t); },
       supprimer: async (t) => { cap.debranches.push(t); return true; },
       ...surConnexions,
-    },
-    client: {
+  };
+  const client: ClientTest = {
       getOrganisation: async () => ORGA,
       listChannels: async () => [CANAL],
       getMessages: async () => [MESSAGE],
       createMessage: async (_cx, m) => { cap.publies.push(m); cap.ordre.push('publie'); return MESSAGE; },
       ...surClient,
-    },
-    liens: {
+  };
+  const liens: LiensTest = {
       list: async () => [LIEN],
       create: async (_t, l) => { cap.liens.push(l); return { ...LIEN, ...l }; },
       byId: async (_t, id) => (id === LINK_ID ? LIEN : null),
@@ -127,20 +156,37 @@ function app(over: Surcharges = {}) {
       eteindreAutomation: async (_t, id) => { cap.eteintes.push(id); cap.ordre.push('eteint'); },
       messagesContenantLaPhrase: async () => 0,
       ...surLiens,
-    },
-    posts: {
+  };
+  const posts: PostsTest = {
       list: async () => [POST],
       create: async (_t, p) => { cap.posts.push(p); cap.ordre.push('trace'); },
       ...surPosts,
-    },
-    creerAutomationCompagnon: async (_t, input) => { cap.automations.push(input); return { id: AUTO_ID }; },
-    scenarioEtat: async (_t, wf) => (wf === WF_ID ? 'ok' : 'inconnu'),
-    getDisplayPhoneNumber: async () => '+33 5 25 68 02 50',
-    demanderActivation: async ({ message }) => { cap.demandes.push({ message }); },
+  };
+  const automations: AutomationsPublicationChannelsMe = {
+    create: async (_t, input) => { cap.automations.push(input); return { id: AUTO_ID }; },
+  };
+  const scenarioEtat = over.scenarioEtat ?? (async (_t, wf) => (wf === WF_ID ? 'ok' : 'inconnu'));
+  const getDisplayPhoneNumber = over.getDisplayPhoneNumber ?? (async () => '+33 5 25 68 02 50');
+  const phraseEnConflit = over.phraseEnConflit ?? (async () => false);
+  const deps: ChannelsMeRouteDeps = {
+    connexions,
+    client,
+    liens,
+    posts,
+    publication: surPublication ?? creerPublicationChannelsMe({
+      connexions,
+      client,
+      liens,
+      posts,
+      automations,
+      scenarioEtat,
+      getDisplayPhoneNumber,
+      phraseEnConflit,
+    }),
+    getDisplayPhoneNumber,
+    demanderActivation: over.demanderActivation ?? (async ({ message }) => { cap.demandes.push({ message }); }),
     // Depuis que la PHRASE route, elle doit etre unique et distinctive. Par defaut le faux dit « libre » et
     // « jamais vue » : chaque test qui veut exercer un refus le surcharge, ce qui rend le refus VISIBLE.
-    phraseEnConflit: async () => false,
-    ...reste,
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, channelsMe: deps }), cap };
 }
@@ -426,14 +472,21 @@ describe('Channels Me : les liens de chaine', () => {
       payload: { workflowId: WF_ID, phrase: 'Je veux recevoir la newsletter', maxParHeure: 2000 },
     });
     expect(res.statusCode).toBe(201);
-    expect(cap.automations[0]).toMatchObject({ workflowId: WF_ID, cooldownSeconds: 300, maxParHeure: 2000 });
+    expect(cap.automations[0]).toMatchObject({
+      workflowId: WF_ID,
+      cooldownSeconds: 300,
+      enabled: false,
+      possedePar: 'channelsme_link',
+      maxFiresPerHour: 2000,
+    });
     // Le jeton est tire par le SERVEUR, jamais fourni par le client, et il est le meme dans l'automation et
     // dans le lien : deux tirages donneraient un bouton qui ne declenche rien.
     // 🔴 LE MOT-CLE DE L AUTOMATION EST LA PHRASE, plus le jeton. C est ce qui fait router le lien sur ce
     // que l abonne envoie vraiment. Le lien garde son jeton en base (identifiant unique, et il vit dans les
     // posts deja publies), il ne declenche simplement plus rien.
-    expect(cap.automations[0]!.motCle).toBe(cap.liens[0]!.phrase);
-    expect(cap.automations[0]!.motCle).not.toBe(cap.liens[0]!.token);
+    const motCle = (cap.automations[0]!.triggerConfig as { keywords: string[] }).keywords[0];
+    expect(motCle).toBe(cap.liens[0]!.phrase);
+    expect(motCle).not.toBe(cap.liens[0]!.token);
     // 🔴 Rien n'est allume a la creation : un lien cree mais jamais publie doit rester inerte.
     expect(cap.allumees).toEqual([]);
     expect(cap.eteintes).toEqual([]);
@@ -800,27 +853,32 @@ describe('Channels Me : publier', () => {
 });
 
 describe('Channels Me : le cablage', () => {
-  it('🔴 l automation compagnon est creee ETEINTE, en `contains`, et POSSEDEE', () => {
-    // Ce test lit la source parce qu'aucun type ne peut exprimer « cette automation nait eteinte ». Les
-    // routes ne voient qu'une dependance : si le cablage la creait allumee, un lien jamais publie
-    // declencherait des scenarios, et rien dans les tests de routes ne le verrait.
-    const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
-    const debut = src.indexOf('channelsMe: {');
-    expect(debut).toBeGreaterThan(0);
-    const brut = src.slice(debut, src.indexOf('\n    },', debut));
-    // 🔴 SANS LES COMMENTAIRES : deux des chaines cherchees (`enabled: false`, `mode: 'contains'`) sont deja
-    // citees, entre backticks, dans les commentaires qui EXPLIQUENT ce cablage. Chercher dans le bloc brut
-    // ferait donc passer ce test meme si le CODE perdait ces lignes, tant que le commentaire les citant
-    // resterait. Meme patron que `tests/campagne-cablage.test.ts`.
-    const bloc = brut.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  it('🔴 le module possede les invariants de l automation compagnon', () => {
+    const src = readFileSync(new URL('../src/channels-me/publication.ts', import.meta.url), 'utf8');
+    const bloc = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     expect(bloc).toContain('enabled: false');
-    expect(bloc).toContain("possedePar: 'channelsme_link'");
+    expect(bloc).toContain('possedePar: POSSESSEUR_LIEN_CHAINE');
     expect(bloc).toContain("triggerKind: 'keyword'");
     expect(bloc).toContain("mode: 'contains'");
+  });
+
+  it('🔴 passe les vraies instances entieres au module', () => {
+    const src = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
+    const debut = src.indexOf('const depsPublicationChannelsMe = {');
+    expect(debut).toBeGreaterThan(0);
+    const brut = src.slice(debut, src.indexOf('\n  } satisfies PublicationChannelsMeDeps;', debut));
+    const bloc = brut.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     // 🔴 Le cablage bascule par le LIEN (le store qui porte la garde `possede_par`), jamais par
     // `automationStore.update`/`remove`, qui excluent ces lignes. Les routes appellent `liens.allumerAutomation`
     // et `liens.eteindreAutomation` : c'est le store des liens qui doit être branché sous ce nom.
     expect(bloc).toMatch(/\bliens: channelsMeLinks,/);
     expect(bloc).not.toMatch(/automationStore\.update\(/);
+    // Les vraies instances sont passées entières au module : aucune méthode de classe n'est recopiée sans `this`.
+    expect(bloc).toContain('connexions: channelsMeConnections');
+    expect(bloc).toContain('client: channelsMeClient');
+    expect(bloc).toContain('posts: channelsMePosts');
+    expect(bloc).toContain('automations: automationStore');
+    const route = src.slice(src.indexOf('channelsMe: {'), src.indexOf('\n    },', src.indexOf('channelsMe: {')));
+    expect(route).toContain('publication: publicationChannelsMe');
   });
 });

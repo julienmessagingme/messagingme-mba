@@ -114,6 +114,7 @@ import { PgChannelsMeConnectionStore } from './channels-me/connection-store.pg';
 import { PgChannelsMeLinkStore } from './channels-me/link-store.pg';
 import { PgChannelsMePostStore } from './channels-me/post-store.pg';
 import { ChannelsMeClient } from './channels-me/client';
+import { creerPublicationChannelsMe, type PublicationChannelsMeDeps } from './channels-me/publication';
 import { PgWidgetStore } from './widgets/store.pg';
 import { qrSvg } from './widgets/qr';
 import { retirerLeCompteApplication, servirLeCreditSiRelie, type DepsConnexionApplication } from './application/connexion';
@@ -1540,6 +1541,25 @@ async function main(): Promise<void> {
     },
   } satisfies Pick<DepsEnvoiModeleDansLeFil, 'sendTemplateMessage' | 'categorieDuModele' | 'prepareCarousel'>;
 
+  // Cycle de publication Channels Me : les routes HTTP ne portent plus les gardes, l'ordre des écritures ni le
+  // rattrapage. Les stores restent passés comme objets entiers : aucune méthode de classe n'est détachée de `this`.
+  const depsPublicationChannelsMe = {
+    connexions: channelsMeConnections,
+    client: channelsMeClient,
+    liens: channelsMeLinks,
+    posts: channelsMePosts,
+    automations: automationStore,
+    // La comparaison est la même que pour les widgets : inclusion dans les deux sens après normalisation.
+    phraseEnConflit: conflitDansLEspace({
+      phrasesDesLiens: (tenant) => channelsMeLinks.phrasesDesLiens(tenant),
+      phrasesDesWidgets: (tenant) => widgetStore.phrasesDesWidgets(tenant),
+    }),
+    scenarioEtat: async (tenant, wfId) => etatDuScenario(await workflowStore.getById(wfId, tenant)),
+    getDisplayPhoneNumber: async (tenant) =>
+      (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
+  } satisfies PublicationChannelsMeDeps;
+  const publicationChannelsMe = creerPublicationChannelsMe(depsPublicationChannelsMe);
+
   const app = buildServer({
     /**
      * 🔴 Le compteur des plafonds de débit, PARTAGÉ par toutes les copies de l'API (migration 0186). Oublié,
@@ -2801,37 +2821,8 @@ async function main(): Promise<void> {
       client: channelsMeClient,
       liens: channelsMeLinks,
       posts: channelsMePosts,
-      // L'automation compagnon du lien. Trois choses se décident ici et nulle part ailleurs :
-      //  - `enabled: false`, parce qu'un lien créé mais jamais publié ne doit rien déclencher ;
-      //  - `possedePar`, qui met la ligne hors de portée de l'écran Automation (prédicat du store) ;
-      //  - `mode: 'contains'`, qui laisse passer un abonné ayant ajouté un mot devant ou derrière la phrase.
-      // L'unicité se tranche avec la même normalisation que la correspondance (`normalizeText`, celle de
-      // `matchesTrigger` et `keywordsOf`) : une comparaison SQL approchée laisserait passer « Ça m'intéresse »
-      // et « ca m interesse ». L'inclusion dans les deux sens, pas l'égalité : en mode `contains`, un abonné qui
-      // appuie sur « Je veux le guide 2026 » envoie aussi « Je veux le guide ».
-      // 🔴 Contre les liens ET les widgets (lot 4 du widget) : la comparaison est celle de la route des widgets,
-      // écrite une fois dans `src/widgets/phrases.ts`.
-      phraseEnConflit: conflitDansLEspace({
-        phrasesDesLiens: (tenant) => channelsMeLinks.phrasesDesLiens(tenant),
-        phrasesDesWidgets: (tenant) => widgetStore.phrasesDesWidgets(tenant),
-      }),
-      creerAutomationCompagnon: (tenant, input) => automationStore.create(tenant, {
-        name: input.nom,
-        triggerKind: 'keyword',
-        // 🔴 `contains` sauve les posts déjà publiés : un ancien post envoie `phrase (cm-xxxx)`, qui contient
-        // le mot-clé (la phrase). En mode `equals`, tous les posts en circulation seraient morts, sans recours.
-        triggerConfig: { keywords: [input.motCle], mode: 'contains' },
-        conditionGroup: null,
-        workflowId: input.workflowId,
-        startNodeId: input.startNodeId,
-        cooldownSeconds: input.cooldownSeconds,
-        enabled: false,
-        possedePar: 'channelsme_link',
-        maxFiresPerHour: input.maxParHeure,
-      }),
-      // La lecture que les widgets font aussi (`gestionDesWidgetsEnBase`) : écrite une fois, dans `etatDuScenario`.
-      scenarioEtat: async (tenant, wfId) => etatDuScenario(await workflowStore.getById(wfId, tenant)),
-      getDisplayPhoneNumber: async (tenant) => (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
+      publication: publicationChannelsMe,
+      getDisplayPhoneNumber: (tenant) => depsPublicationChannelsMe.getDisplayPhoneNumber(tenant),
       // Notification best-effort : `sendTelegram` ne lève jamais et est un no-op sans Telegram. Le jeton d'un
       // lien n'apparaît nulle part dans ce message.
       demanderActivation: async ({ tenantId, userId, message }) => {

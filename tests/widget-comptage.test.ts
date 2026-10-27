@@ -50,10 +50,10 @@ describe('qui demande quoi', () => {
     await new PgChannelsMeLinkStore(pool).messagesContenantLaPhrase('t1', 'Je veux le guide');
     // Les quatre premiers paramètres sont ceux d'avant le lot 5 ; le cinquième rend la condition ajoutée vraie.
     expect(requetes[0]!.params.slice(0, 5)).toEqual(['t1', 'Je veux le guide', expect.any(Number), MOTIF_JETON, false]);
-    // Et la route des liens ne peut pas la demander : son contrat n'a que deux paramètres, et elle les passe.
-    const route = readFileSync(new URL('../src/http/channels-me.ts', import.meta.url), 'utf8');
-    expect(route).toContain('messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number>;');
-    expect(route).toContain('await deps.liens.messagesContenantLaPhrase(tenant, phrase);');
+    // Et le module de publication ne peut pas la demander : son port n'a que deux paramètres, et il les passe.
+    const publication = readFileSync(new URL('../src/channels-me/publication.ts', import.meta.url), 'utf8');
+    expect(publication).toContain('messagesContenantLaPhrase(tenantId: string, phrase: string): Promise<number>;');
+    expect(publication).toContain('await deps.liens.messagesContenantLaPhrase(tenantId, phrase);');
   });
 
   it('la condition ajoutée est neutralisée par le drapeau, et l’espace est filtré partout où la requête lit', async () => {
