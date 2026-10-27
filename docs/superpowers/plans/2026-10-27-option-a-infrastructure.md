@@ -9,6 +9,7 @@ rapide, et la copie d'API toujours allumée passe à la petite taille. Coût vis
 **Implémenteur unique, une relecture indépendante du diff, puis déploiement approuvé par Julien** : les trois gestes
 touchent des chemins que la production emprunte (la prise de chaque tâche, le disque de la base, la taille de la copie
 qui reçoit les webhooks de Meta), mais ils sont petits et chacun se défait en une commande.
+L'essai réel qui clôt l'option : une campagne SANDBOX vers le numéro de Julien (dernière section).
 
 ## Les gestes, dans l'ordre
 
