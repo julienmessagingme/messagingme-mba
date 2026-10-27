@@ -60,14 +60,15 @@ describe('numerosDisponibles et droitAuNumero', () => {
     expect(await numerosDisponibles(reserve({ libres: 1, attente: ['a', 'b'] }).deps)).toBe(0);
   });
 
-  it('🔴 pas de numéro avant le paiement : attribué, puis abonnement vivant, puis Pro vivant, sinon aucun droit', async () => {
-    const pro = (vivant: boolean) => ({ pro: { vivant: async () => vivant } });
+  it('🔴 pas de numéro avant le paiement : attribué, puis abonnement vivant, puis une offre qui l’inclut, sinon aucun droit', async () => {
+    // L'offre qui inclut le numéro se lit dans la grille (`limites.numeroInclus`) : le Pro, le Business et l'Entreprise.
+    const offre = (inclus: boolean) => ({ offre: { numeroInclus: async () => inclus } });
     const base = reserve({ attribues: { t1: '331' }, abonnements: { t2: 'actif', t3: 'en_retard', t4: 'resilie' } }).deps;
-    expect(await droitAuNumero({ ...base, ...pro(false) }, 't1')).toBe('attribue');
-    expect(await droitAuNumero({ ...base, ...pro(false) }, 't2')).toBe('abonne');
-    expect(await droitAuNumero({ ...base, ...pro(false) }, 't3')).toBe('abonne');
-    expect(await droitAuNumero({ ...base, ...pro(false) }, 't4'), 'un abonnement résilié ne donne rien').toBeNull();
-    expect(await droitAuNumero({ ...base, ...pro(true) }, 't4')).toBe('pro');
-    expect(await droitAuNumero({ ...base, ...pro(false) }, 't5')).toBeNull();
+    expect(await droitAuNumero({ ...base, ...offre(false) }, 't1')).toBe('attribue');
+    expect(await droitAuNumero({ ...base, ...offre(false) }, 't2')).toBe('abonne');
+    expect(await droitAuNumero({ ...base, ...offre(false) }, 't3')).toBe('abonne');
+    expect(await droitAuNumero({ ...base, ...offre(false) }, 't4'), 'un abonnement résilié ne donne rien').toBeNull();
+    expect(await droitAuNumero({ ...base, ...offre(true) }, 't4')).toBe('inclus');
+    expect(await droitAuNumero({ ...base, ...offre(false) }, 't5')).toBeNull();
   });
 });

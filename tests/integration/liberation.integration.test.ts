@@ -192,6 +192,26 @@ describe.skipIf(!url)('la libération d’un numéro fourni (lot 4, B)', () => {
     expect(await liberation.liberer(t, 'sub_libpro', { resilier: async () => {}, retirerApplication: aucunRetrait }, MAINTENANT)).not.toEqual({ fait: 'rien' });
   });
 
+  it('🔴 un Business posé, ou retiré depuis moins de 7 jours, retient la libération dans la transaction (spec Business)', async () => {
+    await fini('sub_libbiz', IL_Y_A_8_JOURS);
+    const poser = (business: boolean, quitteLe: Date | null) => pool.query(
+      'update tenants set offre_business = $2, business_quitte_le = $3 where id = $1', [t, business, quitteLe],
+    );
+    try {
+      await poser(true, null);
+      expect(await liberation.liberer(t, 'sub_libbiz', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'rien' });
+      await poser(false, IL_Y_A_6_JOURS);
+      expect(await liberation.liberer(t, 'sub_libbiz', { resilier: async () => { throw new Error('jamais'); }, retirerApplication: aucunRetrait }, MAINTENANT)).toEqual({ fait: 'rien' });
+      expect(await reserve()).toEqual({ statut: 'attribue', tenant_id: t });
+      expect(await liberee('sub_libbiz')).toBeNull();
+      // Retiré depuis 8 jours : la grâce est passée, la libération reprend son cours.
+      await poser(false, IL_Y_A_8_JOURS);
+      expect(await liberation.liberer(t, 'sub_libbiz', { resilier: async () => {}, retirerApplication: aucunRetrait }, MAINTENANT)).not.toEqual({ fait: 'rien' });
+    } finally {
+      await poser(false, null);
+    }
+  });
+
   it('fini sans numéro attribué (rendu par « Abandonner ») : seule la date se pose', async () => {
     await numeros.rendre(t);
     await fini('sub_libi', IL_Y_A_8_JOURS);

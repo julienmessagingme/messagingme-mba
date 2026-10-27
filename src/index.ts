@@ -344,6 +344,13 @@ async function main(): Promise<void> {
   // copie de l'API, dont le cache (30 s) date du refus d'avant ; une requête par invitation, rien à côté. Le gel, lui,
   // garde le cache : un membre payé sur une autre copie peut y être refusé 30 s au plus.
   const offresSansCache = new PgOffresStore(pool);
+  /**
+   * L'offre de l'espace inclut-elle le numéro fourni (`limites.numeroInclus` : le Pro, le Business, l'Entreprise) ? Lue
+   * sans cache : un Business que Julien vient de poser dans /ops couvre le numéro tout de suite (spec du 2026-10-27).
+   */
+  const offreQuiInclutLeNumero = {
+    numeroInclus: async (tenant: string): Promise<boolean> => (await offresSansCache.offreDe(tenant)).droits.limites.numeroInclus,
+  };
   const userStore = new PgUserStore(pool, async (tenant) => {
     const o = await offresSansCache.offreDe(tenant);
     const { limites } = o.droits;
@@ -997,9 +1004,14 @@ async function main(): Promise<void> {
       enregistrer: (a) => abonnementsNumero.enregistrer(a),
       oublierAvisDeSuspension: (tenant) => abonnementsNumero.oublierAvisDeSuspension(tenant),
       porterLaFinParLePro: (a) => abonnementsNumero.porterLaFinParLePro(a),
+      porterLaFinParLOps: (a) => abonnementsNumero.porterLaFinParLOps(a),
     },
     reprendreCampagnes: async (tenant) => { await numeroDelieStore.leverPausesSuspension(tenant); },
     proVivant: (tenant) => abonnementsOffre.vivant(tenant),
+    offreManuelleCouvre: async (tenant) => {
+      const o = await offresSansCache.offreDe(tenant);
+      return (o.offre === 'business' || o.offre === 'entreprise') && o.droits.limites.numeroInclus;
+    },
     alerter: async (texte) => { await sendTelegram(`[mba-${NOM_API}] ${texte}`); },
   };
 
@@ -2937,7 +2949,7 @@ async function main(): Promise<void> {
         programmerFin: (abonnementId) => programmerFinDuNumero(abonnementDuNumero, abonnementId),
       },
       // Le numéro inclus dans le Pro (lot 6, B2b) : un Pro vivant l'attribue sans paiement.
-      pro: { vivant: (tenant) => abonnementsOffre.vivant(tenant) },
+      offre: offreQuiInclutLeNumero,
       // La filière application : le QR code de la page, et l'état qui dit « relié ».
       application: connexionApplication,
     },
@@ -3292,7 +3304,7 @@ async function main(): Promise<void> {
           signerLien: (l) => signLienNumero(l, config.AUTH_SECRET),
           // Le crédit offert d'un compte de l'application relié se sert à cette lecture aussi : l'attente de Claude ne lit qu'elle.
           etat: async (tenant) => servirLeCreditSiRelie(
-            await lireEtatConnexion({ numeros: numerosFournis, numeroConnecte, abonnements: abonnementsNumero, pro: abonnementsOffre, application: connexionApplication }, tenant),
+            await lireEtatConnexion({ numeros: numerosFournis, numeroConnecte, abonnements: abonnementsNumero, offre: offreQuiInclutLeNumero, application: connexionApplication }, tenant),
             tenant, (t) => connexionApplication.offrirCredit(t),
           ),
           urlConsole: config.APP_URL,

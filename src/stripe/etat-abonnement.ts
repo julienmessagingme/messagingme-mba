@@ -49,17 +49,26 @@ export function etatAbonnement(
   return l.finPrevueLe !== null ? 'fin_prevue' : 'actif';
 }
 
-/** Le Pro de l'espace, tel que la couverture du numéro le lit (`abonnements_offre`, lot 6). */
-export interface CouverturePro {
-  /** Un abonnement Pro sans fin effective (en retard compris : Stripe relance jusqu'à la fin). */
+/**
+ * Ce qui couvre le numéro de l'espace, tel que la couverture le lit : une offre qui inclut le numéro (lot 6 pour le Pro,
+ * spec du 2026-10-27 pour le Business et l'Entreprise posés dans /ops).
+ */
+export interface CouvertureDuNumero {
+  /**
+   * L'offre de l'espace inclut le numéro : un Pro sans fin effective (en retard compris : Stripe relance jusqu'à la fin),
+   * ou un Business ou une Entreprise posés.
+   */
   vivant: boolean;
-  /** La fin effective du dernier Pro fini, `null` s'il n'y en a jamais eu. */
+  /**
+   * La fin effective de la dernière couverture : la fin du dernier Pro fini, ou la sortie du Business ou de l'Entreprise,
+   * la plus récente ; `null` s'il n'y en a jamais eu.
+   */
   dernierFini: Date | null;
 }
 
 /**
- * 🔴 LA COUVERTURE DU NUMÉRO PAR LE PRO (lot 6, livraison B1, vigilance 4) : un numéro fourni est couvert si son
- * abonnement est actif OU si le Pro de l'espace l'est. Appliquée à la ligne AVANT `etatAbonnement`, dans
+ * 🔴 LA COUVERTURE DU NUMÉRO (lot 6, livraison B1, vigilance 4 ; étendue au Business et à l'Entreprise le 2026-10-27) :
+ * un numéro fourni est couvert si son abonnement est actif OU si l'offre de l'espace l'inclut. Appliquée à la ligne AVANT `etatAbonnement`, dans
  * `etatDeLEspace`, la seule lecture de l'état : sans elle, le balayage suspendrait puis libérerait le numéro d'un client
  * Pro dont l'abonnement du numéro seul est fini.
  *  - Pro vivant : la ligne se lit active, sans échec, sans fin prévue ni effective, donc ni coupure ni libération.
@@ -67,7 +76,7 @@ export interface CouverturePro {
  *    pendant son Pro verrait son numéro libéré au balayage suivant la fin du Pro, sans les 7 jours de grâce.
  *  - Un numéro déjà libéré le reste.
  */
-export function couvertureParLePro(l: LigneEtat, pro: CouverturePro): LigneEtat {
+export function couvertureDuNumero(l: LigneEtat, pro: CouvertureDuNumero): LigneEtat {
   if (l.libereLe !== null) return l;
   if (pro.vivant) return { ...l, statut: 'actif', premierEchecLe: null, finPrevueLe: null, finiLe: null };
   const fini = l.finiLe !== null || l.statut === 'resilie';

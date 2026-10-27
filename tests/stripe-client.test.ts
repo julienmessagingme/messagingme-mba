@@ -267,6 +267,15 @@ describe('le numéro inclus dans le Pro (lot 6, B2b)', () => {
     expect(t.appels[0]!.entetes['stripe-version']).toBe(VERSION_API_STRIPE);
   });
 
+  it('🔴 un identifiant qui n’est pas celui d’un abonnement Stripe (une ligne ops_ portée par /ops) ne part jamais chez Stripe', async () => {
+    // Spec Business : la fin du numéro d'une offre posée à la main s'écrit `ops_…` dans abonnements_numero. Le client
+    // Stripe est la frontière : aucun chemin, même oublié demain, ne peut lui faire viser un tel identifiant.
+    const t = new FauxTransport([{ status: 200, json: { id: 'ops_x', status: 'canceled' } }]);
+    await expect(arreterAbonnementNumeroSeul(t, { cle: CLE, abonnementId: 'ops_5f0c1e2a1730000000000', avoir: true }))
+      .rejects.toMatchObject({ name: 'StripeError', code: 'abonnement_hors_stripe' });
+    expect(t.appels).toEqual([]);
+  });
+
   it('🔴 J7 : sans avoir (une période impayée), un arrêt nu, sous une autre clé d’idempotence', async () => {
     const t = new FauxTransport([{ status: 200, json: { id: 'sub_N', status: 'canceled' } }]);
     await arreterAbonnementNumeroSeul(t, { cle: CLE, abonnementId: 'sub_N', avoir: false });

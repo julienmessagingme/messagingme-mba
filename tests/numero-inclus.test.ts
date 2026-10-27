@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { surFinDuPro, surPassageEnPro, type DepsNumeroInclus, type FinDuPro } from '../src/offres/numero-inclus';
+import { surFinDeLOffreManuelle, surFinDuPro, surPassageEnPro, type DepsNumeroInclus, type FinDuPro } from '../src/offres/numero-inclus';
 import type { ReponseStripe, TransportStripe } from '../src/stripe/client';
 import type { AbonnementNumero, IssueEnregistrement } from '../src/stripe/abonnements.pg';
 
@@ -32,7 +32,7 @@ const numeroSeul = (o: Partial<AbonnementNumero> = {}): AbonnementNumero => ({
 
 function monter(o: {
   reponses?: ReponseStripe[]; numero?: AbonnementNumero | null; attribue?: boolean; stripe?: boolean; livemode?: boolean;
-  apporte?: boolean; proVivant?: boolean; issueEnregistrement?: IssueEnregistrement;
+  apporte?: boolean; proVivant?: boolean; offreManuelle?: boolean; issueEnregistrement?: IssueEnregistrement;
 } = {}) {
   const transport = new FauxStripe(o.reponses ?? []);
   const journal: string[] = [];
@@ -50,9 +50,11 @@ function monter(o: {
       },
       oublierAvisDeSuspension: async (t) => { journal.push(`avis-oublies:${t}`); },
       porterLaFinParLePro: async (a) => { journal.push(`porte:${a.abonnementPro}:${a.finiLe.toISOString()}`); return true; },
+      porterLaFinParLOps: async (a) => { journal.push(`porte-ops:${a.livemode}:${a.finiLe.toISOString()}`); return true; },
     },
     reprendreCampagnes: async (t) => { journal.push(`campagnes:${t}`); },
     proVivant: async () => o.proVivant ?? false,
+    offreManuelleCouvre: async () => o.offreManuelle ?? false,
     alerter: async (texte) => { alertes.push(texte); },
   };
   return { d, transport, journal, alertes };
@@ -234,5 +236,48 @@ describe('à la fin du Pro', () => {
     const deja = monter({ numero: numeroSeul() });
     expect(await surFinDuPro(deja.d, fin())).toBe('deja_abonne');
     expect([...sans.journal, ...deja.journal, ...sans.transport.appels, ...deja.transport.appels]).toEqual([]);
+  });
+});
+
+describe('quand une offre posée à la main couvre le numéro (spec Business)', () => {
+  it('🔴 la fin d’un Pro payé pendant un Business ne recrée pas le numéro seul à 3,50 € : le Business le couvre', async () => {
+    const m = monter({ offreManuelle: true, reponses: [CREE] });
+    expect(await surFinDuPro(m.d, fin())).toBe('couvert_par_offre');
+    expect(m.transport.appels).toEqual([]);
+    expect(m.journal).toEqual([]);
+    expect(m.alertes).toEqual([]);
+  });
+});
+
+describe('à la fin d’une offre posée à la main (Business, Entreprise)', () => {
+  const RETRAIT = new Date('2026-11-02T09:00:00Z');
+
+  it('🔴 un numéro fourni que plus rien ne couvre : une ligne finie portée par /ops, le lot 4 suspend puis libère ; rien chez Stripe', async () => {
+    const m = monter();
+    expect(await surFinDeLOffreManuelle(m.d, { tenantId: T, finiLe: RETRAIT })).toBe('porte');
+    expect(m.journal).toEqual([`porte-ops:true:${RETRAIT.toISOString()}`]);
+    expect(m.transport.appels).toEqual([]);
+  });
+
+  it('un Pro vivant, ou une autre offre posée à la main, couvre encore le numéro : rien à faire', async () => {
+    const pro = monter({ proVivant: true });
+    expect(await surFinDeLOffreManuelle(pro.d, { tenantId: T, finiLe: RETRAIT })).toBe('pro_vivant');
+    const offre = monter({ offreManuelle: true });
+    expect(await surFinDeLOffreManuelle(offre.d, { tenantId: T, finiLe: RETRAIT })).toBe('couvert_par_offre');
+    expect([...pro.journal, ...offre.journal]).toEqual([]);
+  });
+
+  it('aucun numéro fourni, ou un numéro seul déjà payé : rien de porté, il continue', async () => {
+    const sans = monter({ attribue: false });
+    expect(await surFinDeLOffreManuelle(sans.d, { tenantId: T, finiLe: RETRAIT })).toBe('sans_numero');
+    const deja = monter({ numero: numeroSeul() });
+    expect(await surFinDeLOffreManuelle(deja.d, { tenantId: T, finiLe: RETRAIT })).toBe('deja_abonne');
+    expect([...sans.journal, ...deja.journal, ...sans.transport.appels, ...deja.transport.appels]).toEqual([]);
+  });
+
+  it('sans Stripe configuré, la ligne porte le mode test : elle ne vise de toute façon aucun abonnement Stripe', async () => {
+    const m = monter({ stripe: false });
+    expect(await surFinDeLOffreManuelle(m.d, { tenantId: T, finiLe: RETRAIT })).toBe('porte');
+    expect(m.journal).toEqual([`porte-ops:false:${RETRAIT.toISOString()}`]);
   });
 });

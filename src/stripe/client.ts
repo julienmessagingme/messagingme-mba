@@ -113,6 +113,11 @@ async function appeler<T>(
   o: { cle: string; idempotence?: string; supprimer?: true },
   schema: z.ZodType<T>,
 ): Promise<T> {
+  // 🔴 La frontière (spec Business, 2026-10-27) : abonnements_numero porte aussi des lignes `ops_…`, la fin du numéro d'une
+  // offre posée dans /ops, qui ne sont pas des abonnements Stripe. Aucune ne doit partir ici, même par un chemin oublié.
+  if (chemin.startsWith('/subscriptions/') && !chemin.startsWith('/subscriptions/sub_')) {
+    throw new StripeError(operation, null, null, 'abonnement_hors_stripe', 'identifiant hors Stripe');
+  }
   const entetes: Record<string, string> = { authorization: `Bearer ${o.cle}`, 'stripe-version': VERSION_API_STRIPE };
   const avecCle = { ...entetes, 'idempotency-key': o.idempotence ?? '' };
   let res: ReponseStripe;

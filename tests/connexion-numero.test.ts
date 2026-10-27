@@ -33,7 +33,7 @@ function etatDe(o: { attribue?: string; code?: { code: string; recuLe: Date }; c
         return o.abonnement ? { abonnementId: 'sub_1', tenantId: t, livemode: false, statut: o.abonnement, periodeFin: new Date('2026-11-06T09:00:00Z'), premierEchecLe: null, finPrevueLe: null, finiLe: null, libereLe: null } : null;
       },
     },
-    pro: { vivant: async (t: string) => { lus.push(`pro:${t}`); return o.pro === true; } },
+    offre: { numeroInclus: async (t: string) => { lus.push(`pro:${t}`); return o.pro === true; } },
     application: aucunCompteApplication,
   };
   return { deps, lus };
@@ -145,7 +145,7 @@ describe('GET /tenants/:tenantId/connexion-numero', () => {
         portail: async () => ({ ok: true as const, valeur: { url: 'https://x' } }),
         programmerFin: async () => ({ ok: true as const, valeur: true as const }),
       },
-      pro: { vivant: async () => false },
+      offre: { numeroInclus: async () => false },
       application: aucunCompteApplication,
     };
     return buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET, getUserState: async (userId) => ({ role: userId === 'u2' ? 'agent' : 'admin', disabled: false, horsOffre: null }) }, numeroFourni: deps });

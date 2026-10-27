@@ -45,11 +45,21 @@ export interface DepsNumeroInclus {
      * déjà une (la couverture du Pro y reporte déjà la fin).
      */
     porterLaFinParLePro(a: { tenantId: string; abonnementPro: string; livemode: boolean; finiLe: Date }): Promise<boolean>;
+    /**
+     * La même ligne finie pour la sortie d'une offre posée dans /ops, identifiée `ops_…` (spec Business,
+     * `PgAbonnementsNumeroStore.porterLaFinParLOps`). `false` : l'espace a déjà une ligne non libérée.
+     */
+    porterLaFinParLOps(a: { tenantId: string; livemode: boolean; finiLe: Date }): Promise<boolean>;
   };
   /** J6 : les campagnes en pause `numero_suspendu` repartent. */
   reprendreCampagnes(tenantId: string): Promise<void>;
   /** L'espace a-t-il un Pro vivant (`PgAbonnementsOffreStore.vivant`) ? */
   proVivant(tenantId: string): Promise<boolean>;
+  /**
+   * L'espace est-il dans une offre posée à la main qui inclut le numéro (le Business, l'Entreprise : spec du 2026-10-27) ?
+   * Elle couvre le numéro comme un Pro vivant : la fin d'un Pro n'y recrée rien chez Stripe.
+   */
+  offreManuelleCouvre(tenantId: string): Promise<boolean>;
   /** Prévient Julien (Telegram). */
   alerter(texte: string): Promise<void>;
 }
@@ -113,10 +123,12 @@ export interface FinDuPro {
 }
 
 /**
- * `pro_vivant` : un AUTRE Pro de l'espace vit (un rejeu tardif de la fin), il couvre le numéro. `en_cours` : la même
- * création est déjà en cours chez Stripe. `a_verifier` : le numéro seul recréé n'a pas été enregistré, Julien vérifie.
+ * `pro_vivant` : un AUTRE Pro de l'espace vit (un rejeu tardif de la fin), il couvre le numéro. `couvert_par_offre` : un
+ * Business ou une Entreprise posés le couvrent (spec Business). `en_cours` : la même création est déjà en cours chez
+ * Stripe. `a_verifier` : le numéro seul recréé n'a pas été enregistré, Julien vérifie.
  */
-export type IssueFinDuPro = 'sans_numero' | 'pro_vivant' | 'deja_abonne' | 'recree' | 'a_verifier' | 'en_cours' | 'porte' | 'rendu';
+export type IssueFinDuPro =
+  | 'sans_numero' | 'pro_vivant' | 'couvert_par_offre' | 'deja_abonne' | 'recree' | 'a_verifier' | 'en_cours' | 'porte' | 'rendu';
 
 /**
  * Le numéro seul encore vivant à la fin du Pro (un essai ne l'arrête pas), que le client a choisi de rendre : arrêté chez
@@ -150,6 +162,9 @@ export const MARGE_FIN_PREVUE_MS = 24 * 3_600_000;
 export async function surFinDuPro(d: DepsNumeroInclus, f: FinDuPro): Promise<IssueFinDuPro> {
   // J5 de la relecture : la fin d'un Pro relivrée après la souscription d'un autre. Le Pro vivant couvre le numéro.
   if (await d.proVivant(f.tenantId)) return 'pro_vivant';
+  // 🔴 Relecture à froid de la spec Business : un Pro payé que le client résilie après que Julien a posé le Business. Le
+  // Business couvre le numéro : le recréer à 3,50 € sur la carte du Pro ferait payer un numéro déjà inclus.
+  if (await d.offreManuelleCouvre(f.tenantId)) return 'couvert_par_offre';
   if (!(await d.numero.numeroAttribue(f.tenantId))) return 'sans_numero';
   const seul = await d.numero.deLEspace(f.tenantId);
   if (vivant(seul)) {
@@ -202,4 +217,20 @@ export async function surFinDuPro(d: DepsNumeroInclus, f: FinDuPro): Promise<Iss
     journaliser('error', 'numero_inclus_creation_impossible', { tenantId: f.tenantId, pro: f.abonnementPro, status: err.status, code: err.code, err: err.message });
     return porter(`Stripe refuse de recréer le numéro seul (${err.status ?? 'réseau'}${err.code ? `, ${err.code}` : ''}).`);
   }
+}
+
+/**
+ * LA SORTIE D'UNE OFFRE POSÉE DANS /OPS (le Business, l'Entreprise : spec du 2026-10-27), appelée par la route de `/ops`
+ * qui la retire. Sans carte ni abonnement Stripe à reprendre, le numéro fourni que plus rien ne couvre suit le chemin d'un
+ * impayé, comme la fin d'un Pro sans carte : une ligne finie portée par /ops, puis le lot 4 (envois coupés, 7 jours pour
+ * s'abonner au numéro, libération). Rien ne part chez Stripe. Rejouable : une seconde fois ne porte rien de plus.
+ */
+export async function surFinDeLOffreManuelle(d: DepsNumeroInclus, f: { tenantId: string; finiLe: Date }): Promise<IssueFinDuPro> {
+  if (await d.proVivant(f.tenantId)) return 'pro_vivant';
+  if (await d.offreManuelleCouvre(f.tenantId)) return 'couvert_par_offre';
+  if (!(await d.numero.numeroAttribue(f.tenantId))) return 'sans_numero';
+  if (vivant(await d.numero.deLEspace(f.tenantId))) return 'deja_abonne';
+  // La ligne ne vise aucun abonnement Stripe : son mode est celui de l'instance, pour rester avec les lignes qu'elle lit.
+  await d.numero.porterLaFinParLOps({ tenantId: f.tenantId, livemode: d.stripe?.livemode ?? false, finiLe: f.finiLe });
+  return 'porte';
 }

@@ -169,6 +169,14 @@ export function limiteContactsDe(o: { offre: Offre; droits: Droits }): LimiteCon
 }
 
 /**
+ * Les offres qui incluent le numéro fourni (`limites.numeroInclus`) : le Pro, le Business et l'Entreprise. La couverture
+ * du numéro les lit en SQL (`offre_de_l_espace(...) = any(...)`, `src/stripe/abonnements.pg.ts` et
+ * `src/numero/liberation.pg.ts`) plutôt qu'un nom d'offre écrit en dur.
+ */
+export const OFFRES_NUMERO_INCLUS: readonly Offre[] = (['base', 'pro', 'business', 'entreprise'] as const)
+  .filter((o) => DROITS[o].limites.numeroInclus);
+
+/**
  * La conservation de la Base ne s'applique que 30 jours après l'entrée en Base (spec § 7, lot 6, C) : la création de
  * l'espace, la fin de son dernier Pro, ou sa sortie de l'Entreprise (`tenants.entreprise_quittee_le`, migration 0221).
  * Le temps de se réabonner ou d'exporter : changer d'offre ne purge jamais sur le coup. Lu par la purge et par l'écran

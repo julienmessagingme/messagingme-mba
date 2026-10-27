@@ -125,7 +125,7 @@ function monter(o: {
       },
       programmerFin: async (abonnementId) => { cap.fins.push(abonnementId); return o.fin ?? { ok: true, valeur: true }; },
     },
-    pro: { vivant: async () => o.pro ?? false },
+    offre: { numeroInclus: async () => o.pro ?? false },
     application: o.compteApplication ? {
       ...aucunCompteApplication,
       offrirCredit: async (t: string) => { o.offres?.push(t); },

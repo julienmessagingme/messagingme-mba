@@ -27,7 +27,7 @@ export interface DepsReserve {
 }
 
 /** Le titre auquel un espace prend un numéro NEUF, ou `null` : aucun droit. */
-export type DroitAuNumero = 'attribue' | 'abonne' | 'pro';
+export type DroitAuNumero = 'attribue' | 'abonne' | 'inclus';
 
 /** Un abonnement vivant : payé, ou en retard d'un renouvellement. Le droit au numéro ne se perd qu'à la résiliation. */
 export const abonnementVivant = (a: { statut: string } | null): boolean => a !== null && a.statut !== 'resilie';
@@ -43,20 +43,21 @@ export async function numerosDisponibles(deps: Pick<DepsReserve, 'numeros' | 'ab
 
 /**
  * L'espace a-t-il droit à un numéro, et à quel titre ? Un numéro déjà attribué se rend toujours ; sinon il faut un
- * abonnement du numéro vivant, ou un Pro vivant qui l'inclut. 🔴 Pas de numéro avant le paiement : la même garde pour
- * obtenir et pour remplacer, sans quoi « Remplacer » donnerait un numéro sans payer.
+ * abonnement du numéro vivant, ou une offre qui l'inclut (la grille, `limites.numeroInclus` : le Pro, le Business et
+ * l'Entreprise, spec du 2026-10-27). 🔴 Pas de numéro avant le paiement : la même garde pour obtenir et pour remplacer,
+ * sans quoi « Remplacer » donnerait un numéro sans payer.
  */
 export async function droitAuNumero(
   deps: {
     numeros: Pick<DepsReserve['numeros'], 'numeroDeLEspace'>;
     abonnements: Pick<DepsReserve['abonnements'], 'deLEspace'>;
-    pro: { vivant(tenantId: string): Promise<boolean> };
+    offre: { numeroInclus(tenantId: string): Promise<boolean> };
   },
   tenantId: string,
 ): Promise<DroitAuNumero | null> {
   if (await deps.numeros.numeroDeLEspace(tenantId)) return 'attribue';
   if (abonnementVivant(await deps.abonnements.deLEspace(tenantId))) return 'abonne';
-  return (await deps.pro.vivant(tenantId)) ? 'pro' : null;
+  return (await deps.offre.numeroInclus(tenantId)) ? 'inclus' : null;
 }
 
 /** D'où vient le numéro qui revient à la réserve : le journal le dit. */

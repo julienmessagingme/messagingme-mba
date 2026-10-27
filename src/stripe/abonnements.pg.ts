@@ -1,7 +1,8 @@
 import type { Pool } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { attribuerAvec } from '../otp/store.pg';
-import { couvertureParLePro, etatAbonnement, liberationPrevue, DELAI_COUPURE_IMPAYE_MS, type EtatAbonnementNumero } from './etat-abonnement';
+import { couvertureDuNumero, etatAbonnement, liberationPrevue, DELAI_COUPURE_IMPAYE_MS, type EtatAbonnementNumero } from './etat-abonnement';
+import { OFFRES_NUMERO_INCLUS } from '../offres/offres';
 
 /**
  * L'ABONNEMENT DU NUMÉRO FOURNI (lot 3c, livraison B, migration 0214). Un numéro fourni se paie 3,50 € HT par mois en
@@ -240,6 +241,23 @@ export class PgAbonnementsNumeroStore {
    * compte pas (J1 de la relecture) : elle se lit « libéré », et le numéro neuf du Pro ne serait jamais suspendu ni libéré.
    * La ligne portée, plus récente, passe devant elle dans `deLEspace`.
    */
+  /**
+   * La même ligne finie que `porterLaFinParLePro`, pour la sortie d'une offre posée dans /ops (Business, Entreprise), qui
+   * n'a pas d'abonnement Stripe : identifiée `ops_…` (CHECK `abonnements_numero_id_chk` relâché par 0257). Elle naît
+   * résiliée, donc aucun chemin qui écrit chez Stripe (réservés aux abonnements vivants) ne la touche ; le lot 4 la lit
+   * comme une fin : envois coupés, 7 jours, libération. `false` : l'espace a déjà une ligne non libérée.
+   */
+  async porterLaFinParLOps(a: { tenantId: string; livemode: boolean; finiLe: Date }): Promise<boolean> {
+    const res = await this.pool.query(
+      `insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, fini_le)
+       select $2, $1, $3, 'resilie', $4
+        where not exists (select 1 from abonnements_numero where tenant_id = $1 and libere_le is null)
+       on conflict (stripe_subscription_id) do nothing`,
+      [a.tenantId, `ops_${a.tenantId.replace(/-/g, '')}${a.finiLe.getTime()}`, a.livemode, a.finiLe],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
   async porterLaFinParLePro(a: { tenantId: string; abonnementPro: string; livemode: boolean; finiLe: Date }): Promise<boolean> {
     const res = await this.pool.query(
       `insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, fini_le)
@@ -258,14 +276,18 @@ export class PgAbonnementsNumeroStore {
   async etatDeLEspace(tenantId: string, maintenant: Date = new Date()): Promise<EtatDeLEspace | null> {
     const ligne = await this.deLEspace(tenantId);
     if (ligne === null) return null;
-    // 🔴 Le Pro de l'espace couvre le numéro (lot 6, livraison B1, vigilance 4) : appliqué ICI, la seule lecture de l'état,
-    // donc à la garde d'envoi, au balayage qui suspend puis libère, au MCP et à la console (`couvertureParLePro`).
-    const pro = await this.pool.query<{ vivant: boolean | null; dernier_fini: Date | null }>(
-      `select bool_or(fini_le is null) as vivant, max(fini_le) as dernier_fini from abonnements_offre where tenant_id = $1`,
-      [tenantId],
+    // 🔴 L'offre de l'espace couvre le numéro (lot 6, livraison B1, vigilance 4 ; le Business et l'Entreprise depuis le
+    // 2026-10-27) : appliqué ICI, la seule lecture de l'état, donc à la garde d'envoi, au balayage qui suspend puis libère,
+    // au MCP et à la console (`couvertureDuNumero`). Les offres qui l'incluent viennent de la grille (`OFFRES_NUMERO_INCLUS`).
+    const couverture = await this.pool.query<{ vivant: boolean | null; dernier_fini: Date | null }>(
+      `select offre_de_l_espace($1::uuid) = any($2::text[]) as vivant,
+              greatest((select max(a.fini_le) from abonnements_offre a where a.tenant_id = $1::uuid),
+                       (select greatest(t.entreprise_quittee_le, t.business_quitte_le) from tenants t where t.id = $1::uuid))
+                as dernier_fini`,
+      [tenantId, [...OFFRES_NUMERO_INCLUS]],
     );
-    const p = pro.rows[0];
-    const a = { ...ligne, ...couvertureParLePro(ligne, { vivant: p?.vivant === true, dernierFini: p?.dernier_fini ?? null }) };
+    const p = couverture.rows[0];
+    const a = { ...ligne, ...couvertureDuNumero(ligne, { vivant: p?.vivant === true, dernierFini: p?.dernier_fini ?? null }) };
     const { fourni, numeroApporte } = await this.numerosDeLEspace(tenantId);
     const etat = etatAbonnement(a, { maintenant, numeroAttribue: fourni !== null, numeroApporte });
     return {

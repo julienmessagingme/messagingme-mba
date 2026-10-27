@@ -65,10 +65,11 @@ export interface NumeroFourniRouteDeps {
     programmerFin(abonnementId: string): Promise<Issue<true>>;
   };
   /**
-   * Le Pro de l'espace (lot 6, B2b) : un Pro vivant inclut le numéro fourni. Il s'attribue alors sans abonnement du
-   * numéro, et aucun paiement du numéro ne s'ouvre. Requis : un câblage qui l'oublierait ferait payer un client Pro.
+   * L'offre de l'espace inclut-elle le numéro fourni (la grille : le Pro, le Business, l'Entreprise) ? Il s'attribue alors
+   * sans abonnement du numéro, et aucun paiement du numéro ne s'ouvre. Requis : un câblage qui l'oublierait ferait payer
+   * un numéro à un client qui l'a déjà dans son offre.
    */
-  pro: { vivant(tenantId: string): Promise<boolean> };
+  offre: { numeroInclus(tenantId: string): Promise<boolean> };
   /**
    * La filière application WhatsApp Business (2026-10-22) : relier par QR code depuis la page du lien. Requise : l'état
    * de la connexion la lit aussi, sans quoi un compte relié n'y serait jamais dit connecté.
@@ -150,7 +151,7 @@ export function registerNumeroFourni(
 
   /**
    * L'espace a-t-il droit à un numéro NEUF, et à quel titre ? Un numéro déjà attribué se rend toujours ; sinon il faut
-   * un abonnement du numéro vivant, ou un Pro vivant qui l'inclut (lot 6, B2b). La même garde pour obtenir et pour
+   * un abonnement du numéro vivant, ou une offre qui l'inclut (Pro, Business, Entreprise). La même garde pour obtenir et pour
    * remplacer. `null` : aucun droit.
    */
   const droitAuNumero = (tenant: string): Promise<DroitAuNumero | null> => droitDansLaReserve(deps, tenant);
@@ -160,7 +161,7 @@ export function registerNumeroFourni(
    * sien (`disponibles`), comme pour l'ouverture d'un paiement. `true` : la réserve n'a rien pour lui.
    */
   async function reserveDueAuxAbonnes(droit: DroitAuNumero): Promise<boolean> {
-    if (droit !== 'pro' || (await disponibles()) > 0) return false;
+    if (droit !== 'inclus' || (await disponibles()) > 0) return false;
     await surveillerReserve();
     return true;
   }
@@ -171,7 +172,7 @@ export function registerNumeroFourni(
       return reply.code(409).send({ error: 'Cet espace a déjà un numéro WhatsApp.', cause: 'deja_un_numero' });
     }
     // 🔴 Pas de numéro avant le paiement (lot 3c) : un numéro déjà attribué se rend toujours (un retour sur la page,
-    // l'essai du 3b), un nouveau exige un abonnement vivant, ou un Pro vivant qui l'inclut (lot 6, B2b). Le webhook
+    // l'essai du 3b), un nouveau exige un abonnement vivant, ou une offre qui l'inclut (Pro, Business, Entreprise). Le webhook
     // attribue d'ordinaire à la confirmation.
     const droit = await droitAuNumero(tenant);
     if (droit === null) {
@@ -205,9 +206,10 @@ export function registerNumeroFourni(
     if (abonnementVivant(abonnement)) {
       return reply.code(409).send({ error: 'Le numéro de cet espace est déjà payé.', cause: 'deja_abonne' });
     }
-    // Un Pro vivant inclut le numéro (lot 6, B2b) : rien à payer, la page l'obtient directement.
-    if (await deps.pro.vivant(tenant)) {
-      return reply.code(409).send({ error: 'Le numéro est inclus dans votre Pro : obtenez-le sans payer.', cause: 'inclus_dans_le_pro' });
+    // Une offre qui inclut le numéro (le Pro, le Business, l'Entreprise) : rien à payer, la page l'obtient directement. La
+    // cause garde son nom du lot 6 : la console et Claude la lisent déjà.
+    if (await deps.offre.numeroInclus(tenant)) {
+      return reply.code(409).send({ error: 'Le numéro est inclus dans votre offre : obtenez-le sans payer.', cause: 'inclus_dans_le_pro' });
     }
     // Un numéro déjà attribué ne prend rien à la réserve : seul un numéro neuf la regarde.
     if (fourni === null && (await disponibles()) === 0) {

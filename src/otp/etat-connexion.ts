@@ -23,7 +23,10 @@ export interface EtatConnexion {
   connecte: { chiffres: string; aActiver: boolean; paiementBloque?: boolean; coexistence?: true } | null;
   /** L'abonnement du numéro fourni (livraison B) : son statut et la fin de la période payée, `null` sans abonnement. */
   abonnement: { statut: StatutAbonnement; periodeFin: string | null } | null;
-  /** Un Pro vivant couvre l'espace (lot 6, B2b) : le numéro fourni y est inclus, la page l'obtient sans payer. */
+  /**
+   * L'offre de l'espace inclut le numéro fourni (la grille : le Pro, le Business, l'Entreprise) : la page l'obtient sans
+   * payer. Le nom reste celui du lot 6 (B2b), que la console et Claude lisent déjà.
+   */
   inclusDansLePro: boolean;
   /**
    * Le compte de l'application WhatsApp Business de l'espace (filière application, 2026-10-22) ; absent sans compte, et
@@ -37,8 +40,8 @@ export interface DepsEtatConnexion {
   /** Le numéro de Meta de l'espace (`numeroConnecteDe`). */
   numeroConnecte(tenantId: string): Promise<{ chiffres: string; aActiver: boolean; paiementBloque?: boolean; coexistence?: true } | null>;
   abonnements: Pick<PgAbonnementsNumeroStore, 'deLEspace'>;
-  /** Le Pro de l'espace (lot 6, B2b, `PgAbonnementsOffreStore.vivant`). */
-  pro: { vivant(tenantId: string): Promise<boolean> };
+  /** L'offre de l'espace inclut-elle le numéro fourni (`limites.numeroInclus`, spec du 2026-10-27) ? */
+  offre: { numeroInclus(tenantId: string): Promise<boolean> };
   /** Le compte de la filière application. Requis : sans lui, un compte relié ne serait jamais dit connecté. */
   application: { comptes: Pick<ComptesApplication, 'parEspace'> };
 }
@@ -63,9 +66,9 @@ export function numeroConnecteDe(
 }
 
 export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: string): Promise<EtatConnexion> {
-  const [n, connecteMeta, a, pro, compte] = await Promise.all([
+  const [n, connecteMeta, a, inclus, compte] = await Promise.all([
     deps.numeros.numeroDeLEspace(tenantId), deps.numeroConnecte(tenantId), deps.abonnements.deLEspace(tenantId),
-    deps.pro.vivant(tenantId), deps.application.comptes.parEspace(tenantId),
+    deps.offre.numeroInclus(tenantId), deps.application.comptes.parEspace(tenantId),
   ]);
   const connecte = connecteMeta ?? (compte?.statut === 'relie' ? { chiffres: compte.numero, aActiver: false } : null);
   // Un numéro de Meta relié prime sur un vieux compte de l'application (`filiereDe`) : l'état est alors celui de l'API.
@@ -77,7 +80,7 @@ export async function lireEtatConnexion(deps: DepsEtatConnexion, tenantId: strin
     code: c ? { code: c.code, recuLe: c.recuLe.toISOString() } : null,
     connecte,
     abonnement: a ? { statut: a.statut, periodeFin: a.periodeFin ? a.periodeFin.toISOString() : null } : null,
-    inclusDansLePro: pro,
+    inclusDansLePro: inclus,
     ...(application ? { application } : {}),
   };
 }

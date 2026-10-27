@@ -264,6 +264,38 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     expect(await numeros.etatDeLEspace(t)).toMatchObject({ etat: 'actif', finiLe: null, liberationLe: null });
   });
 
+  it('🔴 un Business couvre le numéro dans etatDeLEspace, sur le vrai SQL ; retiré, la grâce de 7 jours part du retrait (spec Business)', async () => {
+    const t = await espace('itest-offre-couverture-business');
+    await pool.query(
+      "insert into abonnements_numero (stripe_subscription_id, tenant_id, livemode, statut, fini_le) values ('sub_itestcouvbiz', $1, true, 'resilie', now() - interval '30 days')",
+      [t],
+    );
+    const numeros = new PgAbonnementsNumeroStore(pool);
+    expect((await numeros.etatDeLEspace(t))?.liberationLe?.getTime()).toBeLessThan(Date.now());
+    await pool.query('update tenants set offre_business = true where id = $1', [t]);
+    expect(await numeros.etatDeLEspace(t)).toMatchObject({ etat: 'actif', finiLe: null, liberationLe: null });
+    const retrait = new Date(Date.now() - 3 * 24 * 3_600_000);
+    await pool.query('update tenants set offre_business = false, business_quitte_le = $2 where id = $1', [t, retrait]);
+    const e = await numeros.etatDeLEspace(t);
+    expect(e?.finiLe?.getTime()).toBe(retrait.getTime());
+    expect(e?.liberationLe?.getTime()).toBe(retrait.getTime() + 7 * 24 * 3_600_000);
+  });
+
+  it('🔴 porter la fin par /ops : une ligne ops_ finie, une seule, que le lot 4 lit comme une fin (spec Business)', async () => {
+    const t = await espace('itest-offre-porter-ops');
+    const numeros = new PgAbonnementsNumeroStore(pool);
+    const fin = new Date(Date.now() - 24 * 3_600_000);
+    expect(await numeros.porterLaFinParLOps({ tenantId: t, livemode: true, finiLe: fin })).toBe(true);
+    expect(await numeros.porterLaFinParLOps({ tenantId: t, livemode: true, finiLe: fin })).toBe(false);
+    const lignes = (await pool.query<{ stripe_subscription_id: string; statut: string }>(
+      'select stripe_subscription_id, statut from abonnements_numero where tenant_id = $1', [t],
+    )).rows;
+    expect(lignes).toHaveLength(1);
+    expect(lignes[0]!.stripe_subscription_id).toMatch(/^ops_[A-Za-z0-9]+$/);
+    expect(lignes[0]!.statut).toBe('resilie');
+    expect((await numeros.etatDeLEspace(t))?.liberationLe?.getTime()).toBe(fin.getTime() + 7 * 24 * 3_600_000);
+  });
+
   describe('le numéro inclus dans le Pro (lot 6, B2b)', () => {
     it('🔴 porter la fin par le Pro : une ligne finie au nom du Pro pour un espace qui n’a jamais eu de numéro seul, une seule fois', async () => {
       const t = await espace('itest-offre-porter');
