@@ -132,9 +132,9 @@ minuteries (`tests/worker-import.test.ts`). Lancer `src/worker.ts` directement n
 - **API** : Fastify 5. **Validation** : zod, toujours `safeParse`, jamais `parse`.
 - **File** : pg-boss, sur le même Postgres que les données (schéma `pgboss`). Pas de file en mémoire : elle
   perdrait les jobs au redémarrage.
-- **Base** : PostgreSQL 17 managé chez **Scaleway** (`mm-prod-db`, DB-PRO2-XXS, Amsterdam), base `rdb`, une seule
+- **Base** : PostgreSQL 17 managé chez **Scaleway** (`mm-prod-db`, DB-DEV-M depuis le 2026-10-27, Amsterdam), base `rdb`, une seule
   adresse, PRIVÉE (172.16.0.8), TLS vérifié par son certificat dans l'image (`certs/scaleway-mm-prod.crt`). Connexions
-  directes, sans pooler : le budget de ses 200 connexions se tient dans `tests/deploy-scaleway.test.ts`. Elle ne se
+  directes, sans pooler : le budget de ses 150 connexions (selon la gamme) se tient dans `tests/deploy-scaleway.test.ts`. Elle ne se
   lit pas d'un poste, seulement par la machine des workers (`DEPLOY.md`). Supabase (Londres) a été la base jusqu'au
   2026-10-26 et reste figée, comme retour arrière : le `DATABASE_URL` d'un poste y pointe encore.
 - **Front** : Next.js 15 App Router (`web/`), **Tailwind pur** (pas de shadcn), tokens maison

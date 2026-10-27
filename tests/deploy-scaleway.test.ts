@@ -345,8 +345,11 @@ describe('le compose de la machine des workers', () => {
 describe('le conteneur de l’API chez Scaleway et le budget de connexions', () => {
   const CONTENEUR = JSON.parse(lire('ops/scaleway/conteneur-api.json'));
   const env = CONTENEUR.environment_variables as Record<string, string>;
-  /** Relus à la création de la base de production `mm-prod-db` (DB-PRO2-XXS), le 2026-10-15. */
-  const MAX_CONNECTIONS = 200;
+  /**
+   * Relu sur la base de production `mm-prod-db` passée en DB-DEV-M le 2026-10-27 (200 en DB-PRO2-XXS) : Scaleway règle
+   * `max_connections` selon la gamme, donc il se relit et se reporte ici à chaque changement de gamme.
+   */
+  const MAX_CONNECTIONS = 150;
   const RESERVEES_SUPERUTILISATEUR = 3;
   /** Migrations, sondes, sauvegardes et console d'administration. */
   const MARGE = 10;

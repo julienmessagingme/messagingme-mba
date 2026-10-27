@@ -546,7 +546,8 @@ connexions en mode SESSION (écoute, supervision, migration) : la cible doit off
 workers, pas seulement un pooler en mode transaction.
 
 ✅ **Chez Scaleway, le calcul est un test depuis le 2026-10-15** (`tests/deploy-scaleway.test.ts`), sur les chiffres
-relus à la création de la base de production : 200 connexions, dont 3 réservées. Les workers (compose de la machine :
+relus à la création de la base de production : 200 connexions, dont 3 réservées (150 depuis son passage en DB-DEV-M
+le 2026-10-27 : Scaleway règle `max_connections` selon la gamme, le budget n'y permet plus que 4 copies). Les workers (compose de la machine :
 8 + 2 + 1 et 3 + 2 + 1, soit 17), une marge de 10, et chaque copie d'API pleine (10 + 4 de réception), COMPTÉE DEUX
 FOIS : pendant un déploiement, l'ancienne version sert jusqu'à ce que la nouvelle soit prête, et rien ne dit que le
 maximum borne la somme des deux. Le budget en permet donc 6 ; **Julien en a retenu 3** (environ 1 500 appels/s,
@@ -859,7 +860,13 @@ compteur en mémoire pour les tests ; Redis en serait un troisième.
    du §7.5 avec le vrai chiffre : mesurer (la sonde), puis mettre à jour les constantes de
    `tests/budget-pooler.test.ts` et les tailles de chaque service (dont `DB_POOL_RECEPTION_MAX`, § 7.8).
    ✅ **Base créée le 2026-10-15, avant le jour J** (`mm-prod-db`, DB-PRO2-XXS, accord de Julien) : une seule adresse,
-   privée (172.16.0.8), disque chiffré, `max_connections` relu à 200 dont 3 réservées au superutilisateur. Le calcul
+   privée (172.16.0.8), disque chiffré, `max_connections` relu à 200 dont 3 réservées au superutilisateur.
+   🔴 **Redescendue en DB-DEV-M le 2026-10-27** (décision de Julien sur le coût : environ 28 € par mois au lieu de 80, la
+   « gestion » de Scaleway s'ajoutant au prix du nœud) : `rdb instance upgrade node-type=DB-DEV-M`, 7 minutes d'opération
+   dont environ 35 s où `/health` a rendu 503, même adresse, même certificat (relu égal à celui de l'image), sauvegarde
+   logique prise avant (`avant-db-dev-m-2026-10-27`). Scaleway a REFAIT les réglages selon la gamme : `max_connections`
+   150, `effective_cache_size` 2 700 Mo, `work_mem` 8 Mo. ⚠️ La DB-PRO2-XXS étant en stock faible, y revenir peut être
+   refusé ; la DB-DEV-L (4 vCPU partagés, 8 Go, environ 55 €) reste disponible. Le calcul
    du §7.5 et les réglages de charge sont faits le même jour, dans `ops/scaleway/conteneur-api.json` (tenu par
    `tests/deploy-scaleway.test.ts`) : pools, nom des copies et `API_PLAFOND_GLOBAL_PAR_10S` en viennent, JAMAIS du
    `.env.prod` du VPS ni du script des secrets, et le jour J se termine par un lancement du workflow (§10 bis).
@@ -1158,6 +1165,8 @@ Aucun de ces choix ne doit être remplacé par une valeur technique arbitraire.
    banc (§7.8) : **DB-PRO2-XXS** (2 vCPU, 8 Go, environ 43 € par mois), gamme production ; **DB-POP2-2C-8G** (mêmes
    caractéristiques, environ 55 € par mois) si la PRO2-XXS, en stock faible à Amsterdam, est refusée à la création. La
    performance n'a pas décidé (la DB-DEV-M d'essai a tout tenu sans saturer) : l'engagement de service, si.
+   ⚠️ Ces prix ne comptaient que le NŒUD : Scaleway facture en plus la gestion de la base (0,0517 €/h en PRO2-XXS), soit
+   environ 80 € par mois réels. Le 2026-10-27, Julien a fait redescendre la base en DB-DEV-M (environ 28 €) pour le coût.
 10. **Le déclenchement d'un déploiement** : tranché par Julien le 2026-10-14, **à la main, avec son approbation**
     (§10 bis). Un déploiement au push ferait partir l'API avant sa relecture et avant sa migration.
 11. **Les machines des workers** : tranché par Julien le 2026-10-14, **une seule**, chaque conteneur borné (§2).
