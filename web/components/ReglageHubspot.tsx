@@ -199,7 +199,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
     {
       champ: 'reponse',
       titre: t('Répondre aux clients depuis HubSpot', 'Reply to customers from HubSpot'),
-      detail: t('Toute personne du portail répond depuis la carte Messaging Me de la fiche contact, signée de son adresse, tant que la fenêtre de 24 heures est ouverte. Jamais à un contact qui a dit STOP.', 'Anyone on the portal replies from the Messaging Me card on the contact record, signed with their address, while the 24-hour window is open. Never to a contact who said STOP.'),
+      detail: t('Toute personne du portail voit les conversations qui attendent un humain, dans la page Messaging Me de HubSpot et sur la carte de la fiche contact, quels que soient ses droits sur les contacts dans HubSpot. Elle y répond, signée de son adresse, tant que la fenêtre de 24 heures est ouverte. Jamais à un contact qui a dit STOP.', 'Anyone on the portal sees the conversations waiting for a person, on the Messaging Me page in HubSpot and on the contact record card, whatever their rights on contacts in HubSpot. They reply there, signed with their address, while the 24-hour window is open. Never to a contact who said STOP.'),
     },
     {
       champ: 'modeles',

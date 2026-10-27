@@ -32,6 +32,11 @@ que la fenêtre de 24 heures est ouverte ; « Rendre au robot » redonne la main
 un contact qui a dit STOP ni à un contact bloqué. Une conversation qu'un membre tient ne se répond que par lui, un
 admin ou un manager, et chaque personne envoie au plus 20 réponses par minute.
 
+**La page « Messaging Me » de HubSpot** (l'icône Marketplace, puis l'app) liste les conversations qui attendent un
+humain : les urgentes d'abord, puis la plus ancienne attente. « Ouvrir » affiche la conversation pour y répondre comme
+depuis la carte. Toute personne du portail voit la liste entière, quels que soient ses droits sur les contacts dans
+HubSpot. Si la synchronisation du numéro est en pause, la page le dit.
+
 **Envoyer des modèles depuis HubSpot** s'allume une fois la réponse allumée. Quand le client n'a plus écrit depuis
 24 heures, la carte propose vos modèles approuvés, avec leurs variables déjà remplies depuis la fiche du contact :
 vous les vérifiez, puis « Envoyer le modèle ». Un modèle Marketing ne part qu'à un contact qui a donné son accord ;
