@@ -175,7 +175,7 @@ describe.skipIf(!url)('Déconnecter le numéro (Postgres réel)', () => {
   });
 
   it('🔴 l’espace détaché connecte ensuite un AUTRE numéro, ce qu’il ne pouvait pas avant', async () => {
-    const inscriptions = new PgEmbeddedSignupStore(pool, { creditOffertMicroEur: 0 });
+    const inscriptions = new PgEmbeddedSignupStore(pool, { creditOffertMicroEur: 0, creditOffertBusinessMicroEur: 0 });
     // Avant : l'espace voisin a son numéro, un second est refusé.
     await expect(inscriptions.linkTenant({ tenantId: voisin, wabaId: WABA_VOISIN, phoneNumberId: PN_NEUF, displayPhoneNumber: null, verifiedName: null, coexistence: false }))
       .rejects.toBeInstanceOf(SecondNumeroRefuseError);
@@ -207,7 +207,7 @@ describe.skipIf(!url)('Déconnecter le numéro (Postgres réel)', () => {
     expect(await compte('select count(*) from phone_numbers where tenant_id = $1', [tenant])).toBe(0);
     // L'espace repart sans numéro, et reprend un numéro neuf pour la suite.
     await pool.query('delete from phone_numbers where id = $1', [PN_PARTAGE]);
-    const inscriptions = new PgEmbeddedSignupStore(pool, { creditOffertMicroEur: 0 });
+    const inscriptions = new PgEmbeddedSignupStore(pool, { creditOffertMicroEur: 0, creditOffertBusinessMicroEur: 0 });
     await inscriptions.linkTenant({ tenantId: tenant, wabaId: wabaNeuf, phoneNumberId: PN_NEUF, displayPhoneNumber: '+33500000000', verifiedName: null, coexistence: false });
   });
 

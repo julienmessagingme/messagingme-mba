@@ -207,7 +207,7 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
    * ici, on relie puis on offre, comme elle.
    */
   describe('le crédit offert au premier numéro vérifié', () => {
-    const CINQ = { creditOffertMicroEur: 5_000_000 };
+    const CINQ = { creditOffertMicroEur: 5_000_000, creditOffertBusinessMicroEur: 10_000_000 };
     const suffixe = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     /** Un numéro affiché neuf à chaque appel, écrit comme Meta l'écrit (espaces compris). */
     const affiche = () => `+33 7 ${String(Math.floor(Math.random() * 1e8)).padStart(8, '0').replace(/(\d{2})(?=\d)/g, '$1 ')}`;
@@ -250,6 +250,29 @@ describe.skipIf(!url)('solde prépayé d un workspace (Postgres)', () => {
         await pool.query('delete from tenants where id = $1', [t]);
         await pool.query('delete from identities where lower(email) = lower($1)', [email]);
       }
+    });
+
+    it('🔴 Business : 10 € au premier numéro relié pendant qu’il est posé (spec Business)', async () => {
+      const t = await espace('itest-offre-business-premier');
+      await pool.query('update tenants set offre_business = true where id = $1', [t]);
+      expect((await relier(t)).offert).toBe(10_000_000);
+    });
+
+    it('🔴 le complément au passage en Business : la différence une fois, tout pour la reprise à 0, rien sans offre, une seule fois en course', async () => {
+      const es = new PgEmbeddedSignupStore(pool, CINQ);
+      const avecOffre = await espace('itest-complement-business');
+      expect((await relier(avecOffre)).offert).toBe(5_000_000);
+      expect(await es.completerCreditBusiness(avecOffre)).toBe(5_000_000);
+      expect(await es.completerCreditBusiness(avecOffre)).toBe(0);
+      const sansOffre = await espace('itest-complement-sans-offre');
+      expect(await es.completerCreditBusiness(sansOffre)).toBe(0);
+      const reprise = await espace('itest-complement-reprise');
+      await pool.query('insert into credits_offerts (tenant_id, phone_number_id, montant_micro_eur) values ($1, $2, 0)', [reprise, `pn-reprise-${suffixe()}`]);
+      expect(await es.completerCreditBusiness(reprise)).toBe(10_000_000);
+      const course = await espace('itest-complement-course');
+      await relier(course);
+      const deux = await Promise.all([es.completerCreditBusiness(course), es.completerCreditBusiness(course)]);
+      expect(deux.sort((x, y) => x - y)).toEqual([0, 5_000_000]);
     });
 
     it('🔴 premier numéro : 5 € et UNE ligne `offert`, sans clé Vercel ouverte', async () => {

@@ -3,7 +3,7 @@ import { schema } from '../src/config';
 import type { Pool } from 'pg';
 import { PgEmbeddedSignupStore, TenantConflictError } from '../src/account/es-store.pg';
 import { PgUserStore } from '../src/user/store.pg';
-import { NOTE_CREDIT_OFFERT } from '../src/agent/credits.pg';
+import { NOTE_COMPLEMENT_BUSINESS, NOTE_CREDIT_OFFERT } from '../src/agent/credits.pg';
 import { creerOffreDeBienvenue } from '../src/account/offre-bienvenue';
 import { SANS_CREDIT_OFFERT } from './credit-offert';
 
@@ -19,7 +19,11 @@ import { SANS_CREDIT_OFFERT } from './credit-offert';
  * vérité en base est tenue par `tests/integration/agent-credits.integration.test.ts`, joué en CI. Ici, la base est
  * simulée et dit ce que la contrainte aurait dit (`offrePrend`).
  */
-function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean; origine?: 'console' | 'claude_code' } = {}) {
+function fausseBase(o: {
+  offrePrend?: boolean; numeroDejaAilleurs?: boolean; origine?: 'console' | 'claude_code'; offre?: string;
+  /** Ce que rend la mise à jour du complément : le montant écrit, ou rien (déjà complété, aucune offre). */
+  complement?: number | null;
+} = {}) {
   const surLePool: string[] = [];
   const surLaConnexion: Array<{ sql: string; params: unknown[] }> = [];
   const repondre = (sql: string) => {
@@ -31,6 +35,11 @@ function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean; ori
     if (/insert into phone_numbers/i.test(sql)) return { rows: [], rowCount: o.numeroDejaAilleurs ? 0 : 1 };
     // Les contraintes de `credits_offerts` : l'insertion prend, ou le conflit l'annule en silence.
     if (/insert into credits_offerts/i.test(sql)) return { rows: [], rowCount: o.offrePrend === false ? 0 : 1 };
+    // L'offre de l'espace, lue dans la transaction de l'offre (spec Business).
+    if (/select offre_de_l_espace/i.test(sql)) return { rows: [{ offre: o.offre ?? 'base' }], rowCount: 1 };
+    if (/update credits_offerts/i.test(sql)) {
+      return o.complement == null ? { rows: [], rowCount: 0 } : { rows: [{ complement: String(o.complement) }], rowCount: 1 };
+    }
     if (/returning/i.test(sql)) return { rows: [{ id: 'x', solde_micro_eur: '5000000' }], rowCount: 1 };
     return { rows: [], rowCount: 1 };
   };
@@ -45,7 +54,7 @@ function fausseBase(o: { offrePrend?: boolean; numeroDejaAilleurs?: boolean; ori
 }
 
 const LIAISON = { tenantId: 't1', wabaId: 'waba-1', phoneNumberId: 'pn-1', displayPhoneNumber: '+33600000000', verifiedName: 'Démo', coexistence: false };
-const UN_EURO = { creditOffertMicroEur: 1_000_000 };
+const UN_EURO = { creditOffertMicroEur: 1_000_000, creditOffertBusinessMicroEur: 10_000_000 };
 const indexDe = (b: ReturnType<typeof fausseBase>, re: RegExp) => b.surLaConnexion.findIndex((q) => re.test(q.sql));
 const premiersMots = (b: ReturnType<typeof fausseBase>) => b.surLaConnexion.map((q) => q.sql.trim().split(/\s+/)[0]!.toLowerCase());
 
@@ -79,9 +88,30 @@ describe('le crédit offert au premier numéro vérifié', () => {
     expect(b.surLaConnexion[credit]!.params).toEqual(['t1', 1_000_000, 'offert', null, NOTE_CREDIT_OFFERT, null]);
   });
 
-  it('🔴 le défaut de l’instance est 1 € (lot 6, C), et le réglage propre à Claude Code n’existe plus', () => {
+  it('🔴 10 € au premier numéro relié pendant que l’espace est en Business, 1 € ailleurs (spec Business)', async () => {
+    const business = fausseBase({ offre: 'business' });
+    expect(await new PgEmbeddedSignupStore(business.pool, UN_EURO).offrirCredit('t1', 'pn-1')).toBe(10_000_000);
+    const offre = indexDe(business, /insert into credits_offerts/i);
+    // L'offre se lit DANS la transaction, avant l'insertion : un Business posé entre-temps est vu.
+    expect(indexDe(business, /select offre_de_l_espace/i)).toBeGreaterThan(premiersMots(business).indexOf('begin'));
+    expect(indexDe(business, /select offre_de_l_espace/i)).toBeLessThan(offre);
+    expect(business.surLaConnexion[offre]!.params).toEqual(['t1', 'pn-1', 10_000_000]);
+    for (const autre of ['base', 'pro', 'entreprise']) {
+      expect(await new PgEmbeddedSignupStore(fausseBase({ offre: autre }).pool, UN_EURO).offrirCredit('t1', 'pn-1')).toBe(1_000_000);
+    }
+  });
+
+  it('🔴 le levier d’urgence du Business est à part : à 0, un Business ne reçoit rien et l’offre reste due', async () => {
+    const b = fausseBase({ offre: 'business' });
+    const coupe = { creditOffertMicroEur: 1_000_000, creditOffertBusinessMicroEur: 0 };
+    expect(await new PgEmbeddedSignupStore(b.pool, coupe).offrirCredit('t1', 'pn-1')).toBe(0);
+    expect(b.surLaConnexion.filter((q) => /credits_offerts|agent_credit/i.test(q.sql))).toEqual([]);
+  });
+
+  it('🔴 le défaut de l’instance est 1 € (lot 6, C), 10 € pour le Business, et le réglage propre à Claude Code n’existe plus', () => {
     const r = schema.safeParse({});
     expect(r.success && r.data.CREDIT_OFFERT_MICRO_EUR).toBe(1_000_000);
+    expect(r.success && r.data.CREDIT_OFFERT_BUSINESS_MICRO_EUR).toBe(10_000_000);
     expect(Object.keys(schema.shape)).not.toContain('CREDIT_OFFERT_CLAUDE_CODE_MICRO_EUR');
   });
 
@@ -193,5 +223,44 @@ describe('le crédit offert, puis le plafond de la clé', () => {
     await Promise.allSettled(c.suivis);
     await new Promise((r) => { setTimeout(r, 0); });
     expect(c.journal).toHaveLength(1);
+  });
+});
+
+/**
+ * LE COMPLÉMENT AU PASSAGE EN BUSINESS (spec du 2026-10-27) : la différence jusqu'à 10 €, une fois par espace, quand Julien
+ * pose le Business dans /ops. La borne « une fois » est la date du complément, posée par la même mise à jour : sa vérité
+ * en base (deux appels, la reprise de 0191) est tenue par `tests/integration/agent-credits.integration.test.ts`.
+ */
+describe('le complément du crédit offert au passage en Business', () => {
+  it('🔴 la différence jusqu’à 10 €, écrite PUIS créditée avec sa ligne `offert`, dans une seule transaction', async () => {
+    const b = fausseBase({ complement: 9_000_000 });
+    expect(await new PgEmbeddedSignupStore(b.pool, UN_EURO).completerCreditBusiness('t1')).toBe(9_000_000);
+    const maj = indexDe(b, /update credits_offerts/i);
+    const credit = indexDe(b, /insert into agent_credit_mouvements/i);
+    expect(maj).toBeGreaterThan(premiersMots(b).indexOf('begin'));
+    expect(credit).toBeGreaterThan(maj);
+    expect(premiersMots(b).indexOf('commit')).toBeGreaterThan(credit);
+    expect(b.surLaConnexion[maj]!.params).toEqual(['t1', 10_000_000]);
+    expect(b.surLaConnexion[maj]!.sql).toMatch(/complement_business_le is null/);
+    expect(b.surLaConnexion[credit]!.params).toEqual(['t1', 9_000_000, 'offert', null, NOTE_COMPLEMENT_BUSINESS, null]);
+    expect(b.surLePool).toEqual([]);
+  });
+
+  it('🔴 déjà complété, ou aucune offre encore (pas de numéro) : rien n’est crédité', async () => {
+    const b = fausseBase({ complement: null });
+    expect(await new PgEmbeddedSignupStore(b.pool, UN_EURO).completerCreditBusiness('t1')).toBe(0);
+    expect(b.surLaConnexion.filter((q) => /agent_credit/i.test(q.sql))).toEqual([]);
+  });
+
+  it('un complément nul (l’espace a déjà reçu 10 €) est noté sans rien créditer', async () => {
+    const b = fausseBase({ complement: 0 });
+    expect(await new PgEmbeddedSignupStore(b.pool, UN_EURO).completerCreditBusiness('t1')).toBe(0);
+    expect(b.surLaConnexion.filter((q) => /agent_credit/i.test(q.sql))).toEqual([]);
+  });
+
+  it('à 0, rien n’est marqué ni crédité : le complément reste dû le jour où on le rallume', async () => {
+    const b = fausseBase({ complement: 9_000_000 });
+    expect(await new PgEmbeddedSignupStore(b.pool, SANS_CREDIT_OFFERT).completerCreditBusiness('t1')).toBe(0);
+    expect(b.surLaConnexion.filter((q) => /credits_offerts|agent_credit/i.test(q.sql))).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { enTransaction } from '../db/transaction';
-import { offrirAuCompteApplication, offrirAuNumeroVerifie } from '../agent/credits.pg';
+import { completerAuPassageBusiness, offrirAuCompteApplication, offrirAuNumeroVerifie } from '../agent/credits.pg';
 import type { Fournisseur, WabaCredential } from '../meta/credentials';
 
 /**
@@ -54,10 +54,23 @@ export const RETIRER_COMPTE_SANS_NUMERO = `delete from waba w
 export class PgEmbeddedSignupStore {
   /**
    * `offre.creditOffertMicroEur` : le crédit offert au premier numéro vérifié d'un espace, quelle que soit son origine
-   * (`CREDIT_OFFERT_MICRO_EUR`, 1 € par défaut depuis le lot 6, 0 l'éteint). Requis : un câblage qui l'oublierait
-   * relierait des numéros sans jamais rien offrir, sans le dire.
+   * (`CREDIT_OFFERT_MICRO_EUR`, 1 € par défaut depuis le lot 6, 0 l'éteint). `offre.creditOffertBusinessMicroEur` : celui
+   * d'un Business (`CREDIT_OFFERT_BUSINESS_MICRO_EUR`, 10 €, spec du 2026-10-27), au premier numéro ou en complément.
+   * Requis : un câblage qui les oublierait relierait des numéros sans jamais rien offrir, sans le dire.
    */
-  constructor(private readonly pool: Pool, private readonly offre: { creditOffertMicroEur: number }) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly offre: { creditOffertMicroEur: number; creditOffertBusinessMicroEur: number },
+  ) {}
+
+  /**
+   * Le montant offert au premier numéro, lu DANS la transaction de l'offre : celui du Business si l'espace l'est à ce
+   * moment (essai compris), celui de toujours ailleurs. La seule définition de l'offre est en SQL (`offre_de_l_espace`).
+   */
+  private async montantOffert(client: PoolClient, tenantId: string): Promise<number> {
+    const r = await client.query<{ offre: string }>('select offre_de_l_espace($1::uuid) as offre', [tenantId]);
+    return r.rows[0]?.offre === 'business' ? this.offre.creditOffertBusinessMicroEur : this.offre.creditOffertMicroEur;
+  }
 
   /**
    * Rattache le WABA et le numéro à l'espace.
@@ -150,13 +163,23 @@ export class PgEmbeddedSignupStore {
    * l'offre et son crédit s'écrivent ensemble ou pas du tout.
    */
   async offrirCredit(tenantId: string, phoneNumberId: string): Promise<number> {
-    // Le même montant pour toutes les origines (lot 6, C) : la console et Claude Code offrent 1 €.
-    return enTransaction(this.pool, (client) => offrirAuNumeroVerifie(client, tenantId, phoneNumberId, this.offre.creditOffertMicroEur));
+    // Le même montant pour toutes les origines (lot 6, C) : la console et Claude Code offrent 1 €, 10 € en Business.
+    return enTransaction(this.pool, async (client) =>
+      offrirAuNumeroVerifie(client, tenantId, phoneNumberId, await this.montantOffert(client, tenantId)));
   }
 
   /** Le même crédit, pour un compte de l'application WhatsApp Business relié (`offrirAuCompteApplication`). */
   async offrirCreditApplication(tenantId: string): Promise<number> {
-    return enTransaction(this.pool, (client) => offrirAuCompteApplication(client, tenantId, this.offre.creditOffertMicroEur));
+    return enTransaction(this.pool, async (client) =>
+      offrirAuCompteApplication(client, tenantId, await this.montantOffert(client, tenantId)));
+  }
+
+  /**
+   * Le complément du crédit offert au passage en Business (`completerAuPassageBusiness`), appelé par la route de /ops qui
+   * pose le Business. Rend le montant crédité, 0 si rien : le câblage remonte alors le plafond de la clé de l'espace.
+   */
+  async completerCreditBusiness(tenantId: string): Promise<number> {
+    return enTransaction(this.pool, (client) => completerAuPassageBusiness(client, tenantId, this.offre.creditOffertBusinessMicroEur));
   }
 
   /**

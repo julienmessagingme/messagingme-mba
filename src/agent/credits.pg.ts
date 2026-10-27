@@ -187,6 +187,8 @@ export const JOURS_HISTORIQUE = 90;
 
 /** La note du crédit offert, pour le journal d'exploitation (le client lit la raison, pas la note). */
 export const NOTE_CREDIT_OFFERT = 'crédit offert au premier numéro WhatsApp vérifié par Meta';
+/** La note du complément de crédit offert au passage en Business (spec du 2026-10-27). */
+export const NOTE_COMPLEMENT_BUSINESS = 'complément du crédit offert au passage en Business';
 
 /**
  * Le numéro affiché d'un numéro WhatsApp, normalisé en E.164 : « + » suivi des seuls chiffres de
@@ -257,6 +259,32 @@ export async function offrirAuCompteApplication(client: PoolClient, tenantId: st
   if ((pris.rowCount ?? 0) === 0) return 0;
   await bouger(client, tenantId, montant, 'offert', { note: NOTE_CREDIT_OFFERT });
   return montant;
+}
+
+/**
+ * LE COMPLÉMENT DU CRÉDIT OFFERT AU PASSAGE EN BUSINESS (spec du 2026-10-27) : un espace qui a déjà reçu l'offre du premier
+ * numéro (le 1 €, ou 0 pour un espace marqué par la reprise de 0191) reçoit la différence jusqu'au montant du Business, une
+ * fois par espace, quand Julien pose le Business dans /ops. Sans offre encore (aucun numéro), rien : le montant du
+ * Business viendra au premier numéro, l'espace étant alors en Business. Rend le montant crédité, 0 si rien.
+ *
+ * 🔴 LE COMPLÉMENT D'ABORD, LE CRÉDIT ENSUITE, ET SEULEMENT S'IL A PRIS. `complement_business_le` nul est la borne :
+ * la mise à jour la pose, et deux appels simultanés se sérialisent sur la ligne (le second relit la date posée et ne met
+ * rien à jour). Un complément nul (l'espace a déjà reçu le montant du Business) est noté sans rien créditer.
+ */
+export async function completerAuPassageBusiness(client: PoolClient, tenantId: string, cibleMicroEur: number): Promise<number> {
+  const cible = Math.max(0, Math.round(cibleMicroEur));
+  // Éteint (0) : rien n'est marqué, le complément reste dû le jour où on le rallume.
+  if (cible === 0) return 0;
+  const r = await client.query<{ complement: string }>(
+    `update credits_offerts
+        set complement_business_micro_eur = greatest(0, $2::bigint - montant_micro_eur), complement_business_le = now()
+      where tenant_id = $1 and complement_business_le is null
+      returning complement_business_micro_eur as complement`,
+    [tenantId, cible],
+  );
+  const complement = Number(r.rows[0]?.complement ?? 0);
+  if (complement > 0) await bouger(client, tenantId, complement, 'offert', { note: NOTE_COMPLEMENT_BUSINESS });
+  return complement;
 }
 
 /**

@@ -532,6 +532,12 @@ export const schema = z.object({
    */
   CREDIT_OFFERT_MICRO_EUR: z.coerce.number().int().min(0).default(1_000_000),
   /**
+   * Le crédit offert d'un Business (spec du 2026-10-27), en micro-euros : au premier numéro vérifié s'il est relié pendant
+   * que l'espace est en Business, sinon en complément jusqu'à ce montant quand Julien pose le Business dans /ops, une fois
+   * par espace. Même levier d'urgence que le crédit de toujours : 0 coupe l'offre du Business sans rien marquer.
+   */
+  CREDIT_OFFERT_BUSINESS_MICRO_EUR: z.coerce.number().int().min(0).default(10_000_000),
+  /**
    * La recharge du crédit par Stripe (Checkout hébergé, puis webhook). Les quatre vides par défaut : la route de
    * paiement rend 503 et la console dit « recharge pas encore disponible », rien ne casse au démarrage.
    * 🔴 Côté serveur uniquement, jamais en `NEXT_PUBLIC_`. `STRIPE_SECRET_KEY` est une clé RESTREINTE (sessions

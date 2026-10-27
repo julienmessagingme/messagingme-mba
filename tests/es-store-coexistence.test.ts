@@ -30,7 +30,7 @@ describe('linkTenant et la coexistence', () => {
   it('🔴 la colonne est écrite à l’insertion et remplacée sur un numéro déjà là, avec la valeur reçue', async () => {
     for (const coexistence of [true, false]) {
       const b = fausseBase();
-      await new PgEmbeddedSignupStore(b.pool, { creditOffertMicroEur: 0 }).linkTenant({ ...LIAISON, coexistence });
+      await new PgEmbeddedSignupStore(b.pool, { creditOffertMicroEur: 0, creditOffertBusinessMicroEur: 0 }).linkTenant({ ...LIAISON, coexistence });
       const numero = b.requetes.find((q) => /insert into phone_numbers/i.test(q.sql))!;
       const sql = numero.sql.replace(/\s+/g, ' ');
       expect(sql).toContain('insert into phone_numbers (id, waba_id, tenant_id, display_phone_number, verified_name, coexistence)');
