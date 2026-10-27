@@ -36,7 +36,8 @@ describe('le câblage des gardes du modèle envoyé depuis HubSpot', () => {
   });
 
   it('🔴 l’envoi est celui de l’Inbox, avec le STOP de la réponse et la prise du fil', () => {
-    expect(bloc).toContain('envoi: { ...envoiModeleOperateur, repo, estDesabonne: depsRepondre.estDesabonne, takeControl: fil.prisEnEcrivant, inbox: inboxStore }');
+    expect(bloc).toContain('...envoiModeleOperateur, repo, estDesabonne: depsRepondre.estDesabonne,');
+    expect(bloc).toContain('takeControl: (t, waId, par) => fil.prisEnEcrivant(t, waId, par), inbox: inboxStore,');
     expect(index).toContain('...envoiModeleOperateur,');
   });
 });

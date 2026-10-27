@@ -1793,7 +1793,11 @@ async function main(): Promise<void> {
             }
           },
           preparerEntete: (t: string, url: string) => workflowRuntime.prepareHeaderMedia(t, url),
-          envoi: { ...envoiModeleOperateur, repo, estDesabonne: depsRepondre.estDesabonne, takeControl: fil.prisEnEcrivant, inbox: inboxStore },
+          // `prisEnEcrivant` appelé sur son objet (la règle `unbound-method`, `eslint.config.mjs`).
+          envoi: {
+            ...envoiModeleOperateur, repo, estDesabonne: depsRepondre.estDesabonne,
+            takeControl: (t, waId, par) => fil.prisEnEcrivant(t, waId, par), inbox: inboxStore,
+          },
           // Plus bas que les réponses : un modèle est facturé par Meta (décision D). Base muette : laisse passer.
           plafond: new PlafondPartage(compteurDebit, {
             nom: 'hubspot.modeles', max: config.HUBSPOT_MODELES_PAR_MINUTE, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer',
