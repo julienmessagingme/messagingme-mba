@@ -225,6 +225,19 @@ describe.skipIf(!url)('rétention des conversations : la Base (Postgres)', () =>
     expect(await existe(proDescendu)).toBe(true);
   });
 
+  it('🔴 relecture de A : un Business retiré vers la Free garde ses conversations pendant la grâce, puis la Free purge', async () => {
+    // Rouge 1 de la relecture du sous-lot A (2026-10-27) : l'entrée en Free ignorait la sortie du Business, donc un espace
+    // créé il y a 400 jours et sorti du Business il y a 5 jours perdait sa conversation de 40 jours au balayage suivant.
+    const dernier = () => espaces[espaces.length - 1]!;
+    const sortiRecent = await espace('itest-ret-base-biz-5', { creeIlYa: 400 });
+    await pool.query("update tenants set business_quitte_le = now() - interval '5 days' where id = $1", [dernier()]);
+    const sortiAncien = await espace('itest-ret-base-biz-40', { creeIlYa: 400 });
+    await pool.query("update tenants set business_quitte_le = now() - interval '40 days' where id = $1", [dernier()]);
+    await new PgInboxStore(pool).purgeConversationsOlderThan(365, 100_000);
+    expect(await existe(sortiRecent)).toBe(true);
+    expect(await existe(sortiAncien)).toBe(false);
+  });
+
   it('🔴 J5 : en Base après la grâce, un réglage plus COURT que 30 jours reste respecté ; un réglage « jamais » ne protège plus', async () => {
     const court = await espace('itest-ret-base-court', { creeIlYa: 60 });
     const jamais = await espace('itest-ret-base-jamais', { creeIlYa: 60 });

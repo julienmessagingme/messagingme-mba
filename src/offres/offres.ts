@@ -187,7 +187,8 @@ export const OFFRES_RCS: readonly Offre[] = (['base', 'pro', 'business', 'entrep
 
 /**
  * La conservation de la Base ne s'applique que 30 jours après l'entrée en Base (spec § 7, lot 6, C) : la création de
- * l'espace, la fin de son dernier Pro, ou sa sortie de l'Entreprise (`tenants.entreprise_quittee_le`, migration 0221).
+ * l'espace, la fin de son dernier Pro, ou sa sortie de l'Entreprise (`tenants.entreprise_quittee_le`, migration 0221) ou
+ * du Business (`tenants.business_quitte_le`, 0257). Depuis la spec Business, la même grâce vaut pour le Pro et le Business.
  * Le temps de se réabonner ou d'exporter : changer d'offre ne purge jamais sur le coup. Lu par la purge et par l'écran
  * (`src/inbox/retention.ts`).
  */

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { retentionEffective } from '../src/inbox/retention';
+import { BASE_DEPUIS_SQL, retentionEffective } from '../src/inbox/retention';
 import { DROITS, GRACE_RETOUR_BASE_JOURS } from '../src/offres/offres';
 
 const RACINE = resolve(__dirname, '..');
@@ -145,6 +145,12 @@ describe('la purge porte la MEME regle que retentionEffective', () => {
     expect(RETENTION).toContain("in ('base', 'pro', 'business')");
     expect(RETENTION).toContain('${BASE_DEPUIS_SQL}');
     expect(RETENTION).toContain('greatest(t.entreprise_quittee_le, t.business_quitte_le)');
+  });
+
+  it('🔴 relecture de A : l entree en Free compte la sortie du Business, sinon un Business retire est purge sans grace', () => {
+    // Rouge 1 de la relecture du sous-lot A (2026-10-27) : sans elle, un espace cree il y a un an et sorti du Business hier
+    // etait "en Free depuis un an", et la conversation de 40 jours partait au balayage suivant.
+    expect(BASE_DEPUIS_SQL).toContain('t.business_quitte_le');
   });
 
   it('🔴 jaune 6 : la duree de chaque espace est MATERIALISEE une fois, pas recalculee par conversation', () => {

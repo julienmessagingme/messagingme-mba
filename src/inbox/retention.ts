@@ -14,10 +14,11 @@ import { DROITS, GRACE_RETOUR_BASE_JOURS, type Offre } from '../offres/offres';
 
 /**
  * Depuis quand l'espace `t` (alias de `tenants`) est en Base, en SQL : sa création, la fin de son dernier Pro, ou sa
- * sortie de l'Entreprise (migration 0221), la plus récente. `greatest` ignore les `null`. Un seul texte, lu par la purge
- * et par l'écran de synthèse (`src/stats/conversation-stats.pg.ts`) : les deux disent la même durée.
+ * sortie de l'Entreprise (migration 0221) ou du Business (0257), la plus récente. `greatest` ignore les `null`. Un seul
+ * texte, lu par la purge et par l'écran de synthèse (`src/stats/conversation-stats.pg.ts`) : les deux disent la même durée.
+ * 🔴 Une sortie oubliée ici fait purger sans grâce l'espace qui descend par elle (rouge 1 de la relecture du sous-lot A).
  */
-export const BASE_DEPUIS_SQL = `greatest(t.created_at, t.entreprise_quittee_le,
+export const BASE_DEPUIS_SQL = `greatest(t.created_at, t.entreprise_quittee_le, t.business_quitte_le,
   (select max(a.fini_le) from abonnements_offre a where a.tenant_id = t.id))`;
 
 /**
