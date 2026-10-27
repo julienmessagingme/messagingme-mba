@@ -235,7 +235,7 @@ const UNREAD_SQL = `exists (
  *  - et personne ne l'a marqué « Traité » : le prochain vrai message du contact efface ce statut, une réaction
  *    (👍) non.
  */
-const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and ((c.last_direction is not null and c.last_direction <> 'out') or c.escaladee_le is not null) and c.traitee_le is null`;
+export const A_TRAITER_SQL = `c.control_owner <> 'app_workflow' and ((c.last_direction is not null and c.last_direction <> 'out') or c.escaladee_le is not null) and c.traitee_le is null`;
 
 /**
  * Ce qu'on lit d'un message du fil, et sa traduction en `ConversationMessage`, écrits UNE fois pour

@@ -95,7 +95,8 @@ import { signalDeLAccuse, signalDuClic } from './signaux/emetteur';
 import { plafondLePlusBas } from './campaign/pacing';
 import { fetchHubspotLists, importHubspotList, disconnectHubspot, fetchHubspotDealStages, lireHubspotPortal, poserModeTaches } from './crm/hubspot-service';
 import type { HubspotChoixRouteDeps } from './http/hubspot-choix';
-import type { HubspotConversationDeps } from './http/hubspot-conversation';
+import { etatLigneHubspot, type HubspotConversationDeps } from './http/hubspot-conversation';
+import { PgATraiterHubspot } from './inbox/a-traiter-hubspot.pg';
 import { PlafondPartage } from './auth/plafond-partage';
 import { getEtatPassage } from './analysis/enrichment';
 import type { ChoixHubspotEcrit } from './settings/store.pg';
@@ -1814,6 +1815,9 @@ async function main(): Promise<void> {
           nom: 'hubspot.reponses', max: config.HUBSPOT_REPONSES_PAR_MINUTE, dureeMs: 60_000, siLaBaseEchoue: 'laisser-passer',
         }),
         lienConversation,
+        // Lot 4 : la page « Messaging Me » de HubSpot. La ligne est le numéro principal, celui que lit la tâche du lot 1.
+        ligneHubspot: async (t: string) => etatLigneHubspot(await phoneStatusStore.getPhoneNumber(t)),
+        aTraiter: new PgATraiterHubspot(pool),
       } satisfies HubspotConversationDeps,
     } : {}),
     /**

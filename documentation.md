@@ -2747,6 +2747,17 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   (`sceller`) : non scellée, elle se reprendrait au bout du bail et un nouvel essai referait le geste. Le fil rend le
   `statut` de Meta de chaque message (`conversation_messages.statut`, migration 0225) : la carte dit un modèle non
   délivré au lieu de « Modèle envoyé ».
+- **Les conversations qui attendent un humain, pour la page « Messaging Me » de HubSpot** (lot 4 de la reprise humaine,
+  `POST /hubspot/conversation/a-traiter`, `src/inbox/a-traiter-hubspot.pg.ts`). Signée comme les autres, sans
+  conversation dans le corps : `{tenantId, auteurEmail}`. Les gardes de l'espace (offre `inbox` 402, réglage « Répondre
+  depuis HubSpot » 403), puis la ligne : le numéro principal relié à HubSpot (`etatLigneHubspot`), sinon 409
+  `ligne_non_reliee` avec sa `raison` (`pause`, `coupee`, `sans_numero`, la filière application comprise). La personne ne
+  refuse rien : elle donne `peutRepondre`, l'envoi rejuge tout. Le prédicat est le dossier « À traiter » de la console
+  (`A_TRAITER_SQL`, exporté, pas recopié), restreint aux fils `app_human`, ni archivés, sans fin de parcours en attente,
+  d'une fiche ni bloquée ni STOP (lues sur la fiche de la conversation, comme la console : par le numéro, chaque ligne
+  balaierait les contacts de l'espace ; l'envoi relit par le numéro). L'ordre : les urgentes, puis l'attente la plus
+  ancienne (l'escalade, sinon le premier message du client sans réponse), 200 au plus (`A_TRAITER_MAX`), le total.
+  L'affectataire nommé sans son adresse (`affectataire`, la convention de `fil`).
 - **Le visuel d'en-tête d'un modèle envoyé depuis l'Inbox part en `media id`** (`creerEnvoiModeleInbox`,
   `mediaDuModele`) : l'adresse que l'écran passe est celle du CDN de Meta, que l'invariant 9 dit refusée en 131053 ;
   le visuel du modèle se re-téléverse comme pour le bloc de scénario. Sans visuel au modèle, ou si la préparation

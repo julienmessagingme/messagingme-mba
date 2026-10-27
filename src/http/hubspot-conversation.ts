@@ -23,6 +23,8 @@ import {
   PHRASE_SANS_CONSENTEMENT, VALEURS_MAX, VALEUR_MAX_CARACTERES, enteteBornee, modelesPourLeContact, refusAvantEnvoi, refusDuModele,
   type DepsModelesHubspot, type RefusModele,
 } from './hubspot-modeles';
+import type { PgATraiterHubspot } from '../inbox/a-traiter-hubspot.pg';
+import type { PhoneNumberRecord } from '../account/types';
 
 /**
  * LA CONVERSATION LUE ET RÉPONDUE DEPUIS HUBSPOT (lot 2 de la reprise humaine, plan
@@ -42,6 +44,12 @@ import {
  * `~/mm-hubspot/docs/2026-10-26-sous-lot-relancer-modele-plan.md`, décisions A à H validées par Julien le 2026-10-26) :
  * les modèles proposés pour un contact, et l'envoi de l'un d'eux, par le chemin d'un modèle de l'Inbox
  * (`envoyerModeleDansLeFil`), sous un réglage à part (« Envoyer des modèles depuis HubSpot »).
+ *
+ * UNE ROUTE DE PLUS POUR LA PAGE « MESSAGING ME » DE HUBSPOT (lot 4, plan
+ * `~/mm-hubspot/docs/2026-10-27-lot4-page-messaging-me-plan.md`, décisions A à G validées par Julien le 2026-10-27) : les
+ * conversations de l'espace qui attendent un humain. Elle ne vise aucune conversation : l'offre et le réglage d'abord,
+ * puis la ligne (la synchro HubSpot du numéro, décision C), puis la personne, qui ne refuse rien (décision G) et ne sert
+ * qu'à dire ce qu'elle peut faire de chaque ligne.
  */
 export interface HubspotConversationDeps {
   /** Secret partagé avec le connecteur (== SERVICE_SECRET de mm-hubspot). Vide -> module non monté. */
@@ -95,9 +103,36 @@ export interface HubspotConversationDeps {
    * « Ouvrir dans la console » de la carte (lot 3), fenêtre fermée comprise, même sans analyse.
    */
   lienConversation: (conversationId: string) => string;
+  /** L'état de la synchro HubSpot du numéro de l'espace (`etatLigneHubspot` sur `getPhoneNumber`, lot 4, décision C). */
+  ligneHubspot(tenantId: string): Promise<EtatLigneHubspot>;
+  /** Les conversations qui attendent un humain (`PgATraiterHubspot`, lot 4, décisions A et B). */
+  aTraiter: Pick<PgATraiterHubspot, 'lister'>;
   now?: () => number;
   windowMs?: number;
 }
+
+/** La synchro HubSpot du numéro de l'espace : reliée, en pause, coupée, ou aucun numéro Cloud (filière application, espace neuf). */
+export type EtatLigneHubspot = 'reliee' | 'pause' | 'coupee' | 'sans_numero';
+
+/**
+ * L'état de la ligne lu sur le numéro principal de l'espace, celui que la tâche du lot 1 lit (`getHubspotGateStatus`) :
+ * une pause écrit `connected = false` ET pose sa date, une coupure ne pose rien.
+ */
+export function etatLigneHubspot(numero: Pick<PhoneNumberRecord, 'hubspotConnected' | 'hubspotPausedAt'> | null): EtatLigneHubspot {
+  if (numero === null) return 'sans_numero';
+  if (numero.hubspotConnected) return 'reliee';
+  return numero.hubspotPausedAt !== null ? 'pause' : 'coupee';
+}
+
+/** Ce que la page dit d'une ligne qui n'est pas reliée : jamais une liste vide, qui se lirait « rien à traiter ». */
+const PHRASES_LIGNE: Record<Exclude<EtatLigneHubspot, 'reliee'>, string> = {
+  pause: 'La synchronisation HubSpot du numéro de cet espace est en pause (Tools > Intégrations > HubSpot).',
+  coupee: 'Le numéro de cet espace n’est pas relié à HubSpot (Tools > Intégrations > HubSpot).',
+  sans_numero: 'Cet espace n’a pas de numéro WhatsApp relié à HubSpot : la liste des conversations à traiter ne s’y affiche pas.',
+};
+
+/** Au plus autant de conversations par liste (décision B) : au-delà, la page renvoie à la console. */
+export const A_TRAITER_MAX = 200;
 
 /** Le préfixe des routes de la carte : l'audit de latence les range avec l'Inbox (`groupeDeRoute`). */
 export const PREFIXE_CONVERSATION_HUBSPOT = '/hubspot/conversation/';
@@ -154,6 +189,12 @@ const corpsModeles = z.object({
   auteurEmail: adresse,
 }).strict();
 
+/** La liste du lot 4 : un espace, la personne ; aucune conversation, aucun numéro. */
+const corpsATraiter = z.object({
+  tenantId: UUID,
+  auteurEmail: adresse,
+}).strict();
+
 /**
  * Un modèle : son nom, sa langue et ses valeurs, rien d'autre. Sa catégorie, son nombre de variables et son en-tête se
  * relisent chez Meta (décision F) : la carte ne peut pas déclarer un marketing « Service ».
@@ -207,18 +248,27 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
   };
 
   /**
-   * Les gardes communes aux trois routes, dans l'ordre : l'offre, le réglage, la conversation DANS l'espace (le seul
-   * contrôle d'isolation : la connexion contourne la RLS), puis la personne. `null` : la réponse est déjà partie.
+   * Les gardes de l'espace, communes à toutes les routes : l'offre, puis le réglage. `false` : la réponse est déjà partie.
+   * Sorties de `gardes` pour la liste du lot 4, qui ne vise aucune conversation ; l'ordre et les refus n'ont pas changé.
    */
-  async function gardes(reply: FastifyReply, tenantId: string, conversationId: string, auteurEmail: string | null) {
+  async function gardesEspace(reply: FastifyReply, tenantId: string): Promise<boolean> {
     if (!(await deps.fonctions(tenantId)).has('inbox')) {
       reply.code(402).send(corpsRefusFonction('inbox'));
-      return null;
+      return false;
     }
     if (!(await deps.reponseBranchee(tenantId))) {
       reply.code(403).send({ error: 'La réponse depuis HubSpot n’est pas branchée pour cet espace (Tools > Intégrations > HubSpot).', code: 'reponse_hubspot_eteinte' });
-      return null;
+      return false;
     }
+    return true;
+  }
+
+  /**
+   * Les gardes communes aux routes d'une conversation, dans l'ordre : celles de l'espace, la conversation DANS l'espace
+   * (le seul contrôle d'isolation : la connexion contourne la RLS), puis la personne. `null` : la réponse est déjà partie.
+   */
+  async function gardes(reply: FastifyReply, tenantId: string, conversationId: string, auteurEmail: string | null) {
+    if (!(await gardesEspace(reply, tenantId))) return null;
     const ctx = await deps.inbox.getConversationContext(conversationId, tenantId);
     const assignee = ctx ? await deps.inbox.getAssignee(tenantId, conversationId) : undefined;
     if (!ctx || assignee === undefined) {
@@ -234,6 +284,17 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
     // Un membre désactivé ou qui n'a jamais accepté son invitation n'est personne : il ne signe rien, ne passe aucune affectation.
     const m = auteurEmail === null ? undefined : membres.find((u) => !u.disabled && !u.pending && u.email.toLowerCase() === auteurEmail);
     return m ? { acteur: { userId: m.id, role: m.role }, auteur: m.id } : { acteur: { userId: null, role: null }, auteur: null };
+  }
+
+  /**
+   * L'affectataire tel que HubSpot le voit : son nom, sinon la partie locale de son adresse (la convention de
+   * `senderName`). L'adresse entière d'un membre ne part pas chez HubSpot, où le portail peut compter des personnes sans
+   * compte Messaging Me.
+   */
+  function affectataire(membres: Awaited<ReturnType<HubspotConversationDeps['membres']>>, id: string | null): { id: string; nom: string | null } | null {
+    if (id === null) return null;
+    const m = membres.find((u) => u.id === id);
+    return { id, nom: m ? (m.name ?? m.email.split('@')[0] ?? null) : null };
   }
 
   const refusAffectation = { error: 'Cette conversation est affectée à un autre membre de l’équipe.', code: 'assigned_to_other' };
@@ -306,6 +367,36 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
       journaliser('error', 'hubspot_cle_non_liberee', { err, tenantId, conversationId, cle: key.split(':')[0] });
     });
 
+  /**
+   * Les conversations de l'espace qui attendent un humain (lot 4). Lecture seule, sans plafond, comme `fil` : le
+   * connecteur la relit toutes les 30 s par page ouverte. 🔴 La personne ne refuse rien (décision G, la règle du lot 2 :
+   * toute personne du portail lit), elle ne sert qu'à `peutRepondre` ; l'envoi rejuge tout.
+   */
+  app.post(`${PREFIXE_CONVERSATION_HUBSPOT}a-traiter`, async (req, reply) => {
+    if (!signee(req)) return reply.code(401).send({ error: 'invalid signature' });
+    const lu = corpsATraiter.safeParse(req.body);
+    if (!lu.success) return reply.code(400).send({ error: 'payload invalide' });
+    const { tenantId, auteurEmail } = lu.data;
+
+    if (!(await gardesEspace(reply, tenantId))) return reply;
+    const ligne = await deps.ligneHubspot(tenantId);
+    if (ligne !== 'reliee') return reply.code(409).send({ error: PHRASES_LIGNE[ligne], code: 'ligne_non_reliee', raison: ligne });
+
+    const { total, lignes } = await deps.aTraiter.lister(tenantId, A_TRAITER_MAX);
+    // Lus une fois, et seulement s'il y a une adresse à reconnaître ou un affectataire à nommer.
+    const membres = auteurEmail !== null || lignes.some((l) => l.affecteA !== null) ? await deps.membres(tenantId) : [];
+    const { acteur } = personneDe(membres, auteurEmail);
+    return reply.code(200).send({
+      total,
+      conversations: lignes.map((l) => ({
+        ...l,
+        affecteA: affectataire(membres, l.affecteA),
+        // Ce que la page propose à CETTE personne ; STOP et bloqué sont déjà hors de la liste, l'envoi les relit.
+        peutRepondre: peutEcrire(acteur, l.affecteA),
+      })),
+    });
+  });
+
   app.post(`${PREFIXE_CONVERSATION_HUBSPOT}fil`, async (req, reply) => {
     if (!signee(req)) return reply.code(401).send({ error: 'invalid signature' });
     const lu = corpsFil.safeParse(req.body);
@@ -326,7 +417,6 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
     ]);
     const rendus = lus.slice(-MESSAGES_PAR_PAGE);
     const premier = rendus[0];
-    const affecte = g.assignee === null ? null : g.membres.find((m) => m.id === g.assignee);
     const lien = deps.lienConversation(conversationId);
     return reply.code(200).send({
       conversationId,
@@ -334,9 +424,7 @@ export function registerHubspotConversation(app: FastifyInstance, deps: HubspotC
       dernierEntrantLe: g.ctx.lastInboundAt,
       tenuPar,
       escaladeeLe: escaladeeLe ? escaladeeLe.toISOString() : null,
-      // Le nom, sinon la partie locale de l'adresse (la convention de `senderName`) : l'adresse entière d'un membre ne part
-      // pas chez HubSpot, où le portail peut compter des personnes sans compte Messaging Me.
-      affecteA: g.assignee === null ? null : { id: g.assignee, nom: affecte ? (affecte.name ?? affecte.email.split('@')[0] ?? null) : null },
+      affecteA: affectataire(g.membres, g.assignee),
       contactDesabonne: desabonne,
       contactBloque: bloque,
       // Ce que la carte propose à CETTE personne : les mêmes règles que la réponse et le modèle, posées à nouveau à l'envoi.

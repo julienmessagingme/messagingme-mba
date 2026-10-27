@@ -3,7 +3,10 @@ import { randomBytes } from 'node:crypto';
 import { buildServer } from '../src/server';
 import { FakeQueue } from './fake-queue';
 import { signRequest } from '../src/lib/signature';
-import { MESSAGES_PAR_PAGE, PREFIXE_CONVERSATION_HUBSPOT, type HubspotConversationDeps } from '../src/http/hubspot-conversation';
+import {
+  A_TRAITER_MAX, MESSAGES_PAR_PAGE, PREFIXE_CONVERSATION_HUBSPOT, etatLigneHubspot, type EtatLigneHubspot, type HubspotConversationDeps,
+} from '../src/http/hubspot-conversation';
+import type { LigneATraiter } from '../src/inbox/a-traiter-hubspot.pg';
 import { MetaApiError } from '../src/meta/errors';
 import type { DepsRepondre } from '../src/inbox/repondre';
 import type { AuteurDuChangement } from '../src/inbox/evenements';
@@ -91,7 +94,23 @@ interface Options {
   bloqueApres?: number;
   /** Le scellement de la clé échoue ce nombre de fois, puis réussit (une base qui hoquette). */
   scellementEchecs?: number;
+  /** La synchro HubSpot du numéro de l'espace (lot 4, défaut : reliée). */
+  ligne?: EtatLigneHubspot;
+  /** Les conversations qui attendent dans `T1` (lot 4, défaut : `A_TRAITER`). */
+  aTraiter?: LigneATraiter[];
 }
+
+/** Une conversation qui attend (lot 4), affectée ou non. */
+function attente(id: string, affecteA: string | null): LigneATraiter {
+  return {
+    conversationId: id, nom: 'Claire', numero: '+33600000001', apercu: 'Je voudrais parler à quelqu’un', attendDepuis: '2026-10-24T09:00:00.000Z',
+    motif: 'escalade', fenetreOuverte: true, finFenetre: '2026-10-25T09:00:00.000Z', affecteA, urgente: false,
+  };
+}
+
+const C2 = 'c0000000-0000-4000-8000-000000000002';
+const C3 = 'c0000000-0000-4000-8000-000000000003';
+const A_TRAITER = [attente(C1, null), attente(C2, U_AFFECTE), attente(C3, U_ADMIN)];
 
 /** Un modèle tel que Meta le rend : approuvé, sans en-tête. */
 function tpl(name: string, category: 'MARKETING' | 'UTILITY', body: string, extra: Partial<TemplateSummary> = {}): TemplateSummary {
@@ -135,6 +154,7 @@ function app(o: Options = {}) {
   const debitsModeles = new Map<string, number>();
   let lecturesBloque = 0;
   let echecsScellement = 0;
+  const listes: Array<{ tenantId: string; limite: number }> = [];
   const contexte = async (conversationId: string, tenantId: string) => {
     lectures.push(tenantId);
     return conversationId === C1 && tenantId === T1 ? { waId: '33600000001', lastInboundAt: '2026-10-24T10:00:00.000Z', windowOpen: o.fenetre ?? true } : null;
@@ -257,14 +277,22 @@ function app(o: Options = {}) {
       },
     },
     lienConversation: (id) => `${o.console ?? 'https://console.exemple.fr'}/inbox?c=${id}`,
+    ligneHubspot: async () => o.ligne ?? 'reliee',
+    aTraiter: {
+      lister: async (tenantId, limite) => {
+        listes.push({ tenantId, limite });
+        const lignes = tenantId === T1 ? (o.aTraiter ?? A_TRAITER) : [];
+        return { total: lignes.length, lignes };
+      },
+    },
     now: () => NOW,
   };
   const server = buildServer({ queue: new FakeQueue(), hubspotConversation: deps });
-  return { server, envois, traces, prises, lectures, rendus, cles, liberees, debits, modelesEnvoyes, traceModeles, preparations, debitsModeles };
+  return { server, envois, traces, prises, lectures, rendus, cles, liberees, debits, modelesEnvoyes, traceModeles, preparations, debitsModeles, listes };
 }
 
 /** Signe un corps comme le connecteur (même format canonique, même chemin). */
-function envoi(route: 'fil' | 'repondre' | 'rendre' | 'modeles' | 'modele', body: unknown, secret = SECRET) {
+function envoi(route: 'fil' | 'repondre' | 'rendre' | 'modeles' | 'modele' | 'a-traiter', body: unknown, secret = SECRET) {
   const raw = JSON.stringify(body);
   const path = `/hubspot/conversation/${route}`;
   const sig = signRequest(secret, { ts: NOW, nonce: randomBytes(8).toString('hex'), method: 'POST', path, body: raw });
@@ -927,5 +955,96 @@ describe('sous-lot « relancer » : les jaunes de la relecture du lot', () => {
     const res = await server.inject(envoi('fil', { tenantId: T1, conversationId: C1, auteurEmail: null }));
     expect(res.json<{ messages: Array<{ statut: string | null }> }>().messages.map((m) => m.statut)).toEqual([null, 'failed']);
     await server.close();
+  });
+});
+
+describe('lot 4 : les conversations qui attendent un humain, pour la page de HubSpot', () => {
+  const LISTE = { tenantId: T1, auteurEmail: 'alice@exemple.fr' };
+
+  it('🔴 signature absente ou d’un autre secret : 401, rien n’est lu', async () => {
+    const { server, listes } = app();
+    const sans = await server.inject({ method: 'POST', url: '/hubspot/conversation/a-traiter', headers: { 'content-type': 'application/json' }, payload: JSON.stringify(LISTE) });
+    const autre = await server.inject(envoi('a-traiter', LISTE, 'un-autre-secret-de-meme-longueur-000'));
+    expect([sans.statusCode, autre.statusCode]).toEqual([401, 401]);
+    expect(listes).toEqual([]);
+    await server.close();
+  });
+
+  it('un champ de trop (une conversation, un numéro) : 400, rien n’est lu', async () => {
+    const { server, listes } = app();
+    expect((await server.inject(envoi('a-traiter', { ...LISTE, conversationId: C1 }))).statusCode).toBe(400);
+    expect((await server.inject(envoi('a-traiter', { ...LISTE, numero: '+33600000001' }))).statusCode).toBe(400);
+    expect((await server.inject(envoi('a-traiter', { auteurEmail: null }))).statusCode).toBe(400);
+    expect(listes).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 une offre sans l’Inbox (402) ou « Répondre depuis HubSpot » éteint (403) : rien n’est lu', async () => {
+    const sansInbox = app({ fonctions: ['analyse'] });
+    const r1 = await sansInbox.server.inject(envoi('a-traiter', LISTE));
+    expect([r1.statusCode, r1.json<{ code: string }>().code]).toEqual([402, 'plan_feature_unavailable']);
+    expect(sansInbox.listes).toEqual([]);
+    await sansInbox.server.close();
+    const eteint = app({ reponse: false });
+    const r2 = await eteint.server.inject(envoi('a-traiter', LISTE));
+    expect([r2.statusCode, r2.json<{ code: string }>().code]).toEqual([403, 'reponse_hubspot_eteinte']);
+    expect(eteint.listes).toEqual([]);
+    await eteint.server.close();
+  });
+
+  it.each(['pause', 'coupee', 'sans_numero'] as const)('🔴 ligne %s : 409 ligne_non_reliee avec sa raison, jamais une liste vide', async (ligne) => {
+    const { server, listes } = app({ ligne });
+    const res = await server.inject(envoi('a-traiter', LISTE));
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ code: 'ligne_non_reliee', raison: ligne });
+    expect(listes).toEqual([]);
+    await server.close();
+  });
+
+  it('la liste de l’espace, jusqu’à la borne, avec le total, et l’affectataire nommé SANS son adresse', async () => {
+    const { server, listes } = app();
+    const res = await server.inject(envoi('a-traiter', LISTE));
+    expect(res.statusCode).toBe(200);
+    const corps = res.json<{ total: number; conversations: Array<{ conversationId: string; affecteA: { id: string; nom: string | null } | null }> }>();
+    expect(listes).toEqual([{ tenantId: T1, limite: A_TRAITER_MAX }]);
+    expect(corps.total).toBe(3);
+    expect(corps.conversations.map((c) => c.conversationId)).toEqual([C1, C2, C3]);
+    expect(corps.conversations.map((c) => c.affecteA)).toEqual([null, { id: U_AFFECTE, nom: 'Bruno' }, { id: U_ADMIN, nom: 'admin' }]);
+    expect(res.body).not.toContain('@exemple.fr');
+    await server.close();
+  });
+
+  it('🔴 la personne ne refuse rien (décision G) : elle dit seulement à quoi elle peut répondre', async () => {
+    const pour = async (auteurEmail: string | null) => {
+      const { server } = app();
+      const res = await server.inject(envoi('a-traiter', { tenantId: T1, auteurEmail }));
+      await server.close();
+      expect(res.statusCode).toBe(200);
+      return res.json<{ conversations: Array<{ peutRepondre: boolean }> }>().conversations.map((c) => c.peutRepondre);
+    };
+    // Un membre : ce qui n'est à personne ; l'admin : tout ; une personne du portail sans compte : ce qui n'est à personne.
+    expect(await pour('alice@exemple.fr')).toEqual([true, false, false]);
+    expect(await pour('admin@exemple.fr')).toEqual([true, true, true]);
+    expect(await pour('inconnu@ailleurs.fr')).toEqual([true, false, false]);
+    expect(await pour(null)).toEqual([true, false, false]);
+  });
+
+  it('🔴 un espace ne lit que sa liste : la requête porte l’espace du corps, jamais un autre', async () => {
+    const { server, listes } = app();
+    const res = await server.inject(envoi('a-traiter', { tenantId: T2, auteurEmail: null }));
+    expect(res.json<{ total: number }>().total).toBe(0);
+    expect(listes).toEqual([{ tenantId: T2, limite: A_TRAITER_MAX }]);
+    await server.close();
+  });
+
+  it('la route se range avec l’Inbox dans l’audit de latence', () => {
+    expect(groupeDeRoute(`${PREFIXE_CONVERSATION_HUBSPOT}a-traiter`)).toBe('inbox');
+  });
+
+  it('l’état de la ligne se lit sur le numéro principal : reliée, en pause, coupée, ou aucun numéro', () => {
+    expect(etatLigneHubspot(null)).toBe('sans_numero');
+    expect(etatLigneHubspot({ hubspotConnected: true, hubspotPausedAt: null })).toBe('reliee');
+    expect(etatLigneHubspot({ hubspotConnected: false, hubspotPausedAt: '2026-10-27 10:00:00+00' })).toBe('pause');
+    expect(etatLigneHubspot({ hubspotConnected: false, hubspotPausedAt: null })).toBe('coupee');
   });
 });
