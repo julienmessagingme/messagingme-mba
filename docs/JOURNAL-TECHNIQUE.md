@@ -4,6 +4,31 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-27 (soir) : la reprise humaine dans HubSpot, lot 4 (la page « Messaging Me »)
+
+Plan `mm-hubspot/docs/2026-10-27-lot4-page-messaging-me-plan.md`, décisions A à G validées par Julien ; un implémenteur,
+trois relectures à froid (le plan, les routes, l'extension), aucun 🔴, tous les jaunes corrigés.
+
+- **mba `6eafe8e0`**, sans migration (run 40539692584) : `POST /hubspot/conversation/a-traiter`, la liste des
+  conversations qui attendent un humain (`src/inbox/a-traiter-hubspot.pg.ts`). Avant le déploiement, l'`EXPLAIN` de la
+  requête du module (capturée telle quelle, pas recopiée) sur l'espace le plus gros, en lecture seule par la machine
+  des workers, lancé par Julien : 25 conversations, 0,57 ms, les sous-requêtes sur les messages par leur index ; aucun
+  index à créer (0164 n'en voulait pas). Fumée conforme.
+- **Une affirmation fausse, rattrapée par la relecture** : STOP et bloqué devaient se lire par le numéro (décision A) ;
+  le code les lisait sur la fiche « parce que `matchWaIdPredicat` ne passe par aucun index ». Faux : 0096 a créé
+  `contacts_tenant_waid_digits_idx` exactement pour cette branche. Aligné sur la décision, avec un test d'intégration
+  « sans fiche, STOP par le numéro ». La leçon : avant d'écrire qu'une requête n'est pas indexée, chercher l'index
+  d'expression dans les migrations.
+- **La console et l'aide** (`a2e2fa08`, `eef94146`) : le réglage « Répondre aux clients depuis HubSpot » dit que toute
+  personne du portail voit la file entière dans la page, quels que soient ses droits sur les contacts dans HubSpot
+  (décision G) ; la fiche `hubspot-sur-l-accueil` gagne un paragraphe, sa version anglaise suit (`traduit_de: 5e9436`).
+  Régénérée par `vitrine:aide` dans un clone LF (le générateur bute sur une extraction CRLF). `aide:charger` attend
+  l'image qui portera `eef94146` : refusé en SSH par le mode auto de Claude, et la session de l'offre Business
+  déployait mba au même moment.
+- **Côté HubSpot** : le connecteur `960eed7` (routes `/page/*`), la carte refactorée uploadée SEULE (build #13, depuis
+  un export où la page et l'en-tête restaient ceux d'avant, vérifiée par Julien), puis la page et l'en-tête « Messaging
+  Me » (build #14).
+
 ## 2026-10-27 : les bancs de la nouvelle infrastructure (DB-DEV-M, machine DEV1-M, pool du principal à 20)
 
 Demandés par Julien après la descente de gamme du jour. Une base et une machine JETABLES à Amsterdam (accord de Julien),
