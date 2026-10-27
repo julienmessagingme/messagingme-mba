@@ -145,7 +145,7 @@ export function changePassword(currentPassword: string, newPassword: string): Pr
 export function getAuthConfig(): Promise<{ googleClientId: string; googleEnabled: boolean }> {
   return request('/auth/config', { method: 'GET' });
 }
-/** Résultat Google : session + `isNew` (email inconnu -> nouvel espace créé -> le tunnel de la Base, `/connecter-whatsapp?suite=demarrer`). */
+/** Résultat Google : session + `isNew` (email inconnu -> nouvel espace créé -> `arriveeDUnNouvelEspace`, le tunnel de la Base ou la souscription du Pro). */
 export interface GoogleResult extends LoginResult {
   isNew: boolean;
 }

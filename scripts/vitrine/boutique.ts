@@ -114,7 +114,9 @@ function guide(t: TexteBoutique, langue: Langue): string[] {
     '                  </ul>',
     '                </section>',
   ];
-  const inscription = `${CONSOLE}/signup${langue === 'en' ? '?lang=en' : ''}`;
+  // `?offre=pro` : l'espace créé va à la souscription du Pro (`arriveeDUnNouvelEspace`, `web/lib/session.ts`), jamais au
+  // tunnel de la Free, qui est le chemin d'une inscription sans ce drapeau.
+  const inscription = `${CONSOLE}/signup?offre=pro${langue === 'en' ? '&amp;lang=en' : ''}`;
   // Le bout du tunnel, par offre (Julien, 2026-10-27) : en Free, le plugin, son dépôt et la demande à coller dans Claude
   // Code ; en Pro, la console et le pas-à-pas de ce chemin. Une issue sans pas-à-pas n'existe pas en Pro.
   const issue = (x: Issue) => [

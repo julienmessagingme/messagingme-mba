@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { signup, isLoginChoice, estEtapeSecondFacteur, type EtapeSecondFacteur, type SuiteConnexion } from '@/lib/api';
-import { saveSession } from '@/lib/session';
+import { arriveeDUnNouvelEspace, saveSession, veutLePro } from '@/lib/session';
 import { avecDemande, demandeDeLAdresse } from '@/lib/oauth';
 import { CadreSansCompte } from '@/components/CadreSansCompte';
 import { GoogleButton, RetourGoogle } from '@/components/GoogleButton';
@@ -36,9 +36,14 @@ export default function SignupPage() {
   const [interrompu, setInterrompu] = useState<string | null>(null);
   /** Venue de la page d'autorisation d'une application (Claude Code), sans compte Google : on y retourne ensuite. */
   const [demande, setDemande] = useState<string | null>(null);
+  /** Venue du choix du Pro (`?offre=pro`, la fin Pro du guide du numéro de la vitrine) : l'espace créé va le souscrire. */
+  const [pro, setPro] = useState(false);
 
-  // Lu ici et pas au rendu : l'adresse n'existe pas côté serveur.
-  useEffect(() => { setDemande(demandeDeLAdresse(window.location.search)); }, []);
+  // Lus ici et pas au rendu : l'adresse n'existe pas côté serveur.
+  useEffect(() => {
+    setDemande(demandeDeLAdresse(window.location.search));
+    setPro(veutLePro(window.location.search));
+  }, []);
 
   function entrer(res: SuiteConnexion): void {
     // Impossible par construction (l'inscription porte un seul espace) : la connexion saura demander.
@@ -47,9 +52,10 @@ export default function SignupPage() {
       return;
     }
     saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-    // Le tunnel de la Base (lot 19) : le numéro (sautable), puis la page finale, sans passer par l'accueil. Venu
-    // d'une application, le consentement d'abord : c'est elle qui fait la suite (`/messagingme:demarrer`).
-    router.replace(demande !== null ? avecDemande('/autoriser', demande) : '/connecter-whatsapp?suite=demarrer');
+    // Le tunnel de la Base (lot 19) : le numéro (sautable), puis la page finale, sans passer par l'accueil ; venu du
+    // choix du Pro, sa souscription à la place. Venu d'une application, le consentement d'abord : c'est elle qui fait
+    // la suite (`/messagingme:demarrer`).
+    router.replace(demande !== null ? avecDemande('/autoriser', demande) : arriveeDUnNouvelEspace(pro));
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -103,7 +109,7 @@ export default function SignupPage() {
 
         {/* Venu d'une application, Google est sur la page d'autorisation : ici il ouvrirait la console et perdrait la
             demande. On y renvoie, pour une adresse qui est en fait un compte Google (l'inscription la refuse). */}
-        {demande === null ? <GoogleButton onError={setError} /> : <RetourGoogle demande={demande} />}
+        {demande === null ? <GoogleButton onError={setError} pro={pro} /> : <RetourGoogle demande={demande} />}
       </form>
       )}
     </CadreSansCompte>

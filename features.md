@@ -131,7 +131,8 @@ numéro WhatsApp Business (l'application à télécharger, reliée comme un appa
 mène à l'application WhatsApp Business sur le numéro de l'entreprise (la garder, et il devient aussi un numéro API, ou
 un numéro à part), puis à un numéro libre ou à un numéro fourni. Chaque issue finit sur les boutons de l'offre
 choisie : en Free, le plugin, son dépôt GitHub et la demande à coller dans Claude Code, qui reprend les réponses
-données (« Copier ») ; en Pro, « Créer mon compte » et le pas-à-pas de ce chemin. Les quatre mots employés (compte Meta
+données (« Copier ») ; en Pro, « Créer mon compte » (`/signup?offre=pro`, qui mène à la souscription du Pro et non
+au tunnel de la Free) et le pas-à-pas de ce chemin. Les quatre mots employés (compte Meta
 Business, numéro WhatsApp Business, numéro API, garder son application) se déplient sous la carte. Le mot
 « coexistence » n'y apparaît jamais : face au client, c'est « garder votre application WhatsApp Business ». Suivent les
 quatre étapes depuis Claude Code, le prix et une FAQ. ⚠️ Le plugin (la skill `mise-en-service`, son README, sa FAQ) suit
@@ -316,7 +317,10 @@ Agent : **Inbox** seule. Menu **Compte** en haut à droite (**toggle langue FR/E
   ensuite par `/mcp` dans Claude Code), **« Créer la clé de mon application »** (droits par défaut, montrée une seule
   fois, en ligne de `.env` sous `MESSAGINGME_API_KEY`), et **`/messagingme:demarrer`**, qui lance la mise en service
   (lot 10, 2026-10-13 : le plugin remplace la commande `claude mcp add` et le premier message à coller). La suite
-  survit au paiement d'un numéro fourni.
+  survit au paiement d'un numéro fourni. **Venue du choix du Pro** (`/signup?offre=pro`, le bouton « Créer mon compte »
+  de la fin Pro du guide du numéro de la vitrine, 2026-10-27), l'inscription, par mot de passe comme par Google, mène
+  à la place à la **souscription du Pro** : la page de l'offre, son bandeau « la console fait partie du Pro », le
+  mensuel ou l'annuel et l'essai de 14 jours.
 - ✅ **Se connecter avec Google** (bouton sur `/login`, `/signup`, `/invite`) : vérif du jeton côté serveur ;
   liaison **par email** (compte existant -> connexion ; email inconnu -> crée un espace et prend le même tunnel
   qu'un signup).

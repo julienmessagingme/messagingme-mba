@@ -238,7 +238,8 @@ describe('la page Boutiques Shopify', () => {
           expect(x.demande, `${langue} : ${x.id}`).toMatch(offre);
           if (x.pasAPas) {
             const pro = blocs.get('pro') ?? '';
-            expect(pro, `${langue} : ${x.id}`).toContain('href="https://console.messagingme.app/signup');
+            // `?offre=pro` : l'inscription mène à la souscription du Pro, pas au tunnel de la Free (`web/lib/session.ts`).
+            expect(pro, `${langue} : ${x.id}`).toContain(`href="https://console.messagingme.app/signup?offre=pro${langue === 'en' ? '&amp;lang=en' : ''}"`);
             expect(pro, `${langue} : ${x.id}`).toContain(`href="${x.pasAPas}"`);
             expect(existsSync(join(process.cwd(), 'site', x.pasAPas, 'index.html')), x.pasAPas).toBe(true);
           } else {

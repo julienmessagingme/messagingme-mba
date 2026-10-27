@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getAuthConfig, loginWithGoogle, isLoginChoice, type LoginChoice } from '@/lib/api';
-import { saveSession, pageDArrivee } from '@/lib/session';
+import { arriveeDUnNouvelEspace, saveSession, pageDArrivee } from '@/lib/session';
 import { avecDemande } from '@/lib/oauth';
 import { useT } from '@/lib/i18n';
 
@@ -59,12 +59,16 @@ function loadGis(): Promise<void> {
  *
  * `separateur` (vrai par défaut) : le « ou » qui sépare le bouton d'une autre façon d'entrer, posée au-dessus. La page
  * de consentement l'éteint quand Google est la seule façon offerte.
+ *
+ * `pro` (inscription venue du choix du Pro, `?offre=pro`) : un espace que Google vient de créer va souscrire le Pro au
+ * lieu du tunnel de la Free (`arriveeDUnNouvelEspace`) ; un compte qui existait déjà arrive comme d'habitude.
  */
-export function GoogleButton({ onError, onChoix, surJeton, separateur = true }: {
+export function GoogleButton({ onError, onChoix, surJeton, separateur = true, pro = false }: {
   onError?: (msg: string) => void;
   onChoix?: (c: LoginChoice) => void;
   surJeton?: (idToken: string) => void;
   separateur?: boolean;
+  pro?: boolean;
 }) {
   const router = useRouter();
   const t = useT();
@@ -76,6 +80,9 @@ export function GoogleButton({ onError, onChoix, surJeton, separateur = true }: 
   onChoixRef.current = onChoix;
   const surJetonRef = useRef(surJeton);
   surJetonRef.current = surJeton;
+  // Lu par le rappel de Google, installé une fois : la page le pose après son montage, une ref le voit à jour.
+  const proRef = useRef(pro);
+  proRef.current = pro;
   // null = pas encore su ; '' = Google désactivé -> pas de bouton ; sinon le client_id.
   const [clientId, setClientId] = useState<string | null>(null);
 
@@ -121,8 +128,9 @@ export function GoogleButton({ onError, onChoix, surJeton, separateur = true }: 
                   return;
                 }
                 saveSession({ token: res.token, email: res.user.email, role: res.user.role, tenantId: res.user.tenantId });
-                // Nouvel espace -> le tunnel de la Base (lot 19), comme le signup email ; sinon inbox (agent) / accueil (admin).
-                router.replace(res.isNew ? '/connecter-whatsapp?suite=demarrer' : pageDArrivee(res.user.role));
+                // Nouvel espace -> le tunnel de la Base (lot 19), ou la souscription du Pro s'il l'a choisi, comme le signup
+                // email ; sinon inbox (agent) / accueil (admin).
+                router.replace(res.isNew ? arriveeDUnNouvelEspace(proRef.current) : pageDArrivee(res.user.role));
               })
               .catch((err) => onErrorRef.current?.(err instanceof Error ? err.message : t('Connexion Google impossible', 'Google sign-in failed')));
           },

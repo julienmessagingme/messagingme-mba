@@ -301,7 +301,8 @@ export function registerAuth(app: FastifyInstance, deps: AuthRouteDeps, garde: G
     const cree = entree.comptes[0];
     if (!cree) throw new Error('entrée Google créée sans compte');
     const jwt = await signSession({ userId: cree.id, tenantId: cree.tenantId, role: 'admin' }, deps.secret);
-    // isNew:true : le front ouvre le tunnel de la Base (le numéro, puis la page finale `/demarrer`).
+    // isNew:true : le front ouvre le tunnel de la Base (le numéro, puis la page finale `/demarrer`), ou la souscription
+    // du Pro quand l'inscription vient du choix du Pro (`arriveeDUnNouvelEspace`, `web/lib/session.ts`).
     return reply.code(201).send({ token: jwt, user: { email: entree.identite.email, role: 'admin', tenantId: cree.tenantId }, isNew: true });
   });
 

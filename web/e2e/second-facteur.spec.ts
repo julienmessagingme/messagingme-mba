@@ -264,6 +264,23 @@ test.describe('Enrôlement obligatoire d’un administrateur', () => {
     expect(appelsVers(appels, '/auth/mfa/enroler')).toHaveLength(0);
   });
 
+  test('🔴 inscription venue du choix du Pro (?offre=pro) : la souscription du Pro, jamais le tunnel de la Base', async ({ page }) => {
+    // Décision de Julien du 2026-10-27 : « Créer mon compte », à la fin Pro du guide du numéro de la vitrine, mène à la
+    // page de l'offre (le mensuel ou l'annuel, et l'essai de 14 jours), sans passer par le numéro ni la page finale.
+    const appels = await monter(page, (chemin) => {
+      if (chemin === '/auth/signup') return { status: 201, body: SESSION_ADMIN };
+      return undefined;
+    });
+    await page.goto('/signup?offre=pro');
+    await page.getByPlaceholder(/Mon entreprise|My company/).fill('Mon espace');
+    await page.locator('input[type="email"]').fill('a@b.co');
+    await page.locator('input[type="password"]').fill('motdepasse-long');
+    await page.getByRole('button', { name: /Créer mon espace|Create my workspace/ }).click();
+    await page.waitForURL('**/offre?fonction=console', { timeout: 15_000 });
+    expect(await sessionEnregistree(page)).not.toBeNull();
+    expect(appelsVers(appels, '/auth/signup')).toHaveLength(1);
+  });
+
   test('🔴 inscription : une adresse admin d’un espace qui l’exige passe par l’enrôlement avant le tunnel de la Base', async ({ page }) => {
     const appels = await monter(page, (chemin) => {
       if (chemin === '/auth/signup') return { status: 201, body: { enrolToken: 'jeton-enrol' } };
@@ -285,6 +302,25 @@ test.describe('Enrôlement obligatoire d’un administrateur', () => {
     // Le tunnel de la Base (lot 19) : l'espace créé passe par son numéro (sautable), pas par l'accueil.
     await page.waitForURL('**/connecter-whatsapp?suite=demarrer', { timeout: 15_000 });
     expect(appelsVers(appels, '/auth/signup')).toHaveLength(1);
+  });
+
+  test('🔴 inscription venue du choix du Pro : le choix survit à l’enrôlement, puis la souscription du Pro', async ({ page }) => {
+    await monter(page, (chemin) => {
+      if (chemin === '/auth/signup') return { status: 201, body: { enrolToken: 'jeton-enrol' } };
+      if (chemin === '/auth/mfa/enroler') return { body: CLE };
+      if (chemin === '/auth/mfa/activer') return { body: { codesSecours: CODES, ...SESSION_ADMIN } };
+      return undefined;
+    });
+    await page.goto('/signup?offre=pro');
+    await page.getByPlaceholder(/Mon entreprise|My company/).fill('Mon espace');
+    await page.locator('input[type="email"]').fill('a@b.co');
+    await page.locator('input[type="password"]').fill('motdepasse-long');
+    await page.getByRole('button', { name: /Créer mon espace|Create my workspace/ }).click();
+    await page.getByTestId('code-enrolement').fill('123456');
+    await page.getByRole('button', { name: /^(Activer|Activate)$/ }).click();
+    await page.getByTestId('codes-secours-conserves').check();
+    await page.getByTestId('codes-secours-continuer').click();
+    await page.waitForURL('**/offre?fonction=console', { timeout: 15_000 });
   });
 
   test('inscription : une étape expirée renvoie à la connexion, jamais au formulaire (l’espace existe déjà)', async ({ page }) => {

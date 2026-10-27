@@ -5425,6 +5425,7 @@ avec elle) garde son test de parité.
 | `web/lib/inbox-detail.ts` | le panneau Détail de l'Inbox : la validation de sa réponse (`lireDetail`, une réponse mal formée replie le panneau), les phrases de la frise, et son repli retenu par navigateur (dans un try/catch) |
 | `web/components/VariableBodyEditor.tsx` | l'éditeur à chips, partagé par les variables Meta (positionnelles) et RCS (nommées) |
 | `web/lib/session.ts` -> `pageDArrivee` | où atterrit un compte après connexion, selon son rôle |
+| `web/lib/session.ts` -> `arriveeDUnNouvelEspace`, `veutLePro` | où arrive un espace qui vient de naître, par `/signup` comme par le bouton Google : le tunnel de la Free, sauf venu du choix du Pro (`?offre=pro`, la fin Pro du guide du numéro de la vitrine), qui mène à la souscription du Pro (`/offre?fonction=console`) ; une destination fixe, l'adresse ne fait voyager qu'un drapeau ; une demande d'autorisation de Claude (`?demande=`) passe avant |
 | `web/lib/http.ts` -> `messageDErreur` | le texte d'une réponse en échec : la raison écrite par le serveur, sinon, pour un 5xx, une phrase traduite qui garde le statut |
 | `src/agent/devise.ts` | LES DEUX SENS de la conversion dollars/micro-euros : le coût d'un appel, et le plafond d'une clé du Gateway |
 | `src/agent/llm/cles-gateway.ts` | les deux appels Vercel du provisionnement, qui n'ont ni le même hôte ni la même authentification |
