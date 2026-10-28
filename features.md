@@ -90,6 +90,16 @@ plus de 200 participants au webinar promu, 100 % des messages entrants répartis
 accompagner, faire avancer) avec chacun un exemple de conversation entre l'école et le candidat, l'accompagnement et
 l'appel « Parlons de vos recrutements ». Les écrans de NEOMA et d'EDH sont en iPhone 3D, les trois écoles en logos.
 
+✅ **La vitrine a son livre blanc des écoles** (2026-10-28, en service) : « Recruter sur WhatsApp », 15 pages, sur
+`app.messagingme.fr/livre-blanc/whatsapp-education/` (jumelle `/en/white-paper/whatsapp-education/`, qui dit que le PDF
+est en français), annoncé par une section de la page Enseignement supérieur. Le visiteur laisse prénom, nom, e-mail
+professionnel, établissement, fonction et téléphone portable, et peut cocher « J’accepte que Messaging Me me recontacte
+sur WhatsApp ». Il arrive sur la page de téléchargement du PDF dans tous les cas. Son contact entre dans HubSpot (le
+formulaire « Livre blanc éducation »), puis dans l'une des deux listes « WhatsApp OK » ou « e-mail seulement » selon la
+case ; deux jours plus tard, la séquence « Livre blanc éducation » le relance par e-mail depuis la boîte de Julien (une
+seconde relance trois jours ouvrables après, arrêtée par une réponse ou un rendez-vous). Case cochée, il entre aussi dans
+l'espace SANDBOX avec le tag `livre-blanc-education`, consentement noté, sans qu'aucun message ne parte tout seul.
+
 ✅ **La troisième page de secteur, Assurance** (2026-10-21, trois maquettes de Julien) : `app.messagingme.fr/solutions/assurance/`,
 jumelle `/en/solutions/insurance/`. La joignabilité comme premier enjeu, trois cas d'assureurs : Gan Prévoyance (film
 `cas-assurance`, 30 % d'engagement sur les campagnes, plus de 85 % de lecture), Groupama (un devis conversationnel en

@@ -308,9 +308,9 @@ depuis deux jours. Un pointeur qui décrit un ÉTAT vieillit ; un pointeur qui d
   câblage d'une autre dans son `--only`, et `main` n'a plus compilé. **Parade qui ne dépend d'aucun
   timing** : pour un fichier de CÂBLAGE PARTAGÉ, on ne commite pas en `--only`, on construit le commit en
   PLOMBERIE (`GIT_INDEX_FILE` temporaire hors du dépôt, `git read-tree origin/main`, puis SON diff en patch :
-  `git diff HEAD -- <ses chemins> > lot.patch` et `git apply --cached --3way lot.patch`, `git write-tree`,
-  `git commit-tree -p origin/main`, `git push origin <sha>:main`). Ni l'index partagé ni l'arbre sur disque
-  ne sont touchés, et le commit ne peut PAS emporter ce qu'on n'a pas nommé.
+  `git diff --binary --no-textconv HEAD -- <ses chemins> > lot.patch` (sans eux, Git for Windows y met le TEXTE
+  d'un PDF), `git apply --cached --3way lot.patch`, `git write-tree`, `git commit-tree -p origin/main`, `git push
+  origin <sha>:main`). Ni l'index ni l'arbre ne sont touchés : le commit ne peut PAS emporter ce qu'on n'a pas nommé.
   🔴 **Jamais `git hash-object` sur un fichier de l'arbre : l'arbre peut être EN RETARD sur origin**
   (2026-09-26). Un pair qui pousse depuis un worktree laisse l'arbre sans son commit ; un blob reconstruit
   depuis l'arbre aurait défait le correctif STOP (738a7c3d) dans `features.md` et `contact-store.pg.ts`. Le

@@ -4,6 +4,39 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 (soir) : le livre blanc des écoles en production (vitrine, HubSpot, SANDBOX, relances)
+
+La route `POST /vitrine/livre-blanc` (`5c71db73`, les jaunes de sa relecture `3cc836d5`, le mobile obligatoire
+`3b282165`) déployée par le run 40678056460 ; les pages, le PDF et la section de la page Écoles (`d67a2a52`, puis
+`549d5e28` : la case WhatsApp gardée au retour d'erreur, un brouillon par formulaire dans `site.js`).
+
+- **La configuration du conteneur**, en une commande (`docs/prive/livre-blanc/poser-config.cjs`) : elle lit l'espace
+  SANDBOX par son nom en lecture seule par la machine des workers, puis ajoute les variables en clair sans envoyer les
+  secrets. Lancée hors du bureau, le bastion a refusé (ssh 255) : elle a posé les deux variables HubSpot et prévenu.
+  Relancée depuis la box Free, elle a ajouté `VITRINE_ESPACE_LIVRE_BLANC` (« Messaging Me Tech SANDBOX ») ; son attente
+  du redémarrage a fini sur « fetch failed » (le réseau du poste, pas Scaleway) : relu ensuite par la CLI, conteneur
+  prêt, 10 variables en clair au lieu de 9, les trois valeurs présentes, l'API à 200.
+- **HubSpot**, configuré par Claude dans Chrome (choix de Julien : une séquence plutôt qu'un workflow, objectif « prendre
+  un rendez-vous », deux e-mails, trois listes, la relance pour tous) : le formulaire renommé « Livre blanc éducation » ;
+  trois listes actives, 520 (tous), 521 « WhatsApp OK » et 522 « e-mail seulement » sur `recontact_whatsapp` ; la séquence
+  907732198 (relance 1 « Votre livre blanc, et une question », relance 2 dans un nouveau fil trois jours ouvrables plus
+  tard, arrêt sur réponse ou réunion) ; son automatisation 5210332390 (soumission du formulaire, délai de 2 880 minutes,
+  inscription depuis la boîte de Julien). ⚠️ L'action de workflow « S'inscrire à une séquence » demande Enterprise : seule
+  l'automatisation propre à la séquence marche en Pro, sans filtre de propriété, d'où la relance pour tous. Le connecteur
+  MCP de HubSpot n'écrit pas de listes, et le tableau de bord ne se pilote que par JavaScript (aucune capture). Reste le
+  brouillon de workflow 5211466945, désactivé, à supprimer.
+- **Cloudflare** : `/vitrine/livre-blanc` ajouté par Julien à la règle de débit « Entrées anonymes qui écrivent » ; un
+  envoi vide aux deux routes de la vitrine rend toujours sa redirection 303.
+- **Essai réel de Julien, depuis son téléphone** : à 19 h 56, case cochée, page de téléchargement et PDF corrects ; le
+  contact dans HubSpot et la liste 521, le tag `livre-blanc-education` sur sa fiche SANDBOX, ses autres tags gardés. À
+  20 h 02, case décochée, autre adresse : `recontact_whatsapp` à `false`, liste 522. Le même numéro, déjà tagué, ne laisse
+  pas voir l'absence de dépôt dans SANDBOX : elle reste prouvée par le test. Les deux contacts attendent dans
+  l'automatisation jusqu'au 30 octobre au soir (essai 180 de `docs/prive/ESSAIS-REELS.md`).
+- ⚠️ **Le PDF a failli partir en texte** : le patch du commit par plomberie, fait par `git diff --binary`, portait le
+  TEXTE du PDF (31 Ko au lieu de 3,7 Mo), Git for Windows déclarant `*.pdf diff=astextplain`. Vu avant le push, refait
+  avec `--no-textconv` ; la règle est dans la parade de plomberie du `CLAUDE.md`.
+- `documentation.md` annonçait cinq envois par adresse : le code en compte vingt depuis la relecture.
+
 ## 2026-10-28 (soir) : la réserve de numéros fournis donnait un numéro déjà utilisé
 
 - **Le constat** (Julien, depuis `/ops`) : `+44 1555 479304`, le numéro DIDWW de son application WhatsApp Business, était
