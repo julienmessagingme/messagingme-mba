@@ -70,7 +70,7 @@ export interface TexteBoutique {
   readonly compat: string;
   readonly telephone: { readonly aria: string; readonly boutique: string; readonly compte: string; readonly jour: string; readonly bulles: readonly BulleTel[] };
   readonly probleme: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly texte: string; readonly source: string };
-  readonly scenario: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly etapes: readonly Etape[]; readonly note: string };
+  readonly scenario: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly etapes: readonly Etape[] };
   readonly branchez: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly cartes: readonly Carte[] };
   readonly ensuite: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly cartes: readonly Carte[]; readonly offre: string };
   readonly numero: {
@@ -175,7 +175,6 @@ const fr = (): TexteBoutique => {
         { titre: 'Votre agent IA lui répond', texte: 'Avec ce qu’il sait de votre boutique : vos délais, vos transporteurs, vos retours, vos produits. Sans la réponse, il vous passe la main.' },
         { titre: 'Il commande', texte: 'La confirmation arrive sur WhatsApp, puis l’avis d’expédition avec le lien de suivi.' },
       ],
-      note: 'La relance est un message marketing : le consentement de vos clients relève de vous, et elle dit comment répondre STOP.',
     },
     branchez: {
       surtitre: 'Ce que vous branchez',
@@ -416,7 +415,6 @@ const en = (): TexteBoutique => {
         { titre: 'Your AI agent answers them', texte: 'With what it knows about your store: your delivery times, your carriers, your returns, your products. Without the answer, it hands over to you.' },
         { titre: 'They order', texte: 'The confirmation arrives on WhatsApp, then the shipping notice with the tracking link.' },
       ],
-      note: 'The reminder is a marketing message: your customers’ consent is your responsibility, and it says how to reply STOP.',
     },
     branchez: {
       surtitre: 'What you connect',

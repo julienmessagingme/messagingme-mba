@@ -200,7 +200,6 @@ function mainBoutique(t: TexteBoutique, langue: Langue): string {
     `      <p class="f-surtitre">${t.scenario.surtitre}</p>`,
     `      <h2 class="f-titre">${deux(t.scenario.titre)}</h2>`,
     ...etapes(t.scenario.etapes),
-    `      <p class="bt-note">${t.scenario.note}</p>`,
     '    </div>',
     '  </section>',
     '',
