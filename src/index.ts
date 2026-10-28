@@ -84,6 +84,7 @@ import type { ContactVitrineDeps } from './http/contact-vitrine';
 import { depotSandbox, soumissionHubspot } from './http/livre-blanc-vitrine';
 import type { ShopifyWebhooksRouteDeps } from './http/shopify-webhooks';
 import { PgShopifyStore } from './shopify/store.pg';
+import { PgVentesStore } from './shopify/ventes.pg';
 import { demanderJeton, verifierBoutique } from './shopify/connexion';
 import { lireClientsAbonnes } from './shopify/clients';
 import { abonnerWebhooks } from './shopify/abonnements';
@@ -1363,6 +1364,8 @@ async function main(): Promise<void> {
     filiere: (tenant) => comptesApplication.filiereDe(tenant),
     ecrirePremier: (demande) => enfilerPremierMessage(depsPremier, demande),
     ficheParTelephone: async (tenant, e164) => (await contactStore.findByPhone(tenant, e164))?.id ?? null,
+    // Le chiffre d'affaires attribué (plan 2026-10-28) : le store entier, ses méthodes lisent `this.pool`.
+    ventes: new PgVentesStore(pool),
     /**
      * L'effacement de la purge du mini-CRM (même retrait chez l'agent de Meta, même suivi en fond), HORS limite du jour :
      * une demande d'effacement transmise par Shopify est une obligation légale, pas un geste qu'une offre limite.

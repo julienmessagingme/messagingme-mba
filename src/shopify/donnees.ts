@@ -80,6 +80,8 @@ export const schemaCommande = z.object({
     presentment_money: z.object({ amount: z.string(), currency_code: z.string() }).nullish(),
     shop_money: z.object({ amount: z.string(), currency_code: z.string() }).nullish(),
   }).nullish(),
+  /** Le moment du paiement chez Shopify : la fenêtre d'attribution se compte depuis lui, pas depuis un webhook réessayé. */
+  processed_at: texte,
   /** Une commande de la passerelle de test : enregistrée, jamais comptée (spec du 2026-10-28). */
   test: z.boolean().nullish(),
   /** La page d'arrivée de la visite qui a mené à la commande, avec sa requête : la preuve par UTM (tâche 6). */

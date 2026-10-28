@@ -6,6 +6,8 @@ import type { Emission } from '../src/emails-produit/emission';
 import type { RapportEnvoi, ResultatEnvoiPublic } from '../src/api/envoi-public';
 import type { Filiere } from '../src/application/comptes';
 import type { DemandePremierMessage, ResultatPremier } from '../src/application/premier-message';
+import type { Touche } from '../src/shopify/attribution';
+import type { VenteAEnregistrer } from '../src/shopify/ventes.pg';
 
 /**
  * LE TRAITEMENT D'UN WEBHOOK SHOPIFY VÉRIFIÉ, ET SON ENVOI (plan 2026-10-21, lot 1).
@@ -17,7 +19,37 @@ import type { DemandePremierMessage, ResultatPremier } from '../src/application/
  */
 
 const T = '5f0c1e2a-8b7d-4c3e-9a1f-2d6b7e8c9f01';
-const BOUTIQUE: BoutiqueRecue = { tenantId: T, domaine: 'b.myshopify.com', etat: 'connectee', pays: 'FR', origine: 'claude_code' };
+const BOUTIQUE: BoutiqueRecue = { tenantId: T, domaine: 'b.myshopify.com', etat: 'connectee', pays: 'FR', devise: 'EUR', origine: 'claude_code' };
+
+/**
+ * Le faux store des ventes (plan 2026-10-28, tâche 4). Une CLASSE dont les méthodes lisent `this` : un câblage qui les
+ * détacherait de leur objet échouerait ici comme en production (règle du store injecté, CLAUDE.md).
+ */
+class FauxVentes {
+  enregistrees: VenteAEnregistrer[] = [];
+  anonymisees: string[][] = [];
+  jetons: string[] = [];
+  lectures: Array<{ depuis: Date; jusqua: Date; filiereApplication: boolean }> = [];
+  constructor(private readonly o: { touches?: Touche[]; panier?: { relanceLe: Date } | null; leve?: boolean } = {}) {}
+  async touches(_t: string, _c: string, depuis: Date, jusqua: Date, filiereApplication: boolean): Promise<Touche[]> {
+    if (this.o.leve) throw new Error('base indisponible');
+    this.lectures.push({ depuis, jusqua, filiereApplication });
+    return this.o.touches ?? [];
+  }
+  async derniereToucheDuModele(): Promise<Touche | null> { return null; }
+  async panierRelance(_t: string, jeton: string): Promise<{ relanceLe: Date } | null> {
+    this.jetons.push(jeton);
+    return this.o.panier ?? null;
+  }
+  async enregistrer(_t: string, v: VenteAEnregistrer): Promise<'enregistree' | 'deja'> {
+    this.enregistrees.push(v);
+    return 'enregistree';
+  }
+  async anonymiserCommandes(_t: string, ids: readonly string[]): Promise<number> {
+    this.anonymisees.push([...ids]);
+    return ids.length;
+  }
+}
 
 const commande = (over: Record<string, unknown> = {}) => ({
   id: 1002, name: '#1002', checkout_token: 'ck', customer: { id: 77, phone: null, first_name: 'Julien' },
@@ -39,7 +71,7 @@ const rapport = (over: Partial<RapportEnvoi> = {}): RapportEnvoi => ({
 
 function monter(o: {
   messages?: MessageBranche[]; reservation?: Reservation; reponse?: ResultatEnvoiPublic; envoyerLeve?: boolean;
-  filiere?: Filiere | null; premier?: ResultatPremier;
+  filiere?: Filiere | null; premier?: ResultatPremier; ventes?: FauxVentes;
 } = {}) {
   const journal = {
     reserve: [] as string[], issues: [] as Array<[string, string]>, liberes: [] as string[], liees: [] as unknown[],
@@ -82,6 +114,7 @@ function monter(o: {
     emails: { emettre: async (e) => { journal.emails.push(e); return {}; } },
     pageOffre: 'https://console.test/offre',
     maintenant: () => Date.parse('2026-10-21T10:00:00Z'),
+    ventes: o.ventes ?? new FauxVentes(),
   };
   return { deps, journal };
 }
@@ -483,5 +516,90 @@ describe('l’adaptateur de l’envoi public : l’issue de chaque réponse', ()
     expect((corps as { recipients: Array<Record<string, unknown>> }).recipients).toEqual([
       { phone: '+33600000000', consent: 'opted_in', consentSource: 'shopify:b.myshopify.com' },
     ]);
+  });
+});
+
+/** L'attribution d'une commande payée (plan 2026-10-28, tâche 4) : figée à la réception, jamais un frein à la confirmation. */
+describe('l’attribution d’une commande payée', () => {
+  const payee = { processed_at: '2026-10-21T09:30:00+02:00', total_price_set: { shop_money: { amount: '49.90', currency_code: 'EUR' } } };
+
+  it('la vente porte le montant de la boutique, la date de paiement de Shopify et la source choisie', async () => {
+    const ventes = new FauxVentes({ touches: [{ source: 'agent', le: new Date('2026-10-20T08:00:00Z'), campaignId: null, modele: null, lanceScenario: false }] });
+    const { deps } = monter({ ventes });
+    expect(await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande(payee))).toEqual({ statut: 200 });
+    expect(ventes.enregistrees).toEqual([{
+      commandeId: '1002', contactId: 'fiche-1', montant: '49.90', devise: 'EUR', payeeLe: new Date('2026-10-21T07:30:00Z'), test: false,
+      source: 'agent', campaignId: null, preuve: null, relanceLe: null,
+    }]);
+    // La fenêtre se lit sur 5 jours avant le paiement, filière de l'espace comprise.
+    expect(ventes.lectures).toEqual([{ depuis: new Date('2026-10-16T07:30:00Z'), jusqua: new Date('2026-10-21T07:30:00Z'), filiereApplication: false }]);
+  });
+
+  it('le panier payé se cherche par le jeton du checkout : relancé, il revient à la relance', async () => {
+    const ventes = new FauxVentes({ panier: { relanceLe: new Date('2026-10-21T06:00:00Z') } });
+    const { deps } = monter({ ventes });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande(payee));
+    expect(ventes.jetons).toEqual(['ck']);
+    expect(ventes.enregistrees[0]).toMatchObject({ source: 'relance_panier', preuve: 'panier', relanceLe: new Date('2026-10-21T06:00:00Z') });
+  });
+
+  it('🔴 une panne de l’attribution n’empêche pas la confirmation : 200 et envoi servi', async () => {
+    const { deps, journal } = monter({ ventes: new FauxVentes({ leve: true }) });
+    expect(await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande(payee))).toEqual({ statut: 200 });
+    expect(journal.envois).toHaveLength(1);
+    expect(journal.issues).toEqual([['shopify:b.myshopify.com:orders/paid:1002', 'envoye']]);
+  });
+
+  it('une commande d’un numéro inconnu n’écrit rien et ne crée aucune fiche', async () => {
+    const ventes = new FauxVentes({ touches: [{ source: 'agent', le: new Date('2026-10-21T07:00:00Z'), campaignId: null, modele: null, lanceScenario: false }] });
+    const { deps } = monter({ ventes, messages: [] });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande({ ...payee, shipping_address: { first_name: 'X', phone: '+33611110000', country_code: 'FR' } }));
+    expect([ventes.enregistrees, ventes.lectures]).toEqual([[], []]);
+  });
+
+  it('une commande sans téléphone n’écrit rien', async () => {
+    const ventes = new FauxVentes();
+    const { deps } = monter({ ventes });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande({ ...payee, shipping_address: null }));
+    expect(ventes.enregistrees).toEqual([]);
+  });
+
+  it('🔴 l’attribution se fait même quand la confirmation est éteinte', async () => {
+    const ventes = new FauxVentes({ touches: [{ source: 'campagne', le: new Date('2026-10-20T08:00:00Z'), campaignId: 'k1', modele: 'soldes', lanceScenario: false }] });
+    const { deps, journal } = monter({ ventes, messages: [] });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande(payee));
+    expect(journal.envois).toEqual([]);
+    expect(ventes.enregistrees).toHaveLength(1);
+    expect(ventes.enregistrees[0]).toMatchObject({ source: 'campagne', campaignId: 'k1' });
+  });
+
+  it('une commande de test s’enregistre avec test = true', async () => {
+    const ventes = new FauxVentes({ touches: [{ source: 'agent', le: new Date('2026-10-20T08:00:00Z'), campaignId: null, modele: null, lanceScenario: false }] });
+    const { deps } = monter({ ventes });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande({ ...payee, test: true }));
+    expect(ventes.enregistrees[0]).toMatchObject({ test: true });
+  });
+
+  it('sans touche dans la fenêtre, rien ne s’enregistre ; un montant illisible non plus', async () => {
+    const sansTouche = new FauxVentes();
+    await traiterWebhookShopify(monter({ ventes: sansTouche }).deps, BOUTIQUE, 'orders/paid', commande(payee));
+    expect(sansTouche.enregistrees).toEqual([]);
+    const illisible = new FauxVentes({ touches: [{ source: 'agent', le: new Date('2026-10-20T08:00:00Z'), campaignId: null, modele: null, lanceScenario: false }] });
+    await traiterWebhookShopify(monter({ ventes: illisible }).deps, { ...BOUTIQUE, devise: null }, 'orders/paid', commande({ processed_at: payee.processed_at, total_price: '12.00' }));
+    expect(illisible.enregistrees).toEqual([]);
+  });
+
+  it('une date de paiement absente ou illisible prend l’heure de réception', async () => {
+    const ventes = new FauxVentes({ touches: [{ source: 'agent', le: new Date('2026-10-20T08:00:00Z'), campaignId: null, modele: null, lanceScenario: false }] });
+    const { deps } = monter({ ventes });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande({ ...payee, processed_at: 'demain' }));
+    expect(ventes.enregistrees[0]!.payeeLe).toEqual(new Date('2026-10-21T10:00:00Z'));
+  });
+
+  it('customers/redact anonymise les commandes nommées', async () => {
+    const ventes = new FauxVentes();
+    const { deps } = monter({ ventes });
+    await traiterWebhookShopify(deps, BOUTIQUE, 'customers/redact', { customer: { id: 9, email: null, phone: null }, orders_to_redact: [1002, 1003] });
+    expect(ventes.anonymisees).toEqual([['1002', '1003']]);
   });
 });

@@ -71,6 +71,7 @@ export interface BoutiqueSignee {
   etat: EtatBoutique;
   secret: string;
   pays: string | null;
+  devise: string | null;
   origine: OrigineBoutique;
 }
 
@@ -176,13 +177,17 @@ export class PgShopifyStore {
    * pour vérifier la signature, et à personne d'autre.
    */
   async boutiqueParDomaine(domaine: string): Promise<BoutiqueSignee | null> {
-    const res = await this.pool.query<{ tenant_id: string; etat: EtatBoutique; secret_chiffre: string; pays: string | null; origine: OrigineBoutique }>(
-      `select tenant_id, etat, secret_chiffre, pays, origine from shopify_boutiques where domaine = $1`,
+    const res = await this.pool.query<{
+      tenant_id: string; etat: EtatBoutique; secret_chiffre: string; pays: string | null; devise: string | null; origine: OrigineBoutique;
+    }>(
+      `select tenant_id, etat, secret_chiffre, pays, devise, origine from shopify_boutiques where domaine = $1`,
       [domaine],
     );
     const r = res.rows[0];
     if (!r) return null;
-    return { tenantId: r.tenant_id, etat: r.etat, secret: decryptSecret(r.secret_chiffre, this.cle), pays: r.pays, origine: r.origine };
+    return {
+      tenantId: r.tenant_id, etat: r.etat, secret: decryptSecret(r.secret_chiffre, this.cle), pays: r.pays, devise: r.devise, origine: r.origine,
+    };
   }
 
   /**

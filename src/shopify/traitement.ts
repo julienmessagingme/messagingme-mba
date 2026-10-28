@@ -11,8 +11,9 @@ import {
   type DonneeShopify, type EvenementShopify,
 } from './donnees';
 import { envoyerMessageShopify, type DepsEnvoiShopify, type IssueShopify } from './envoi';
-import { PREFIXE_LIGNE_SHOPIFY } from './attribution';
+import { PREFIXE_LIGNE_SHOPIFY, attribuerCommande } from './attribution';
 import type { EtatBoutique, OrigineBoutique, PgShopifyStore } from './store.pg';
+import type { PgVentesStore } from './ventes.pg';
 
 /**
  * LE TRAITEMENT D'UN WEBHOOK SHOPIFY DÉJÀ VÉRIFIÉ (plan 2026-10-21, lot 1), sujet par sujet.
@@ -37,6 +38,8 @@ export interface BoutiqueRecue {
   domaine: string;
   etat: EtatBoutique;
   pays: string | null;
+  /** La devise de la boutique : le montant d'une vente attribuée quand la commande ne porte pas `shop_money`. */
+  devise: string | null;
   /** `console` : une boutique désinstallée perd son branchement, `shop/redact` ne viendra jamais (conception 2026-10-22). */
   origine: OrigineBoutique;
 }
@@ -61,6 +64,8 @@ export interface DepsTraitementShopify {
   /** La page Offre de la console, pour l'e-mail de la limite de contacts. */
   pageOffre: string;
   maintenant?: () => number;
+  /** Les ventes attribuées (plan 2026-10-28) : les touches d'un contact, le panier relancé, la vente figée, l'anonymisation. */
+  ventes: Pick<PgVentesStore, 'touches' | 'derniereToucheDuModele' | 'panierRelance' | 'enregistrer' | 'anonymiserCommandes'>;
 }
 
 /** 200 : traité ou délibérément ignoré. 503 : Shopify doit réessayer plus tard. */
@@ -92,6 +97,13 @@ export async function traiterWebhookShopify(
     case 'orders/paid': {
       const c = schemaCommande.safeParse(corps);
       if (!c.success) return illisible(b, sujet, c.error);
+      // 🔴 L'attribution AVANT tout le reste, et jamais un frein : la confirmation attendue par le client compte plus que
+      // notre chiffre, et une panne ici ne doit ni la bloquer ni faire réessayer Shopify en boucle (plan 2026-10-28).
+      try {
+        await attribuerCommande(deps, b, c.data);
+      } catch (err) {
+        journaliser('error', 'shopify_attribution_en_echec', { tenantId: b.tenantId, erreur: messageDe(err) });
+      }
       // Une commande payée ferme aussi son panier : `orders/create` peut arriver après (aucun ordre entre sujets).
       await fermerSiPanier(deps, b, c.data.checkout_token, telephoneDeCommande(c.data, b.pays));
       return servir(deps, b, {
@@ -308,6 +320,8 @@ async function effacerClient(deps: DepsTraitementShopify, b: BoutiqueRecue, corp
   const d = schemaEffacementClient.safeParse(corps);
   if (!d.success) return illisible(b, 'customers/redact', d.error);
   try {
+    // Les ventes attribuées de ces commandes perdent leur numéro et leur contact ; le montant et la source restent.
+    await deps.ventes.anonymiserCommandes(b.tenantId, (d.data.orders_to_redact ?? []).map(String));
     const ids = new Set(await deps.store.contactsLies(
       b.tenantId, (d.data.orders_to_redact ?? []).map(String), d.data.customer?.id ? String(d.data.customer.id) : null,
     ));

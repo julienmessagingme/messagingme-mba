@@ -352,7 +352,7 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
   shopifyWebhooks: {
     boutiques: {
       boutiqueParDomaine: async (d) => (d === BOUTIQUE_SONDE
-        ? { tenantId: randomUUID(), etat: 'connectee', secret: SECRET_SERVICE, pays: 'FR', origine: 'claude_code' }
+        ? { tenantId: randomUUID(), etat: 'connectee', secret: SECRET_SERVICE, pays: 'FR', devise: 'EUR', origine: 'claude_code' }
         : null),
     },
     traiter: async () => { throw new Error('auto-attaque : le traitement n’est jamais atteint'); },

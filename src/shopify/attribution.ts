@@ -1,3 +1,6 @@
+import { montantBoutique, telephoneDeCommande, type CommandeShopify } from './donnees';
+import type { BoutiqueRecue, DepsTraitementShopify } from './traitement';
+
 /**
  * LE CHIFFRE D'AFFAIRES ATTRIBUÉ (spec docs/superpowers/specs/2026-10-28-revenus-attribues-design.md) : une commande
  * payée d'un contact connu revient à UNE source, et cette attribution est figée à la réception (`ventes_attribuees`,
@@ -72,4 +75,35 @@ export function choisirSource(e: {
     if (campagne) return venteDe(campagne, null);
   }
   return venteDe(gagnante, null);
+}
+
+/**
+ * Attribue une commande payée et la fige (`orders/paid`, plan 2026-10-28, tâche 4). Rien ne s'écrit pour une commande
+ * sans téléphone, d'un numéro sans fiche (aucune fiche n'est créée : elle compterait dans la limite de l'offre), au
+ * montant illisible, ou sans source. Le paiement se date par Shopify (`processed_at`), sinon par la réception.
+ * La preuve par UTM attend le verdict du lot 0 : `toucheUtm` reste `null` d'ici là.
+ */
+export async function attribuerCommande(
+  deps: Pick<DepsTraitementShopify, 'ventes' | 'ficheParTelephone' | 'filiere' | 'maintenant'>,
+  b: Pick<BoutiqueRecue, 'tenantId' | 'pays' | 'devise'>,
+  c: CommandeShopify,
+): Promise<void> {
+  const telephone = telephoneDeCommande(c, b.pays);
+  if (telephone === null) return;
+  const contactId = await deps.ficheParTelephone(b.tenantId, telephone);
+  if (contactId === null) return;
+  const montant = montantBoutique(c, b.devise);
+  if (montant === null) return;
+  const traitee = c.processed_at ? Date.parse(c.processed_at) : NaN;
+  const payeeLe = new Date(Number.isNaN(traitee) ? (deps.maintenant ?? Date.now)() : traitee);
+  const filiereApplication = (await deps.filiere(b.tenantId)) === 'application';
+  const panierRelance = c.checkout_token ? await deps.ventes.panierRelance(b.tenantId, c.checkout_token) : null;
+  const touches = panierRelance
+    ? []
+    : await deps.ventes.touches(b.tenantId, contactId, new Date(payeeLe.getTime() - FENETRE_MS), payeeLe, filiereApplication);
+  const vente = choisirSource({ payeeLe, touches, panierRelance, toucheUtm: null });
+  if (vente === null) return;
+  await deps.ventes.enregistrer(b.tenantId, {
+    commandeId: String(c.id), contactId, ...montant, payeeLe, test: c.test === true, ...vente,
+  });
 }
