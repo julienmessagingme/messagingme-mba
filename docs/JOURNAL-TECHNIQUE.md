@@ -4,6 +4,29 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 (soir) : le chiffre d'affaires attribué, lot 1 (l'enregistrement, rien d'affiché)
+
+Spec `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`, plan `docs/superpowers/plans/2026-10-28-revenus-attribues-lots-0-1.md`
+(tâches 1 à 5), exécuté dans une copie à part de l'arbre partagé (accord de Julien).
+- **Migration 0261** (`973c3569`, poussée seule) : `ventes_attribuees` et `relances_panier_jour`. Mon déploiement épinglé
+  a été annulé ; elle est partie avec celui de la session voisine (`ff135559`, `migration=avant`, avec sa 0260), approuvé
+  par Julien. Relue en base point par point : colonnes, CHECK sous leur nom, `SET NULL` sur `contact_id` et
+  `campaign_id`, prédicat exact de l'index partiel d'unicité, quatre index valides.
+- **Le code** (`62c34fbc`..`adcff885`, `migration=aucune`) : l'attribution à la réception d'`orders/paid`, avant la
+  confirmation, le store des touches, la purge RGPD et l'effacement de boutique qui anonymisent, le compteur des
+  relances. Les invariants vont au manuel (§ Les tables `shopify_*`).
+- **Relecture** (une, opus) : aucun rouge dans le code ; son rouge d'ordre (code après l'application de 0261) a été tenu.
+  Trois jaunes corrigés avant le push (`c6a21ca9`), chacun par un test vu rouge : un budget de 1,5 s à l'attribution
+  (base saturée, Shopify coupe à 5 s), les champs neufs du corps lus absents plutôt que refusés (un refus emportait la
+  confirmation), les lignes des workflows HubSpot jamais une source. Le reste au `todo.md`.
+- **Mesuré avant de conclure** : les messages sortants des trois derniers jours ont tous leur statut de livraison, agent
+  de Meta compris ; les sans-statut (79 scénarios sur 91 en 30 jours) sont tous plus anciens. La règle « livré » tient.
+- **Le vrai code en production**, en lecture seule après le déploiement (révision `adcff885`) : les touches d'un
+  destinataire de campagne en 21 ms (une relance de panier reconnue comme telle), d'un contact de l'agent IA en 6 ms.
+- **Reste** : la tâche 0 (deux commandes de test de Julien par une adresse UTM) et la tâche 6 qui en dépend ; puis le
+  lot 2 (l'outil MCP et les écrans). Localement, trois échecs d'environnement sans rapport (zod et `@aws-sdk/client-s3`
+  du `node_modules` partagé en retard sur le verrou) : la CI, qui installe depuis le verrou, était verte.
+
 ## 2026-10-28 (soir) : le livre blanc des écoles en production (vitrine, HubSpot, SANDBOX, relances)
 
 La route `POST /vitrine/livre-blanc` (`5c71db73`, les jaunes de sa relecture `3cc836d5`, le mobile obligatoire
