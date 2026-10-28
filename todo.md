@@ -11,6 +11,17 @@ Spec `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`, section «
 - **Les boutiques hors Shopify** : une route d'API « déclarer une commande » (numéro, montant, devise), pour
   PrestaShop, WooCommerce ou un site maison.
 - **Relire l'historique au branchement** (60 jours, la limite de `read_orders`).
+- 🟡 **Les restes de la relecture du lot 1 (2026-10-28)** :
+  - un index partiel sur `ventes_attribuees.campaign_id` (clé étrangère `on delete set null`) : la suppression d'un
+    espace cascade ses campagnes, une ligne par message Shopify, et chacune balaierait la table ; migration à part ;
+  - un `POST /v1/sends` qui vise un scénario écrit ses messages en origine `scenario` : ils deviennent des touches
+    « scénario », alors que l'API n'est jamais une source ;
+  - le crédit « scénario lancé par une campagne » prend n'importe quelle campagne à scénario de la fenêtre, pas
+    forcément celle qui l'a lancé ; une campagne « message et scénario » compte même seulement partie ;
+  - en filière application, une relance qui part en file (`en_file`) ne passe pas par le compteur (sans effet tant
+    que la porte refuse tout texte Shopify) ;
+  - courses improbables : une vente insérée pendant la purge de sa fiche garde son numéro ; un `orders/paid` rejoué
+    après une anonymisation réinsère la vente.
 
 ## 🟡 Le MCP face à Wax et Kanal : ce qui manque encore (2026-10-28)
 

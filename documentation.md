@@ -2362,6 +2362,24 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   du téléphone de livraison ; `purgeMany` efface ses lignes et les paniers du numéro, par requête explicite (la purge
   anonymise la fiche, la cascade sur `contacts` ne joue pas). L'effacement demandé par Shopify passe par
   `effacerContacts` HORS limite du jour.
+- 🔴 **`ventes_attribuees` fige le chiffre d'affaires attribué** (migration 0261, spec
+  `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`) : à la réception d'`orders/paid`, AVANT la
+  confirmation et dans un budget (`BUDGET_ATTRIBUTION_MS`, `src/shopify/traitement.ts`), une commande payée d'une fiche
+  EXISTANTE (par le téléphone de la commande ; aucune fiche n'est créée) revient à une seule source (`choisirSource`,
+  `src/shopify/attribution.ts`) : le panier relancé qu'elle paie (preuve `panier`), sinon le dernier envoi livré des
+  5 jours (campagne, relance de panier, scénario, agent IA `ia`, agent de Meta `mba`). Une panne ou une lenteur se
+  journalise et ne retarde jamais la confirmation. Le montant est `shop_money` (devise de la boutique), sinon
+  `total_price` et `shopify_boutiques.devise` ; une commande de test est gardée avec `test = true`. Les champs que seule
+  l'attribution lit se lisent absents sous une forme inattendue (`.catch(null)`), jamais refusés : un refus rejetterait
+  le corps, et la confirmation avec ;
+- 🔴 **les noms des lignes de Campagnes sont un contrat lu par l'attribution** : elle reconnaît la relance
+  (`LIGNE_RELANCE_PANIER`) et écarte les autres lignes Shopify (`PREFIXE_LIGNE_SHOPIFY`), les envois `[API] `
+  (`PREFIXE_ENVOI_API`) et ceux des workflows HubSpot (`PREFIXE_LIGNE_HUBSPOT`). Renommer une ligne sans toucher
+  `src/shopify/ventes.pg.ts` fausserait les sources en silence, et une vente est figée ;
+- **effacer une personne n'efface pas le fait** : `purgeMany` vide `commande_id` des ventes de la fiche ;
+  `customers/redact` et l'effacement du branchement (`effacerBranchement`) vident aussi `contact_id` ; montant, devise,
+  date et source restent. `relances_panier_jour` compte les relances PARTIES par jour de Paris, sans personne : les
+  paniers, eux, partent à 7 jours avec leur téléphone.
 
 - 🔴 **chaque envoi né d'un événement Shopify écrit la fiche consentante** (décision de Julien du 2026-10-26 : le
   consentement des clients relève du marchand, aucune affirmation ne lui est demandée, ni par Claude ni par la

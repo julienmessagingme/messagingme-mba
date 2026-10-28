@@ -18,18 +18,22 @@
 | CI | lue job par job sur `gh run view <id> --json jobs`, jamais sur le code de sortie du watch ; un rouge `toomanyrequests` (Docker Hub) n'a rien vérifié ; un rouge `unauthorized` sur la connexion à Docker Hub = jeton expiré ou révoqué, ou secret absent (CLAUDE.md) |
 | Le récit | les lots déployés sont sortis de ce fichier le 2026-10-10, texte d'origine, vers [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md) ; les essais dus vivent dans `docs/prive/ESSAIS-REELS.md`, les restes dans [todo.md](todo.md) |
 
-## LE CHIFFRE D'AFFAIRES ATTRIBUÉ (SHOPIFY) : PLAN DES LOTS 0 ET 1 ÉCRIT, À VALIDER
+## LE CHIFFRE D'AFFAIRES ATTRIBUÉ (SHOPIFY) : LOT 1 (TÂCHES 1 À 5) LIVRÉ, TÂCHE 6 ET LOT 2 À VENIR
 
 Spec [docs/superpowers/specs/2026-10-28-revenus-attribues-design.md](docs/superpowers/specs/2026-10-28-revenus-attribues-design.md),
 validée par Julien le 2026-10-28 : une commande payée est attribuée au dernier envoi livré dans les 5 jours (campagne,
 relance de panier, scénario, agent IA), un panier relancé puis payé revient toujours à la relance, et un « dont prouvé »
 (même jeton de panier, ou visite que Shopify rattache à nos UTM). Lu par l'outil MCP (toutes les offres), Quantitatif >
-Shopify et la page Shopify. Rien n'est codé.
-- **Plan** : [docs/superpowers/plans/2026-10-28-revenus-attribues-lots-0-1.md](docs/superpowers/plans/2026-10-28-revenus-attribues-lots-0-1.md),
-  lot 0 (mesure sur la boutique de dev : `landing_site` et UTM, `shop_money`, `test`, accusés des messages de l'agent
-  de Meta) et lot 1 (migration `ventes_attribuees` poussée et appliquée SEULE, puis enregistrement et attribution à la
-  réception, purge RGPD, compteur des relances, UTM de la redirection si le lot 0 les a vus revenir).
-- **Prochaine étape** : Julien relit le plan ; puis la tâche 0. Les écrans et l'outil MCP feront le plan du lot 2.
+Shopify et la page Shopify.
+- **Plan** : [docs/superpowers/plans/2026-10-28-revenus-attribues-lots-0-1.md](docs/superpowers/plans/2026-10-28-revenus-attribues-lots-0-1.md).
+  Tâches 1 à 5 livrées (migration 0261, enregistrement et attribution à la réception, purge RGPD, compteur des
+  relances), relues sans rouge, trois jaunes corrigés ; les autres au `todo.md`. Les invariants : `documentation.md`
+  § Les tables `shopify_*`. Rien ne s'affiche encore.
+- **Tâche 0, mesuré** : les messages sortants des trois derniers jours ont tous leur statut de livraison, agent de Meta
+  compris (sonde de production du 2026-10-28). **Reste** : deux commandes de test de Julien sur `messaging-me-essai`
+  par une adresse UTM (cookies acceptés, puis refusés), pour savoir si Shopify rend `landing_site` et ses UTM.
+- **Ensuite** : la tâche 6 (UTM de la redirection) si la mesure le permet, en petit lot relu à part ; puis le plan du
+  lot 2 (l'outil MCP, Quantitatif > Shopify, la page Shopify) ; l'essai réel du plan clôt les lots 0 et 1.
 
 ## LE CENTRE D'AIDE (EN COURS)
 
