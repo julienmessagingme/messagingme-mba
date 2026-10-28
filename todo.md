@@ -14,6 +14,23 @@ eux est une promesse publique en attente.
 - **Un geste de `/ops` échoué ne se rejoue pas seul** (jaune 13 de la relecture de A) : une route qui rejoue le seul geste
   échoué, si l'essai réel en montre le besoin.
 
+## 🟡 Sans Google sur /autoriser : ce que la relecture laisse (2026-10-27)
+
+Lot `b9c0ccd1` et `0a7418cf` (journal du 2026-10-27). Rien ne bloque.
+
+- **Un compte à mot de passe qui clique « Créer mon espace avec mon adresse e-mail »** et saisit sa propre adresse et
+  son bon mot de passe obtient un SECOND espace (`/auth/signup` réutilise l'identité, `src/auth/routes.ts`), et Claude se
+  branche sur cet espace vide. C'était déjà le comportement de `/signup`, rendu plus probable par le gros bouton. Pistes :
+  un avertissement sur `/signup?demande=` quand l'adresse existe, ou la connexion proposée à la place.
+- **L'origine des espaces créés par ce chemin est `console`**, pas `claude_code` ni `client_mcp` comme par Google sur la
+  même page. Donnée d'exploitation seulement ; la porter dans `/auth/signup` si on veut compter ces inscriptions.
+- **L'adresse saisie à l'inscription n'est pas vérifiée** (seule celle de Google l'est) : les alertes, le récapitulatif
+  de la semaine et les e-mails produit y partent.
+- **Les trois e2e neufs n'ont pas été vérifiés dans les deux sens** (il faut une compilation de la console mutée de plus).
+- **À décider par Julien** : l'inscription qui mène directement au Pro (le bouton « Créer mon compte » du Pro de la page
+  Shopify finit en Free, relevé par la session de la vitrine) ; l'e-mail de l'admin rempli d'avance sur la page de
+  paiement Stripe (`creerClientStripe` ne transmet que l'identifiant de l'espace, Stripe redemande l'adresse).
+
 ## 🟡 Les restes de la relecture de l'option A (index de prise de pg-boss, petite copie d'API, 2026-10-27)
 
 - **Une file pleine de tâches DIFFÉRÉES** (`start_after` dans le futur : un « attendre 24 h » d'automation sur 30 000

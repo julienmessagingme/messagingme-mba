@@ -40,6 +40,31 @@ la session HubSpot (`tenant_settings.hubspot_workflows`), que le déploiement em
 - **Pas encore fait** : la publication du plugin 0.3.15 (refusée au mode auto de Claude, surface publique : commande à
   Julien) ; l'essai partiel puis l'essai réel du Business (`docs/prive/ESSAIS-REELS.md`, 175 et 176).
 
+## 2026-10-27 (soir) : Claude Code sans compte Google (l'inscription et la connexion ramènent au consentement)
+
+Deux commits sur la console seule (`b9c0ccd1`, puis `0a7418cf` pour les jaunes), publiés par Vercel, sans migration ni
+route d'API.
+
+- **Le constat** : la page d'autorisation du MCP (`/autoriser`) ne proposait que Google. Sans compte Google, le seul
+  chemin était un lien « Compte avec mot de passe » vers `/login` dans un nouvel onglet, puis `/signup`, puis revenir
+  recharger la page avant que la demande n'expire (dix minutes), alors que l'inscription envoyait dans le tunnel de la
+  Free. Julien : « la moitié des gens sur terre n'ont pas de compte gmail ».
+- **Ce qui change** : un bouton « Créer mon espace avec mon adresse e-mail » de la taille de celui de Google, et « Déjà
+  un compte avec mot de passe ? Connectez-vous ». `/signup` et `/login` portent `?demande=` et ramènent à `/autoriser` une
+  fois la session ouverte (second facteur compris), sur le bouton direct : le consentement reste un clic. Seule la demande
+  voyage, vers une destination fixe (`avecDemande`). Sur ces deux pages, Google est remplacé par un lien qui ramène à
+  `/autoriser` ; un compte non administrateur lit pourquoi il n'a pas de bouton ; une étape du second facteur expirée
+  garde la demande.
+- **La relecture indépendante** : aucun 🔴, six 🟡. Trois repris dans `0a7418cf` (le retour vers Google, l'étape
+  expirée, la raison du non-administrateur), avec un e2e qui ancre l'absence de Google sur le lien rendu à sa place, au
+  lieu d'un `toHaveCount(0)` qui passait avant que le bouton asynchrone ait eu le temps d'apparaître. Les trois autres
+  sont au `todo.md`.
+- **Vérifié** : la suite de la console, 51 e2e dont trois neufs, la CI verte job par job sur les deux commits (unit,
+  intégration, sécurité, console en topologies proxy et Vercel), le déploiement Vercel en `success`. En local, seul
+  `sdk-contrat` échouait, à cause du travail non commité d'une autre session dans `src/worker*` ; la CI le passe.
+- **Pas encore fait** : l'essai réel (`docs/prive/ESSAIS-REELS.md`, n° 178), dans un navigateur privé, avec une adresse
+  qui n'est pas Gmail.
+
 ## 2026-10-27 (soir) : la refonte de /ops, lot 1 (onglets, Santé, Capacité)
 
 Spec `docs/superpowers/specs/2026-10-27-ops-refonte-design.md`, plan `docs/superpowers/plans/2026-10-27-ops-refonte.md`.
