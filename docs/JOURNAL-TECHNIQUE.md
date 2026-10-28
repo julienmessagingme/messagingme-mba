@@ -4,6 +4,25 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 (nuit) : le chiffre d'affaires attribué, la mesure du lot 0 et la preuve par UTM (tâche 6)
+
+Plan `docs/superpowers/plans/2026-10-28-revenus-attribues-lots-0-1.md`, tâches 0 et 6 ; copie à part de l'arbre partagé.
+- **La mesure** (commande de test #1003 de Julien sur `messaging-me-essai`, venue d'une adresse UTM après la page du mot
+  de passe) : le corps d'`orders/paid` ne porte que la page d'arrivée de la PREMIÈRE visite (`/password`), et le parcours
+  client n'y est pas calculé (`ready: false`). Shopify le calcule en 14 minutes ; sa DERNIÈRE visite porte nos trois UTM,
+  lisibles par l'API `2026-10` avec le `gid` de l'id du webhook (coût 4). `shop_money`, `test` et `processed_at` sont
+  présents. La commande n'a laissé aucune vente : aucun envoi dans les 5 jours, le comportement voulu. Décision de
+  Julien : une relecture différée.
+- **6a et 6b** (`19e896dc`..`a0973433`) : nos UTM sur la redirection des liens d'un espace branché sur Shopify ; la file
+  `shopify-preuve-utm`, programmée à la réception après la vente figée, relue par le worker toutes les 30 minutes, quatre
+  essais. Une relecture, opus : aucun rouge ; deux jaunes corrigés par un test vu rouge (la requête du marchand gardée
+  octet pour octet, une vente jamais recréée après un rebranchement de la boutique), le reste au `todo.md`.
+- **Déploiement** de `a0973433` (`migration=aucune`, approuvé par Julien) : il emportait aussi deux lots d'autres
+  sessions, annoncés et acceptés (les 5 lignes serveur de HubSpot lot 2, `41708664`, accord de leur session ; la réserve
+  de numéros, `99c1948f`, dont l'écran `/ops` attendait la route). Relu en production : révision `a0973433`, file
+  `shopify-preuve-utm` et sa file des morts créées. L'espace branché n'a encore aucun lien tracé : la redirection avec
+  UTM se vérifiera à l'essai réel (`docs/prive/ESSAIS-REELS.md`, essai 182).
+
 ## 2026-10-28 (soir) : le livre blanc des écoles en anglais
 
 Demandé par Julien après l'essai réel de la version française : la page anglaise faisait télécharger le PDF français.
