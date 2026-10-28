@@ -551,6 +551,18 @@ export class PgShopifyStore {
     return { relances, fermesATemps, enAttente };
   }
 
+  /**
+   * Une relance PARTIE, comptée dans son jour de Paris (`relances_panier_jour`, migration 0261) : le panier, lui, part à
+   * 7 jours avec son téléphone, et ce compte anonyme garde l'historique des relances.
+   */
+  async compterRelance(tenantId: string, le: Date): Promise<void> {
+    await this.pool.query(
+      `insert into relances_panier_jour (tenant_id, jour, n) values ($1, ($2::timestamptz at time zone 'Europe/Paris')::date, 1)
+       on conflict (tenant_id, jour) do update set n = relances_panier_jour.n + 1`,
+      [tenantId, le],
+    );
+  }
+
   /** EXCEPTION TRANSVERSE 5 : les paniers de plus de `jours` jours partent, relancés ou non (ils portent un téléphone). */
   async purgerPaniers(jours: number): Promise<number> {
     const res = await this.pool.query(`delete from shopify_paniers where ouvert_le < now() - make_interval(days => $1)`, [jours]);
@@ -577,8 +589,12 @@ export class PgShopifyStore {
   }
 }
 
-/** Tout le branchement d'un espace, dans la transaction de l'appelant. */
+/**
+ * Tout le branchement d'un espace, dans la transaction de l'appelant. 🔴 Les ventes attribuées n'en font pas partie : elles
+ * perdent leur commande et leur contact, et restent anonymes (spec du 2026-10-28) ; un chiffre déjà lu ne change pas.
+ */
 async function effacerBranchement(client: PoolClient, tenantId: string): Promise<void> {
+  await client.query(`update ventes_attribuees set commande_id = null, contact_id = null where tenant_id = $1`, [tenantId]);
   for (const table of ['shopify_messages', 'shopify_messages_attente', 'shopify_paniers', 'shopify_evenements', 'shopify_commandes', 'shopify_boutiques']) {
     await client.query(`delete from ${table} where tenant_id = $1`, [tenantId]);
   }

@@ -11,6 +11,7 @@ import {
   type DonneeShopify, type EvenementShopify,
 } from './donnees';
 import { envoyerMessageShopify, type DepsEnvoiShopify, type IssueShopify } from './envoi';
+import { PREFIXE_LIGNE_SHOPIFY } from './attribution';
 import type { EtatBoutique, OrigineBoutique, PgShopifyStore } from './store.pg';
 
 /**
@@ -271,7 +272,7 @@ async function servir(deps: DepsTraitementShopify, b: BoutiqueRecue, s: Service)
       // QR code), qui le met en file : l'issue est alors `en_file`, et le job inscrit la suivante sous la même clé.
       issue = await envoyerMessageShopify(deps, {
         tenantId: b.tenantId, cle, origine: 'shopify_commande', reference: cle, evenement: s.evenement,
-        nomLigne: `Shopify · ${LIBELLE[s.evenement]} · ${s.numero}`, message: m, valeurs, telephone: s.telephone,
+        nomLigne: `${PREFIXE_LIGNE_SHOPIFY}${LIBELLE[s.evenement]} · ${s.numero}`, message: m, valeurs, telephone: s.telephone,
         // Bornée comme toute source de consentement (`MAX_OPT_IN_SOURCE`) : trop longue, le destinataire serait écarté.
         sourceConsentement: `shopify:${b.domaine}`.slice(0, MAX_OPT_IN_SOURCE),
       });

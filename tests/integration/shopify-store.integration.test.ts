@@ -279,6 +279,27 @@ describe.skipIf(!url)('le store Shopify : la console (origine, attentes, migrati
     expect(await store.attentes(D)).toEqual([]);
     expect(await store.lire(D)).toBeNull();
   });
+
+  it('🔴 effacer la boutique ANONYMISE ses ventes attribuées : le montant et la source restent, la commande et le contact partent', async () => {
+    const contact = (await pool.query<{ id: string }>(`insert into contacts (tenant_id, phone_e164) values ($1, '+33600000971') returning id`, [D])).rows[0]!.id;
+    await pool.query(
+      `insert into ventes_attribuees (tenant_id, commande_id, contact_id, montant, devise, payee_le, source)
+       values ($1, '5001', $2, 30, 'EUR', now(), 'agent')`,
+      [D, contact],
+    );
+    await store.effacerBoutique(D);
+    const r = (await pool.query('select commande_id, contact_id, montant::text, source from ventes_attribuees where tenant_id = $1', [D])).rows;
+    expect(r).toEqual([{ commande_id: null, contact_id: null, montant: '30.000', source: 'agent' }]);
+  });
+
+  it('compterRelance additionne par jour de Paris', async () => {
+    // 22 h 30 et 23 h 30 UTC le 27 octobre (heure d'hiver) : 23 h 30 à Paris, puis 0 h 30 le 28.
+    await store.compterRelance(D, new Date('2026-10-27T22:30:00Z'));
+    await store.compterRelance(D, new Date('2026-10-27T22:45:00Z'));
+    await store.compterRelance(D, new Date('2026-10-27T23:30:00Z'));
+    const r = (await pool.query(`select to_char(jour, 'YYYY-MM-DD') as jour, n from relances_panier_jour where tenant_id = $1 order by jour`, [D])).rows;
+    expect(r).toEqual([{ jour: '2026-10-27', n: 2 }, { jour: '2026-10-28', n: 1 }]);
+  });
 });
 
 /**

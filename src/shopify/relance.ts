@@ -3,6 +3,7 @@ import { texteDe } from '../lib/erreur';
 import { MAX_OPT_IN_SOURCE } from '../api/contacts-upsert';
 import { envoyerMessageShopify, type DepsEnvoiShopify, type IssueShopify } from './envoi';
 import { avecPrenomDeSecours } from './donnees';
+import { LIGNE_RELANCE_PANIER } from './attribution';
 import type { PgShopifyStore } from './store.pg';
 import { moisDeParis, type QuotaModeles } from '../offres/compteurs';
 import type { Emission } from '../emails-produit/emission';
@@ -80,7 +81,7 @@ export async function relancerPaniers(deps: DepsRelance, limite = PANIERS_PAR_PA
         issue = await envoyerMessageShopify(deps, {
           tenantId: p.tenantId, cle: `shopify:${p.domaine}:checkouts/abandoned:${p.jeton}`.slice(0, 200),
           origine: 'shopify_panier', reference: p.jeton, evenement: 'checkout_abandoned',
-          nomLigne: 'Shopify · panier abandonné', message: p, valeurs,
+          nomLigne: LIGNE_RELANCE_PANIER, message: p, valeurs,
           telephone: p.telephone, sourceConsentement: `shopify:${p.domaine}`.slice(0, MAX_OPT_IN_SOURCE),
         });
       }
