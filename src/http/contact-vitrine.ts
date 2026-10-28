@@ -33,14 +33,27 @@ export const PAGES = {
   fr: { formulaire: '/contact/', merci: '/contact/merci/' },
   en: { formulaire: '/en/contact/', merci: '/en/contact/thanks/' },
 } as const;
-type Langue = keyof typeof PAGES;
+export type Langue = keyof typeof PAGES;
 
 /** Lu à part de la demande : un formulaire anglais refusé doit revenir sur la page anglaise, avec son erreur. */
 const LangueDuFormulaire = z.object({ langue: z.literal('en') });
-const langueDe = (corps: unknown): Langue => (LangueDuFormulaire.safeParse(corps).success ? 'en' : 'fr');
+export const langueDe = (corps: unknown): Langue => (LangueDuFormulaire.safeParse(corps).success ? 'en' : 'fr');
 
 /** Un champ d'une ligne : les retours à la ligne et les blancs répétés deviennent une espace (il finit dans un sujet). */
-const uneLigne = (s: string): string => s.replace(/\s+/g, ' ').trim();
+export const uneLigne = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
+/**
+ * Monte des routes qui lisent un formulaire HTML natif. Le lecteur n'existe que dans cette portée : ailleurs, un corps
+ * urlencoded reste refusé (415). Partagé par les formulaires de la vitrine (contact, livre blanc).
+ */
+export function routesDeFormulaire(app: FastifyInstance, monter: (portee: FastifyInstance) => void): void {
+  void app.register(async (portee) => {
+    portee.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 64_000 }, (_req, corps, fait) => {
+      fait(null, Object.fromEntries(new URLSearchParams(String(corps))));
+    });
+    monter(portee);
+  });
+}
 
 const Demande = z.object({
   nom: z.string().transform(uneLigne).pipe(z.string().min(1).max(120)),
@@ -82,12 +95,7 @@ export function registerContactVitrine(app: FastifyInstance, deps: ContactVitrin
    */
   const plafond = new RateLimiter(10, 10 * 60_000);
 
-  // Le lecteur de formulaire n'existe que dans cette portée : ailleurs, un corps urlencoded reste refusé (415).
-  void app.register(async (portee) => {
-    portee.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string', bodyLimit: 64_000 }, (_req, corps, fait) => {
-      fait(null, Object.fromEntries(new URLSearchParams(String(corps))));
-    });
-
+  routesDeFormulaire(app, (portee) => {
     portee.post('/vitrine/contact', async (req, reply) => {
       const langue = langueDe(req.body);
       const pages = PAGES[langue];

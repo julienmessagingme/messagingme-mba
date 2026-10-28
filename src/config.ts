@@ -371,6 +371,15 @@ export const schema = z.object({
   /** Destinataire des messages du formulaire de support. Vide -> support indisponible (503). */
   SUPPORT_TO: z.string().default(''),
   /**
+   * Le formulaire du livre blanc de la vitrine (`/vitrine/livre-blanc`, `src/http/livre-blanc-vitrine.ts`). Aucun n'est
+   * un secret : un portail et un formulaire HubSpot figurent dans toute page qui embarque un formulaire HubSpot. Portail
+   * ou formulaire vide -> chaque prospect part par courriel à `SUPPORT_TO`. Espace vide -> rien n'entre dans SANDBOX.
+   * Aucune valeur ne bloque le démarrage : une coquille ne coupe que sa moitié, journalisée à chaque envoi.
+   */
+  VITRINE_HUBSPOT_PORTAIL: z.string().default(''),
+  VITRINE_HUBSPOT_FORMULAIRE_LIVRE_BLANC: z.string().default(''),
+  VITRINE_ESPACE_LIVRE_BLANC: z.string().default(''),
+  /**
    * Le secret de signature du webhook de Resend (`whsec_...`, lot 7) : ce que deviennent les e-mails du produit
    * (livrés, ouverts, cliqués, rebonds, plaintes), pour les chiffres de `/ops`. Vide -> la route refuse tout (401), les
    * e-mails partent quand même. Posé par Julien dans `.env.prod`, jamais par Claude.

@@ -55,6 +55,7 @@ import { registerDossiers, type DossiersRouteDeps } from './http/dossiers';
 import { registerFields } from './http/fields';
 import { registerSupport } from './http/support';
 import { registerContactVitrine } from './http/contact-vitrine';
+import { registerLivreBlancVitrine } from './http/livre-blanc-vitrine';
 import { registerCspRapports } from './http/csp-rapports';
 import { registerAide, type AideRouteDeps } from './http/aide';
 import { registerContacts } from './http/contacts';
@@ -160,6 +161,7 @@ import type { TagsRouteDeps } from './http/tags';
 import type { FieldsRouteDeps } from './http/fields';
 import type { SupportRouteDeps } from './http/support';
 import type { ContactVitrineDeps } from './http/contact-vitrine';
+import type { LivreBlancVitrineDeps } from './http/livre-blanc-vitrine';
 import type { CspRapportsDeps } from './http/csp-rapports';
 import type { ContactsRouteDeps } from './http/contacts';
 import type { AccountRouteDeps } from './http/account';
@@ -358,6 +360,7 @@ export interface ServerDeps {
   support?: SupportRouteDeps;
   /** Formulaire de contact de la vitrine (app.messagingme.fr) : public, même envoi que le support. */
   contactVitrine?: ContactVitrineDeps;
+  livreBlancVitrine?: LivreBlancVitrineDeps;
   /** Le collecteur des rapports de violation de la CSP de la console (lot 6) : public, il ne rend jamais rien. */
   cspRapports?: CspRapportsDeps;
   /** Le contrat OpenAPI de l'API publique (lot 16), `GET /openapi.json` : public, sans donnée d'espace. */
@@ -768,6 +771,8 @@ export function modulesDeRoutes(
     entree('auth', 'anonyme', deps.auth, (app, d, g) => registerAuth(app, d, g.auth, debit)),
     // Le formulaire de contact de la vitrine : public par nature, son plafond et son pot de miel sont dans le module.
     entree('contactVitrine', 'anonyme', deps.contactVitrine, (app, d) => registerContactVitrine(app, d)),
+    // Le formulaire du livre blanc de la vitrine : public par nature, ses plafonds et son pot de miel sont dans le module.
+    entree('livreBlancVitrine', 'anonyme', deps.livreBlancVitrine, (app, d) => registerLivreBlancVitrine(app, d)),
     // Les rapports CSP des navigateurs de la console : publics par nature, bornés et sans réponse (le module le dit).
     entree('cspRapports', 'anonyme', deps.cspRapports, (app, d) => registerCspRapports(app, d)),
     // L'OAuth devant `/mcp` : public par nature, personne n'a encore de jeton. Ses plafonds sont dans le module, et

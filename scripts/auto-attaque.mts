@@ -72,6 +72,7 @@ import type { Receiver360Deps } from '../src/webhooks/receiver-360dialog';
 import type { ShopifyWebhooksRouteDeps } from '../src/http/shopify-webhooks';
 import type { OtpPontRouteDeps } from '../src/http/otp-pont';
 import type { ContactVitrineDeps } from '../src/http/contact-vitrine';
+import type { LivreBlancVitrineDeps } from '../src/http/livre-blanc-vitrine';
 import type { CspRapportsDeps } from '../src/http/csp-rapports';
 import type { OpenapiRouteDeps } from '../src/http/openapi';
 import { contratOpenapi } from '../src/api/openapi';
@@ -416,6 +417,13 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     enabled: false,
     envoyer: async () => { throw new Error('auto-attaque : le formulaire de contact n’envoie rien'); },
   } satisfies ContactVitrineDeps,
+  // Le formulaire du livre blanc : public par nature lui aussi. Sa fausse autorité ne transmet RIEN : un HubSpot qui
+  // accepte sans rien envoyer, aucun espace de dépôt, et le courriel de secours coupé.
+  livreBlancVitrine: {
+    hubspot: { soumettre: async () => {} },
+    sandbox: null,
+    secours: { enabled: false, envoyer: async () => { throw new Error('auto-attaque : le livre blanc n’envoie rien'); } },
+  } satisfies LivreBlancVitrineDeps,
   // Les rapports CSP de la console : publics par nature, ils n'ont aucune autorité à tromper. Sa fausse autorité est
   // un magasin qui n'écrit RIEN : une sonde qui l'atteindrait ne laisserait aucune ligne, même avec une page autorisée.
   cspRapports: {
@@ -586,6 +594,7 @@ const OUVERTES: ReadonlyArray<{ motif: RegExp; raison: string }> = [
   { motif: /^\/auth\/choose-workspace$/, raison: 'entrée : autorisé par un jeton de choix signé, pas par une session' },
   // Le formulaire de contact de la vitrine : un visiteur n'a par définition aucun compte.
   { motif: /^\/vitrine\/contact$/, raison: 'formulaire de contact public de la vitrine' },
+  { motif: /^\/vitrine\/livre-blanc$/, raison: 'formulaire public du livre blanc de la vitrine' },
   // Les rapports CSP : un navigateur les poste sans session ni cookie. La route ne rend jamais rien (204) et ne retient
   // que les pages de nos origines, sans donnée personnelle.
   { motif: /^\/csp-rapports$/, raison: 'rapports CSP des navigateurs de la console, sans réponse ni donnée personnelle' },

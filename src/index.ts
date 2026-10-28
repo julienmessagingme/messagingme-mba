@@ -80,6 +80,8 @@ import { creerClientSalesforce } from './salesforce/client';
 import { connecter as connecterSalesforce, deconnecter as deconnecterSalesforce } from './salesforce/connexion';
 import type { SalesforceRouteDeps } from './http/salesforce';
 import type { ShopifyRouteDeps } from './http/shopify';
+import type { ContactVitrineDeps } from './http/contact-vitrine';
+import { depotSandbox, soumissionHubspot } from './http/livre-blanc-vitrine';
 import type { ShopifyWebhooksRouteDeps } from './http/shopify-webhooks';
 import { PgShopifyStore } from './shopify/store.pg';
 import { demanderJeton, verifierBoutique } from './shopify/connexion';
@@ -1561,6 +1563,21 @@ async function main(): Promise<void> {
       (await phoneStatusStore.getPhoneNumber(tenant))?.displayPhoneNumber ?? null,
   } satisfies PublicationChannelsMeDeps;
   const publicationChannelsMe = creerPublicationChannelsMe(depsPublicationChannelsMe);
+
+  // Le courriel des formulaires de la vitrine à l'équipe : même envoi et même destinataire que le support. Le formulaire
+  // de contact l'emploie, et le livre blanc en secours, quand HubSpot n'a pas reçu le prospect.
+  const courrielVitrine: ContactVitrineDeps = {
+    enabled: envoisResend !== null && !!config.SUPPORT_TO,
+    envoyer: async ({ sujet, texte, repondreA }) => {
+      if (envoisResend === null) throw new Error('Resend non configuré');
+      await envoisResend.support({
+        to: config.SUPPORT_TO,
+        subject: sujet,
+        text: texte,
+        replyTo: repondreA,
+      });
+    },
+  };
 
   const app = buildServer({
     /**
@@ -3049,18 +3066,18 @@ async function main(): Promise<void> {
     },
     // Le contrat OpenAPI (lot 16) : il ne dépend que du code, `GET /openapi.json` le sert tel quel.
     openapi: { contrat: contratOpenapi },
-    // Même envoi et même destinataire que le support : le texte du courriel se construit dans la route (testée).
-    contactVitrine: {
-      enabled: envoisResend !== null && !!config.SUPPORT_TO,
-      envoyer: async ({ sujet, texte, repondreA }) => {
-        if (envoisResend === null) throw new Error('Resend non configuré');
-        await envoisResend.support({
-          to: config.SUPPORT_TO,
-          subject: sujet,
-          text: texte,
-          replyTo: repondreA,
-        });
-      },
+    // Le texte du courriel se construit dans la route (testée).
+    contactVitrine: courrielVitrine,
+    // Le livre blanc : HubSpot par le point d'envoi public de l'API Forms, SANDBOX quand le visiteur a coché WhatsApp,
+    // et le courriel de l'équipe en secours. Chaque moitié se coupe par sa variable vide (`src/config.ts`).
+    livreBlancVitrine: {
+      hubspot: config.VITRINE_HUBSPOT_PORTAIL !== '' && config.VITRINE_HUBSPOT_FORMULAIRE_LIVRE_BLANC !== ''
+        ? soumissionHubspot({ portail: config.VITRINE_HUBSPOT_PORTAIL, formulaire: config.VITRINE_HUBSPOT_FORMULAIRE_LIVRE_BLANC })
+        : null,
+      sandbox: config.VITRINE_ESPACE_LIVRE_BLANC !== ''
+        ? depotSandbox(contactStore, auditSink, config.VITRINE_ESPACE_LIVRE_BLANC)
+        : null,
+      secours: courrielVitrine,
     },
     // Les rapports CSP ne comptent que venant d'une page de la console : celles de `CORS_ORIGINS` et d'`APP_URL` (la
     // console du VPS, `mba.messagingme.app`, n'existe plus depuis le 2026-10-26).
