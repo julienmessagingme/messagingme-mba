@@ -4,6 +4,21 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 (suite) : l'offre Business, les captures de « Choisir mon offre » et la fiche HubSpot
+
+- **Les captures** (`45ce0858`) : les huit captures de la fiche publique « Choisir mon offre » montraient encore la page
+  Offre à trois colonnes, d'avant le retrait de la marge. Refaites sur la console de la copie, servie sur un port libre
+  (configuration Playwright locale, ce seul scénario), converties, fiche régénérée. Poussé après la fin de la CI d'une
+  autre session : `ci.yml` annule le run en cours de `main` à chaque push.
+- **La fiche HubSpot passe au Business** (`651d7f66`), décision de Julien, comme la vitrine. En lisant le code : la
+  connexion HubSpot (installation, import, pipelines, workflows) reste fermée par `crm`, à l'Entreprise ; la réponse et
+  les modèles depuis HubSpot ne demandent que `inbox`. La fiche devance donc le code jusqu'au lot 2, qui scinde `crm` :
+  le test des offres des fiches pose le cas HubSpot à la main (vérifié dans les deux sens), `todo.md` le note au lot 2.
+- **Le bot d'aide n'est pas rechargé** : le bastion de Scaleway a refusé le poste, sorti ce jour-là par une adresse
+  absente de sa liste (`Connection timed out during banner exchange`), et modifier la liste est un geste de Julien. Le
+  prochain `aide:charger` à une révision postérieure à `651d7f66` emporte la fiche ; d'ici là, le bot dit « Entreprise »,
+  ce que le code permet.
+
 ## 2026-10-28 : l'offre Business, sous-lot B (la grille visible, la console, la vitrine)
 
 Un commit (`a3e6cf8a`), déployé en `migration=avant` (run 40656461729) : la seule migration en attente était la 0259 de

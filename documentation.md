@@ -3149,7 +3149,10 @@ sécurité : c'est un levier commercial, et une route ouverte à tort ne fuit au
 - **Le widget personnalisable** (`widget_personnalise`, Business et Entreprise) : hors offre, une apparence nouvelle
   (couleur, position, libellé, avatar) est refusée en 402, une valeur standard ou déjà enregistrée passe sans rien changer
   (`src/widgets/gestion.ts`), et le script public sert l'apparence standard (`APPARENCE_STANDARD`,
-  `presentationDeLOffre`, `src/http/widget-public.ts`) ; rien n'est effacé.
+  `presentationDeLOffre`, `src/http/widget-public.ts`) ; rien n'est effacé. 🔴 Hors offre, la console n'envoie JAMAIS
+  l'apparence (`sansApparence`, `web/lib/widgets.ts`) : un formulaire grisé qui l'enverrait réécrirait le réglage d'une
+  Entreprise par l'apparence standard pendant la fenêtre où la console publiée devance l'API. Une API qui ne connaît pas
+  encore `widget_personnalise` laisse l'apparence ouverte (`lireVueOffre`).
 - **Les refus nomment l'offre qui lève la limite ou ouvre la fonction** (`src/offres/refus.ts`) : déduite de la grille
   (l'offre dont c'est la limite, puis la suivante qui va plus haut ; l'offre la moins chère qui ouvre la fonction). Une
   limite absente de la grille (une Entreprise réglée) dit « Contactez-nous ».
