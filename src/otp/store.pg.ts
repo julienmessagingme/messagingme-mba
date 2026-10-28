@@ -42,6 +42,12 @@ export interface CodeCapte {
 
 export interface NumeroEtDernierCode extends NumeroFourni {
   dernierCode: CodeCapte | null;
+  /**
+   * Un numéro LIBRE dont quelqu'un se sert déjà hors attribution (`UTILISE_AILLEURS_SQL`) : `application` (un compte
+   * d'application WhatsApp Business l'a porté chez nous) ou `api` (le numéro API d'un espace). `null` sinon, et pour
+   * tout numéro qui n'est pas libre.
+   */
+  ailleurs: 'application' | 'api' | null;
 }
 
 /** Ce que l'appel a produit, écrit tel quel. Les deux formes sont celles du CHECK `codes_verification_cause_chk`. */
@@ -55,6 +61,20 @@ interface LigneNumero {
 }
 
 const COLONNES_NUMERO = 'n.id, n.numero, n.didww_did_id, n.statut, n.tenant_id, n.attribue_le, n.cree_le';
+
+/**
+ * 🔴 UN NUMÉRO DE LA RÉSERVE QUE QUELQU'UN UTILISE DÉJÀ NE PART JAMAIS (2026-10-28, plan
+ * `docs/superpowers/plans/2026-10-28-reserve-numeros-ailleurs.md`). Vécu : le numéro DIDWW de l'application WhatsApp
+ * Business de Julien, relié par QR code sans passer par l'attribution, était resté `libre` ; un client l'aurait reçu,
+ * Meta l'aurait vérifié sur notre central, et l'application aurait perdu le numéro. Deux preuves, sur l'alias `n` :
+ * un compte d'application qui porte ce numéro, QUEL QUE SOIT son statut (un compte retiré chez nous laisse
+ * l'application en service sur le téléphone), ou un numéro API d'un espace aux mêmes chiffres. Prudence assumée : un
+ * numéro écarté à tort coûte un abonnement DIDWW, un numéro donné à tort coupe l'application de quelqu'un. La garde se
+ * DÉDUIT à chaque lecture (attribution, compte des libres, liste de /ops) : aucun statut à tenir à jour.
+ */
+const EN_APPLICATION_SQL = 'exists (select 1 from comptes_application ca where ca.numero = n.numero)';
+const EN_API_SQL = "exists (select 1 from phone_numbers pn where regexp_replace(coalesce(pn.display_phone_number, ''), '[^0-9]', '', 'g') = n.numero)";
+export const UTILISE_AILLEURS_SQL = `(${EN_APPLICATION_SQL} or ${EN_API_SQL})`;
 
 function versNumero(l: LigneNumero): NumeroFourni {
   return {
@@ -105,12 +125,15 @@ export class PgNumerosFournisStore {
     return res.rows[0] ? versNumero(res.rows[0]) : null;
   }
 
-  /** La réserve entière, avec le dernier appel reçu par numéro, pour /ops. */
+  /** La réserve entière, avec le dernier appel reçu par numéro et ce qui retient un numéro libre, pour /ops. */
   async lister(): Promise<NumeroEtDernierCode[]> {
     const res = await this.pool.query<LigneNumero & {
       appel_id: string | null; recu_le: Date | null; code: string | null; transcription: string | null; cause: CauseSansCode | null;
+      ailleurs: 'application' | 'api' | null;
     }>(
-      `select ${COLONNES_NUMERO}, c.appel_id, c.recu_le, c.code, c.transcription, c.cause
+      `select ${COLONNES_NUMERO}, c.appel_id, c.recu_le, c.code, c.transcription, c.cause,
+              case when n.statut = 'libre' and ${EN_APPLICATION_SQL} then 'application'
+                   when n.statut = 'libre' and ${EN_API_SQL} then 'api' end as ailleurs
          from numeros_fournis n
          left join lateral (
            select appel_id, recu_le, code, transcription, cause from codes_verification
@@ -120,6 +143,7 @@ export class PgNumerosFournisStore {
     );
     return res.rows.map((l) => ({
       ...versNumero(l),
+      ailleurs: l.ailleurs,
       dernierCode: l.appel_id === null || l.recu_le === null ? null : {
         appelId: l.appel_id, recuLe: l.recu_le, code: l.code, transcription: l.transcription ?? '', cause: l.cause,
       },
@@ -266,10 +290,28 @@ export class PgNumerosFournisStore {
     return res.rows[0]?.numero ?? null;
   }
 
-  /** Les numéros encore libres : l'alerte de réserve basse. */
+  /**
+   * Les numéros que l'attribution peut encore donner : l'alerte de réserve basse et le parcours du Pro. Le même
+   * prédicat que `attribuerAvec`, sans quoi on promettrait un numéro qu'elle refuse.
+   */
   async compterLibres(): Promise<number> {
-    const res = await this.pool.query<{ n: number }>(`select count(*)::int as n from numeros_fournis where statut = 'libre'`);
-    return res.rows[0]?.n ?? 0;
+    const res = await this.pool.query<{ libres: number }>(
+      `select count(*)::int as libres from numeros_fournis n where n.statut = 'libre' and not ${UTILISE_AILLEURS_SQL}`,
+    );
+    return res.rows[0]?.libres ?? 0;
+  }
+
+  /**
+   * Sort de la réserve un numéro `libre` et sans espace (/ops) : il passe en `bloque`, exclu de l'attribution, ses codes
+   * toujours captés. Rend le numéro, `null` s'il n'était pas libre (attribué, déjà sorti) ou n'existe pas : rien n'est
+   * écrit.
+   */
+  async sortirDeLaReserve(id: string): Promise<string | null> {
+    const res = await this.pool.query<{ numero: string }>(
+      `update numeros_fournis set statut = 'bloque' where id = $1 and statut = 'libre' and tenant_id is null returning numero`,
+      [id],
+    );
+    return res.rows[0]?.numero ?? null;
   }
 }
 
@@ -285,14 +327,15 @@ async function lireAttribue(db: Pool | PoolClient, tenantId: string): Promise<Nu
 /**
  * L'attribution, sur une connexion donnée : `attribuer` la prend sur le pool, l'abonnement du numéro (lot 3c,
  * `src/stripe/abonnements.pg.ts`) DANS la transaction qui enregistre le paiement, pour qu'un abonnement payé ait
- * son numéro ou qu'aucun des deux ne soit écrit.
+ * son numéro ou qu'aucun des deux ne soit écrit. Un numéro utilisé ailleurs (`UTILISE_AILLEURS_SQL`) n'est jamais pris.
  */
 export async function attribuerAvec(db: Pool | PoolClient, tenantId: string): Promise<NumeroFourni | null> {
   const existant = await lireAttribue(db, tenantId);
   if (existant) return existant;
   const res = await db.query<LigneNumero>(
     `update numeros_fournis n set statut = 'attribue', tenant_id = $1, attribue_le = now()
-      where n.id = (select id from numeros_fournis where statut = 'libre' order by cree_le, id limit 1 for update skip locked)
+      where n.id = (select n.id from numeros_fournis n where n.statut = 'libre' and not ${UTILISE_AILLEURS_SQL}
+                     order by n.cree_le, n.id limit 1 for update skip locked)
      returning ${COLONNES_NUMERO}`,
     [tenantId],
   );

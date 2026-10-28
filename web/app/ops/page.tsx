@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { DailyChart } from '@/components/DailyChart';
 import { getOpsOverview, getOpsStockage, getOpsVercel, type JaugeVercel, observerTenant, lireGrillePrixOps, ecrireGrillePrixOps, loginOps, loginOpsGoogle, estEtapeSecondFacteur, type OpsOverview,
-  lireNumerosFournis, declarerNumeroFourni, type ReserveNumerosOps, lirePlafondApiOps, type PlafondApiOps, type FenetrePlafondOps,
+  lireNumerosFournis, declarerNumeroFourni, sortirNumeroDeLaReserve, type ReserveNumerosOps, lirePlafondApiOps, type PlafondApiOps, type FenetrePlafondOps,
   lireOffreOps, ecrireOffreOps, type OffreEntrepriseOps,
   lireSuppressionOps, supprimerEspaceOps, type BilanSuppressionOps, type EtapePrevueOps, type SuppressionEspaceOps, type EtapeSuppressionNom,
   type TenantOverviewRow, type QueueLoadRow, type QueueGroupLoadRow, type QueueLatenceRow, type LatenceHttpRow, type WorkerHeartbeat, type PoolInstantane,
@@ -1088,6 +1088,9 @@ function NumerosFournisCard({ token }: { token: string }) {
   const [note, setNote] = useState('');
   const [envoi, setEnvoi] = useState(false);
   const [retour, setRetour] = useState<{ ok: boolean; texte: string } | null>(null);
+  // Le numéro qu'on sort de la réserve (son identifiant), et la note qui le justifie.
+  const [sortie, setSortie] = useState<string | null>(null);
+  const [noteSortie, setNoteSortie] = useState('');
 
   const charger = useCallback(() => {
     lireNumerosFournis(token)
@@ -1119,10 +1122,34 @@ function NumerosFournisCard({ token }: { token: string }) {
     }
   }
 
+  async function sortir(id: string) {
+    if (envoi) return;
+    setEnvoi(true);
+    setRetour(null);
+    try {
+      const r = await sortirNumeroDeLaReserve(token, id, noteSortie);
+      setRetour({ ok: true, texte: t(`+${r.numero} est sorti de la réserve : il ne sera jamais attribué.`, `+${r.numero} is out of the reserve: it will never be assigned.`) });
+      setSortie(null);
+      setNoteSortie('');
+      charger();
+    } catch (e: unknown) {
+      setRetour({ ok: false, texte: e instanceof ApiError && e.status === 404
+        ? t('La sortie de la réserve n’existe pas encore sur cette version de l’API.', 'Taking a number out of the reserve does not exist yet on this API version.')
+        : e instanceof Error ? e.message : t('Sortie impossible', 'Could not take it out') });
+    } finally {
+      setEnvoi(false);
+    }
+  }
+
   const statuts: Record<ReserveNumerosOps['numeros'][number]['statut'], string> = {
     libre: t('libre', 'free'), attribue: t('attribué', 'assigned'), resilie: t('résilié', 'terminated'),
-    // Refusé par Meta (déjà actif ailleurs) : sorti de la réserve, à résilier ou à garder, à toi de voir.
-    bloque: t('bloqué (refusé par Meta)', 'blocked (refused by Meta)'),
+    // Sorti de la réserve sans être résilié chez DIDWW : refusé par Meta à l'attribution, sorti à la main d'ici
+    // (2026-10-28), ou vu de Meta et pas résilié à la libération. Un abonnement DIDWW court encore : à décider.
+    bloque: t('hors réserve (à résilier ou à garder)', 'out of the reserve (cancel or keep)'),
+  };
+  const ailleurs: Record<'application' | 'api', string> = {
+    application: t('utilisé par une application WhatsApp Business : jamais attribué', 'used by a WhatsApp Business app: never assigned'),
+    api: t('numéro API d’un espace : jamais attribué', 'API number of a workspace: never assigned'),
   };
   const causes: Record<'transcription_indisponible' | 'code_introuvable', string> = {
     transcription_indisponible: t('transcription indisponible', 'transcription unavailable'),
@@ -1162,11 +1189,30 @@ function NumerosFournisCard({ token }: { token: string }) {
           <div className="grid gap-1.5">
             {reserve.numeros.length === 0 && <p className="text-xs text-ink-500">{t('Aucun numéro dans la réserve.', 'No number in the reserve.')}</p>}
             {reserve.numeros.map((n) => (
-              <div key={n.id} className="grid gap-1 rounded-controle bg-ink-50 px-3 py-2 text-xs">
+              <div key={n.id} className="grid gap-1 rounded-controle bg-ink-50 px-3 py-2 text-xs" data-testid={`numero-fourni-${n.numero}`}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-mono text-ink-900">+{n.numero}</span>
-                  <span className="text-ink-500">{statuts[n.statut]}{n.tenantId ? ` · ${n.tenantId}` : ''}</span>
+                  <span className="flex flex-wrap items-center gap-2 text-ink-500">
+                    {statuts[n.statut]}{n.tenantId ? ` · ${n.tenantId}` : ''}
+                    {n.statut === 'libre' && sortie !== n.id && (
+                      <Bouton variante="secondaire" taille="petite" data-testid="sortir-de-la-reserve" onClick={() => { setSortie(n.id); setNoteSortie(''); setRetour(null); }}>
+                        {t('Sortir de la réserve', 'Take out of the reserve')}
+                      </Bouton>
+                    )}
+                  </span>
                 </div>
+                {n.statut === 'libre' && n.ailleurs && (
+                  <div className="text-danger" data-testid="numero-ailleurs">{ailleurs[n.ailleurs]}</div>
+                )}
+                {sortie === n.id && (
+                  <div className="flex flex-wrap items-end gap-2">
+                    <input className={inputCls} value={noteSortie} onChange={(e) => setNoteSortie(e.target.value)} placeholder={t('Note : pourquoi il sort de la réserve', 'Note: why it leaves the reserve')} aria-label={t('Note de sortie', 'Exit note')} />
+                    <Bouton enCours={envoi} disabled={envoi || noteSortie.trim().length < 3} data-testid="confirmer-sortie" onClick={() => { void sortir(n.id); }}>
+                      {t('Confirmer la sortie', 'Confirm')}
+                    </Bouton>
+                    <Bouton variante="secondaire" taille="petite" onClick={() => setSortie(null)}>{t('Annuler', 'Cancel')}</Bouton>
+                  </div>
+                )}
                 {n.dernierCode && (
                   <div className="text-ink-500">
                     {formatDate(n.dernierCode.recuLe, locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}{' · '}

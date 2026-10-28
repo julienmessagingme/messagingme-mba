@@ -513,6 +513,12 @@ export interface NumeroFourniOps {
     transcription: string;
     cause: 'transcription_indisponible' | 'code_introuvable' | null;
   } | null;
+  /**
+   * Un numéro libre dont quelqu'un se sert déjà (une application WhatsApp Business reliée chez nous, ou le numéro API
+   * d'un espace) : l'attribution ne le donne jamais, et `libres` ne le compte pas. Absent d'une API d'avant (la console
+   * est publiée avant l'API).
+   */
+  ailleurs?: 'application' | 'api' | null;
 }
 
 export interface ReserveNumerosOps {
@@ -602,6 +608,11 @@ export function ecrireOffreOps(sessionOps: string, tenantId: string, corps: {
 /** Retrouve le numéro chez DIDWW, le branche sur le trunk de l'Asterisk, puis l'inscrit dans la réserve. */
 export function declarerNumeroFourni(sessionOps: string, numero: string, note: string): Promise<{ cree: boolean }> {
   return appelOps(sessionOps, '/ops/numeros-fournis', { method: 'POST', corps: { numero, note } });
+}
+
+/** Sort un numéro libre de la réserve : il ne sera plus jamais attribué (404 sur une API d'avant). */
+export function sortirNumeroDeLaReserve(sessionOps: string, id: string, note: string): Promise<{ numero: string }> {
+  return appelOps(sessionOps, `/ops/numeros-fournis/${encodeURIComponent(id)}/sortir`, { method: 'POST', corps: { note } });
 }
 
 /** Les étapes de la suppression d'un espace (RC8), dans l'ordre où le serveur les joue. */

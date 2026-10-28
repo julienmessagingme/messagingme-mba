@@ -51,6 +51,12 @@ eux est une promesse publique en attente.
   de `tests/aide-fiches-format.test.ts` redevient dérivé de `DROITS`.
 - **Lot 3, l'e-mail aller-retour** : la réponse à un e-mail de scénario revient dans la conversation, l'équipe répond par
   e-mail depuis l'Inbox (fournisseur de réception à choisir, webhook signé, STOP sur le nouveau chemin d'envoi).
+- **La réserve de numéros fournis, les jaunes de la relecture du 2026-10-28** (plan
+  `docs/superpowers/plans/2026-10-28-reserve-numeros-ailleurs.md`) : (1) `libres` du GET de `/ops` filtre le résultat de
+  `lister` quand `compterLibres` porte le même prédicat en SQL : faire lire `compterLibres` par la route, ou un test de
+  parité ; (2) le `or` de deux `exists` corrélés balaie `phone_numbers` avec `regexp_replace` par numéro libre, sans
+  conséquence aujourd'hui, à décorréler si le parc grossit ; (3) deux cas de test : `lister` rend `ailleurs` nul pour
+  un numéro ATTRIBUÉ aussi présent dans `phone_numbers`, et le 409 de la sortie n'écrit aucune ligne de journal.
 - **Un geste de `/ops` échoué ne se rejoue pas seul** (jaune 13 de la relecture de A) : une route qui rejoue le seul geste
   échoué, si l'essai réel en montre le besoin.
 

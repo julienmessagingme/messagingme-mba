@@ -3363,7 +3363,10 @@ boîte par sous-menu.
   dans la carte « Numéros fournis » ; le serveur le branche sur l'Asterisk et l'ajoute à la réserve. Quand Meta appelle
   ce numéro pour le vérifier, le code qu'il dicte est capté automatiquement et s'affiche en face du numéro, avec ce qui
   a été entendu. La carte compte les numéros encore libres. Un numéro attribué à un espace (page « Connecter WhatsApp »,
-  lot 3b) y apparaît « attribué » avec son espace ; un numéro que Meta a refusé, « bloqué », à résilier ou à garder.
+  lot 3b) y apparaît « attribué » avec son espace ; un numéro sorti de la réserve (refusé par Meta, ou sorti à la main),
+  « hors réserve (à résilier ou à garder) ». Un numéro libre que quelqu'un utilise déjà (une application
+  WhatsApp Business reliée, ou le numéro API d'un espace) est signalé en rouge, ne compte pas parmi les libres et n'est
+  jamais attribué ; « Sortir de la réserve », avec une note, sort un numéro libre dont on se sert ailleurs (2026-10-28).
 - ✅ **Supprimer un espace, définitivement** (2026-10-07) : un lien « supprimer » sur la ligne de l'espace ouvre
   d'abord un bilan (ce qui part avec lui, son crédit restant, les liens Stripe de son client et de ses abonnements
   encore actifs, les adresses qui seront effacées et celles qui seront gardées parce qu'elles ont d'autres espaces, et

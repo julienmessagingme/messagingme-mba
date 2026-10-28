@@ -4180,6 +4180,15 @@ touche sert à l'appel de l'application WhatsApp, qui dit « appuyez sur 5 » av
   se lit que sur SON numéro, reçu après l'attribution et dans les 15 minutes, jamais avec sa transcription. Un numéro
   refusé par Meta passe en `bloque` (sorti de la réserve, pas résilié). Sous `ALERTE_RESERVE_SEUIL` numéros libres,
   Telegram, au plus une fois par jour (verrou court `numeros.reserve-basse`).
+  🔴 **Un numéro de la réserve que quelqu'un utilise déjà ne part jamais** (`UTILISE_AILLEURS_SQL`,
+  `src/otp/store.pg.ts`) : un compte d'application qui porte ce numéro, quel que soit son statut (retiré chez nous,
+  l'application reste en service sur le téléphone), ou un numéro API d'un espace aux mêmes chiffres. Le prédicat se
+  DÉDUIT à chaque lecture, aucun statut ne le porte : l'attribution l'applique, `compterLibres` aussi (l'alerte et le
+  parcours du Pro ne promettent pas un numéro qu'elle refuserait), et `lister` le dit à `/ops` (`ailleurs`), qui ne le
+  compte pas parmi les libres. `/ops` sort un numéro `libre` de la réserve (`POST /ops/numeros-fournis/:id/sortir`,
+  note obligatoire) en le passant en `bloque` ; rien ne l'y remet depuis l'écran. ⚠️ La garde déduite ne vit que tant que
+  sa preuve existe : l'espace supprimé (cascade) ou son compte d'application relié à un autre numéro, le numéro redevient
+  attribuable. Un numéro qu'on sait utilisé hors de nos écrans se sort donc de la réserve.
 - 🔴 **Le lien de connexion du numéro que donne Claude Code** (lot 3c, `start_whatsapp_connection`, page `/brancher`).
   Un JWT d'un genre à part (`kind: 'lien_numero'`, `signLienNumero`, une heure) : `verifySession` le refuse, donc
   aucune route d'espace ne s'ouvre avec lui. Seule la garde `adminOuLien` (`makeRequireAdminOuLien`) l'accepte, et

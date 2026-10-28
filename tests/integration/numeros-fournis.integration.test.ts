@@ -192,4 +192,65 @@ describe.skipIf(!url)('la réserve de numéros fournis (0210)', () => {
         .rejects.toMatchObject({ code: '23505' });
     });
   });
+  describe('🔴 un numéro utilisé ailleurs ne part jamais (2026-10-28)', () => {
+    // Vécu : le numéro DIDWW de l'application WhatsApp Business de Julien, relié par QR code sans attribution, était resté
+    // `libre`. Les deux preuves de `UTILISE_AILLEURS_SQL`, puis la sortie de la réserve depuis /ops.
+    let tiers = '';
+    const menage = async (): Promise<void> => {
+      await pool.query(`delete from comptes_application where numero like '44999%'`);
+      await pool.query(`delete from phone_numbers where id = 'itest-nf-pn'`);
+    };
+    beforeAll(async () => {
+      tiers = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-numeros-fournis-c') returning id`)).rows[0]!.id;
+      await pool.query(`insert into waba (id, tenant_id, name) values ('itest-nf-waba', $1, 'itest') on conflict (id) do nothing`, [tiers]);
+    });
+    afterAll(async () => {
+      await menage();
+      await pool.query(`delete from waba where id = 'itest-nf-waba'`);
+      await pool.query(`delete from numeros_fournis where numero like '44999%'`);
+      if (tiers) await pool.query('delete from tenants where id = $1', [tiers]);
+    });
+    beforeEach(menage);
+
+    it('🔴 porté par un compte d’application, même RETIRÉ : jamais attribué ni compté, signalé ; le suivant part à sa place', async () => {
+      await store.declarer(N1, 'did-itest-1');
+      await pool.query(`insert into comptes_application (tenant_id, numero, statut) values ($1, $2, 'retire')`, [tiers, N1]);
+      expect(await store.compterLibres()).toBe(0);
+      expect(await store.attribuer(tenantId)).toBeNull();
+      expect((await store.lister()).find((n) => n.numero === N1)).toMatchObject({ statut: 'libre', ailleurs: 'application' });
+      // N1 est le plus ancien : sans la garde, c'est lui qui partait.
+      await store.declarer(N2, 'did-itest-2');
+      expect(await store.compterLibres()).toBe(1);
+      expect((await store.attribuer(tenantId))?.numero).toBe(N2);
+    });
+
+    it('🔴 le numéro API d’un espace (mêmes chiffres, autre écriture) : jamais attribué ni compté, signalé', async () => {
+      await store.declarer(N1, 'did-itest-1');
+      await pool.query(
+        `insert into phone_numbers (id, tenant_id, waba_id, display_phone_number, status) values ('itest-nf-pn', $1, 'itest-nf-waba', '+44 999 0000001', 'CONNECTED')`,
+        [tiers],
+      );
+      expect(await store.compterLibres()).toBe(0);
+      expect(await store.attribuer(tenantId)).toBeNull();
+      expect((await store.lister()).find((n) => n.numero === N1)).toMatchObject({ statut: 'libre', ailleurs: 'api' });
+    });
+
+    it('un numéro libre sans autre usage : `ailleurs` nul, compté, attribuable', async () => {
+      await store.declarer(N1, 'did-itest-1');
+      expect((await store.lister()).find((n) => n.numero === N1)).toMatchObject({ statut: 'libre', ailleurs: null });
+      expect(await store.compterLibres()).toBe(1);
+    });
+
+    it('sortir de la réserve : un libre passe en `bloque` et n’est plus attribué ; attribué, déjà sorti ou inconnu : rien', async () => {
+      const { numero: n1 } = await store.declarer(N1, 'did-itest-1');
+      const { numero: n2 } = await store.declarer(N2, 'did-itest-2');
+      expect(await store.sortirDeLaReserve(n1.id)).toBe(N1);
+      expect(await store.sortirDeLaReserve(n1.id), 'déjà sorti').toBeNull();
+      expect((await store.parNumero(N1))?.statut).toBe('bloque');
+      expect((await store.attribuer(tenantId))?.numero).toBe(N2);
+      expect(await store.sortirDeLaReserve(n2.id), 'attribué').toBeNull();
+      expect((await store.parNumero(N2))?.statut).toBe('attribue');
+      expect(await store.sortirDeLaReserve('00000000-0000-4000-8000-000000000000'), 'inconnu').toBeNull();
+    });
+  });
 });

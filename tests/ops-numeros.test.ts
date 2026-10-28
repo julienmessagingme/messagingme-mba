@@ -23,7 +23,10 @@ beforeAll(async () => {
   await s.close();
 });
 
-function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre'; enAttente?: string[]; attribuerLeve?: boolean } = {}) {
+/** Un identifiant de la réserve, au format que la route de sortie exige. */
+const ID_AILLEURS = 'a09d4af6-b35a-466f-bb7a-70dda6706294';
+
+function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre'; enAttente?: string[]; attribuerLeve?: boolean; sortirRendRien?: boolean } = {}) {
   const gestes: string[] = [];
   const inscrits: NumeroFourni[] = [];
   const client: ClientDidww = {
@@ -44,10 +47,16 @@ function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre
         return { numero: n, cree: true };
       },
       lister: async (): Promise<NumeroEtDernierCode[]> => [
-        { id: 'n1', numero: '442071234567', didwwDidId: 'did-1', statut: 'libre', tenantId: null, attribueLe: null, creeLe: new Date(),
+        { id: 'n1', numero: '442071234567', didwwDidId: 'did-1', statut: 'libre', tenantId: null, attribueLe: null, creeLe: new Date(), ailleurs: null,
           dernierCode: { appelId: 'a1', recuLe: new Date(), code: '863801', transcription: 'your code is 8 6 3 8 0 1', cause: null } },
-        { id: 'n2', numero: '442071234568', didwwDidId: 'did-2', statut: 'attribue', tenantId: 't1', attribueLe: new Date(), creeLe: new Date(), dernierCode: null },
+        { id: 'n2', numero: '442071234568', didwwDidId: 'did-2', statut: 'attribue', tenantId: 't1', attribueLe: new Date(), creeLe: new Date(), ailleurs: null, dernierCode: null },
+        // Libre en base, mais l'application WhatsApp Business de quelqu'un s'en sert : jamais attribué, pas compté.
+        { id: ID_AILLEURS, numero: '442071234569', didwwDidId: 'did-3', statut: 'libre', tenantId: null, attribueLe: null, creeLe: new Date(), ailleurs: 'application', dernierCode: null },
       ],
+      sortirDeLaReserve: async (id) => {
+        gestes.push(`sortir:${id}`);
+        return o.sortirRendRien ? null : '442071234569';
+      },
       attribuer: async (tenantId) => {
         gestes.push(`attribuer:${tenantId}`);
         if (o.attribuerLeve) throw new Error('base indisponible');
@@ -62,6 +71,10 @@ function monter(o: { didww?: Partial<ClientDidww> | null; deja?: 'meme' | 'autre
 
 const declarer = (numero: string, note = 'achat DIDWW du 5 octobre') => ({
   method: 'POST' as const, url: '/ops/numeros-fournis', headers: ops, payload: JSON.stringify({ numero, note }),
+});
+
+const sortir = (id: string, note = 'le numéro de l’application de Julien') => ({
+  method: 'POST' as const, url: `/ops/numeros-fournis/${id}/sortir`, headers: ops, payload: JSON.stringify({ note }),
 });
 
 describe('/ops/numeros-fournis', () => {
@@ -169,6 +182,48 @@ describe('/ops/numeros-fournis', () => {
     const corps = res.json();
     expect(corps).toMatchObject({ configure: true, libres: 1 });
     expect(corps.numeros[0].dernierCode).toMatchObject({ code: '863801' });
+    await server.close();
+  });
+
+  it('🔴 un numéro libre utilisé ailleurs ne compte pas parmi les libres, et la lecture dit pourquoi', async () => {
+    const { server } = monter();
+    const corps = (await server.inject({ method: 'GET', url: '/ops/numeros-fournis', headers: ops })).json();
+    expect(corps.libres).toBe(1);
+    expect(corps.numeros.find((n: { id: string }) => n.id === ID_AILLEURS)).toMatchObject({ statut: 'libre', ailleurs: 'application' });
+    await server.close();
+  });
+});
+
+describe('/ops/numeros-fournis/:id/sortir', () => {
+  it('🔴 sans session d’exploitation : 401 ; sans note ou avec un identifiant illisible : 400 ; la réserve n’est pas touchée', async () => {
+    const { server, gestes } = monter();
+    const sansSession = await server.inject({ ...sortir(ID_AILLEURS), headers: { 'content-type': 'application/json' } });
+    expect(sansSession.statusCode).toBe(401);
+    expect((await server.inject(sortir(ID_AILLEURS, ' '))).statusCode).toBe(400);
+    expect((await server.inject(sortir('pas-un-identifiant'))).statusCode).toBe(400);
+    expect(gestes).toEqual([]);
+    await server.close();
+  });
+
+  it('🔴 un numéro libre sort de la réserve : la réponse le nomme, la trace porte son auteur et la note', async () => {
+    const avertis = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { server, gestes } = monter();
+    const res = await server.inject(sortir(ID_AILLEURS));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ numero: '442071234569' });
+    expect(gestes).toEqual([`sortir:${ID_AILLEURS}`]);
+    const lignes = avertis.mock.calls.map((c) => JSON.parse(String(c[0])) as Record<string, unknown>);
+    expect(lignes.find((l) => l.msg === 'ops_numero_sorti_de_la_reserve')).toMatchObject({
+      numero: '442071234569', par: 'exploitant@exploitation.test', note: 'le numéro de l’application de Julien',
+    });
+    await server.close();
+  });
+
+  it('un numéro attribué, déjà sorti ou inconnu : 409, rien d’écrit', async () => {
+    const { server } = monter({ sortirRendRien: true });
+    const res = await server.inject(sortir(ID_AILLEURS));
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatch(/libre/);
     await server.close();
   });
 });

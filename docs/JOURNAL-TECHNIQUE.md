@@ -4,6 +4,26 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 (soir) : la réserve de numéros fournis donnait un numéro déjà utilisé
+
+- **Le constat** (Julien, depuis `/ops`) : `+44 1555 479304`, le numéro DIDWW de son application WhatsApp Business, était
+  `libre` dans la réserve. Relu en production, en lecture seule : déclaré le 21, relié par QR code le 22 à l'espace de
+  test « newCompany » sans passer par l'attribution (`fourni_id` nul), compte retiré le 25, application toujours en
+  service. La réserve donne le plus ancien libre : le deuxième client Pro qui demandait un numéro le recevait, Meta
+  l'aurait vérifié sur notre central, et l'application aurait perdu le numéro. Une commande d'une ligne (passer ce numéro
+  en `bloque`) a été préparée pour Julien : une écriture de données en production depuis la machine est refusée au mode
+  auto.
+- **La garde** (plan `docs/superpowers/plans/2026-10-28-reserve-numeros-ailleurs.md`) : `UTILISE_AILLEURS_SQL`, un
+  prédicat déduit à chaque lecture (un compte d'application qui porte le numéro, quel que soit son statut, ou un numéro
+  API d'un espace aux mêmes chiffres), appliqué par l'attribution, par `compterLibres` et par `lister` ; `/ops` signale
+  le numéro et peut le sortir de la réserve (`POST /ops/numeros-fournis/:id/sortir`, note obligatoire). Preuve en lecture
+  seule sur la vraie réserve, avec le texte du prédicat importé du code : 2 libres avant, 1 après, `…304` signalé,
+  `…300` toujours le prochain attribué, plan d'exécution négligeable. Test de la route vérifié dans les deux sens (le
+  filtre retiré, trois cas rouges).
+- **La relecture indépendante** : aucun rouge, cinq jaunes. Deux corrigés dans le lot (le libellé de `bloque`, qui couvre
+  aussi un numéro vu de Meta que DIDWW n'a pas pu résilier, devient « à résilier ou à garder » ; le numéro de Julien se
+  sort dans tous les cas, la garde déduite tombant avec sa preuve), trois au `todo.md`.
+
 ## 2026-10-28 (soir) : la refonte de /ops, lot 2 (Cockpit et la mémoire des workers)
 
 `0d5c4b7f`. Le jeton Cockpit d'abord : créé par Julien en lecture des métriques (un premier, créé en ÉCRITURE par

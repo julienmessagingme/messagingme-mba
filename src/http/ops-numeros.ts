@@ -20,7 +20,7 @@ import { MIN_NOTE } from './ops';
  */
 
 export interface OpsNumerosDeps {
-  numeros: Pick<PgNumerosFournisStore, 'declarer' | 'lister' | 'attribuer'>;
+  numeros: Pick<PgNumerosFournisStore, 'declarer' | 'lister' | 'attribuer' | 'sortirDeLaReserve'>;
   /**
    * Les espaces qui ont payé leur numéro pendant que la réserve était vide (lot 3c, livraison B) : un numéro neuf leur
    * revient d'abord, au plus ancien.
@@ -31,6 +31,8 @@ export interface OpsNumerosDeps {
 }
 
 const corpsSchema = z.object({ numero: z.string().max(40), note: z.string() });
+const sortieSchema = z.object({ note: z.string() });
+const idSchema = z.object({ id: z.string().uuid() });
 
 /** Chiffres seuls, au format `wa_id` : « +44 20 7123 4567 » et « 442071234567 » désignent le même numéro. */
 export function numeroEnChiffres(saisie: string): string | null {
@@ -45,7 +47,8 @@ export function registerOpsNumeros(app: FastifyInstance, deps: OpsNumerosDeps, g
     const numeros = await deps.numeros.lister();
     return reply.code(200).send({
       configure: deps.didww !== null,
-      libres: numeros.filter((n) => n.statut === 'libre').length,
+      // Ce que l'attribution peut encore donner : un numéro libre utilisé ailleurs n'en fait pas partie.
+      libres: numeros.filter((n) => n.statut === 'libre' && n.ailleurs === null).length,
       numeros,
     });
   });
@@ -87,5 +90,23 @@ export function registerOpsNumeros(app: FastifyInstance, deps: OpsNumerosDeps, g
       if (err instanceof DidDejaDeclare) return reply.code(409).send({ error: err.message });
       throw err;
     }
+  });
+
+  /**
+   * Sortir un numéro de la réserve (2026-10-28) : un numéro `libre` dont quelqu'un se sert hors de nos écrans (le
+   * téléphone de Julien, un client d'un autre fournisseur) passe en `bloque`, jamais attribué. Rien d'autre ne bouge :
+   * un numéro attribué se libère par la libération (lot 4), jamais d'ici. Pas de retour en réserve depuis /ops : y
+   * remettre un numéro actif ailleurs est le geste que cette route évite.
+   */
+  app.post('/ops/numeros-fournis/:id/sortir', opts, async (req, reply) => {
+    const id = idSchema.safeParse(req.params);
+    if (!id.success) return reply.code(400).send({ error: 'identifiant de numéro invalide' });
+    const lu = sortieSchema.safeParse(req.body ?? {});
+    const note = lu.success ? lu.data.note.trim().slice(0, 500) : '';
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi ce numéro sort de la réserve' });
+    const numero = await deps.numeros.sortirDeLaReserve(id.data.id);
+    if (numero === null) return reply.code(409).send({ error: 'seul un numéro libre sort de la réserve : celui-ci est attribué, déjà sorti ou inconnu' });
+    journaliser('warn', 'ops_numero_sorti_de_la_reserve', { numero, par: auteurOps(req), note, at: new Date().toISOString() });
+    return reply.code(200).send({ numero });
   });
 }
