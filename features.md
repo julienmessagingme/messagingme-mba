@@ -47,7 +47,8 @@ Business, pas à pas » (`/developpeurs/compte-meta-business/` et sa jumelle ang
 donnent la console et Claude, générées depuis `web/lib/partage/etapes-meta.ts`. En haut et en bas de la page, « Installer le plugin » mène aux trois étapes et « Le plugin sur
 GitHub » à son dépôt : depuis le
 2026-10-19, aucune page Développeurs ne renvoie vers l'inscription de la console, et sur la page des tarifs la Free mène
-au plugin (le Pro garde la création d'espace dans la console). « Créer mon espace », en haut de l'accueil, ouvre
+au plugin (le Pro garde la création d'espace dans la console, qui mène depuis le 2026-10-28 à la souscription du Pro,
+`/signup?offre=pro`, et non au tunnel de la Free). « Créer mon espace », en haut de l'accueil, ouvre
 l'inscription de la console. Venu de la page anglaise, un lien ouvre la console en anglais.
 
 ✅ **La vitrine a ses pages de cas d'usage** (2026-10-20) : la page chapeau « SaaS et app builders »
@@ -132,7 +133,8 @@ mène à l'application WhatsApp Business sur le numéro de l'entreprise (la gard
 un numéro à part), puis à un numéro libre ou à un numéro fourni. Chaque issue finit sur les boutons de l'offre
 choisie : en Free, le plugin, son dépôt GitHub et la demande à coller dans Claude Code, qui reprend les réponses
 données (« Copier ») ; en Pro, « Créer mon compte » (`/signup?offre=pro`, qui mène à la souscription du Pro et non
-au tunnel de la Free) et le pas-à-pas de ce chemin. Les quatre mots employés (compte Meta
+au tunnel de la Free, comme les deux boutons « Tout faire depuis la console » de la page) et le pas-à-pas de ce chemin.
+Les quatre mots employés (compte Meta
 Business, numéro WhatsApp Business, numéro API, garder son application) se déplient sous la carte. Le mot
 « coexistence » n'y apparaît jamais : face au client, c'est « garder votre application WhatsApp Business ». Suivent les
 quatre étapes depuis Claude Code, le prix et une FAQ. ⚠️ Le plugin (la skill `mise-en-service`, son README, sa FAQ) suit

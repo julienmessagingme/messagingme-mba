@@ -250,6 +250,19 @@ describe('la page Boutiques Shopify', () => {
     }
   });
 
+  it('« Tout faire depuis la console » mène à la souscription du Pro : la console est celle du Pro (Julien, 2026-10-28)', () => {
+    for (const e of boutiques) {
+      for (const [langue, adresse] of [['fr', e.fr.adresse], ['en', e.en.adresse]] as const) {
+        const html = lire(fichierDe(adresse));
+        const libelle = TEXTES_BOUTIQUES.shopify![langue].boutonConsole;
+        const liens = [...html.matchAll(/<a class="bouton bouton-trait" href="([^"]+)">([^<]+)<\/a>/g)].filter((m) => m[2] === libelle).map((m) => m[1]);
+        // En haut de la page, et dans l'appel final.
+        expect(liens, langue).toHaveLength(2);
+        for (const l of liens) expect(l, langue).toBe(`https://console.messagingme.app/signup?offre=pro${langue === 'en' ? '&amp;lang=en' : ''}`);
+      }
+    }
+  });
+
   it('les textes des deux langues ont la même forme', () => {
     const { fr, en } = TEXTES_BOUTIQUES.shopify!;
     expect(en.scenario.etapes.length).toBe(fr.scenario.etapes.length);

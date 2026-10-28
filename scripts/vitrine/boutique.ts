@@ -17,6 +17,12 @@ const PLUGIN: Readonly<Record<Langue, string>> = { fr: '/developpeurs/installer-
 const AIDE: Readonly<Record<Langue, string>> = { fr: '/aide/brancher-ma-boutique-shopify/', en: '/en/help/connect-my-shopify-store/' };
 const TARIFS: Readonly<Record<Langue, string>> = { fr: '/tarifs/', en: '/en/pricing/' };
 const CONTACT: Readonly<Record<Langue, string>> = { fr: '/contact/#formulaire', en: '/en/contact/#formulaire' };
+/**
+ * L'inscription qui mène à la souscription du Pro (`?offre=pro`, `arriveeDUnNouvelEspace`, `web/lib/session.ts`), jamais
+ * au tunnel de la Free, qui est le chemin d'une inscription sans ce drapeau : la console est celle du Pro, donc les
+ * boutons qui y mènent (« Tout faire depuis la console », la fin Pro du guide du numéro) la prennent tous.
+ */
+const inscriptionPro = (langue: Langue): string => `${CONSOLE}/signup?offre=pro${langue === 'en' ? '&amp;lang=en' : ''}`;
 
 /** Le texte brut d'un fragment : sans balises ni entités, pour une méta ou un JSON-LD. */
 const brut = (h: string): string => h.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&');
@@ -114,9 +120,7 @@ function guide(t: TexteBoutique, langue: Langue): string[] {
     '                  </ul>',
     '                </section>',
   ];
-  // `?offre=pro` : l'espace créé va à la souscription du Pro (`arriveeDUnNouvelEspace`, `web/lib/session.ts`), jamais au
-  // tunnel de la Free, qui est le chemin d'une inscription sans ce drapeau.
-  const inscription = `${CONSOLE}/signup?offre=pro${langue === 'en' ? '&amp;lang=en' : ''}`;
+  const inscription = inscriptionPro(langue);
   // Le bout du tunnel, par offre (Julien, 2026-10-27) : en Free, le plugin, son dépôt et la demande à coller dans Claude
   // Code ; en Pro, la console et le pas-à-pas de ce chemin. Une issue sans pas-à-pas n'existe pas en Pro.
   const issue = (x: Issue) => [
@@ -174,7 +178,7 @@ function mainBoutique(t: TexteBoutique, langue: Langue): string {
     `      <p class="chapeau">${t.chapeau}</p>`,
     '      <div class="appels">',
     `        <a class="bouton bouton-plein" href="#commencer">${t.boutonClaude}</a>`,
-    `        <a class="bouton bouton-trait" href="${CONSOLE}/signup${langue === 'en' ? '?lang=en' : ''}">${t.boutonConsole}</a>`,
+    `        <a class="bouton bouton-trait" href="${inscriptionPro(langue)}">${t.boutonConsole}</a>`,
     '      </div>',
     // La phrase d'abord, le logo ensuite : « se branche à votre boutique [Shopify] », jamais un logo en sujet, qui ferait badge.
     `      <p class="bt-compat"><span>${t.compat}</span><span class="bt-compat-logo"><img class="logo-shopify" src="/img/logos/shopify-noir.svg" width="105" height="30" alt="Shopify"></span></p>`,
@@ -264,7 +268,7 @@ function mainBoutique(t: TexteBoutique, langue: Langue): string {
     `      <p class="f-texte">${t.appel.texte}</p>`,
     '      <div class="appels">',
     `        <a class="bouton bouton-plein" href="#commencer">${t.boutonClaude}</a>`,
-    `        <a class="bouton bouton-trait" href="${CONSOLE}/signup${langue === 'en' ? '?lang=en' : ''}">${t.boutonConsole}</a>`,
+    `        <a class="bouton bouton-trait" href="${inscriptionPro(langue)}">${t.boutonConsole}</a>`,
     `        <a class="bouton bouton-texte" href="${CONTACT[langue]}">${t.appel.contact} ${fleche}</a>`,
     '      </div>',
     '    </div>',

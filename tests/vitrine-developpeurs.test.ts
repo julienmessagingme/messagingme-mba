@@ -217,5 +217,14 @@ describe('le démarrage passe par le plugin, sans créer d’espace avant (Julie
       expect(free).toMatch(/href="\/(en\/developers|developpeurs)\/#demarrer"/);
       expect(free).not.toContain('signup');
     });
+
+    it(`${page} : le Pro s'ouvre sur sa souscription, pas sur le tunnel de la Free (Julien, 2026-10-28)`, () => {
+      const html = lire(page);
+      const debut = html.indexOf('<h2 class="tarif-nom">Pro</h2>');
+      const pro = html.slice(debut, html.indexOf('<h2 class="tarif-nom">', debut + 1));
+      expect(pro.length).toBeGreaterThan(0);
+      // `?offre=pro` : l'inscription mène à la page de l'offre (`arriveeDUnNouvelEspace`, `web/lib/session.ts`).
+      expect(pro).toMatch(/href="https:\/\/console\.messagingme\.app\/signup\?offre=pro(&(amp;)?lang=en)?"/);
+    });
   }
 });
