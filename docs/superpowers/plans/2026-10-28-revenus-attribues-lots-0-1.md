@@ -261,27 +261,54 @@ de `landing_site` seulement si la tâche 0 l'a validé (sinon `toucheUtm = null`
 - [ ] **Étape 4 :** `npm test`, `npm run typecheck`, CI verte (`integration`).
 - [ ] **Étape 5 : commit.**
 
-### Tâche 6 : les UTM de la redirection (seulement si la tâche 0 les a vus revenir)
+### Tâche 6 : la preuve par UTM, réécrite après la mesure du 2026-10-28 (petit lot relu à part)
 
-**Fichiers :**
-- Créer : `src/links/utm.ts`
-- Modifier : `src/links/tracked-links.pg.ts` (`DestinationLien` et sa requête), `src/http/links.ts` (`traiter`)
-- Test : `tests/links-utm.test.ts`, `tests/http-links.test.ts`
+Le verdict de la tâche 0 est dans la spec (« La preuve par UTM ») : le webhook ne porte pas la preuve, le parcours client
+la porte un quart d'heure plus tard. Décision de Julien : une relecture différée. Deux sous-tâches, un lot, une relecture.
+
+#### 6a : les UTM sur la redirection
+
+**Fichiers :** créer `src/links/utm.ts` ; modifier `src/links/tracked-links.pg.ts` (`DestinationLien` et sa requête),
+`src/http/links.ts` (`traiter`) ; tests `tests/links-utm.test.ts`, `tests/http-links.test.ts`.
+
+**Interfaces :** `DestinationLien` gagne `modele: string | null` (le `template_name` du lien) et `boutique: boolean` (une
+boutique `connectee` de l'espace, lue DANS la requête du lien) ; `avecUtm(destination: string, modele: string): string`.
+
+- [ ] Tests qui échouent : `'avecUtm ajoute source, medium et campagne'`, `'avecUtm n’écrase aucun utm_ déjà présent'`,
+  `'avecUtm laisse une adresse illisible telle quelle'` ; `http-links` : `'sans boutique branchée, la destination ne
+  change pas'`, `'avec boutique, la redirection porte les UTM après le remplissage des champs'`.
+- [ ] Les voir rouges, implémenter (UTM après `remplirChampsUrl`), les voir verts, commit.
+
+#### 6b : la relecture différée du parcours client
+
+**Fichiers :** créer `src/shopify/preuve-utm.ts` ; modifier `src/shopify/attribution.ts` (programmer la relecture),
+`src/shopify/ventes.pg.ts` (`appliquerPreuveUtm`), `src/crm/contact-store.pg.ts` (exporter `ficheActive`),
+`src/queue/names.ts` (file `shopify-preuve-utm` dans `BASE_QUEUES`, polling 60 s, non urgente), `src/worker/roles.ts`
+(`principal`), `src/worker.ts` et `src/index.ts` (câblage : fichiers PARTAGÉS, commit en plomberie) ; tests
+`tests/shopify-preuve-utm.test.ts`, `tests/shopify-traitement.test.ts`, `tests/integration/ventes-store.integration.test.ts`.
 
 **Interfaces :**
-- Produit : `DestinationLien` gagne `modele: string | null` et `boutique: boolean` (boutique `connectee` de l'espace,
-  lue DANS la même requête que le lien) ;
-  `avecUtm(destination: string, modele: string): string` ;
-  `modeleDeLanding(landing: string | null): string | null` (rend `utm_campaign` quand `utm_source=whatsapp` et
-  `utm_medium=messagingme`), consommée par `attribuerCommande` (tâche 4) pour chercher `derniereToucheDuModele`.
+- `FILE_PREUVE_UTM = 'shopify-preuve-utm'` ; `DELAI_PREUVE_MS = 30 * 60_000` ; `ESSAIS_PREUVE = 4` ;
+- `JobPreuve { tenantId; commandeId; contactId; montant; devise; payeeLe (ISO); test; essai }`, validé par Zod à la lecture ;
+- `DepsTraitementShopify.programmerPreuve(job: JobPreuve, quand: Date): Promise<void>` ;
+- `lireParcours(acces: { domaine; jeton }, commandeId, appeler?): Promise<{ ok: true; pret: false } | { ok: true; pret: true; modele: string | null } | { ok: false }>`
+  (GraphQL `order(id: "gid://shopify/Order/<id>") { customerJourneySummary { ready lastVisit { utmParameters { source medium campaign } } } }`,
+  `modele` = `campaign` seulement si `source = whatsapp` et `medium = messagingme`) ;
+- `traiterPreuveUtm(deps, donnees: unknown): Promise<'prouvee' | 'sans_preuve' | 'reessai' | 'abandon'>` ;
+- `PgVentesStore.appliquerPreuveUtm(tenantId, v: VenteAEnregistrer): Promise<'appliquee' | 'ignoree'>` : met à jour la
+  vente de la commande si sa preuve n'est pas `panier`, sinon l'insère, mais seulement pour une fiche encore vivante.
 
-- [ ] **Étape 1 : tests qui échouent** :
-  - `'avecUtm ajoute source, medium et campagne'` ;
-  - `'avecUtm n’écrase aucun utm_ déjà présent'` ;
-  - `'avecUtm laisse une adresse illisible telle quelle'` ;
-  - `'modeleDeLanding lit le modèle de nos seuls UTM'` (une adresse `utm_source=whatsapp` sans `utm_medium=messagingme` rend `null`) ;
-  - `http-links` : `'sans boutique branchée, la destination ne change pas'`, `'avec boutique, la redirection porte les UTM après le remplissage des champs'`.
-- [ ] **Étape 2 :** `npx vitest run tests/links-utm.test.ts tests/http-links.test.ts`, attendu FAIL.
-- [ ] **Étape 3 : implémenter** (UTM appliqués après `remplirChampsUrl`).
-- [ ] **Étape 4 :** suite entière, typecheck, lint, auto-attaque.
-- [ ] **Étape 5 : commit**, puis le récit du lot au journal et `wip.md` à jour.
+- [ ] Tests qui échouent :
+  - `attribuerCommande` : `'une commande d’une fiche connue programme la relecture à 30 min'`, `'le panier relancé
+    payé ne programme rien'`, `'un échec de programmation ne change rien à la vente ni à la confirmation'` ;
+  - `traiterPreuveUtm` : `'un parcours prêt avec nos UTM prouve la vente au modèle nommé'`, `'un parcours pas prêt se
+    relit plus tard, quatre fois au plus'`, `'des UTM étrangers ou absents : sans preuve'`, `'une boutique coupée ou un
+    jeton refusé : abandon'`, `'un modèle sans touche : sans preuve'`, `'un job illisible : abandon, sans lever'` ;
+  - `lireParcours` : la requête porte le `gid` de la commande ; un 401, un corps illisible, une erreur GraphQL ;
+  - intégration : `'appliquerPreuveUtm met à jour une vente sans preuve, jamais une preuve panier'`, `'insère une vente
+    prouvée pour une fiche vivante, rien pour une fiche anonymisée'`.
+- [ ] Les voir rouges, implémenter, les voir verts ; suite entière, typecheck, lint, auto-attaque ; commit.
+
+**Relecture** : une, sur 6a et 6b. **Déploiement** : sans migration ; les workers avant l'API (le workflow le fait), pour
+que la file existe quand l'API y enfile. **Essai réel** : une commande de la boutique de dev venue d'un lien tracé d'une
+campagne reçue par le numéro de Julien ; 30 minutes après, la vente porte `preuve = utm` et la campagne.

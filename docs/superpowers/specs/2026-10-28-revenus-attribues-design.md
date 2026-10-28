@@ -86,18 +86,29 @@ et les annulations **ne sont pas déduits** en v1 : le chiffre s'appelle « brut
 - *Mon choix* : seulement pour un espace qui a une boutique Shopify branchée, et sans jamais écraser un `utm_*` déjà
   présent dans la destination. Changer les adresses de tous les clients sans raison serait un changement de
   comportement public.
-- À la réception de `orders/paid`, la page d'arrivée de la commande est relue ; ses UTM, s'ils viennent de nous,
-  désignent la source.
-- 🔴 **Ce point se MESURE avant de se construire** (lot 0) : ni `landing_site` ni le parcours client n'ont été vus sur
-  un vrai corps de commande. Si Shopify ne les rend pas de façon exploitable, la preuve se réduit au panier relancé, et
-  le reste du chantier ne bouge pas.
+- **Mesuré le 2026-10-28 (lot 0, commande #1003 de la boutique de dev)** : le corps d'`orders/paid` ne porte QUE la
+  page d'arrivée de la PREMIÈRE visite (`landing_site`, ici la page du mot de passe de la boutique de dev), et le
+  parcours client n'y est pas encore calculé (`ready: false`). Shopify le calcule ensuite, en un quart d'heure environ :
+  sa DERNIÈRE visite porte bien nos trois UTM (`customerJourneySummary.lastVisit.utmParameters`, API `2026-10`, lu par
+  `gid://shopify/Order/<id du webhook>`, coût 4). Les accusés de livraison des messages, agent de Meta compris, sont
+  présents sur tous les messages des trois derniers jours.
+- **Décision de Julien (même jour) : une RELECTURE DIFFÉRÉE.** À la réception, une commande d'une fiche existante dont
+  le panier relancé n'est pas en cause programme une tâche de fond, 30 minutes plus tard. Elle relit le parcours de la
+  commande chez Shopify (le jeton de l'app de la boutique) ; si la dernière visite vient de nos UTM, la vente devient
+  PROUVÉE et revient à la dernière touche du modèle nommé (règle 2), qu'elle ait été enregistrée ou non à la réception.
+  Un parcours pas encore prêt se relit plus tard, quelques fois. La preuve `panier` ne se remplace jamais. Le chiffre
+  d'une commande peut donc changer dans sa première heure, jamais après.
+- *Mon choix* : une vente prouvée par UTM qui n'avait pas été enregistrée à la réception (aucune touche dans la
+  fenêtre) n'est créée que si la fiche est encore vivante (ni supprimée, ni anonymisée) : une demande d'effacement
+  arrivée entre-temps ne doit pas recréer de lien vers la personne.
 
 ## Ce qui s'enregistre
 
 - Une ligne par commande attribuée : l'espace, l'identifiant de commande Shopify (idempotence : `orders/paid` peut
   arriver deux fois), le contact, le montant et sa devise (jamais en flottant), la date de paiement, la source et son
   identifiant (la campagne, par exemple), la preuve (`panier`, `utm` ou aucune).
-- **L'attribution se calcule à la réception, puis elle est figée.** Les chiffres d'un mois passé ne bougent plus quand
+- **L'attribution se calcule à la réception, puis elle est figée** (sauf la preuve par UTM, qui peut la reprendre dans
+  sa première heure, voir plus haut). Les chiffres d'un mois passé ne bougent plus quand
   des messages sont purgés ou qu'un contact est supprimé.
 - **Une commande d'un inconnu ne crée jamais de fiche** (elle compterait dans la limite de l'offre) et ne laisse aucune
   trace.
