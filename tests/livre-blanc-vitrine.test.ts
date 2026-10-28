@@ -47,7 +47,7 @@ describe('POST /vitrine/livre-blanc (le formulaire du livre blanc)', () => {
     expect(res.headers.location).toBe(MERCI);
     expect(soumis).toEqual([{
       prenom: 'Léa', nom: 'Martin', email: 'lea@ecole.fr', etablissement: 'École Horizon',
-      fonction: 'Directrice des admissions', mobile: '06 12 34 56 78', whatsapp: 'oui', site: '',
+      fonction: 'Directrice des admissions', mobile: '+33612345678', whatsapp: 'oui', site: '',
     }]);
     expect(deposes).toEqual([{ nom: 'Léa Martin', telephoneE164: '+33612345678' }]);
     expect(secours).toHaveLength(0);
@@ -64,15 +64,11 @@ describe('POST /vitrine/livre-blanc (le formulaire du livre blanc)', () => {
     expect(deposes).toEqual([{ nom: 'Léa Martin', telephoneE164: attendu }]);
   });
 
-  it.each([
-    ['la case décochée', sans('whatsapp')],
-    ['la case cochée sans mobile', champs({ mobile: '' })],
-    ['un mobile illisible', champs({ mobile: 'pas un numéro' })],
-  ])('%s : HubSpot seulement, rien dans SANDBOX, le PDF quand même', async (_cas, corps) => {
+  it('la case décochée : HubSpot seulement (avec le mobile), rien dans SANDBOX, le PDF quand même', async () => {
     const { app, soumis, deposes } = monter();
-    const res = await poster(app, corps);
+    const res = await poster(app, sans('whatsapp'));
     expect(res.headers.location).toBe(MERCI);
-    expect(soumis).toHaveLength(1);
+    expect(soumis.map((d) => [d.mobile, d.whatsapp])).toEqual([['+33612345678', undefined]]);
     expect(deposes).toHaveLength(0);
   });
 
@@ -82,6 +78,9 @@ describe('POST /vitrine/livre-blanc (le formulaire du livre blanc)', () => {
     ['une adresse fausse', champs({ email: 'pas-une-adresse' })],
     ['sans établissement', sans('etablissement')],
     ['sans fonction', champs({ fonction: '' })],
+    ['sans mobile', champs({ mobile: '' })],
+    ['sans mobile, case décochée', new URLSearchParams({ ...Object.fromEntries(new URLSearchParams(sans('whatsapp'))), mobile: '  ' }).toString()],
+    ['un mobile illisible', champs({ mobile: 'pas un numéro' })],
     ['une case à une autre valeur', champs({ whatsapp: 'yes' })],
   ])('refuse %s : retour au formulaire, rien n’est transmis', async (_cas, corps) => {
     const { app, soumis, deposes, secours } = monter();
@@ -196,11 +195,11 @@ describe('soumissionHubspot', () => {
     expect(corps.context.pageUri).toBe(`${VITRINE}/livre-blanc/whatsapp-education/`);
   });
 
-  it('sans mobile, le champ n’est pas envoyé ; case décochée, la propriété vaut « false »', async () => {
+  it('case décochée : la propriété vaut « false », et le mobile part quand même', async () => {
     const { appels, envoyer } = fauxFetch();
-    await soumissionHubspot({ portail: '1', formulaire: 'f' }, envoyer).soumettre({ ...demande, mobile: '', whatsapp: undefined }, 'en');
+    await soumissionHubspot({ portail: '1', formulaire: 'f' }, envoyer).soumettre({ ...demande, mobile: '+33612345678', whatsapp: undefined }, 'en');
     const corps = JSON.parse(String(appels[0]!.init.body));
-    expect(corps.fields.map((f: { name: string }) => f.name)).not.toContain('mobilephone');
+    expect(corps.fields).toContainEqual({ objectTypeId: '0-1', name: 'mobilephone', value: '+33612345678' });
     expect(corps.fields).toContainEqual({ objectTypeId: '0-1', name: 'recontact_whatsapp', value: 'false' });
     expect(corps.context.pageUri).toBe(`${VITRINE}/en/white-paper/whatsapp-education/`);
   });

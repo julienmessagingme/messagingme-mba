@@ -14,8 +14,9 @@ import { VITRINE, langueDe, routesDeFormulaire, uneLigne, type Langue } from './
  * `docs/superpowers/specs/2026-10-28-livre-blanc-education-design.md`.
  *
  * Même mécanique que `/vitrine/contact` : formulaire HTML natif, redirection 303 vers une page écrite ici. Chaque envoi
- * part dans HubSpot (le formulaire HubSpot de Messaging Me), et dans SANDBOX quand le visiteur a coché la case WhatsApp
- * et donné un mobile lisible.
+ * part dans HubSpot (le formulaire HubSpot de Messaging Me), et dans SANDBOX quand le visiteur a coché la case WhatsApp.
+ * Le mobile est OBLIGATOIRE et doit se lire en E.164 (décision de Julien du 2026-10-28) ; la case, elle, reste
+ * facultative : un consentement ne s'impose pas en échange du PDF.
  *
  * 🔴 LE VISITEUR A SON PDF DANS TOUS LES CAS. Ni une panne de HubSpot, ni un refus de SANDBOX, ni le plafond ne le
  * privent du téléchargement : la page « merci » porte le lien. Seul un formulaire invalide revient au formulaire.
@@ -40,7 +41,15 @@ const Demande = z.object({
   email: z.string().transform(uneLigne).pipe(z.email().max(254)),
   etablissement: ligne(160),
   fonction: ligne(120),
-  mobile: z.string().default('').transform(uneLigne).pipe(z.string().max(40)),
+  /** Rendu en E.164 : c'est sous cette forme qu'il part chez HubSpot, dans le courriel et dans SANDBOX. */
+  mobile: ligne(40).transform((saisi, ctx) => {
+    const e164 = e164DepuisSaisie(saisi);
+    if (e164 === null) {
+      ctx.addIssue({ code: 'custom', message: 'mobile illisible' });
+      return z.NEVER;
+    }
+    return e164;
+  }),
   /** La case « recontact sur WhatsApp » : absente si décochée, « oui » si cochée. */
   whatsapp: z.literal('oui').optional(),
   /** Le pot de miel : caché à l'écran, seul un robot le remplit. */
@@ -71,7 +80,7 @@ export function courrielDeSecours(d: DemandeLivreBlanc, langue: Langue): Courrie
       `E-mail : ${d.email} (saisi par le visiteur, non vérifié)`,
       `Établissement : ${d.etablissement}`,
       `Fonction : ${d.fonction}`,
-      `Mobile : ${d.mobile || 'non renseigné'}`,
+      `Mobile : ${d.mobile}`,
       `Recontact sur WhatsApp : ${d.whatsapp === 'oui' ? 'accepté' : 'non'}`,
       ...(langue === 'en' ? ['Langue : anglais (page anglaise de la vitrine)'] : []),
     ].join('\n'),
@@ -142,7 +151,6 @@ export function soumissionHubspot(
         mobile: d.mobile, whatsapp: d.whatsapp === 'oui' ? 'true' : 'false',
       };
       const fields = (Object.keys(valeurs) as Array<keyof typeof CHAMPS_HUBSPOT>)
-        .filter((cle) => valeurs[cle] !== '')
         .map((cle) => ({ objectTypeId: '0-1', name: CHAMPS_HUBSPOT[cle], value: valeurs[cle] }));
       const res = await envoyer(`${SOUMISSION_HUBSPOT}/${encodeURIComponent(o.portail)}/${encodeURIComponent(o.formulaire)}`, {
         method: 'POST',
@@ -194,10 +202,9 @@ export function registerLivreBlancVitrine(app: FastifyInstance, deps: LivreBlanc
       }
 
       const d = lu.data;
-      const mobile = d.whatsapp === 'oui' && d.mobile !== '' ? e164DepuisSaisie(d.mobile) : null;
       const [hubspot, sandbox] = await Promise.allSettled([
         deps.hubspot ? deps.hubspot.soumettre(d, langue) : Promise.reject(new Error('formulaire HubSpot non configuré')),
-        mobile && deps.sandbox ? deps.sandbox.deposer({ nom: `${d.prenom} ${d.nom}`, telephoneE164: mobile }) : Promise.resolve(),
+        d.whatsapp === 'oui' && deps.sandbox ? deps.sandbox.deposer({ nom: `${d.prenom} ${d.nom}`, telephoneE164: d.mobile }) : Promise.resolve(),
       ]);
       if (sandbox.status === 'rejected') journal('livre_blanc_sandbox_echec', sandbox.reason);
       if (hubspot.status === 'rejected') {

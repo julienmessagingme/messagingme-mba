@@ -136,7 +136,7 @@ chiffres), montrées à Julien. Le reste ne se met en page qu'après son accord 
   française : on ne l'affaiblit pas. La page dédiée et sa page « merci » ont leur jumelle, générée par les
   dictionnaires (`npm run vitrine:anglais`), qui propose le livre blanc en annonçant qu'il est en français. La route
   renvoie un formulaire anglais vers les pages anglaises, comme `/vitrine/contact`.
-- **Formulaire.** Prénom, nom, e-mail professionnel, établissement, fonction (requis) ; mobile (facultatif) ; une case
+- **Formulaire.** Prénom, nom, e-mail professionnel, établissement, fonction et mobile (requis ; le mobile obligatoire est une décision de Julien du 2026-10-28, et un mobile illisible renvoie au formulaire) ; une case
   « J'accepte d'être recontacté par Messaging Me sur WhatsApp », **décochée** et facultative, avec un lien vers la
   politique de confidentialité. Le téléchargement ne dépend pas de la case. Un pot de miel comme sur le formulaire de
   contact.
