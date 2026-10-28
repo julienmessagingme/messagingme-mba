@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Recruter sur WhatsApp · Livre blanc Messaging Me</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,400..800&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:ital,wght@0,400..800;1,400..600&display=block" rel="stylesheet">
+<link rel="stylesheet" href="commun.css">
+<style>
+/* ---------- Pages en flux (toutes sauf couverture, 01 et 03) ---------- */
+.flux{padding:23mm 16mm 27mm;display:flex;flex-direction:column;gap:5mm}
+.flux > .numero{position:absolute;top:13mm;right:10mm;font-size:150pt;line-height:1;color:transparent;-webkit-text-stroke:.5mm var(--ciel);opacity:.6}
+.flux h2{font-size:34pt;line-height:.98;max-width:140mm;position:relative}
+.flux h2 em{font-style:normal;background:linear-gradient(transparent 62%,var(--wa) 62%,var(--wa) 92%,transparent 92%);padding:0 1mm}
+.flux .chapo{font-size:11.2pt;line-height:1.5;color:#2A2F4A;max-width:172mm}
+.flux .chapo strong{color:var(--encre)}
+.nuit-p{background:var(--nuit);color:var(--blanc)}
+.nuit-p::before{content:"";position:absolute;inset:0;background:radial-gradient(55% 30% at 88% 6%,rgb(26 47 184 / .85),transparent 70%),radial-gradient(35% 22% at 4% 100%,rgb(37 211 102 / .16),transparent 70%)}
+.nuit-p > *{position:relative;z-index:1}
+.nuit-p .course{position:absolute;color:rgb(255 255 255 / .5);border-color:rgb(255 255 255 / .14)}
+.nuit-p .course .chap{color:var(--wa)}
+.nuit-p .chapo{color:rgb(255 255 255 / .82)} .nuit-p .chapo strong{color:var(--blanc)}
+.nuit-p .signature{color:rgb(255 255 255 / .45)}
+.nuit-p > .numero{position:absolute;-webkit-text-stroke-color:rgb(111 194 254 / .55)}
+.encart.f{position:relative;top:auto;left:auto;width:auto}
+.retenir.f{position:relative;top:auto;right:auto;width:auto;transform:rotate(-1deg);margin-top:5mm}
+.deux{display:grid;grid-template-columns:1fr 1fr;gap:6mm;align-items:start}
+.note{font-size:6.8pt;line-height:1.45;color:var(--gris)}
+.nuit-p .note{color:rgb(255 255 255 / .5)}
+.eti-s{font-size:7.4pt;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--bleu)}
+.nuit-p .eti-s{color:var(--wa)}
+.sous-titre{font-family:var(--titre);font-weight:800;font-variation-settings:"wdth" 85;font-size:14pt;line-height:1.1}
+
+/* ---------- Édito ---------- */
+.edito-g{display:grid;grid-template-columns:1.12fr .88fr;gap:9mm;margin-top:2mm}
+.edito-g .texte p{font-size:10.6pt;line-height:1.62;color:#2A2F4A;margin-top:3.4mm}
+.edito-g .texte p:first-of-type{margin-top:0}
+.edito-g .texte p:first-of-type::first-letter{font-family:var(--titre);font-weight:800;font-size:40pt;float:left;line-height:.8;margin:1.4mm 2mm 0 0;color:var(--bleu)}
+.exergue{font-family:var(--accent);font-style:italic;font-size:21pt;line-height:1.15;color:var(--nuit);border-left:1.6mm solid var(--wa);padding:1mm 0 1mm 5mm;margin:6mm 0 4mm}
+.signe{font-weight:700;font-size:9.6pt;color:var(--encre)}
+.signe span{display:block;font-weight:500;color:var(--gris);font-size:8.6pt}
+.sommaire-c{background:var(--nuit);color:var(--blanc);border-radius:6mm;padding:7mm 6mm 6mm;position:relative;overflow:hidden}
+.sommaire-c::before{content:"";position:absolute;right:-20mm;top:-20mm;width:60mm;height:60mm;border-radius:50%;background:radial-gradient(closest-side,rgb(26 47 184 / .9),transparent)}
+.sommaire-c h3{position:relative;font-family:var(--accent);font-style:italic;font-weight:400;font-size:24pt;color:var(--soleil);margin-bottom:4mm}
+.sommaire-c ol{position:relative;list-style:none;display:flex;flex-direction:column}
+.sommaire-c li{display:grid;grid-template-columns:9mm 1fr auto;align-items:baseline;gap:2mm;padding:2.3mm 0;border-bottom:.25mm solid rgb(255 255 255 / .12);font-size:9.6pt;font-weight:600}
+.sommaire-c li b{font-family:var(--titre);font-weight:800;color:var(--wa);font-size:10pt}
+.sommaire-c li i{font-style:normal;color:rgb(255 255 255 / .5);font-size:8.6pt;font-variant-numeric:tabular-nums}
+.sommaire-c li.fin b{color:var(--soleil)}
+
+/* ---------- Compte API ---------- */
+.pieces{display:grid;grid-template-columns:1fr 1fr;gap:3.6mm}
+.piece{background:var(--blanc);border:.3mm solid var(--trait);border-radius:4.5mm;padding:4.2mm 4.6mm;display:grid;grid-template-columns:9mm 1fr;gap:3mm}
+.piece .n{width:9mm;height:9mm;border-radius:50%;background:var(--nuit);color:var(--soleil);display:grid;place-items:center;font-family:var(--titre);font-weight:800;font-size:11pt}
+.piece h3{font-family:var(--titre);font-weight:800;font-variation-settings:"wdth" 85;font-size:12.4pt;line-height:1.1;margin-bottom:1.2mm}
+.piece p{font-size:8.7pt;line-height:1.42;color:#2A2F4A}
+.paliers{background:var(--nuit);color:var(--blanc);border-radius:5mm;padding:5mm 6mm 4.6mm}
+.paliers .haut{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3mm}
+.paliers .haut .sous-titre{color:var(--blanc)}
+.paliers .haut span{font-size:7.6pt;color:rgb(255 255 255 / .55);max-width:62mm;text-align:right;line-height:1.3}
+.marches{display:grid;grid-template-columns:repeat(5,1fr);gap:2.6mm;align-items:end;height:36mm}
+.marche{border-radius:3mm 3mm 1mm 1mm;padding:2.4mm 2.6mm;display:flex;flex-direction:column;justify-content:flex-start;color:var(--nuit)}
+.marche b{font-family:var(--titre);font-weight:800;font-size:15pt;line-height:1;font-variation-settings:"wdth" 80}
+.marche span{font-size:6.8pt;font-weight:700;line-height:1.25;margin-top:1mm}
+.m1{height:30%;background:var(--ciel)} .m2{height:46%;background:var(--wa)} .m3{height:62%;background:var(--wa)} .m4{height:80%;background:var(--wa)} .m5{height:100%;background:var(--soleil)}
+.paliers .bas-p{display:grid;grid-template-columns:repeat(5,1fr);gap:2.6mm;margin-top:2mm;font-size:6.8pt;color:rgb(255 255 255 / .7);line-height:1.3}
+.paliers .bas-p .auto{grid-column:3/6;border-top:.3mm dashed rgb(255 255 255 / .35);padding-top:1.4mm;text-align:center}
+.api-bas{display:grid;grid-template-columns:1fr 1fr;gap:7mm;align-items:start}
+
+/* ---------- Ce qui marche ---------- */
+.moments{display:flex;flex-direction:column;gap:2.6mm;position:relative}
+.moments::before{content:"";position:absolute;left:3.2mm;top:3mm;bottom:3mm;width:.5mm;background:var(--trait)}
+.moment{display:grid;grid-template-columns:7mm 1fr;gap:2mm;position:relative}
+.moment .pt{width:6.8mm;height:6.8mm;border-radius:50%;background:var(--wa);border:1.2mm solid var(--papier);box-sizing:border-box;margin-top:.4mm}
+.moment h4{font-size:8.6pt;font-weight:800;color:var(--bleu);letter-spacing:.02em;margin-bottom:1mm}
+.mini{background:var(--blanc);border-radius:1mm 3.6mm 3.6mm 3.6mm;padding:2.2mm 3mm;font-size:8.4pt;line-height:1.38;color:#111B21;box-shadow:0 1mm 3mm rgb(1 6 48 / .08)}
+.valeurs{display:flex;flex-direction:column;gap:2.6mm}
+.valeur{background:var(--nuit);color:var(--blanc);border-radius:4mm;padding:3.6mm 4.4mm}
+.valeur:nth-child(2){background:var(--bleu)} .valeur:nth-child(3){background:var(--wa);color:var(--nuit)} .valeur:nth-child(4){background:var(--soleil);color:var(--nuit)}
+.valeur h4{font-family:var(--titre);font-weight:800;font-size:12pt;font-variation-settings:"wdth" 85;margin-bottom:.8mm}
+.valeur p{font-size:8.6pt;line-height:1.4}
+.colonne-t{font-family:var(--accent);font-style:italic;font-size:15pt;color:var(--nuit);margin-bottom:2.4mm}
+.preuve{display:grid;grid-template-columns:auto 1fr;gap:4mm;align-items:center;background:var(--blanc);border:.3mm solid var(--trait);border-radius:4mm;padding:3.4mm 4.6mm}
+.preuve b{font-family:var(--titre);font-weight:800;font-size:28pt;color:var(--bleu);line-height:1}
+.preuve p{font-size:8.8pt;line-height:1.4}
+
+/* ---------- Click-to-WhatsApp ---------- */
+.schema{background:var(--nuit);border-radius:6mm;padding:6mm 5mm 5mm;color:var(--blanc);position:relative;overflow:hidden}
+.schema::before{content:"";position:absolute;inset:0;background:radial-gradient(40% 60% at 85% 0%,rgb(26 47 184 / .8),transparent 70%)}
+.schema > *{position:relative}
+.etapes4{display:grid;grid-template-columns:1fr 6mm 1fr 6mm 1fr 6mm 1fr;align-items:stretch}
+.etape{display:flex;flex-direction:column;gap:2.4mm}
+.etape .lab{display:flex;align-items:center;gap:1.6mm;font-size:7.6pt;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ciel)}
+.etape .lab i{font-style:normal;width:5.4mm;height:5.4mm;border-radius:50%;background:var(--soleil);color:var(--nuit);display:grid;place-items:center;font-family:var(--titre);font-size:8pt;letter-spacing:0}
+.fleche{display:grid;place-items:center;color:var(--wa);font-family:var(--titre);font-weight:800;font-size:16pt;padding-top:9mm}
+.pub{background:var(--blanc);border-radius:3.4mm;overflow:hidden;color:#1C1E21;font-size:7pt;flex:1;display:flex;flex-direction:column}
+.pub .t{display:flex;gap:1.6mm;align-items:center;padding:2mm 2.4mm}
+.pub .t .av{width:5mm;height:5mm;border-radius:50%;background:linear-gradient(135deg,var(--bleu),var(--nuit));flex:none}
+.pub .t b{display:block;font-size:7.2pt} .pub .t small{color:#65676B;font-size:6.2pt}
+.pub .txt{padding:0 2.4mm 1.8mm;line-height:1.35}
+.pub .vis{height:21mm;background:linear-gradient(135deg,#0080D6 0%,#1A2FB8 55%,#25D366 130%);display:flex;flex-direction:column;justify-content:flex-end;padding:2mm 2.4mm;color:#fff}
+.pub .vis b{font-family:var(--titre);font-weight:800;font-size:10.4pt;line-height:1}
+.pub .vis span{font-size:6.4pt;opacity:.85}
+.pub .bt{margin:2mm 2.4mm 2.4mm;background:var(--wa);color:var(--nuit);border-radius:1.6mm;text-align:center;font-weight:800;font-size:7pt;padding:1.8mm}
+.tel{background:#EFEAE2;border-radius:3.4mm;flex:1;padding:2.4mm;display:flex;flex-direction:column;gap:1.6mm;color:#111B21;font-size:7pt;line-height:1.35}
+.tel .entete{display:flex;align-items:center;gap:1.4mm;background:#F6F6F6;margin:-2.4mm -2.4mm .4mm;padding:1.8mm 2.4mm;border-radius:3.4mm 3.4mm 0 0;font-weight:800;font-size:7pt}
+.tel .entete .av{width:4.4mm;height:4.4mm;border-radius:50%;background:linear-gradient(135deg,var(--bleu),var(--nuit))}
+.b-in{background:#fff;border-radius:.6mm 2.4mm 2.4mm 2.4mm;padding:1.6mm 2mm;align-self:flex-start;max-width:92%}
+.b-out{background:var(--wa-pale);border-radius:2.4mm .6mm 2.4mm 2.4mm;padding:1.6mm 2mm;align-self:flex-end;max-width:92%}
+.b-in .ia{display:block;font-size:5.8pt;font-weight:800;color:var(--wa-fonce);margin-bottom:.4mm}
+.puces{display:flex;gap:1.2mm;flex-wrap:wrap}
+.puces span{background:#fff;color:#027EB5;font-weight:800;font-size:6.4pt;padding:1.2mm 2mm;border-radius:1.6mm}
+.fiche{background:var(--blanc);color:var(--encre);border-radius:3.4mm;flex:1;padding:2.6mm;font-size:7pt;display:flex;flex-direction:column;gap:1.3mm}
+.fiche .nm{display:flex;align-items:center;gap:1.6mm;font-weight:800;font-size:8pt}
+.fiche .nm .av{width:6mm;height:6mm;border-radius:50%;background:var(--soleil);display:grid;place-items:center;font-size:7pt;color:var(--nuit)}
+.fiche dl{display:grid;grid-template-columns:auto 1fr;gap:.8mm 2mm;font-size:6.6pt}
+.fiche dt{color:var(--gris)} .fiche dd{font-weight:700}
+.fiche .tag{align-self:flex-start;background:var(--wa-pale);color:var(--wa-fonce);font-weight:800;font-size:6.4pt;padding:1mm 2mm;border-radius:99px}
+.fiche .qui{margin-top:auto;background:var(--nuit);color:var(--blanc);border-radius:2mm;padding:1.8mm 2mm;font-size:6.6pt;font-weight:700}
+.trois{display:grid;grid-template-columns:repeat(3,1fr);gap:3.6mm}
+.atout{border-radius:4.5mm;padding:4mm 4.6mm;background:var(--blanc);border:.3mm solid var(--trait)}
+.atout b{display:block;font-family:var(--titre);font-weight:800;font-size:26pt;line-height:1;color:var(--bleu);font-variation-settings:"wdth" 80}
+.atout:first-child{background:var(--wa);border:0} .atout:first-child b{color:var(--nuit)}
+.atout p{font-size:8.8pt;line-height:1.4;margin-top:1.6mm;font-weight:600}
+
+/* ---------- Cas ---------- */
+.cas-g{display:grid;grid-template-columns:1fr 1fr;gap:4mm}
+.cas{background:rgb(255 255 255 / .06);border:.3mm solid rgb(255 255 255 / .14);border-radius:5mm;padding:5mm 5.2mm;display:flex;flex-direction:column;gap:2.4mm}
+.cas .ecole{font-size:7.6pt;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--wa)}
+.cas h3{font-family:var(--titre);font-weight:800;font-size:16pt;line-height:1.05;font-variation-settings:"wdth" 85}
+.cas p{font-size:9.2pt;line-height:1.45;color:rgb(255 255 255 / .8)}
+.cas .kpis{display:grid;grid-template-columns:1fr 1fr;gap:2.6mm;margin-top:auto}
+.kpi{background:var(--blanc);color:var(--nuit);border-radius:3.4mm;padding:3mm 3.2mm}
+.kpi b{display:block;font-family:var(--titre);font-weight:800;font-size:24pt;line-height:.95;color:var(--bleu);font-variation-settings:"wdth" 80}
+.kpi span{font-size:7.6pt;font-weight:700;line-height:1.3}
+.cas.large{grid-column:1/3;flex-direction:row;align-items:center;gap:6mm;background:var(--soleil);color:var(--nuit);border:0}
+.cas.large .ecole{color:var(--bleu)} .cas.large p{color:#2A2F4A}
+.cas.large > div{flex:1}
+.cas.large .grand{font-family:var(--accent);font-style:italic;font-size:19pt;line-height:1.15;color:var(--nuit);flex:.9;border-left:1.2mm solid var(--nuit);padding-left:5mm}
+.citation{font-family:var(--accent);font-style:italic;font-size:22pt;line-height:1.18;color:var(--ciel);max-width:160mm}
+
+/* ---------- CRM ---------- */
+.boucle{display:grid;grid-template-columns:1fr 5mm 1fr 5mm 1fr 5mm 1fr;align-items:stretch}
+.noeud{background:var(--blanc);border:.3mm solid var(--trait);border-radius:4mm;padding:3.4mm 3.6mm}
+.noeud i{font-style:normal;display:inline-grid;place-items:center;width:5.6mm;height:5.6mm;border-radius:50%;background:var(--bleu);color:#fff;font-family:var(--titre);font-weight:800;font-size:8pt;margin-bottom:1.6mm}
+.noeud b{display:block;font-size:9.2pt;line-height:1.25;margin-bottom:1mm}
+.noeud span{font-size:7.8pt;line-height:1.35;color:var(--gris)}
+.noeud.fin{background:var(--nuit);color:#fff;border:0} .noeud.fin i{background:var(--wa);color:var(--nuit)} .noeud.fin span{color:rgb(255 255 255 / .7)}
+.boucle .fleche{color:var(--bleu);padding-top:0;font-size:13pt}
+.retour{grid-column:1/8;margin-top:1.6mm;border:.4mm dashed var(--bleu);border-top:0;height:4mm;border-radius:0 0 3mm 3mm;position:relative}
+.retour span{position:absolute;left:50%;bottom:-2.4mm;transform:translateX(-50%);background:var(--papier);padding:0 2mm;font-size:7pt;font-weight:800;color:var(--bleu);letter-spacing:.06em;text-transform:uppercase}
+.captures{display:grid;grid-template-columns:1fr 1fr;gap:4mm}
+.capture .fen{background:var(--blanc);border:.3mm solid var(--trait);border-radius:3mm;overflow:hidden;box-shadow:0 2mm 6mm -2mm rgb(1 6 48 / .18)}
+.capture .barre-f{display:flex;align-items:center;gap:1.2mm;padding:1.6mm 2.4mm;background:#EEF1F7;border-bottom:.3mm solid var(--trait)}
+.capture .barre-f i{width:1.8mm;height:1.8mm;border-radius:50%;background:#C9CFDD}
+.capture .barre-f b{margin-left:2mm;font-size:6.8pt;color:var(--gris);font-weight:700}
+.capture .vide{height:30mm;margin:2.4mm;border:.4mm dashed #C9CFDD;border-radius:2mm;display:grid;place-items:center;color:#9AA1B6;font-size:7.6pt;font-weight:700;text-align:center;line-height:1.4}
+.capture h4{font-family:var(--titre);font-weight:800;font-size:11pt;margin:2mm 0 .6mm}
+.capture p{font-size:8.2pt;line-height:1.38;color:#2A2F4A}
+
+/* ---------- Sans CRM ---------- */
+.non-g{display:grid;grid-template-columns:auto 1fr;gap:7mm;align-items:center}
+.non-g .gros-non{font-family:var(--titre);font-weight:800;font-size:96pt;line-height:.8;color:var(--wa);font-variation-settings:"wdth" 78;-webkit-text-stroke:.6mm var(--nuit)}
+.non-g .q{font-family:var(--accent);font-style:italic;font-size:20pt;line-height:1.15;color:var(--nuit)}
+.non-g .q + p{font-size:10pt;line-height:1.5;color:#2A2F4A;margin-top:2mm}
+.etapes3{display:grid;grid-template-columns:repeat(3,1fr);gap:3.6mm;counter-reset:e}
+.e3{background:var(--blanc);border:.3mm solid var(--trait);border-radius:4.5mm;padding:4mm 4.4mm;counter-increment:e;position:relative}
+.e3::before{content:counter(e);position:absolute;top:-3mm;left:4mm;width:7mm;height:7mm;border-radius:50%;background:var(--bleu);color:#fff;display:grid;place-items:center;font-family:var(--titre);font-weight:800;font-size:10pt}
+.e3 h4{font-family:var(--titre);font-weight:800;font-size:13pt;margin:2mm 0 1mm}
+.e3 p{font-size:8.6pt;line-height:1.42;color:#2A2F4A}
+.exemple{display:grid;grid-template-columns:1.25fr 1fr;gap:6mm;align-items:center;background:var(--nuit);color:#fff;border-radius:5.5mm;padding:6mm}
+.exemple .eti-s{color:var(--soleil)}
+.exemple h3{font-family:var(--titre);font-weight:800;font-size:17pt;line-height:1.05;margin:1.6mm 0 2mm;font-variation-settings:"wdth" 85}
+.exemple p{font-size:9pt;line-height:1.5;color:rgb(255 255 255 / .82)}
+.exemple .tel{flex:none}
+.modele .boutons{display:flex;flex-direction:column;gap:.8mm;margin-top:1mm}
+.modele .boutons span{background:#fff;border-radius:1.6mm;text-align:center;color:#027EB5;font-weight:800;font-size:6.8pt;padding:1.4mm}
+.modele .gabarit{display:block;font-size:5.8pt;font-weight:800;color:#667781;margin-bottom:.6mm;letter-spacing:.06em;text-transform:uppercase}
+
+/* ---------- Relances ---------- */
+.frise{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm;position:relative;margin-top:2mm}
+.frise::before{content:"";position:absolute;left:4mm;right:4mm;top:3.4mm;height:.6mm;background:linear-gradient(90deg,var(--wa),var(--ciel),rgb(255 255 255 / .2))}
+.jalon{position:relative;display:flex;flex-direction:column;gap:2mm}
+.jalon .j{align-self:flex-start;background:var(--soleil);color:var(--nuit);font-family:var(--titre);font-weight:800;font-size:9pt;padding:1.2mm 3mm;border-radius:99px}
+.jalon h4{font-size:9pt;font-weight:800;color:var(--blanc)}
+.jalon .mini{font-size:7.8pt}
+.jalon.stop .j{background:rgb(255 255 255 / .18);color:#fff}
+.jalon .vide-msg{font-family:var(--accent);font-style:italic;font-size:13pt;color:rgb(255 255 255 / .6);line-height:1.2}
+.regles{display:grid;grid-template-columns:1fr 1fr;gap:3mm}
+.regle{display:grid;grid-template-columns:10mm 1fr;gap:3mm;align-items:center;background:rgb(255 255 255 / .06);border:.3mm solid rgb(255 255 255 / .12);border-radius:4mm;padding:3.4mm 4mm}
+.regle b{font-family:var(--titre);font-weight:800;font-size:20pt;color:var(--wa);line-height:1}
+.regle p{font-size:9.4pt;line-height:1.35;font-weight:600}
+.regle.rouge b{color:#FF7A66}
+.regle.large{grid-column:1/3}
+.produit{border-left:1.2mm solid var(--ciel);padding:1mm 0 1mm 4mm;font-size:9pt;line-height:1.5;color:rgb(255 255 255 / .82)}
+.produit strong{color:var(--ciel)}
+
+/* ---------- Hybride ---------- */
+.hyb{display:grid;grid-template-columns:1.02fr .98fr;gap:6mm;align-items:start}
+.concept{background:var(--bleu);color:#fff;border-radius:6mm 6mm 6mm 1.5mm;padding:5mm 5.6mm}
+.concept .eti-s{color:var(--soleil)}
+.concept p{font-size:9.6pt;line-height:1.5;margin-top:1.6mm}
+.fil-h{background:#EFEAE2;border-radius:5mm;padding:4mm;display:flex;flex-direction:column;gap:2mm;font-size:8.2pt;line-height:1.4;color:#111B21;margin-top:4mm}
+.fil-h .qui{display:block;font-size:6.4pt;font-weight:800;margin-bottom:.6mm;letter-spacing:.04em}
+.fil-h .ia .qui{color:var(--wa-fonce)} .fil-h .amb .qui{color:#B4570A}
+.fil-h .b-in,.fil-h .b-out{max-width:86%;padding:2mm 2.6mm}
+.fil-h .amb{background:#FFF6D6}
+.relais{align-self:center;font-size:6.8pt;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--gris);background:#fff;border-radius:99px;padding:1mm 3mm}
+.roles{display:flex;flex-direction:column;gap:3mm}
+.role{border-radius:4.5mm;padding:4mm 4.6mm;display:grid;grid-template-columns:11mm 1fr;gap:3mm}
+.role .ic{width:11mm;height:11mm;border-radius:3mm;display:grid;place-items:center;font-family:var(--titre);font-weight:800;font-size:11pt}
+.role h4{font-family:var(--titre);font-weight:800;font-size:13pt;margin-bottom:1mm}
+.role ul{list-style:none;font-size:8.4pt;line-height:1.42;display:flex;flex-direction:column;gap:.8mm}
+.role li::before{content:"· ";font-weight:800}
+.r-ia{background:var(--nuit);color:#fff} .r-ia .ic{background:var(--wa);color:var(--nuit)}
+.r-eq{background:var(--blanc);border:.3mm solid var(--trait)} .r-eq .ic{background:var(--bleu);color:#fff}
+.r-amb{background:var(--soleil);color:var(--nuit)} .r-amb .ic{background:var(--nuit);color:var(--soleil)}
+
+/* ---------- Ce qui ne marche pas ---------- */
+.jaune{background:var(--soleil)}
+.jaune .course{border-color:rgb(1 6 48 / .2);color:rgb(1 6 48 / .6)} .jaune .course .chap{color:var(--nuit)}
+.jaune > .numero{-webkit-text-stroke-color:rgb(1 6 48 / .35)}
+.jaune .citation{color:var(--nuit);font-size:25pt}
+.duel{display:grid;grid-template-columns:1fr 1fr;border-radius:5mm;overflow:hidden;box-shadow:0 3mm 0 var(--nuit)}
+.duel .col{padding:4.6mm 5mm}
+.duel .col h3{font-family:var(--titre);font-weight:800;font-size:13pt;margin-bottom:3mm;display:flex;align-items:center;gap:2mm}
+.duel .col h3 i{font-style:normal;width:6mm;height:6mm;border-radius:50%;display:grid;place-items:center;font-size:8pt}
+.duel .mal{background:var(--nuit);color:#fff} .duel .mal h3 i{background:#FF7A66;color:var(--nuit)}
+.duel .bien{background:var(--blanc);color:var(--nuit)} .duel .bien h3 i{background:var(--wa);color:var(--nuit)}
+.duel ul{list-style:none;display:flex;flex-direction:column;gap:0}
+.duel li{font-size:9.2pt;line-height:1.35;font-weight:600;padding:2.6mm 0;border-bottom:.25mm solid rgb(128 128 140 / .25);min-height:11.6mm;display:flex;align-items:center}
+.duel li:last-child{border-bottom:0}
+.duel .mal li{color:rgb(255 255 255 / .85);text-decoration:line-through;text-decoration-color:rgb(255 122 102 / .7);text-decoration-thickness:.4mm}
+.gravite{background:var(--nuit);color:#fff;border-radius:5mm;padding:4.6mm 5.4mm;display:grid;grid-template-columns:auto 1fr;gap:4mm;align-items:center}
+.gravite b{font-family:var(--titre);font-weight:800;font-size:30pt;color:var(--soleil);line-height:1}
+.gravite p{font-size:9.6pt;line-height:1.5}
+.jaune .signature{color:rgb(1 6 48 / .6)}
+.jaune .folio{background:var(--nuit);color:var(--soleil)}
+
+/* ---------- Check-list ---------- */
+.fin-g{display:grid;grid-template-columns:1.05fr .95fr;gap:7mm;align-items:start}
+.coches{list-style:none;display:flex;flex-direction:column;gap:2.4mm}
+.coches li{display:grid;grid-template-columns:7mm 1fr;gap:3mm;align-items:center;background:rgb(255 255 255 / .06);border:.3mm solid rgb(255 255 255 / .12);border-radius:3.4mm;padding:2.8mm 3.6mm;font-size:9.6pt;font-weight:600;line-height:1.35}
+.coches li::before{content:"";width:6mm;height:6mm;border-radius:1.6mm;border:.6mm solid var(--wa)}
+.coches li small{display:block;font-weight:500;font-size:7.8pt;color:rgb(255 255 255 / .6)}
+.appel{background:var(--blanc);color:var(--nuit);border-radius:6mm;padding:6mm;display:flex;flex-direction:column;gap:3mm;box-shadow:0 4mm 0 var(--wa)}
+.appel h3{font-family:var(--titre);font-weight:800;font-size:22pt;line-height:1;font-variation-settings:"wdth" 82}
+.appel p{font-size:9.4pt;line-height:1.5;color:#2A2F4A}
+.appel .qr{align-self:center;width:44mm;height:44mm;padding:3mm;border-radius:4mm;border:.6mm solid var(--nuit);background:#fff}
+.appel .qr img{width:100%;height:100%;display:block}
+.appel .lien{align-self:center;background:var(--wa);color:var(--nuit);font-weight:800;font-size:10pt;padding:2.4mm 5mm;border-radius:99px}
+.appel .ou{font-size:8.6pt;text-align:center;color:var(--gris)} .appel .ou b{color:var(--nuit)}
+.colophon{margin-top:auto;display:flex;justify-content:space-between;align-items:end;border-top:.25mm solid rgb(255 255 255 / .16);padding-top:4mm;font-size:7.6pt;color:rgb(255 255 255 / .55)}
+.colophon img{height:6.4mm;display:block;margin-bottom:1.6mm}
+
+/* ---------- Corrections après relecture ---------- */
+.flux > .numero{font-size:118pt;top:12mm;right:11mm}
+.flux .chapo{max-width:150mm}
+.nuit-p > .signature,.nuit-p > .folio{position:absolute}
+.nuit-p h2 em{background:none;color:var(--wa);padding:0}
+.kpi span,.noeud span{display:block}
+.edito-g .texte p{font-size:11.2pt}
+.exergue{font-size:24pt}
+.sommaire-c li{padding:2.9mm 0}
+.p-api{gap:4mm}
+.p-api .piece{padding:3.4mm 4.2mm}
+.p-api .piece p{font-size:8.4pt}
+.p-api .marches{height:25mm}
+.p-api .paliers{padding:4.2mm 5.6mm 4mm}
+.pub,.tel,.fiche{font-size:7.6pt}
+.pub .vis{height:26mm}
+.cas-p .cas-g{flex:1;grid-template-rows:1.25fr 1fr}
+.cas-p .cas{padding:6mm}
+.cas-p .cas h3{font-size:19pt}
+.cas-p .cas p{font-size:10.4pt}
+.cas-p .kpi b{font-size:28pt;white-space:nowrap;letter-spacing:-.02em}
+.cas-p .kpi span{font-size:8.6pt}
+.cas-p .cas.large .grand{font-size:22pt}
+.capture .vide{height:40mm}
+.non-g .gros-non{font-size:110pt}
+.e3{padding:5mm 4.6mm}
+.rel-p .frise .mini{font-size:9pt}
+.rel-p .jalon h4{font-size:10.4pt}
+.rel-p .regle{padding:4.4mm 4.6mm}
+.rel-p .regle p{font-size:10.4pt}
+.rel-p .regle b{font-size:24pt}
+.rel-p .retenir{margin-top:6mm}
+.fil-h{font-size:9pt}
+.concept p{font-size:10.4pt}
+.role ul{font-size:9pt}
+.duel li{font-size:10pt;min-height:12.4mm}
+.test3{display:grid;grid-template-columns:repeat(3,1fr);gap:3.6mm}
+.test3 .q3{background:var(--blanc);border-radius:4.5mm;padding:4.4mm 4.8mm;box-shadow:0 2mm 0 var(--nuit)}
+.test3 .q3 b{display:block;font-family:var(--titre);font-weight:800;font-size:26pt;line-height:1;color:var(--bleu)}
+.test3 .q3 p{font-family:var(--accent);font-style:italic;font-size:15pt;line-height:1.15;color:var(--nuit);margin-top:1.6mm}
+.titre-test{font-family:var(--titre);font-weight:800;font-size:14pt;color:var(--nuit)}
+.fin-p .fin-g{flex:1;align-items:stretch}
+.fin-p .coches{justify-content:space-between}
+.fin-p .coches li{padding:5mm 4.6mm;font-size:11.4pt} .fin-p .coches li small{font-size:8.6pt;margin-top:.6mm} .fin-p .coches li::before{width:7mm;height:7mm}
+.fin-p .appel{justify-content:center;gap:4mm}
+.fin-p .appel .qr{width:56mm;height:56mm}
+.fin-p .appel h3{font-size:26pt}
+</style>
+</head>
+<body>
+
+<!-- ============ 1. COUVERTURE ============ -->
+<section class="page couv">
+  <img class="logo" src="../../../site/messagingme-logo-blanc.png" alt="Messaging Me">
+  <div class="pastille">Livre blanc 2026</div>
+  <div class="surtitre">Écoles &amp; enseignement supérieur</div>
+  <h1 class="titre">Recruter<br>sur <span class="marque">WhatsApp</span><span class="point">.</span></h1>
+  <p class="sous serif">Le guide pour transformer chaque intérêt en conversation, et chaque conversation en candidature.</p>
+  <div class="sommaire">
+    <b>Dans ce guide</b>
+    <span>Comprendre l’API</span><span>Les chiffres</span><span>Click-to-WhatsApp</span>
+    <span>CRM &amp; relances</span><span>IA puis humain</span><span>Ce qui ne marche pas</span>
+  </div>
+  <div class="fil">
+    <div class="bulle ecole"><span class="qui">Admissions · École de commerce</span>Bonjour Léa, votre dossier pour le Bachelor est complet. On prépare votre entretien avec l’équipe admissions ?<small>17:42</small></div>
+    <div class="bulle candidat">Oui, avec plaisir ! Jeudi en fin de journée, c’est possible ?<small>17:44 ✓✓</small></div>
+    <div class="choix"><span>Jeudi 18 h</span><span>Voir les créneaux</span></div>
+  </div>
+  <div class="bas"><strong>app.messagingme.fr</strong><span>La plateforme conversationnelle qui comprend chaque conversation.</span></div>
+</section>
+
+<!-- ============ 2. ÉDITO ET SOMMAIRE ============ -->
+<section class="page flux">
+  <div class="course"><span class="chap">Édito</span><span>Recruter sur WhatsApp</span></div>
+    <h2 class="titre">Vos candidats vivent dans WhatsApp. <em>À une condition</em>, votre école aussi.</h2>
+  <div class="edito-g">
+    <div class="texte">
+      <p>Entre un salon étudiant et une inscription, il se passe des mois. Pendant ces mois, vos e-mails se perdent entre deux newsletters et vos appels tombent sur des messageries. Vos candidats, eux, ouvrent WhatsApp des dizaines de fois par jour.</p>
+      <p>WhatsApp est devenu l’endroit où l’on parle de son orientation : avec ses amis, avec ses parents, et de plus en plus avec les écoles. Les candidats y sont prêts : 83 % des Français se disent ouverts aux messages des entreprises, quand ils sont pertinents.</p>
+      <p>La condition est là : pertinents. Ce guide ne vous apprend pas à envoyer plus de messages. Il vous apprend à envoyer le bon, au bon moment : quand un candidat vient de télécharger une brochure, de s’inscrire à une journée portes ouvertes, d’être déclaré admissible. Puis à faire vivre la conversation, avec votre IA, vos équipes et vos ambassadeurs.</p>
+      <p class="exergue">Un message utile au bon moment vaut mieux que dix campagnes.</p>
+      <p class="signe">L’équipe Messaging Me<span>Conseil, plateforme et accompagnement conversationnels</span></p>
+    </div>
+    <div class="sommaire-c">
+      <h3>Sommaire</h3>
+      <ol>
+        <li><b>01</b>Comprendre WhatsApp<i>03</i></li>
+        <li><b>02</b>Le compte API, pièce par pièce<i>04</i></li>
+        <li><b>03</b>Les chiffres<i>05</i></li>
+        <li><b>04</b>Le bon moment, la bonne valeur<i>06</i></li>
+        <li><b>05</b>Acquérir avec Click-to-WhatsApp<i>07</i></li>
+        <li><b>06</b>Ils le font déjà<i>08</i></li>
+        <li><b>07</b>L’automatisation CRM<i>09</i></li>
+        <li><b>08</b>Démarrer sans CRM<i>10</i></li>
+        <li><b>09</b>Relancer sans harceler<i>11</i></li>
+        <li><b>10</b>L’IA d’abord, l’humain ensuite<i>12</i></li>
+        <li><b>11</b>Ce qui ne marche pas<i>13</i></li>
+        <li class="fin"><b>✓</b>Votre check-list de démarrage<i>14</i></li>
+      </ol>
+    </div>
+  </div>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">02</div>
+</section>
+
+<!-- ============ 3. 01 COMPRENDRE WHATSAPP ============ -->
+<section class="page contenu">
+  <div class="course"><span class="chap">01 · Comprendre WhatsApp</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">01</div>
+  <h2 class="titre">Trois WhatsApp.<br>Un seul recrute<br><em>à grande échelle</em>.</h2>
+  <p class="chapo">Même logo, même bulle verte, trois outils très différents. Avant de lancer une campagne d’admissions, il faut savoir <strong>lequel vous parle de votre CRM, de vos publicités et de vos équipes</strong>, et lequel s’arrête au téléphone d’un conseiller.</p>
+  <div class="cartes">
+    <div class="carte">
+      <div class="eti">Application</div>
+      <h3>WhatsApp</h3>
+      <div class="pour">pour les particuliers</div>
+      <ul>
+        <li class="oui">L’application de tous les jours, entre proches</li>
+        <li class="non">Aucun nom d’entreprise vérifié</li>
+        <li class="non">Rien ne se branche sur vos outils</li>
+        <li class="non">Un téléphone, une personne</li>
+      </ul>
+    </div>
+    <div class="carte">
+      <div class="eti">Application</div>
+      <h3>WhatsApp Business</h3>
+      <div class="pour">pour la petite structure</div>
+      <ul>
+        <li class="oui">Gratuite, avec un profil d’entreprise</li>
+        <li class="oui">Réponses rapides et étiquettes</li>
+        <li class="non">Diffusions limitées aux contacts qui ont enregistré votre numéro</li>
+        <li class="non">Pas de lien avec votre CRM</li>
+      </ul>
+    </div>
+    <div class="carte api">
+      <div class="badge">Celle qu’il vous faut</div>
+      <div class="eti">Plateforme</div>
+      <h3>API WhatsApp Business</h3>
+      <div class="pour">pour recruter à l’échelle</div>
+      <ul>
+        <li class="oui">Campagnes vers des milliers de candidats qui ont donné leur accord</li>
+        <li class="oui">Branchée sur votre CRM, vos formulaires et vos publicités</li>
+        <li class="oui">Toute l’équipe admissions sur un seul numéro, l’IA en premier relais</li>
+        <li class="note">Écrire en premier passe par un modèle validé par Meta, facturé au message</li>
+      </ul>
+    </div>
+  </div>
+  <div class="encart">
+    <div class="eti">Le mécanisme</div>
+    <p><strong>Vous écrivez en premier ?</strong> C’est un message modèle, validé par Meta avant son envoi.</p>
+    <p><strong>Le candidat vous répond ?</strong> Une fenêtre de 24 heures s’ouvre pour échanger librement, avec votre équipe ou votre IA.</p>
+  </div>
+  <div class="retenir">
+    <div class="etiquette">À retenir</div>
+    <ol>
+      <li>L’application Business dépanne une petite équipe ; elle ne porte pas une campagne de recrutement.</li>
+      <li>Seule l’API se branche sur votre CRM et parle à des milliers de candidats.</li>
+      <li>Un modèle validé pour ouvrir, puis 24 heures d’échange libre après chaque réponse.</li>
+    </ol>
+  </div>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">03</div>
+</section>
+
+<!-- ============ 4. 02 LE COMPTE API ============ -->
+<section class="page flux p-api">
+  <div class="course"><span class="chap">02 · Le compte API</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">02</div>
+  <h2 class="titre">Ce qu’il faut pour écrire à <em>des milliers</em> de candidats.</h2>
+  <p class="chapo">L’API WhatsApp Business ne s’achète pas comme une application : elle s’ouvre chez Meta, au nom de votre école. <strong>Quatre pièces, et une cinquième en option : la coche bleue.</strong></p>
+  <div class="pieces">
+    <div class="piece"><div class="n">1</div><div><h3>Un portefeuille Meta Business</h3><p>Le compte d’entreprise de l’école chez Meta (business.facebook.com). Faites-le vérifier : c’est la vérification d’entreprise qui ouvre les envois à grande échelle.</p></div></div>
+    <div class="piece"><div class="n">2</div><div><h3>Un numéro dédié</h3><p>Un numéro libre, qui ne sert pas déjà dans l’application WhatsApp. Ou celui de votre application WhatsApp Business, qui peut y rester.</p></div></div>
+    <div class="piece"><div class="n">3</div><div><h3>Un nom d’affichage</h3><p>Le nom de l’école, tel que le candidat le lit en haut de la conversation. Meta l’examine et l’approuve.</p></div></div>
+    <div class="piece"><div class="n">4</div><div><h3>Une carte bancaire chez Meta</h3><p>Meta facture l’école directement, au message, selon sa catégorie. Sans moyen de paiement, seules les réponses partent : les modèles sont bloqués.</p></div></div>
+  </div>
+  <div class="paliers">
+    <div class="haut"><div class="sous-titre">Les limites d’envoi : on part de 250, on monte vite.</div><span>Nombre de contacts différents joignables par 24 heures, hors réponses dans une conversation ouverte.</span></div>
+    <div class="marches">
+      <div class="marche m1"><b>250</b></div>
+      <div class="marche m2"><b>2 000</b></div>
+      <div class="marche m3"><b>10 000</b></div>
+      <div class="marche m4"><b>100 000</b></div>
+      <div class="marche m5"><b>Illimité</b></div>
+    </div>
+    <div class="bas-p"><div>Nouveau portefeuille</div><div>Après la vérification d’entreprise</div><div class="auto">Montée automatique : des messages de qualité, et la moitié du palier utilisée sur 7 jours</div></div>
+  </div>
+  <div class="api-bas">
+    <div class="encart f">
+      <div class="eti">La coche bleue</div>
+      <p><strong>Elle signale un compte officiel.</strong> Meta l’accorde sur demande, après examen, si l’école est sur la plateforme depuis 30 jours, si son portefeuille est vérifié, si le numéro a la double authentification et un nom d’affichage approuvé.</p>
+      <p>Pas indispensable pour démarrer vos campagnes.</p>
+    </div>
+    <div class="retenir f">
+      <div class="etiquette">À retenir</div>
+      <ol>
+        <li>Vérifiez l’entreprise chez Meta dès le départ : c’est elle qui fait passer de 250 à 2 000.</li>
+        <li>Un numéro dédié à l’école, jamais le portable d’un conseiller.</li>
+        <li>La coche bleue est un bonus, pas un prérequis.</li>
+      </ol>
+    </div>
+  </div>
+  <p class="note">Source : Meta, documentation de la WhatsApp Business Platform, pages « Messaging limits » et « Official Business Accounts », consultées le 28 octobre 2026.</p>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">04</div>
+</section>
+
+<!-- ============ 5. 03 LES CHIFFRES ============ -->
+<section class="page chiffres">
+  <div class="course"><span class="chap">03 · Les chiffres</span><span>Recruter sur WhatsApp</span></div>
+  <h2 class="titre">Vos candidats sont déjà là. <span class="serif">Et ils n’attendent qu’un message utile.</span></h2>
+  <div class="grille">
+    <div class="tuile t-un">
+      <div class="gros titre"><span>N°</span>1</div>
+      <p>WhatsApp, marque la plus forte du monde en 2026.<sup>1</sup></p>
+      <p class="petit">Indice 41,5, devant Samsung (41,4).</p>
+    </div>
+    <div class="tuile t-audience">
+      <div class="gros titre">49,2 M</div>
+      <p>de visiteurs uniques chaque mois en France : la 3<sup style="font-size:.62em;margin:0;vertical-align:.45em">e</sup>&nbsp;marque la plus visitée du pays.<sup>2</sup></p>
+    </div>
+    <div class="tuile t-ouvert">
+      <div class="gros titre">891</div>
+      <p>ouvertures de l’application par mois et par utilisateur : près de 30 par jour.<sup>5</sup></p>
+    </div>
+    <div class="tuile t-ecart">
+      <h3>La demande est en avance sur les marques.</h3>
+      <div class="barre fr"><div class="val">83 %</div><div class="piste"><div class="rempli">des Français sont ouverts aux messages pertinents des entreprises<sup>3</sup></div></div></div>
+      <div class="barre ent"><div class="val">50 %</div><div class="piste"><div class="rempli">des entreprises le croient<sup>3</sup></div></div></div>
+    </div>
+    <div class="tuile t-lecture">
+      <div class="gros titre">96 %</div>
+      <p>de taux de lecture.</p>
+    </div>
+    <div class="tuile t-clics">
+      <div class="gros titre">×4,5</div>
+      <p>de clics pour Air France sur WhatsApp que par e-mail.<sup>4</sup></p>
+    </div>
+    <div class="tuile t-jour">
+      <div class="gros titre">24 h</div>
+      <p>d’échange libre après chaque réponse d’un candidat.</p>
+    </div>
+  </div>
+  <p class="sources"><b>Sources.</b> 1. YouGov, Best Brand Rankings 2026, indices BrandIndex du 1<sup>er</sup> janvier au 31 décembre 2025 (article du 9 février 2026). 2. Médiamétrie, Audience Internet Global, février 2026, internautes de 11 ans et plus. 3. Enquête Kantar pour Meta, citée dans l’étude BCG et Meta du 9 avril 2026. 4. Étude BCG et Meta, 9 avril 2026. 5. Meta, Top Trends 2026 (891 ouvertures par mois).</p>
+  <div class="folio">05</div>
+</section>
+
+<!-- ============ 6. 04 LE BON MOMENT ============ -->
+<section class="page flux">
+  <div class="course"><span class="chap">04 · Ce qui marche</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">04</div>
+  <h2 class="titre">Le bon moment. Ou quelque chose <em>qui a de la valeur</em>.</h2>
+  <p class="chapo">Un message WhatsApp qui marche répond à l’une de deux questions : <strong>que vient de faire le candidat ? Que puis-je lui apporter ?</strong> S’il ne répond à aucune des deux, il ne part pas.</p>
+  <div class="deux">
+    <div>
+      <div class="colonne-t">Coller à un événement du candidat</div>
+      <div class="moments">
+        <div class="moment"><div class="pt"></div><div><h4>Il télécharge une brochure</h4><div class="mini">Voici la brochure du Bachelor. Une question sur le programme ou sur l’admission ?</div></div></div>
+        <div class="moment"><div class="pt"></div><div><h4>Il s’inscrit à une journée portes ouvertes</h4><div class="mini">Votre place est réservée samedi à 10 h. On vous envoie le plan d’accès la veille ?</div></div></div>
+        <div class="moment"><div class="pt"></div><div><h4>Son dossier est incomplet</h4><div class="mini">Il manque votre relevé de notes : vous pouvez le déposer ici, en deux minutes.</div></div></div>
+        <div class="moment"><div class="pt"></div><div><h4>Il est déclaré admissible</h4><div class="mini">Félicitations ! Voici comment préparer vos oraux, et qui peut répondre à vos questions.</div></div></div>
+        <div class="moment"><div class="pt"></div><div><h4>Il est admis</h4><div class="mini">Bienvenue ! Les trois étapes pour finaliser votre inscription.</div></div></div>
+      </div>
+    </div>
+    <div>
+      <div class="colonne-t">Apporter quelque chose de précieux</div>
+      <div class="valeurs">
+        <div class="valeur"><h4>Renvoyer la brochure</h4><p>Celle qu’il a téléchargée, sur le canal qu’il ouvre vraiment.</p></div>
+        <div class="valeur"><h4>Inviter</h4><p>Journée portes ouvertes, webinar, journée d’immersion : une invitation, une réponse en un geste.</p></div>
+        <div class="valeur"><h4>Partager un contenu exclusif</h4><p>Un témoignage d’étudiant, une vidéo du campus, un guide comme celui-ci.</p></div>
+        <div class="valeur"><h4>Rappeler une échéance</h4><p>La date limite de candidature, l’heure de l’oral, le jour de la rentrée.</p></div>
+      </div>
+    </div>
+  </div>
+  <div class="preuve"><b>200+</b><p><strong>participants au webinar que NEOMA a promu sur WhatsApp</strong> auprès de ses admissibles : une invitation au bon moment, une réponse en un geste.<br><span class="note">Cas client présenté par Messaging Me, mai 2026.</span></p></div>
+  <div class="retenir f">
+    <div class="etiquette">À retenir</div>
+    <ol>
+      <li>Chaque message part d’une action du candidat, ou apporte quelque chose.</li>
+      <li>Il dit pourquoi il arrive maintenant.</li>
+      <li>Il se termine par une question ou un bouton : on attend une réponse.</li>
+    </ol>
+  </div>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">06</div>
+</section>
+
+<!-- ============ 7. 05 CLICK-TO-WHATSAPP ============ -->
+<section class="page flux">
+  <div class="course"><span class="chap">05 · Click-to-WhatsApp</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">05</div>
+  <h2 class="titre">Acquérir : de la pub à la conversation, <em>en un geste</em>.</h2>
+  <p class="chapo">Une publicité Click-to-WhatsApp, c’est une pub Facebook ou Instagram dont le bouton ouvre une conversation WhatsApp avec votre école. <strong>Pas de page d’atterrissage, pas de formulaire</strong> : le candidat arrive avec un message déjà écrit, et votre scénario lui répond dans la seconde.</p>
+  <div class="schema">
+    <div class="etapes4">
+      <div class="etape">
+        <div class="lab"><i>1</i>La pub</div>
+        <div class="pub">
+          <div class="t"><div class="av"></div><div><b>École Horizon</b><small>Sponsorisé</small></div></div>
+          <div class="txt">Votre projet à l’international commence par une question.</div>
+          <div class="vis"><b>Bachelor International</b><span>Rentrée 2027 · 4 campus</span></div>
+          <div class="bt">Envoyer un message WhatsApp</div>
+        </div>
+      </div>
+      <div class="fleche">→</div>
+      <div class="etape">
+        <div class="lab"><i>2</i>Le clic</div>
+        <div class="tel">
+          <div class="entete"><div class="av"></div>École Horizon</div>
+          <div class="b-out">Bonjour ! Je voudrais des informations sur le Bachelor International.</div>
+          <div class="b-in"><span class="ia">Assistant de l’école</span>Avec plaisir ! Vous êtes en terminale, ou déjà dans le supérieur ?</div>
+          <div class="puces"><span>Terminale</span><span>Bac +1 ou +2</span></div>
+        </div>
+      </div>
+      <div class="fleche">→</div>
+      <div class="etape">
+        <div class="lab"><i>3</i>La qualification</div>
+        <div class="tel">
+          <div class="b-out">Terminale. Et il y a des bourses ?</div>
+          <div class="b-in"><span class="ia">Assistant de l’école</span>Oui, sur critères sociaux et au mérite. Je vous mets en relation avec Inès, des admissions : elle vous écrit ici même.</div>
+        </div>
+      </div>
+      <div class="fleche">→</div>
+      <div class="etape">
+        <div class="lab"><i>4</i>La reprise</div>
+        <div class="fiche">
+          <div class="nm"><div class="av">CM</div>Camille M.</div>
+          <span class="tag">Prospect qualifié</span>
+          <dl><dt>Programme</dt><dd>Bachelor International</dd><dt>Niveau</dt><dd>Terminale</dd><dt>Intention</dt><dd>Financement</dd><dt>Source</dt><dd>Pub Instagram</dd></dl>
+          <div class="qui">→ Inès, admissions, reprend</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="trois">
+    <div class="atout"><b>72 h</b><p>de messages offerts après le clic : vous ne payez que la pub.</p></div>
+    <div class="atout"><b>1 écran</b><p>La pub, le scénario qui répond et les résultats, au même endroit dans Messaging Me.</p></div>
+    <div class="atout"><b>€ / qualifié</b><p>Coût par clic, par prospect et par conversation qualifiée : vous coupez ou relancez, pub par pub.</p></div>
+  </div>
+  <div class="encart f">
+    <div class="eti">Sur le terrain</div>
+    <p><strong>Le Groupe EDH</strong> promeut ainsi ses écoles et ses formations <strong>dans 11 pays</strong>, avec des campagnes Click-to-WhatsApp et des messages marketing.</p>
+  </div>
+  <p class="note">Exemple illustratif : l’école, la publicité et la candidate sont fictives. Cas EDH : cas client présenté par Messaging Me, mai 2026.</p>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">07</div>
+</section>
+
+<!-- ============ 8. 06 ILS LE FONT DÉJÀ ============ -->
+<section class="page flux nuit-p cas-p">
+  <div class="course"><span class="chap">06 · Ils le font déjà</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">06</div>
+  <h2 class="titre">Ils le font déjà.</h2>
+  <p class="citation">Trois écoles, trois façons d’engager la conversation.</p>
+  <div class="cas-g">
+    <div class="cas">
+      <div class="ecole">NEOMA Business School</div>
+      <h3>Renforcer la préférence aux moments décisifs.</h3>
+      <p>Des campagnes WhatsApp entre l’admissibilité et les oraux, avec une orientation des demandes vers les services compétents.</p>
+      <div class="kpis">
+        <div class="kpi"><b>200+</b><span>participants au webinar promu</span></div>
+        <div class="kpi"><b>100 %</b><span>des messages entrants répartis instantanément</span></div>
+      </div>
+    </div>
+    <div class="cas">
+      <div class="ecole">Groupe EDH</div>
+      <h3>Recruter à l’international. Centraliser le suivi.</h3>
+      <p>Des campagnes Click-to-WhatsApp et des messages marketing pour promouvoir les écoles et formations dans 11 pays.</p>
+      <div class="kpis">
+        <div class="kpi"><b>30 000+</b><span>conversations engagées avec les candidats</span></div>
+        <div class="kpi"><b>11</b><span>comptes gérés dans une seule plateforme</span></div>
+      </div>
+    </div>
+    <div class="cas large">
+      <div>
+        <div class="ecole">EDHEC Business School</div>
+        <h3>Accompagner le choix des étudiants et de leurs parents.</h3>
+        <p>Des campagnes push marketing sortantes sur WhatsApp pour valoriser l’école et partager des contenus exclusifs aux étapes clés de l’orientation.</p>
+      </div>
+      <div class="grand">Objectif : renforcer la préférence au moment du choix d’école.</div>
+    </div>
+  </div>
+  <p class="citation" style="font-size:21pt;color:rgb(255 255 255 / .85)">Le point commun : chaque message arrive au moment où le candidat a une décision à prendre.</p>
+  <p class="note">Source : cas clients présentés par Messaging Me, mai 2026.</p>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">08</div>
+</section>
+
+<!-- ============ 9. 07 L'AUTOMATISATION CRM ============ -->
+<section class="page flux">
+  <div class="course"><span class="chap">07 · L’automatisation CRM</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">07</div>
+  <h2 class="titre">L’automatisation CRM : <em>le moteur</em> de ce qui marche.</h2>
+  <p class="chapo">Votre CRM sait où en est chaque candidat. L’automatisation, c’est laisser <strong>chaque changement d’étape déclencher le bon message WhatsApp</strong>, puis faire revenir la réponse dans la fiche. Personne n’envoie rien à la main, et personne n’oublie personne.</p>
+  <div class="boucle">
+    <div class="noeud"><i>1</i><b>Une étape change dans le CRM</b><span>Brochure téléchargée, dossier complet, admissible.</span></div>
+    <div class="fleche">→</div>
+    <div class="noeud"><i>2</i><b>Le bon modèle part sur WhatsApp</b><span>Celui de cette étape, au nom du candidat.</span></div>
+    <div class="fleche">→</div>
+    <div class="noeud"><i>3</i><b>Le candidat répond</b><span>L’IA ou l’équipe enchaîne, dans la même conversation.</span></div>
+    <div class="fleche">→</div>
+    <div class="noeud fin"><i>4</i><b>L’analyse revient dans la fiche</b><span>Intention, urgence, prochaine action : on sait qui appeler.</span></div>
+    <div class="retour"><span>et la boucle recommence à l’étape suivante</span></div>
+  </div>
+  <div class="captures">
+    <div class="capture"><div class="fen"><div class="barre-f"><i></i><i></i><i></i><b>HubSpot</b></div><div class="vide">Capture HubSpot<br>à venir</div></div>
+      <h4>HubSpot</h4><p>L’analyse de chaque conversation arrive dans HubSpot, et vos listes HubSpot deviennent des audiences de campagne.</p></div>
+    <div class="capture"><div class="fen"><div class="barre-f"><i></i><i></i><i></i><b>Salesforce</b></div><div class="vide">Capture Salesforce<br>à venir</div></div>
+      <h4>Salesforce</h4><p>L’analyse de chaque conversation arrive dans Salesforce : votre équipe sait qui appeler, et quand.</p></div>
+    <div class="capture"><div class="fen"><div class="barre-f"><i></i><i></i><i></i><b>Microsoft Dynamics</b></div><div class="vide">Capture Microsoft Dynamics<br>à venir</div></div>
+      <h4>Microsoft Dynamics</h4><p>Par l’API ou un webhook : votre CRM prévient Messaging Me à chaque changement d’étape.</p></div>
+    <div class="capture"><div class="fen"><div class="barre-f"><i></i><i></i><i></i><b>Oscar</b></div><div class="vide">Capture Oscar<br>à venir</div></div>
+      <h4>Oscar</h4><p>Même principe : un appel à l’API ou un webhook au changement d’étape, ou un export importé.</p></div>
+  </div>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">09</div>
+</section>
+
+<!-- ============ 10. 08 DÉMARRER SANS CRM ============ -->
+<section class="page flux">
+  <div class="course"><span class="chap">08 · Démarrer sans CRM</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">08</div>
+  <h2 class="titre">Pas de CRM branché ? <em>Commencez quand même</em>.</h2>
+  <div class="non-g">
+    <div class="gros-non">Non.</div>
+    <div><p class="q">Faut-il relier son CRM pour démarrer ?</p><p>Le branchement fait gagner du temps quand les envois deviennent quotidiens. Pour vos premières campagnes, une liste suffit.</p></div>
+  </div>
+  <div class="etapes3">
+    <div class="e3"><h4>Exportez</h4><p>Une liste de votre CRM ou de votre outil d’admissions, en fichier CSV : nom, mobile, programme, date utile.</p></div>
+    <div class="e3"><h4>Importez</h4><p>Dans Messaging Me, avec un tag par population : « admissibles-2027 », « jpo-novembre ».</p></div>
+    <div class="e3"><h4>Lancez</h4><p>Une campagne avec un modèle validé par Meta, au rythme d’envoi que vous choisissez.</p></div>
+  </div>
+  <div class="exemple">
+    <div>
+      <div class="eti-s">L’exemple</div>
+      <h3>Tous les candidats convoqués aux entretiens.</h3>
+      <p>Vous importez la liste avec la date de chaque entretien. Messaging Me envoie seul un rappel 48 heures avant, avec le lieu et deux boutons : « Je confirme » et « Je dois décaler ». Une date reportée ? Le rappel suit la nouvelle date.</p>
+    </div>
+    <div class="tel modele">
+      <div class="entete"><div class="av"></div>École Horizon</div>
+      <div class="b-in"><span class="gabarit">Modèle · rappel</span>Bonjour Hugo, votre entretien d’admission a lieu jeudi à 14 h, campus de Lyon, salle B204. À jeudi !
+        <div class="boutons"><span>Je confirme</span><span>Je dois décaler</span></div></div>
+    </div>
+  </div>
+  <div class="api-bas">
+    <div class="encart f">
+      <div class="eti">Une seule condition</div>
+      <p><strong>Le consentement.</strong> N’importez que des candidats qui ont accepté d’être contactés sur WhatsApp, par une case à cocher sur vos formulaires.</p>
+    </div>
+    <div class="retenir f">
+      <div class="etiquette">À retenir</div>
+      <ol>
+        <li>Un fichier suffit pour une première campagne.</li>
+        <li>Un tag par population, une campagne par moment.</li>
+        <li>Branchez le CRM quand les imports deviennent hebdomadaires.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">10</div>
+</section>
+
+<!-- ============ 11. 09 RELANCER SANS HARCELER ============ -->
+<section class="page flux nuit-p rel-p">
+  <div class="course"><span class="chap">09 · Les relances</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">09</div>
+  <h2 class="titre">Relancer <em>sans harceler</em>.</h2>
+  <p class="chapo">Une relance n’est pas le même message envoyé deux fois. <strong>C’est un autre angle, au bon moment</strong>, et elle s’arrête dès que le candidat répond.</p>
+  <div class="frise">
+    <div class="jalon"><span class="j">J 0</span><h4>L’invitation</h4><div class="mini">Journée portes ouvertes samedi : on vous garde une place ?</div></div>
+    <div class="jalon"><span class="j">J +3</span><h4>Pas de réponse : un autre angle</h4><div class="mini">Léa, étudiante en 2e année, sera là samedi pour répondre à vos questions.</div></div>
+    <div class="jalon"><span class="j">Oui !</span><h4>Il répond : la veille, le rappel</h4><div class="mini">À demain 10 h ! Voici le plan d’accès, et le numéro de l’accueil.</div></div>
+    <div class="jalon stop"><span class="j">Silence</span><h4>Toujours rien : on s’arrête</h4><div class="vide-msg">Aucun troisième message. Le candidat reviendra par lui-même, ou pas.</div></div>
+  </div>
+  <div class="regles">
+    <div class="regle"><b>1</b><p>On s’arrête dès que le candidat répond.</p></div>
+    <div class="regle"><b>2</b><p>Un autre angle à chaque fois : témoignage, vidéo, question simple.</p></div>
+    <div class="regle"><b>3</b><p>Une relance sans réponse, puis le silence.</p></div>
+    <div class="regle rouge"><b>4</b><p>Après un STOP, plus rien. Jamais.</p></div>
+    <div class="regle large"><b>5</b><p>Au-delà de 24 heures sans réponse, seul un modèle validé par Meta peut partir : chaque relance se prépare comme un vrai message.</p></div>
+  </div>
+  <p class="produit"><strong>Dans Messaging Me</strong>, le délai « Pas de réponse » d’une question, le bloc « Attente » et les rappels avant une date font tout cela sans personne. Un STOP est respecté automatiquement.</p>
+  <div class="retenir f">
+    <div class="etiquette">À retenir</div>
+    <ol>
+      <li>Une relance, c’est un nouvel angle, jamais le même message.</li>
+      <li>La réponse du candidat arrête tout.</li>
+      <li>Le silence est aussi une réponse : on le respecte.</li>
+    </ol>
+  </div>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">11</div>
+</section>
+
+<!-- ============ 12. 10 L'IA D'ABORD ============ -->
+<section class="page flux">
+  <div class="course"><span class="chap">10 · L’IA puis l’humain</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">10</div>
+  <h2 class="titre">L’IA d’abord. Vos équipes ensuite. <em>Vos ambassadeurs aussi</em>.</h2>
+  <div class="hyb">
+    <div>
+      <div class="concept">
+        <div class="eti-s">Le bot hybride, c’est quoi ?</div>
+        <p>Une IA répond tout de suite, jour et nuit, à partir de vos contenus : programmes, frais, admissions, logement. Elle annonce qu’elle est une IA.</p>
+        <p>Dès qu’une question sort de ce qu’elle sait, ou qu’un candidat demande à parler à quelqu’un, <strong>elle passe la main à un humain</strong>, et ne reprend pas la parole d’elle-même.</p>
+      </div>
+      <div class="fil-h">
+        <div class="b-out">Bonjour, le Bachelor est-il accessible en alternance ?<small style="display:block;text-align:right;font-size:6pt;color:#667781">23:14</small></div>
+        <div class="b-in ia"><span class="qui">ASSISTANT DE L’ÉCOLE · 23:14</span>Vous échangez avec un assistant automatique. Oui, à partir de la 3e année, en alternance.</div>
+        <div class="b-out">Et la vie étudiante, ça ressemble à quoi ? Je peux parler à un étudiant ?</div>
+        <div class="b-in ia"><span class="qui">ASSISTANT DE L’ÉCOLE</span>Je vous mets en relation avec Inès, étudiante ambassadrice. Elle vous répond ici même.</div>
+        <div class="relais">Conversation attribuée à Inès</div>
+        <div class="b-in amb"><span class="qui">INÈS · AMBASSADRICE · 9:02</span>Bonjour ! Je suis en 2e année. Posez-moi toutes vos questions sur la vie du campus.</div>
+      </div>
+      <p class="note" style="margin-top:2mm">Exemple illustratif, école fictive.</p>
+    </div>
+    <div class="roles">
+      <div class="role r-ia"><div class="ic">IA</div><div><h4>L’IA</h4><ul><li>Répond en quelques secondes, à toute heure</li><li>S’appuie uniquement sur vos contenus</li><li>Annonce qu’elle est une IA</li></ul></div></div>
+      <div class="role r-eq"><div class="ic">ADM</div><div><h4>Vos équipes</h4><ul><li>Reprennent l’admission, le financement, les cas particuliers</li><li>Trouvent la conversation dans « À traiter »</li><li>Répondent depuis le numéro de l’école</li></ul></div></div>
+      <div class="role r-amb"><div class="ic">★</div><div><h4>Vos ambassadeurs</h4><ul><li>Des étudiants avec un accès à la boîte de réception</li><li>Vous leur attribuez les conversations</li><li>Ils répondent avec leurs mots</li></ul></div></div>
+      <div class="retenir f">
+        <div class="etiquette">À retenir</div>
+        <ol>
+          <li>L’IA répond à ce qu’elle sait, et seulement à ça.</li>
+          <li>Un humain reprend dès que la question compte vraiment.</li>
+          <li>Rien ne convainc mieux un futur étudiant qu’un étudiant.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">12</div>
+</section>
+
+<!-- ============ 13. 11 CE QUI NE MARCHE PAS ============ -->
+<section class="page flux jaune">
+  <div class="course"><span class="chap">11 · Ce qui ne marche pas</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">11</div>
+  <h2 class="titre">Ce qui ne marche pas : le marketing pur.</h2>
+  <p class="citation">WhatsApp n’est pas un e-mail de plus. C’est une conversation, ou ce n’est rien.</p>
+  <div class="duel">
+    <div class="col mal"><h3><i>✕</i>À éviter</h3>
+      <ul>
+        <li>Une promotion envoyée à toute la base, sans raison</li>
+        <li>Un fichier acheté, ou importé sans accord</li>
+        <li>« Un message par semaine, pour rester présent »</li>
+        <li>Un message auquel on ne peut pas répondre</li>
+        <li>Tout automatiser, sans personne derrière</li>
+        <li>Relancer quelqu’un qui a dit STOP</li>
+      </ul>
+    </div>
+    <div class="col bien"><h3><i>✓</i>À faire à la place</h3>
+      <ul>
+        <li>Un message qui suit une action du candidat</li>
+        <li>Des candidats qui ont coché la case WhatsApp</li>
+        <li>Un message quand il y a quelque chose à dire</li>
+        <li>Une question ou un bouton, à chaque fois</li>
+        <li>L’IA d’abord, une personne quand ça compte</li>
+        <li>Un STOP respecté, définitivement</li>
+      </ul>
+    </div>
+  </div>
+  <div class="titre-test">Le test, avant chaque envoi</div>
+  <div class="test3">
+    <div class="q3"><b>1</b><p>Pourquoi lui, et pourquoi maintenant ?</p></div>
+    <div class="q3"><b>2</b><p>Peut-il me répondre en un geste ?</p></div>
+    <div class="q3"><b>3</b><p>Le lirais-je jusqu’au bout, à sa place ?</p></div>
+  </div>
+  <div class="gravite"><b>!</b><p><strong>Pourquoi c’est grave.</strong> Chaque candidat qui bloque ou signale votre numéro fait baisser sa qualité aux yeux de Meta. Et la qualité de vos messages décide de vos limites d’envoi.</p></div>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">13</div>
+</section>
+
+<!-- ============ 14. CHECK-LIST ET CONTACT ============ -->
+<section class="page flux nuit-p fin-p">
+  <div class="course"><span class="chap">Pour démarrer</span><span>Recruter sur WhatsApp</span></div>
+  <h2 class="titre" style="max-width:none">Votre check-list <em>de démarrage</em>.</h2>
+  <div class="fin-g">
+    <ul class="coches">
+      <li><span>Un portefeuille Meta Business, vérifié<small>La clé des envois à grande échelle</small></span></li>
+      <li><span>Un numéro dédié à l’école<small>Libre, ou celui de votre application Business</small></span></li>
+      <li><span>Un nom d’affichage approuvé<small>Le nom que lira le candidat</small></span></li>
+      <li><span>Une carte bancaire chez Meta<small>Sans elle, les modèles sont bloqués</small></span></li>
+      <li><span>Une case « WhatsApp » sur vos formulaires<small>Brochure, candidature, journée portes ouvertes</small></span></li>
+      <li><span>Vos trois premiers modèles<small>Invitation, rappel, dossier incomplet</small></span></li>
+      <li><span>Les contenus de votre IA<small>Programmes, admissions, frais, logement</small></span></li>
+      <li><span>Qui reprend la main<small>Admissions, conseillers, ambassadeurs</small></span></li>
+    </ul>
+    <div class="appel">
+      <h3>Parlons de vos recrutements.</h3>
+      <p>Scannez, et écrivez-nous sur WhatsApp : c’est la meilleure démonstration.</p>
+      <div class="qr"><img src="qr.svg" alt="QR code vers WhatsApp"></div>
+      <div class="lien">app.messagingme.fr/whatsapp</div>
+      <p class="ou">Ou par le formulaire : <b>app.messagingme.fr/contact</b></p>
+    </div>
+  </div>
+  <div class="colophon">
+    <div><img src="../../../site/messagingme-logo-blanc.png" alt="Messaging Me">La plateforme conversationnelle qui comprend chaque conversation.</div>
+    <div style="text-align:right">© 2026 Messaging Me<br>6, rue d’Armaillé, 75017 Paris</div>
+  </div>
+</section>
+
+</body>
+</html>
