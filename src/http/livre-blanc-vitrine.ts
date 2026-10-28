@@ -120,6 +120,15 @@ export const CHAMPS_HUBSPOT = {
   mobile: 'mobilephone', whatsapp: 'recontact_whatsapp',
 } as const;
 
+/** Les `errorType` d'une réponse d'erreur de HubSpot (`FIELD_NOT_IN_FORM_DEFINITION`...), rien d'autre de son corps. */
+const ReponseDErreur = z.object({ errors: z.array(z.object({ errorType: z.string().max(80) })).max(20) });
+function typesDErreur(corps: string): string {
+  let brut: unknown;
+  try { brut = JSON.parse(corps); } catch { return ''; }
+  const lu = ReponseDErreur.safeParse(brut);
+  return lu.success && lu.data.errors.length > 0 ? ` : ${[...new Set(lu.data.errors.map((e) => e.errorType))].join(', ')}` : '';
+}
+
 /** La soumission au formulaire HubSpot. Lève sur tout statut autre que 2xx, et au-delà de `DELAI_HUBSPOT_MS`. */
 export function soumissionHubspot(
   o: { portail: string; formulaire: string },
@@ -144,8 +153,9 @@ export function soumissionHubspot(
         }),
         signal: AbortSignal.timeout(DELAI_HUBSPOT_MS),
       });
-      // HubSpot est un hôte fixe et de confiance : son corps se lit d'un coup, borné à l'affichage.
-      if (!res.ok) throw new Error(`HubSpot HTTP ${res.status} : ${(await res.text()).slice(0, 300)}`);
+      // HubSpot est un hôte fixe et de confiance : son corps se lit d'un coup. Seuls ses types d'erreur passent dans le
+      // message, qui finit au journal : le corps peut citer l'e-mail que le visiteur a saisi.
+      if (!res.ok) throw new Error(`HubSpot HTTP ${res.status}${typesDErreur(await res.text())}`);
     },
   };
 }
@@ -157,10 +167,11 @@ export function registerLivreBlancVitrine(app: FastifyInstance, deps: LivreBlanc
   /**
    * Deux plafonds, et ils ne refusent pas le PDF : au-delà, le visiteur a sa page « merci » mais rien n'est transmis.
    * Par adresse (l'en-tête de Cloudflare, `ipIndicative`) pour qu'un robot ne remplisse pas HubSpot ; un plafond global
-   * seul, comme celui du formulaire de contact, bloquerait les vrais visiteurs d'une campagne. Le global reste en
-   * filet, pour un robot qui forgerait l'en-tête en appelant l'API sans passer par Cloudflare.
+   * seul, comme celui du formulaire de contact, bloquerait les vrais visiteurs d'une campagne. Vingt par adresse, pas
+   * cinq : tout un campus sort par une seule adresse, et HubSpot dédoublonne par e-mail. La clé étant choisie par
+   * l'appelant, la table est bornée (`maxCles`, règle de `rate-limit.ts`). Le global reste en filet.
    */
-  const parAdresse = new RateLimiter(5, 10 * 60_000);
+  const parAdresse = new RateLimiter(20, 10 * 60_000, undefined, 20_000);
   const enTout = new RateLimiter(200, 10 * 60_000);
 
   routesDeFormulaire(app, (portee) => {
@@ -173,8 +184,12 @@ export function registerLivreBlancVitrine(app: FastifyInstance, deps: LivreBlanc
       if (!lu.success) return reply.redirect(`${vitrine}${pages.formulaire}?erreur=champs#formulaire`, 303);
       // Au robot, la même réponse qu'à un humain : lui dire qu'on l'a repéré lui apprendrait à contourner.
       if (lu.data.site !== '') return merci();
-      if (!parAdresse.take(ipIndicative(req)) || !enTout.take('livre-blanc')) {
-        journal('livre_blanc_plafond');
+      if (!parAdresse.take(ipIndicative(req))) {
+        journal('livre_blanc_plafond_adresse');
+        return merci();
+      }
+      if (!enTout.take('livre-blanc')) {
+        journal('livre_blanc_plafond_global');
         return merci();
       }
 

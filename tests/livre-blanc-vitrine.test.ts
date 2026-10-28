@@ -134,13 +134,14 @@ describe('POST /vitrine/livre-blanc (le formulaire du livre blanc)', () => {
     expect(erreur.mock.calls.flat().join(' ')).toContain('livre_blanc_sandbox_echec');
   });
 
-  it('au-delà de cinq envois en dix minutes depuis une même adresse : le PDF, mais plus rien n’est transmis', async () => {
-    vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('au-delà de vingt envois en dix minutes depuis une même adresse : le PDF, mais plus rien n’est transmis', async () => {
+    const erreur = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { app, soumis } = monter();
-    for (let i = 0; i < 6; i++) expect((await poster(app, champs())).headers.location).toBe(MERCI);
-    expect(soumis).toHaveLength(5);
+    for (let i = 0; i < 21; i++) expect((await poster(app, champs())).headers.location).toBe(MERCI);
+    expect(soumis).toHaveLength(20);
+    expect(erreur.mock.calls.flat().join(' ')).toContain('livre_blanc_plafond_adresse');
     await poster(app, champs(), '198.51.100.9');
-    expect(soumis).toHaveLength(6);
+    expect(soumis).toHaveLength(21);
   });
 
   it('la page anglaise : merci et erreurs reviennent sur les pages anglaises', async () => {
@@ -204,10 +205,17 @@ describe('soumissionHubspot', () => {
     expect(corps.context.pageUri).toBe(`${VITRINE}/en/white-paper/whatsapp-education/`);
   });
 
-  it('un refus de HubSpot lève, avec son statut et le début de sa réponse', async () => {
-    const { envoyer } = fauxFetch(400, '{"errors":[{"errorType":"FIELD_NOT_IN_FORM_DEFINITION"}]}');
+  it('un refus de HubSpot lève avec son statut et ses types d’erreur, jamais le reste de son corps (l’e-mail saisi)', async () => {
+    const { envoyer } = fauxFetch(400, '{"errors":[{"errorType":"INVALID_EMAIL","message":"lea@ecole.fr est invalide"},{"errorType":"FIELD_NOT_IN_FORM_DEFINITION","message":"x"}]}');
+    const refus = soumissionHubspot({ portail: '1', formulaire: 'f' }, envoyer).soumettre(demande, 'fr');
+    await expect(refus).rejects.toThrow('HubSpot HTTP 400 : INVALID_EMAIL, FIELD_NOT_IN_FORM_DEFINITION');
+    await expect(refus).rejects.not.toThrow(/lea@ecole\.fr/);
+  });
+
+  it('un corps de refus illisible ne donne que le statut', async () => {
+    const { envoyer } = fauxFetch(502, '<html>Bad gateway, lea@ecole.fr</html>');
     await expect(soumissionHubspot({ portail: '1', formulaire: 'f' }, envoyer).soumettre(demande, 'fr'))
-      .rejects.toThrow(/HubSpot HTTP 400 .*FIELD_NOT_IN_FORM_DEFINITION/);
+      .rejects.toThrow(/^HubSpot HTTP 502$/);
   });
 });
 
