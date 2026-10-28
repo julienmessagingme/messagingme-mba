@@ -28,6 +28,7 @@ import { PgPoolAttentesStore } from './ops/pool-attentes.pg';
 import { PgHttpLatencesStore } from './ops/latence-http.pg';
 import { PgMesuresFilesStore } from './ops/mesures-files.pg';
 import { PgSanteStore } from './ops/sante.pg';
+import { PgMemoireWorkersStore } from './ops/memoire-workers.pg';
 import { PgMesuresTachesStore } from './ops/mesure-taches.pg';
 import { PgWorkflowNodeEventStore } from './workflow/node-events.pg';
 import { PgTrackedLinkStore } from './links/tracked-links.pg';
@@ -234,6 +235,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   // lit dans l'onglet Capacité ; et les lectures propres à l'onglet Santé.
   const mesuresFilesStore = new PgMesuresFilesStore(pool, config.PGBOSS_SCHEMA);
   const santeStore = new PgSanteStore(pool);
+  const memoireWorkersStore = new PgMemoireWorkersStore(pool);
   const nodeEventStore = new PgWorkflowNodeEventStore(pool);
   const trackedLinkStore = new PgTrackedLinkStore(pool);
   const webhookStore = new PgWebhookStore(pool, async (tenant) => (await offres.offreDe(tenant)).droits.limites.automations);
@@ -590,7 +592,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     clesGateway, dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     adressesEvenements, envoisEvenements, espacesEvenements,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, httpLatencesStore, mesuresTachesStore, mesuresFilesStore, santeStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
+    poolAttentesStore, httpLatencesStore, mesuresTachesStore, mesuresFilesStore, santeStore, memoireWorkersStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
     credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
     wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,

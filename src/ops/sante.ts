@@ -1,6 +1,8 @@
 import type { WorkerHeartbeatRow } from './heartbeat-store.pg';
 import type { LatenceHttpRow } from './latence-http';
 import type { QueueLatenceRow, QueueLoadRow } from './store.pg';
+import type { MesuresCockpit } from './cockpit';
+import type { MemoireWorker } from './memoire-workers.pg';
 
 /**
  * L'ONGLET SANTÉ DE /OPS (refonte, lot 1 : `docs/superpowers/specs/2026-10-27-ops-refonte-design.md`). Une pastille
@@ -23,6 +25,12 @@ export const SEUILS_SANTE = {
   erreurs: { orange: 1, rouge: 5 },
   /** Âge du dernier battement d'un worker, en secondes. */
   battement: { orange: 120, rouge: 300 },
+  /** Processeur de la base, moyenne sur 15 minutes, en pourcentage (Cockpit). Rouge : passer en DB-DEV-L. */
+  processeurBase: { orange: 60, rouge: 80 },
+  /** Processeur de la machine des workers, moyenne sur 15 minutes, en pourcentage (Cockpit). Rouge : machine plus grosse. */
+  processeurMachine: { orange: 60, rouge: 80 },
+  /** Mémoire d'un worker, en pourcentage de la limite de son conteneur. Rouge : limite ou machine plus grosse. */
+  memoireWorker: { orange: 70, rouge: 85 },
 } as const;
 
 type Seuil = { orange: number; rouge: number };
@@ -41,7 +49,7 @@ function routeDuService(route: string): boolean {
   return route !== '/live' && route !== '/ops' && !route.startsWith('/ops/');
 }
 
-export type CleBrique = 'api' | 'workers' | 'base' | 'entrants' | 'accuses';
+export type CleBrique = 'api' | 'workers' | 'memoire-workers' | 'machine' | 'base' | 'processeur-base' | 'entrants' | 'accuses' | 'hubspot';
 
 export interface Brique {
   cle: CleBrique;
@@ -53,7 +61,7 @@ export interface Brique {
    * tombent : un vert « aucun trafic » à ce moment-là mentirait.
    */
   indisponible?: true;
-  /** Pour les workers : le rôle le plus en retard. */
+  /** Pour les workers : le rôle le plus en retard ; pour leur mémoire : le plus chargé. */
   detail?: string;
 }
 
@@ -67,13 +75,20 @@ export interface EntreesSante {
   /** Les latences HTTP de la dernière heure. */
   latencesHttp: LatenceHttpRow[] | null;
   connexions: { utilisees: number; max: number } | null;
+  /** La mémoire de chaque worker, relevée par lui (les relevés frais seulement). */
+  memoires: MemoireWorker[] | null;
+  /**
+   * Cockpit (lot 2). Non configuré (aucun jeton) : ses briques n'existent pas. Configuré : `mesures` vaut `null` quand
+   * Cockpit n'a rien rendu, et chaque signal `null` quand lui seul est illisible.
+   */
+  cockpit: { configure: false } | { configure: true; mesures: MesuresCockpit | null };
 }
 
 export interface Jauge {
   /** De 0 (un seuil rouge est atteint) à 100 (rien ne tire). */
   margePourcent: number;
   /** Le signal le plus tendu. */
-  signal: Exclude<CleBrique, 'api' | 'workers'>;
+  signal: 'accuses' | 'entrants' | 'base' | 'processeur-base' | 'machine' | 'memoire-workers';
   /** Une des lectures de capacité a échoué : la marge ne compte que les autres. */
   partielle: boolean;
 }
@@ -114,11 +129,33 @@ function partErreurs(lignes: LatenceHttpRow[]): number | null {
   return (100 * erreurs) / total;
 }
 
-export function evaluerSante(e: EntreesSante): BilanSante {
+/** La part de sa limite qu'occupe le worker le plus chargé ; `null` sans aucun relevé qui porte une limite. */
+function memoireLaPlusHaute(memoires: MemoireWorker[]): { pourcent: number; role: string } | null {
+  let pire: { pourcent: number; role: string } | null = null;
+  for (const m of memoires) {
+    if (m.limiteOctets === null || m.limiteOctets <= 0) continue;
+    const pourcent = (100 * m.utiliseOctets) / m.limiteOctets;
+    if (!pire || pourcent > pire.pourcent) pire = { pourcent, role: m.role };
+  }
+  return pire;
+}
+
+/**
+ * Au-delà, un worker qui bat sans relevé frais de sa mémoire est un relevé qui échoue, pas un démarrage : il a eu le
+ * temps de faire son premier relevé (une minute, plus le décalage de lissage du registre).
+ */
+export const DELAI_PREMIER_RELEVE_MEMOIRE_MS = 3 * 60_000;
+
+export function evaluerSante(e: EntreesSante, maintenant = Date.now()): BilanSante {
   const juger = (cle: CleBrique, mesure: number | null, seuil: Seuil): Brique => ({ cle, mesure, etat: etat(mesure, seuil) });
   const files = e.latencesFiles !== null && e.chargeFiles !== null ? { latences: e.latencesFiles, charge: e.chargeFiles } : null;
   const retard = (file: string): number | null => (files ? retardFile(files.latences, files.charge, file) : null);
   const connexionsPourcent = e.connexions && e.connexions.max > 0 ? (100 * e.connexions.utilisees) / e.connexions.max : null;
+  const memoire = e.memoires ? memoireLaPlusHaute(e.memoires) : null;
+  const cockpit = e.cockpit.configure ? e.cockpit.mesures : null;
+  // Un signal de Cockpit : illisible si Cockpit entier ou ce signal seul n'a rien rendu.
+  const deCockpit = (cle: CleBrique, valeur: number | null | undefined, seuil: Seuil): Brique =>
+    (valeur === null || valeur === undefined ? { cle, ...INDISPONIBLE } : juger(cle, valeur, seuil));
 
   // Un worker arrêté garde sa ligne et son vieux battement : c'est ce qui le rend rouge, sans liste de rôles attendus.
   const plusVieux = e.workers ? [...e.workers].sort((a, b) => b.ageSeconds - a.ageSeconds)[0] : undefined;
@@ -128,13 +165,35 @@ export function evaluerSante(e: EntreesSante): BilanSante {
       ? { ...juger('workers', plusVieux.ageSeconds, SEUILS_SANTE.battement), detail: plusVieux.role }
       // Aucun worker n'a jamais battu : rien ne traite les files.
       : { cle: 'workers', mesure: null, etat: 'rouge' };
+  // Un worker vivant, démarré depuis plus de trois minutes, sans relevé frais : son relevé échoue (sous saturation, c'est
+  // justement l'écriture qui tombe). Orange, pas le vert d'un « rien à juger ».
+  const muet = e.memoires === null ? undefined : (e.workers ?? []).find((w) => w.ageSeconds < SEUILS_SANTE.battement.orange
+    && w.bootedAt !== null && maintenant - Date.parse(w.bootedAt) > DELAI_PREMIER_RELEVE_MEMOIRE_MS
+    && !e.memoires!.some((m) => m.role === w.role));
+  const memoireWorkers: Brique = e.memoires === null
+    ? { cle: 'memoire-workers', ...INDISPONIBLE }
+    : muet
+      ? { cle: 'memoire-workers', ...INDISPONIBLE, detail: muet.role }
+      : memoire
+      ? { ...juger('memoire-workers', memoire.pourcent, SEUILS_SANTE.memoireWorker), detail: memoire.role }
+      // Aucun relevé frais (juste après un déploiement, ou hors d'un conteneur) : rien à juger, les battements disent la vie.
+      : juger('memoire-workers', null, SEUILS_SANTE.memoireWorker);
 
   const briques: Brique[] = [
     e.latencesHttp === null ? { cle: 'api', ...INDISPONIBLE } : juger('api', partErreurs(e.latencesHttp), SEUILS_SANTE.erreurs),
     workers,
+    memoireWorkers,
+    ...(e.cockpit.configure ? [deCockpit('machine', cockpit?.machineProcesseur, SEUILS_SANTE.processeurMachine)] : []),
     e.connexions === null ? { cle: 'base', ...INDISPONIBLE } : juger('base', connexionsPourcent, SEUILS_SANTE.connexions),
+    ...(e.cockpit.configure ? [deCockpit('processeur-base', cockpit?.baseProcesseur, SEUILS_SANTE.processeurBase)] : []),
     files ? juger('entrants', retard(FILE_ENTRANTS), SEUILS_SANTE.entrants) : { cle: 'entrants', ...INDISPONIBLE },
     files ? juger('accuses', retard(FILE_ACCUSES), SEUILS_SANTE.accuses) : { cle: 'accuses', ...INDISPONIBLE },
+    // La porte HubSpot : éveillée ou endormie, jamais une panne (elle s'endort à dessein). Le nombre de copies.
+    ...(e.cockpit.configure
+      ? [cockpit?.hubspotCopies === null || cockpit?.hubspotCopies === undefined
+        ? { cle: 'hubspot' as const, ...INDISPONIBLE }
+        : { cle: 'hubspot' as const, mesure: cockpit.hubspotCopies, etat: 'vert' as const }]
+      : []),
   ];
 
   // La jauge : chaque signal de capacité rapporté à son seuil rouge ; le plus haut décide. Un signal illisible ne
@@ -143,14 +202,19 @@ export function evaluerSante(e: EntreesSante): BilanSante {
     ['accuses', (retard(FILE_ACCUSES) ?? 0) / SEUILS_SANTE.accuses.rouge],
     ['entrants', (retard(FILE_ENTRANTS) ?? 0) / SEUILS_SANTE.entrants.rouge],
     ['base', (connexionsPourcent ?? 0) / SEUILS_SANTE.connexions.rouge],
+    ['processeur-base', (cockpit?.baseProcesseur ?? 0) / SEUILS_SANTE.processeurBase.rouge],
+    ['machine', (cockpit?.machineProcesseur ?? 0) / SEUILS_SANTE.processeurMachine.rouge],
+    ['memoire-workers', (memoire?.pourcent ?? 0) / SEUILS_SANTE.memoireWorker.rouge],
   ];
   const [signal, ratio] = ratios.reduce((pire, r) => (r[1] > pire[1] ? r : pire));
+  const cockpitIllisible = e.cockpit.configure
+    && (cockpit === null || cockpit.baseProcesseur === null || cockpit.machineProcesseur === null);
   return {
     briques,
     jauge: {
       margePourcent: Math.max(0, Math.min(100, Math.round(100 * (1 - ratio)))),
       signal,
-      partielle: files === null || e.connexions === null,
+      partielle: files === null || e.connexions === null || e.memoires === null || muet !== undefined || cockpitIllisible,
     },
   };
 }

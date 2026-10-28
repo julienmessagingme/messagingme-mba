@@ -354,7 +354,7 @@ export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages'
 export const opsInerte: Pick<OpsRouteDeps,
   'deposerJetonPub' | 'lireGrillePrix' | 'reglages' | 'verrouillerEspace' | 'observerTenant'
   | 'file' | 'heartbeat' | 'soldeAgent' | 'rechargerAgent' | 'etatPoolInstantane' | 'attentesPool' | 'latencesHttp'
-  | 'mesuresTaches' | 'sante' | 'capacite' | 'stockage' | 'vercel'
+  | 'mesuresTaches' | 'sante' | 'capacite' | 'cockpit' | 'stockage' | 'vercel'
   | 'balayerRisque' | 'reinitialiserMfa' | 'audit'> = {
   audit: journalMuet,
   deposerJetonPub: neDevraitPasEtreAppelee('deposerJetonPub'),
@@ -372,9 +372,15 @@ export const opsInerte: Pick<OpsRouteDeps,
   attentesPool: { lireDernieresMinutes: async () => [] },
   latencesHttp: { lire: async () => [] },
   mesuresTaches: { lire: async () => [] },
-  // Une base sans connexion ni signal de Meta, et aucun historique : l'onglet Santé reste vert, Capacité vide.
-  sante: { connexionsBase: async () => ({ utilisees: 0, max: 147 }), signauxMeta: async () => ({ dernierMessage: null, dernierAccuse: null }) },
-  capacite: { parHeure: async () => [], files: async () => [] },
+  // Une base sans connexion ni signal de Meta, aucun relevé de mémoire, aucun historique : Santé reste vert, Capacité vide.
+  sante: {
+    connexionsBase: async () => ({ utilisees: 0, max: 147 }),
+    signauxMeta: async () => ({ dernierMessage: null, dernierAccuse: null }),
+    memoires: async () => [],
+  },
+  capacite: { parHeure: async () => [], files: async () => [], memoires: async () => [] },
+  // Aucun jeton Cockpit : ses briques et ses courbes sont absentes.
+  cockpit: null,
   // Une base vide : aucune famille, aucune table.
   stockage: { mesurer: async () => ({ baseOctets: 0, familles: [], tables: [], mesureLe: '1970-01-01T00:00:00.000Z' }) },
   // Aucun jeton de compte Vercel : la carte dit « non configurée ».

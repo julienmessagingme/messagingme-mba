@@ -6,6 +6,7 @@ import { PgPoolAttentesStore } from '../../src/ops/pool-attentes.pg';
 import { PgSanteStore } from '../../src/ops/sante.pg';
 import { PgMesuresFilesStore } from '../../src/ops/mesures-files.pg';
 import { PgBossQueue } from '../../src/queue/pgboss';
+import { PgMemoireWorkersStore } from '../../src/ops/memoire-workers.pg';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -25,6 +26,7 @@ describe.skipIf(!url)('onglets Santé et Capacité de /ops (Postgres)', () => {
     await pool.query(`delete from pool_attentes where process like 'api-itest%' or process like 'worker-itest%'`).catch(() => {});
     await pool.query(`delete from webhook_events where meta_message_id like '%itest-ops%'`).catch(() => {});
     await pool.query(`delete from mesures_files_heures where file = 'webhook' or file like 'itest-mf-%'`).catch(() => {});
+    await pool.query(`delete from memoire_workers where role like 'itest-mem-%'`).catch(() => {});
     await pool.end().catch(() => {});
   });
 
@@ -112,5 +114,25 @@ describe.skipIf(!url)('onglets Santé et Capacité de /ops (Postgres)', () => {
     await store.purgeOlderThan(30);
     const reste = await pool.query<{ n: number }>(`select count(*)::int as n from mesures_files_heures where file like 'itest-mf-%'`);
     expect(reste.rows[0]!.n).toBe(3);
+  });
+
+  it('🔴 la mémoire des workers : le pire de l’heure gardé, la dernière valeur lue, un relevé périmé ignoré, la purge à 30 jours', async () => {
+    const store = new PgMemoireWorkersStore(pool);
+    await store.noter('itest-mem-a', { utiliseOctets: 300, limiteOctets: 1000 });
+    await store.noter('itest-mem-a', { utiliseOctets: 200, limiteOctets: 1000 });
+    const a = (await store.actuelles()).find((m) => m.role === 'itest-mem-a');
+    expect(a).toEqual({ role: 'itest-mem-a', utiliseOctets: 200, limiteOctets: 1000 });
+    const heure = (await store.parHeure(1)).find((p) => p.role === 'itest-mem-a');
+    expect(heure).toMatchObject({ maxOctets: 300, limiteOctets: 1000 });
+    // Un relevé d'il y a dix minutes n'est plus l'instant ; une heure de 40 jours part à la purge.
+    await pool.query(
+      `insert into memoire_workers (role, heure, max_octets, dernier_octets, limite_octets, maj) values
+         ('itest-mem-b', date_trunc('hour', now()), 10, 10, null, now() - interval '10 minutes'),
+         ('itest-mem-b', date_trunc('hour', now()) - interval '40 days', 10, 10, null, now() - interval '40 days')`,
+    );
+    expect((await store.actuelles()).some((m) => m.role === 'itest-mem-b')).toBe(false);
+    await store.purgeOlderThan(30);
+    const reste = await pool.query<{ n: number }>(`select count(*)::int as n from memoire_workers where role = 'itest-mem-b'`);
+    expect(reste.rows[0]!.n).toBe(1);
   });
 });

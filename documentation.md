@@ -3881,7 +3881,7 @@ coupable en une mesure.
 
 Tous côté serveur, jamais dans le bundle `web/` ni en `NEXT_PUBLIC_*` : `META_ACCESS_TOKEN`,
 `META_APP_SECRET`, `ENCRYPTION_KEY`, `AUTH_SECRET` (il signe aussi les sessions d'exploitation), `AI_GATEWAY_API_KEY`, `VERCEL_API_TOKEN`,
-la clé Supabase.
+`COCKPIT_TOKEN` (lecture seule des métriques de Scaleway, `/ops`), la clé Supabase.
 
 🔴 **`VERCEL_API_TOKEN` n'est pas un secret comme les autres, et le confondre avec `AI_GATEWAY_API_KEY`
 coûterait cher.** La seconde ne sait que DÉPENSER sous un plafond ; le premier sait FABRIQUER des clés
@@ -4607,7 +4607,33 @@ arrivant sur un autre onglet, et Santé rend elle-même la révision affichée s
   échec lève, et la carte « Tâches de fond » le compte. ⚠️ La table `job` n'a aucun index sur `completed_on` : le
   relevé la parcourt, comme la carte de latence. Sa durée se lit dans « Tâches de fond » (`mesures-files`).
 - Les rétentions des mesures que lit l'onglet (`pool_attentes`, `http_latences`, `taches_mesures`,
-  `mesures_files_heures`) sont de 30 jours ; leurs constantes font foi.
+  `mesures_files_heures`, `memoire_workers`) sont de 30 jours ; leurs constantes font foi.
+- **Cockpit** (lot 2, `src/ops/cockpit.ts`) : le processeur, la mémoire, le disque et les connexions de la base, le
+  processeur et la mémoire de la machine des workers, la mémoire de la pire copie d'API, et les copies de la porte
+  HubSpot, en PromQL sur la source « Scaleway Metrics » du projet (31 jours gardés). Jeton en LECTURE des métriques,
+  `COCKPIT_TOKEN`, posé par Julien dans les secrets du conteneur de l'API ; l'adresse de la source a son défaut dans
+  `src/config.ts` (elle n'est pas secrète). Sans jeton, ses briques et ses courbes sont absentes. Les noms des séries
+  et chaque formule ont été MESURÉS avant d'être écrits (relevés dans `docs/prive/cockpit-metriques.txt` et
+  `cockpit-formules.txt`). Une requête de l'instant a 4 s, une de trente jours 10 s ; un succès se garde une minute
+  (dix pour les trente jours), un échec, même partiel, 30 s. Cockpit muet, un signal seul illisible ou une série vide
+  (ressource renommée, jeton sans accès) : « mesure indisponible », jamais l'écran en panne ni une courbe à zéro ; un
+  échec se journalise une fois par signal, par son statut (`cockpit_illisible`), jamais le jeton (pris sans espace
+  autour, un retour à la ligne collé avec lui rendrait l'en-tête invalide). La porte HubSpot endormie n'a AUCUNE série
+  chez Cockpit : zéro copie, pas une lecture en échec. Les courbes de trente jours prennent le pire de chaque heure par
+  sous-requête (`max_over_time(...[1h:5m])`), et la requête simple si la sous-requête est refusée.
+- **La mémoire des workers** (lot 2, `src/ops/memoire-worker.ts`, migration 0260) : chaque worker lit SON groupe de
+  contrôle chaque minute (`memory.current` moins `inactive_file`, le calcul de `docker stats`, et `memory.max`) et
+  l'écrit dans `memoire_workers`, une ligne par rôle et par heure (la dernière valeur, le pire de l'heure). À part du
+  battement, que son échec ne touche jamais ; un relevé en échec lève, compté par « Tâches de fond ». Santé ne juge que
+  les relevés de moins de 5 minutes. Aucun relevé frais est vert (pas encore de mesure), sauf pour un worker qui bat,
+  démarré depuis plus de 3 minutes, sans relevé frais : son relevé échoue, la pastille est orange (sous saturation,
+  c'est justement l'écriture qui tombe). Une lecture en échec, orange aussi. ⚠️ Un relevé par minute ne voit pas une
+  montée jusqu'à l'arrêt en moins d'une minute ; seule la ligne « Worker démarré » des incidents la trahit.
+- Les briques de Santé du lot 2, et leurs seuils (`SEUILS_SANTE`, ceux de la spec) : mémoire des workers (le plus
+  chargé, 70 et 85 % de sa limite), machine des workers (processeur sur 15 min, 60 et 80 %), processeur de la base
+  (60 et 80 %, rouge : DB-DEV-L), porte HubSpot (éveillée ou endormie, jamais une panne). La jauge compte aussi le
+  processeur de la base, celui de la machine et la mémoire des workers. Dans Capacité, chaque courbe commence à son
+  premier jour mesuré : avant, un jour sans mesure se dessinerait à zéro.
 
 **La veille de charge** (`src/ops/veille-charge.ts`, worker principal, chaque minute) lit les mesures que seul `/ops`
 lisait, et alerte sur Telegram au plus une fois par clé toutes les 30 minutes :

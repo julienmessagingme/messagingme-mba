@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { copiesDeLHeure, montees7Jours, parJour, retardParJour } from './ops-capacite';
+import { cockpitParJour, copiesDeLHeure, debutMesure, memoireWorkerParJour, montees7Jours, parJour, retardParJour, rolesDeMemoire } from './ops-capacite';
 
 const heure = (iso: string, copiesMax: number, minutesDeuxCopiesOuPlus = 0) => ({
   heure: iso, copiesMax, minutesDeuxCopiesOuPlus, attentesApi: 1, attentesWorkers: 2, maxAttenteMs: 0,
@@ -52,5 +52,35 @@ describe('montees7Jours', () => {
   it('une heure sans mesure entre deux heures à deux copies : deux montées, pas une', () => {
     const h = [heure('2026-10-26T09:00:00.000Z', 2, 30), heure('2026-10-26T11:00:00.000Z', 2, 30)];
     expect(montees7Jours(h, maintenant)).toEqual({ montees: 2, heures: 1 });
+  });
+});
+
+describe('les courbes du lot 2', () => {
+  it('Cockpit : le pire de chaque jour de Paris ; une série absente ou illisible ne donne aucun point', () => {
+    const pts = [{ heure: '2026-10-27T08:00:00.000Z', valeur: 6.7 }, { heure: '2026-10-27T15:00:00.000Z', valeur: 26.6 }];
+    expect(cockpitParJour(pts)).toEqual([{ date: '2026-10-27', count: 26.6 }]);
+    expect(cockpitParJour(null)).toEqual([]);
+    expect(cockpitParJour(undefined)).toEqual([]);
+  });
+
+  it('🔴 la mémoire d’un worker en % de SA limite, son pire du jour ; une heure sans limite ne compte pas', () => {
+    const m = (role: string, heure: string, maxOctets: number, limiteOctets: number | null) => ({ role, heure, maxOctets, limiteOctets });
+    const pts = [
+      m('principal', '2026-10-27T08:00:00.000Z', 134e6, 1e9),
+      m('principal', '2026-10-27T09:00:00.000Z', 700e6, 1e9),
+      m('analyse', '2026-10-27T09:00:00.000Z', 900e6, null),
+    ];
+    expect(rolesDeMemoire(pts)).toEqual(['analyse', 'principal']);
+    expect(memoireWorkerParJour(pts, 'principal')).toEqual([{ date: '2026-10-27', count: 70 }]);
+    expect(memoireWorkerParJour(pts, 'analyse')).toEqual([]);
+  });
+});
+
+describe('debutMesure', () => {
+  it('🔴 le graphique commence au premier jour mesuré, jamais avant sa fenêtre ; sans mesure, la fenêtre', () => {
+    const s = (...dates: string[]) => ({ points: dates.map((date) => ({ date, count: 1 })) });
+    expect(debutMesure([s('2026-10-20', '2026-10-15'), s('2026-10-17')], '2026-09-29')).toBe('2026-10-15');
+    expect(debutMesure([s('2026-09-01')], '2026-09-29')).toBe('2026-09-29');
+    expect(debutMesure([s()], '2026-09-29')).toBe('2026-09-29');
   });
 });

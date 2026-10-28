@@ -469,6 +469,16 @@ export const schema = z.object({
   VERCEL_API_TOKEN: z.string().default(''),
   VERCEL_TEAM_ID: z.string().default(''),
   /**
+   * Cockpit, l'outil de mesure de Scaleway (refonte de /ops, lot 2) : l'adresse de la source « Scaleway Metrics » du
+   * projet de production, et un jeton en LECTURE des métriques posé par Julien dans les secrets du conteneur de l'API.
+   * L'adresse n'est pas un secret (rien ne s'y lit sans jeton) : elle a son défaut ici plutôt qu'un geste de plus, et
+   * `ops/scaleway/conteneur-api.json` n'en porte pas (rien de propre à un environnement, `tests/deploy-scaleway.test.ts`).
+   * Sans jeton, les mesures de Cockpit sont absentes de `/ops` et rien d'autre ne change. Jamais de refus au démarrage :
+   * une mesure ne fait pas tomber ce qu'elle mesure.
+   */
+  COCKPIT_URL: z.string().default('https://04311b18-58d2-4780-8c22-c9a77e7a806e.metrics.cockpit.nl-ams.scw.cloud'),
+  COCKPIT_TOKEN: z.string().default(''),
+  /**
    * Modèle de l'IA de construction, à ne pas confondre avec celui d'un agent. Celle-ci tourne rarement
    * (reglage et optimisation) et joue le role le plus dur : elle merite un modele plus fort que le runtime.
    * Vide -> repli sur LLM_MODEL.

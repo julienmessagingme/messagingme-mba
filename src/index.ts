@@ -151,6 +151,7 @@ import { newMediaCode } from './ids/code';
 import { verifierCleRcs } from './rcs/channel-info';
 import { fetchGet } from './lib/http-get';
 import { lireConsommationEquipe } from './agent/llm/consommation-equipe';
+import { creerLecteurCockpit } from './ops/cockpit';
 import { lireCatalogueGateway } from './agent/llm/modeles-gateway';
 import { modelesProposables, type ModeleGateway } from './agent/modeles';
 import { contactVars } from './crm/render';
@@ -288,7 +289,7 @@ async function main(): Promise<void> {
     transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore, inboxStore,
     adressesEvenements, envoisEvenements, espacesEvenements,
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
-    httpLatencesStore, mesuresTachesStore, mesuresFilesStore, santeStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
+    httpLatencesStore, mesuresTachesStore, mesuresFilesStore, santeStore, memoireWorkersStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
@@ -2910,12 +2911,27 @@ async function main(): Promise<void> {
       attentesPool: poolAttentesStore,
       latencesHttp: httpLatencesStore,
       mesuresTaches: mesuresTachesStore,
-      sante: santeStore,
-      // L'onglet Capacité : la méthode est appelée sur son store, jamais détachée (elle lit `this.pool`).
+      // Les onglets Santé et Capacité : chaque méthode est appelée sur son store, jamais détachée (elle lit `this.pool`).
+      sante: {
+        connexionsBase: () => santeStore.connexionsBase(),
+        signauxMeta: () => santeStore.signauxMeta(),
+        memoires: () => memoireWorkersStore.actuelles(),
+      },
       capacite: {
         parHeure: (jours) => poolAttentesStore.lireParHeure(jours),
         files: (jours) => mesuresFilesStore.lire(jours),
+        memoires: (jours) => memoireWorkersStore.parHeure(jours),
       },
+      // Cockpit (lot 2) : sans jeton, ses mesures sont absentes de `/ops`. Un refus se journalise par son statut seul.
+      // Le jeton sans espace autour : un retour à la ligne collé avec lui dans la console rendrait l'en-tête invalide.
+      cockpit: config.COCKPIT_URL !== '' && config.COCKPIT_TOKEN.trim() !== ''
+        ? creerLecteurCockpit({
+          url: config.COCKPIT_URL,
+          jeton: config.COCKPIT_TOKEN.trim(),
+          http: fetchGet,
+          signaler: (detail) => { journaliser('warn', 'cockpit_illisible', detail); },
+        })
+        : null,
       stockage: new PgStockageStore(pool),
       vercel: {
         lire: () => (config.VERCEL_API_TOKEN !== '' && config.VERCEL_TEAM_ID !== ''

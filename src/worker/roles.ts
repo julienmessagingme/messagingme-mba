@@ -107,6 +107,8 @@ export const TACHES_PAR_ROLE: Record<string, Appartenance> = {
   'idempotence-api': 'principal',
   // La latence des files heure par heure (refonte de /ops, lot 1) : une seule copie la relève.
   'mesures-files': 'principal',
+  // Chaque worker relève SA mémoire : sur un seul rôle, l'autre serait sans courbe.
+  'memoire-workers': 'tous',
   reclaim: 'principal',
   'reprise-controle': 'principal',
   'retention-evenements-meta': 'principal',

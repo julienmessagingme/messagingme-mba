@@ -1,4 +1,4 @@
-import type { DailyPoint, PointCapaciteHeureOps, PointFileHeureOps } from './api';
+import type { DailyPoint, PointCapaciteHeureOps, PointCockpitOps, PointFileHeureOps, PointMemoireHeureOps } from './api';
 import { dayKey } from './day';
 
 /**
@@ -56,4 +56,36 @@ export function montees7Jours(heures: PointCapaciteHeureOps[], maintenant = Date
     precedente = { heure: t, copies };
   }
   return { montees, heures: Math.round((minutes / 60) * 10) / 10 };
+}
+
+/** Une courbe de Cockpit, un point par jour de Paris : le pire de ses heures. Absente ou illisible : aucun point. */
+export function cockpitParJour(points: PointCockpitOps[] | null | undefined): DailyPoint[] {
+  return parJour(points ?? [], (p) => p.valeur, 'max');
+}
+
+/** Les rôles qui ont relevé leur mémoire, dans un ordre stable. */
+export function rolesDeMemoire(points: PointMemoireHeureOps[]): string[] {
+  return [...new Set(points.map((p) => p.role))].sort();
+}
+
+/**
+ * La mémoire d'un worker en pourcentage de la limite de son conteneur, le pire de chaque jour. Une heure sans limite
+ * (hors d'un conteneur) ne se rapporte à rien : elle ne compte pas.
+ */
+export function memoireWorkerParJour(points: PointMemoireHeureOps[], role: string): DailyPoint[] {
+  return parJour(
+    points.filter((p) => p.role === role && p.limiteOctets !== null && p.limiteOctets > 0),
+    (p) => Math.round((1000 * p.maxOctets) / (p.limiteOctets as number)) / 10,
+    'max',
+  );
+}
+
+/**
+ * Le premier jour mesuré d'un graphique, jamais avant `defaut` : avant lui, un jour sans mesure se dessinerait à zéro,
+ * comme une mesure (Cockpit ne garde que depuis la création des ressources, nos tables depuis leur migration).
+ */
+export function debutMesure(series: ReadonlyArray<{ points: DailyPoint[] }>, defaut: string): string {
+  const dates = series.flatMap((s) => s.points.map((p) => p.date)).sort();
+  const premier = dates[0];
+  return premier !== undefined && premier > defaut ? premier : defaut;
 }

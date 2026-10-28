@@ -403,8 +403,13 @@ export function getOpsOverview(sessionOps: string): Promise<OpsOverview> {
 
 /** Un seuil de la refonte de `/ops` (lot 1) : orange, puis rouge, dans l'unité de son signal. */
 export interface SeuilOps { orange: number; rouge: number }
-export interface SeuilsSanteOps { accuses: SeuilOps; entrants: SeuilOps; connexions: SeuilOps; erreurs: SeuilOps; battement: SeuilOps }
-export type CleBriqueOps = 'api' | 'workers' | 'base' | 'entrants' | 'accuses';
+/** Les trois derniers seuils viennent avec Cockpit (lot 2) : absents d'une API d'avant lui. */
+export interface SeuilsSanteOps {
+  accuses: SeuilOps; entrants: SeuilOps; connexions: SeuilOps; erreurs: SeuilOps; battement: SeuilOps;
+  processeurBase?: SeuilOps; processeurMachine?: SeuilOps; memoireWorker?: SeuilOps;
+}
+export type CleBriqueOps = 'api' | 'workers' | 'memoire-workers' | 'machine' | 'base' | 'processeur-base' | 'entrants' | 'accuses' | 'hubspot';
+export type SignalJaugeOps = 'base' | 'entrants' | 'accuses' | 'processeur-base' | 'machine' | 'memoire-workers';
 /** Une pastille de l'onglet Santé, jugée par le serveur (`src/ops/sante.ts`) ; l'écran ne fait que la mettre en mots. */
 export interface BriqueSanteOps {
   cle: CleBriqueOps;
@@ -418,7 +423,7 @@ export interface BriqueSanteOps {
 export interface SanteOps {
   briques: BriqueSanteOps[];
   /** `partielle` : une lecture de capacité a échoué (absent d'une API d'avant ce champ). */
-  jauge: { margePourcent: number; signal: 'base' | 'entrants' | 'accuses'; partielle?: boolean };
+  jauge: { margePourcent: number; signal: SignalJaugeOps; partielle?: boolean };
   /** Absente d'une API d'avant ce champ. */
   revision?: string;
   connexions: { utilisees: number; max: number } | null;
@@ -447,7 +452,21 @@ export interface PointFileHeureOps {
   boutEnBoutP95Secondes: number;
   boutEnBoutMaxSecondes: number;
 }
-export interface CapaciteOps { jours: number; heures: PointCapaciteHeureOps[]; files: PointFileHeureOps[]; seuils: SeuilsSanteOps }
+/** La mémoire d'un worker, le pire de l'heure (lot 2). */
+export interface PointMemoireHeureOps { role: string; heure: string; maxOctets: number; limiteOctets: number | null }
+export interface PointCockpitOps { heure: string; valeur: number }
+export type SignalHistoriqueOps = 'baseProcesseur' | 'baseMemoire' | 'baseDisque' | 'baseConnexions' | 'machineProcesseur' | 'machineMemoire' | 'apiMemoire';
+/** `series: null` : Cockpit n'a rien rendu ; une série `null` : elle seule est illisible. */
+export type CockpitCapaciteOps = { configure: false } | { configure: true; series: Partial<Record<SignalHistoriqueOps, PointCockpitOps[] | null>> | null };
+export interface CapaciteOps {
+  jours: number;
+  heures: PointCapaciteHeureOps[];
+  files: PointFileHeureOps[];
+  seuils: SeuilsSanteOps;
+  /** Absents d'une API d'avant le lot 2 : leurs courbes ne s'affichent pas. */
+  memoires?: PointMemoireHeureOps[];
+  cockpit?: CockpitCapaciteOps;
+}
 
 export function getOpsCapacite(sessionOps: string, jours = 30): Promise<CapaciteOps> {
   return appelOps(sessionOps, `/ops/capacite?jours=${jours}`);

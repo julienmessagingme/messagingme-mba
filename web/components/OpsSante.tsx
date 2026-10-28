@@ -28,7 +28,9 @@ function duree(secondes: number): string {
 }
 
 /** Les briques que cet écran sait mettre en mots ; une autre (ajoutée par une API plus récente) est ignorée. */
-const BRIQUES_CONNUES: ReadonlySet<string> = new Set(['api', 'workers', 'base', 'entrants', 'accuses']);
+const BRIQUES_CONNUES: ReadonlySet<string> = new Set([
+  'api', 'workers', 'memoire-workers', 'machine', 'base', 'processeur-base', 'entrants', 'accuses', 'hubspot',
+]);
 
 export function OpsSante({ jeton, onPerdue, onRevision }: { jeton: string; onPerdue: () => void; onRevision?: (revision: string) => void }) {
   const t = useT();
@@ -63,11 +65,22 @@ export function OpsSante({ jeton, onPerdue, onRevision }: { jeton: string; onPer
 
   const s = sante.seuils;
   const cx = sante.connexions;
-  const nomSignal = { base: t('connexions de la base', 'database connections'), entrants: t('messages entrants', 'inbound messages'), accuses: t('accusés de Meta', 'Meta receipts') }[sante.jauge.signal];
+  const nomSignal = {
+    base: t('connexions de la base', 'database connections'),
+    entrants: t('messages entrants', 'inbound messages'),
+    accuses: t('accusés de Meta', 'Meta receipts'),
+    'processeur-base': t('processeur de la base', 'database CPU'),
+    machine: t('processeur de la machine des workers', 'workers machine CPU'),
+    'memoire-workers': t('mémoire des workers', 'workers memory'),
+  }[sante.jauge.signal] ?? sante.jauge.signal;
   const marge = sante.jauge.margePourcent;
   const teinteJauge = marge <= 0 ? TEINTE.rouge : marge < 40 ? TEINTE.orange : TEINTE.vert;
 
   const illisible = t('lecture impossible : la base ou l’API est peut-être saturée', 'reading failed: the database or the API may be saturated');
+  // Les briques de Cockpit : une mesure absente dit Cockpit muet, pas la production en panne.
+  const sansCockpit = t('mesure indisponible : Cockpit ne répond pas', 'measure unavailable: Cockpit is not answering');
+  const pourcent = (m: number): string => `${Math.round(m)} %`;
+  const rougeA = (seuil: { rouge: number } | undefined, defaut: number): number => seuil?.rouge ?? defaut;
 
   function libelle(b: BriqueSanteOps): { titre: string; raison: string } {
     const m = b.mesure;
@@ -82,6 +95,20 @@ export function OpsSante({ jeton, onPerdue, onRevision }: { jeton: string; onPer
         return { titre: t('Messages entrants', 'Inbound messages'), raison: b.indisponible ? illisible : m === null ? t('aucun en attente ni traité récemment', 'none waiting or recently handled') : t(`retard ${duree(m)} (rouge à ${duree(s.entrants.rouge)})`, `delay ${duree(m)} (red at ${duree(s.entrants.rouge)})`) };
       case 'accuses':
         return { titre: t('Accusés de Meta', 'Meta receipts'), raison: b.indisponible ? illisible : m === null ? t('aucun en attente ni traité récemment', 'none waiting or recently handled') : t(`retard ${duree(m)} (rouge à ${duree(s.accuses.rouge)})`, `delay ${duree(m)} (red at ${duree(s.accuses.rouge)})`) };
+      case 'memoire-workers': {
+        const rouge = rougeA(s.memoireWorker, 85);
+        return { titre: t('Mémoire des workers', 'Workers memory'), raison: b.indisponible ? illisible : m === null ? t('aucun relevé récent', 'no recent reading') : t(`${b.detail ?? ''} à ${pourcent(m)} de sa limite (rouge à ${rouge} %)`, `${b.detail ?? ''} at ${pourcent(m)} of its limit (red at ${rouge}%)`) };
+      }
+      case 'machine': {
+        const rouge = rougeA(s.processeurMachine, 80);
+        return { titre: t('Machine des workers', 'Workers machine'), raison: b.indisponible || m === null ? sansCockpit : t(`processeur à ${pourcent(m)} sur 15 min (rouge à ${rouge} %)`, `CPU at ${pourcent(m)} over 15 min (red at ${rouge}%)`) };
+      }
+      case 'processeur-base': {
+        const rouge = rougeA(s.processeurBase, 80);
+        return { titre: t('Processeur de la base', 'Database CPU'), raison: b.indisponible || m === null ? sansCockpit : t(`${pourcent(m)} sur 15 min (rouge à ${rouge} % : passer en DB-DEV-L)`, `${pourcent(m)} over 15 min (red at ${rouge}%: move to DB-DEV-L)`) };
+      }
+      case 'hubspot':
+        return { titre: t('Porte HubSpot', 'HubSpot door'), raison: b.indisponible || m === null ? sansCockpit : m === 0 ? t('endormie : elle se réveille au premier appel', 'asleep: it wakes up on the first call') : t(`éveillée (${m} copie${m > 1 ? 's' : ''})`, `awake (${m} cop${m > 1 ? 'ies' : 'y'})`) };
     }
   }
 

@@ -16,6 +16,8 @@ import { z } from 'zod';
 import { evaluerSante, SEUILS_SANTE } from '../ops/sante';
 import type { PointCapaciteHeure } from '../ops/pool-attentes.pg';
 import type { PointFileHeure } from '../ops/mesures-files.pg';
+import type { MemoireWorker, PointMemoireHeure } from '../ops/memoire-workers.pg';
+import type { LecteurCockpit } from '../ops/cockpit';
 import { messageDe } from '../lib/erreur';
 import { makeTraceOps, type AuditSink } from '../audit/journal';
 
@@ -144,12 +146,17 @@ export interface OpsRouteDeps {
   sante: {
     connexionsBase(): Promise<{ utilisees: number; max: number }>;
     signauxMeta(): Promise<{ dernierMessage: string | null; dernierAccuse: string | null }>;
+    /** Le dernier relevé de mémoire de chaque worker (lot 2), frais seulement. */
+    memoires(): Promise<MemoireWorker[]>;
   };
-  /** L'onglet Capacité : l'historique heure par heure du pool, des copies d'API et des files. Au mieux. */
+  /** L'onglet Capacité : l'historique heure par heure du pool, des copies d'API, des files et de la mémoire des workers. Au mieux. */
   capacite: {
     parHeure(jours: number): Promise<PointCapaciteHeure[]>;
     files(jours: number): Promise<PointFileHeure[]>;
+    memoires(jours: number): Promise<PointMemoireHeure[]>;
   };
+  /** Cockpit, l'outil de mesure de Scaleway (lot 2) : `null` tant que `COCKPIT_TOKEN` n'est pas posé. */
+  cockpit: LecteurCockpit | null;
   /**
    * Les octets en base, fichiers compris. Coûteux (le catalogue entier) : servi par sa propre route, jamais par
    * la vue d'ensemble, que l'écran recharge à chaque ouverture et sur demande.
@@ -277,7 +284,7 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
   app.get('/ops/sante', opts, async (_req, reply) => {
     // Une lecture en échec rend `null`, jamais une liste vide : sous saturation, « illisible » n'est pas « aucun trafic ».
     const auMieux = <T>(lecture: Promise<T>): Promise<T | null> => lecture.catch(() => null);
-    const [workers, latencesFiles, chargeFiles, latencesHeure, latences24h, connexions, meta] = await Promise.all([
+    const [workers, latencesFiles, chargeFiles, latencesHeure, latences24h, connexions, meta, memoires, mesuresCockpit] = await Promise.all([
       auMieux(deps.heartbeat.lister()),
       // Le dernier quart d'heure : un pic résolu ne garde pas la pastille rouge une heure.
       auMieux(deps.exploitation.getQueueLatence(0.25)),
@@ -286,8 +293,11 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
       deps.latencesHttp.lire(24).catch(() => []),
       auMieux(deps.sante.connexionsBase()),
       deps.sante.signauxMeta().catch(() => ({ dernierMessage: null, dernierAccuse: null })),
+      auMieux(deps.sante.memoires()),
+      deps.cockpit ? deps.cockpit.mesures().catch(() => null) : Promise.resolve(null),
     ]);
-    const bilan = evaluerSante({ workers, latencesFiles, chargeFiles, latencesHttp: latencesHeure, connexions });
+    const cockpit = deps.cockpit ? { configure: true as const, mesures: mesuresCockpit } : { configure: false as const };
+    const bilan = evaluerSante({ workers, latencesFiles, chargeFiles, latencesHttp: latencesHeure, connexions, memoires, cockpit });
     const ilYa24h = Date.now() - 24 * 3600 * 1000;
     const charge = chargeFiles ?? [];
     const estDlq = (q: string): boolean => charge.some((c) => dlqName(c.queue) === q);
@@ -318,11 +328,15 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
     const lu = requeteCapacite.safeParse(req.query ?? {});
     if (!lu.success) return reply.code(400).send({ error: 'jours : un entier de 1 à 30' });
     const { jours } = lu.data;
-    const [heures, files] = await Promise.all([
+    const [heures, files, memoires, series] = await Promise.all([
       deps.capacite.parHeure(jours).catch(() => []),
       deps.capacite.files(jours).catch(() => []),
+      deps.capacite.memoires(jours).catch(() => []),
+      deps.cockpit ? deps.cockpit.historique(jours).catch(() => null) : Promise.resolve(null),
     ]);
-    return reply.code(200).send({ jours, heures, files, seuils: SEUILS_SANTE });
+    // Cockpit : `series` vaut `null` quand il n'a rien rendu ; l'écran le dit (« mesure indisponible »).
+    const cockpit = deps.cockpit ? { configure: true, series } : { configure: false };
+    return reply.code(200).send({ jours, heures, files, memoires, cockpit, seuils: SEUILS_SANTE });
   });
 
   /** Les octets en base : lus une fois à l'ouverture de l'écran, pas à chaque chargement de la vue d'ensemble (voir `PgStockageStore`). */
