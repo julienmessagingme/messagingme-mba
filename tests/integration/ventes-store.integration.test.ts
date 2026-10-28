@@ -47,6 +47,15 @@ describe.skipIf(!url)('le store des ventes', () => {
     );
   }
 
+  /** La boutique de l'espace, branchée à cette date (la preuve par UTM n'insère que pour une boutique branchée avant le paiement). */
+  async function brancher(le: Date): Promise<void> {
+    await pool.query(
+      `insert into shopify_boutiques (tenant_id, domaine, client_id, secret_chiffre, connectee_le)
+       values ($1, $2, 'cid', 'chiffre', $3) on conflict (tenant_id) do update set connectee_le = excluded.connectee_le`,
+      [T, `itest-ventes-${T.slice(0, 8)}.myshopify.com`, le],
+    );
+  }
+
   async function vider(): Promise<void> {
     await pool.query('delete from conversation_messages where conversation_id = $1', [fil]);
     await pool.query('delete from campaigns where tenant_id = $1', [T]);
@@ -171,6 +180,7 @@ describe.skipIf(!url)('le store des ventes', () => {
 
   it('🔴 appliquerPreuveUtm insère une vente prouvée pour une fiche vivante, rien pour une fiche anonymisée', async () => {
     await vider();
+    await brancher(ilYA(48));
     const vente = { contactId: contact, montant: '20', devise: 'EUR', payeeLe: maintenant, test: false, source: 'agent' as const, campaignId: null, preuve: 'utm' as const, relanceLe: null };
     expect(await store.appliquerPreuveUtm(T, { ...vente, commandeId: 'n1' })).toBe('appliquee');
     const anonyme = (await pool.query<{ id: string }>(
@@ -179,6 +189,20 @@ describe.skipIf(!url)('le store des ventes', () => {
     expect(await store.appliquerPreuveUtm(T, { ...vente, commandeId: 'n2', contactId: anonyme })).toBe('ignoree');
     const r = (await pool.query(`select commande_id, preuve from ventes_attribuees where tenant_id = $1 order by commande_id`, [T])).rows;
     expect(r).toEqual([{ commande_id: 'n1', preuve: 'utm' }]);
+  });
+
+  it('🔴 appliquerPreuveUtm ne recrée pas une vente quand la boutique a été rebranchée après le paiement (sa vente d’avant a été anonymisée)', async () => {
+    await vider();
+    // Désinstallée puis rebranchée pendant la relecture : l'effacement a anonymisé la vente, la reconnexion date d'après.
+    await brancher(new Date(maintenant.getTime() + 600_000));
+    const vente = { contactId: contact, montant: '20', devise: 'EUR', payeeLe: maintenant, test: false, source: 'agent' as const, campaignId: null, preuve: 'utm' as const, relanceLe: null };
+    await pool.query(
+      `insert into ventes_attribuees (tenant_id, commande_id, contact_id, montant, devise, payee_le, source) values ($1, null, null, 20, 'EUR', $2, 'agent')`,
+      [T, maintenant],
+    );
+    expect(await store.appliquerPreuveUtm(T, { ...vente, commandeId: 'r1' })).toBe('ignoree');
+    const n = (await pool.query<{ n: number }>('select count(*)::int as n from ventes_attribuees where tenant_id = $1', [T])).rows[0]!.n;
+    expect(n).toBe(1);
   });
 
   it('panierRelance rend la date d’une relance partie, rien pour un panier non relancé ou refusé', async () => {

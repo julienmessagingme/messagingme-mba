@@ -497,7 +497,7 @@ export async function demarrerWorker(): Promise<void> {
 
   /**
    * La preuve par UTM d'une vente (plan 2026-10-28, tâche 6b) : 30 minutes après la commande, le parcours client relu chez
-   * Shopify ; si sa dernière visite vient de nos liens, la vente devient prouvée. Ne lève jamais (un job ne boucle pas).
+   * Shopify ; si sa dernière visite vient de nos liens, la vente devient prouvée. Seule une panne de notre base lève.
    */
   const preuveUtm: DepsPreuveUtm = {
     store: new PgShopifyStore(pool, config.ENCRYPTION_KEY),

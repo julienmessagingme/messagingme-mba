@@ -102,7 +102,11 @@ export interface DepsPreuveUtm {
 
 export type IssuePreuve = 'prouvee' | 'ignoree' | 'sans_preuve' | 'reessai' | 'abandon';
 
-/** Une relecture : prouve la vente, ou la relit plus tard, ou s'arrête. Ne lève jamais : un job ne se rejoue pas en boucle. */
+/**
+ * Une relecture : prouve la vente, ou la relit plus tard, ou s'arrête. Shopify ne la fait jamais lever (toute panne de
+ * lecture devient une relecture plus tard) ; une panne de NOTRE base, elle, lève, et pg-boss reprend le job puis le range
+ * dans sa file des morts.
+ */
 export async function traiterPreuveUtm(deps: DepsPreuveUtm, donnees: unknown): Promise<IssuePreuve> {
   const lu = schemaJob.safeParse(donnees);
   if (!lu.success) {

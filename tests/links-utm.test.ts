@@ -12,6 +12,13 @@ describe('les UTM de nos liens', () => {
     expect(avecUtm('https://boutique.fr/#avis', 'noel')).toBe('https://boutique.fr/?utm_source=whatsapp&utm_medium=messagingme&utm_campaign=noel#avis');
   });
 
+  it('🔴 avecUtm garde la requête du marchand OCTET POUR OCTET : il ajoute, il ne réécrit rien', () => {
+    expect(avecUtm('https://site.fr/r?q=%E9t%E9&a=1;b=2&ref&p=a/b,c:d', 'noel'))
+      .toBe('https://site.fr/r?q=%E9t%E9&a=1;b=2&ref&p=a/b,c:d&utm_source=whatsapp&utm_medium=messagingme&utm_campaign=noel');
+    expect(avecUtm('https://site.fr/r?', 'noel')).toBe('https://site.fr/r?utm_source=whatsapp&utm_medium=messagingme&utm_campaign=noel');
+    expect(avecUtm('https://site.fr/r?x=1', 'promo été')).toBe('https://site.fr/r?x=1&utm_source=whatsapp&utm_medium=messagingme&utm_campaign=promo%20%C3%A9t%C3%A9');
+  });
+
   it('avecUtm n’écrase aucun utm_ déjà présent : le marchand garde son marquage', () => {
     expect(avecUtm('https://boutique.fr/?utm_source=newsletter', 'noel')).toBe('https://boutique.fr/?utm_source=newsletter');
     expect(avecUtm('https://boutique.fr/?UTM_Campaign=x', 'noel')).toBe('https://boutique.fr/?UTM_Campaign=x');

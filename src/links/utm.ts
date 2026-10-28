@@ -8,7 +8,12 @@
 export const UTM_SOURCE = 'whatsapp';
 export const UTM_MEDIUM = 'messagingme';
 
-/** La destination avec nos UTM ; telle quelle si elle en porte déjà un (le marquage du marchand prime) ou si elle est illisible. */
+/**
+ * La destination avec nos UTM ; telle quelle si elle en porte déjà un (le marquage du marchand prime) ou si elle est
+ * illisible. 🔴 La requête du marchand se garde OCTET POUR OCTET : on AJOUTE au texte de `search`, jamais par
+ * `searchParams.set`, qui resérialiserait toutes les paires (un `%E9` latin-1 corrompu, un `;` encodé, `?ref` devenu
+ * `?ref=`) et casserait un lien déjà livré (relecture du lot 6).
+ */
 export function avecUtm(destination: string, modele: string): string {
   let url: URL;
   try {
@@ -17,9 +22,9 @@ export function avecUtm(destination: string, modele: string): string {
     return destination;
   }
   if ([...url.searchParams.keys()].some((k) => k.toLowerCase().startsWith('utm_'))) return destination;
-  url.searchParams.set('utm_source', UTM_SOURCE);
-  url.searchParams.set('utm_medium', UTM_MEDIUM);
-  url.searchParams.set('utm_campaign', modele);
+  const nos = new URLSearchParams({ utm_source: UTM_SOURCE, utm_medium: UTM_MEDIUM, utm_campaign: modele }).toString().replace(/\+/g, '%20');
+  const requete = url.search.replace(/^\?/, '');
+  url.search = requete === '' ? nos : `${requete}&${nos}`;
   return url.toString();
 }
 

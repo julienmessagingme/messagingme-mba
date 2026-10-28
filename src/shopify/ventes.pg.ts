@@ -97,8 +97,9 @@ export class PgVentesStore {
   /**
    * La preuve par UTM, relue après coup (`src/shopify/preuve-utm.ts`) : la vente de la commande prend sa source prouvée,
    * sauf si son panier relancé la prouve déjà (la preuve `panier` ne se remplace jamais) ; absente (aucune touche dans la
-   * fenêtre à la réception), elle se crée, mais seulement pour une fiche encore VIVANTE : une demande d'effacement arrivée
-   * entre-temps ne doit pas recréer de lien vers la personne. Une seule instruction : l'instantané commun des CTE fait
+   * fenêtre à la réception), elle se crée, mais seulement pour une fiche encore VIVANTE (une demande d'effacement arrivée
+   * entre-temps ne doit pas recréer de lien vers la personne) et une boutique branchée AVANT le paiement (un rebranchement
+   * suit un effacement qui a pu anonymiser la vente : la recréer la doublerait). Une seule instruction : l'instantané commun des CTE fait
    * que l'insertion ne voit pas la mise à jour, et n'insère que s'il n'existait aucune vente.
    */
   async appliquerPreuveUtm(tenantId: string, v: VenteAEnregistrer): Promise<'appliquee' | 'ignoree'> {
@@ -113,6 +114,9 @@ export class PgVentesStore {
          select $1, $2, $3, $4::numeric, $5, $6, $7, $8, $9, $10, $11
           where not exists (select 1 from ventes_attribuees where tenant_id = $1 and commande_id = $2)
             and exists (select 1 from contacts c where c.tenant_id = $1 and c.id = $3 and ${ficheActive('c')})
+            -- Une boutique (re)branchée APRÈS le paiement : l'effacement d'avant a peut-être anonymisé la vente de cette
+            -- commande, introuvable par son numéro ; la recréer la compterait deux fois (relecture du lot 6).
+            and exists (select 1 from shopify_boutiques b where b.tenant_id = $1 and b.connectee_le <= $6)
          on conflict (tenant_id, commande_id) where commande_id is not null do nothing
          returning 1
        )
