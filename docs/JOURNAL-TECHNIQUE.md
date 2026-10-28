@@ -4,6 +4,42 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 : l'offre Business, sous-lot B (la grille visible, la console, la vitrine)
+
+Un commit (`a3e6cf8a`), déployé en `migration=avant` (run 40656461729) : la seule migration en attente était la 0259 de
+la session HubSpot (`tenant_settings.hubspot_workflows`), que le déploiement emportait, accord échangé avec elle.
+
+- **Ce qui change** : le Pro à 1 000 contacts et 60 jours, sans Meta Business Agent, assistants ni bot d'aide ; le widget
+  personnalisable au Business et à l'Entreprise (hors offre, apparence standard servie et refusée à l'écriture, réglage
+  conservé : les deux bulles personnalisées des espaces Free de test repassent au vert, décision de Julien) ; la marge
+  sur l'IA retirée de tout texte public (test sur la vitrine, l'aide et le plugin) ; la console à quatre offres (page
+  Offre, Support prioritaire pour un Business, tous administrateurs en Pro, écrans fermés avec le tutoriel quand il en
+  existe, section Business de `/ops` avec ses alertes, la confirmation du retrait qui coupe le numéro fourni et le bilan
+  des gestes) ; la vitrine à quatre cartes, sans « bientôt » (décision de Julien : les fonctions des lots 2 et 3 sont
+  dites incluses), HubSpot et Salesforce/Batch « en app intégrée » ; les fiches d'aide à l'offre minimale ; le plugin
+  0.3.15. Jaunes de la relecture de A repris : le rôle effectif au renouvellement OAuth, au second facteur et dans la
+  console (par `/me`), l'alerte du numéro en Business, le rôle annoncé à l'invitation.
+- **La relecture indépendante** : deux 🔴, corrigés avant le push. (1) La console est publiée avant l'API : pendant la
+  fenêtre (ou après un retour arrière), elle grisait l'apparence d'une Entreprise et un enregistrement renvoyait le vert
+  standard, que l'API A écrivait par-dessus le réglage ; parades : une API sans `widget_personnalise` laisse l'apparence
+  ouverte (`lireVueOffre`), et hors offre le formulaire n'envoie plus jamais l'apparence (`sansApparence`). (2) Un Pro
+  qui revient d'une Free encore en grâce (la Free garde alors la durée de l'instance, 90 jours) prenait les 60 jours du
+  Pro sur le coup ; la descente du Pro compte désormais la fin de son dernier Pro. Le sens « échoue sans le correctif » du
+  cas d'intégration, prouvé en lecture seule en production sur des lignes fictives, une CTE masquant `abonnements_offre`
+  dans la requête : ancien texte, grille appliquée à 10 jours de la fin du Pro ; nouveau, grâce.
+- **Avant le déploiement**, la sonde en lecture seule : aucun Pro vivant, aucun Business, aucune transaction longue ; le
+  seul Pro fini depuis moins de 30 jours appartient à un espace aujourd'hui en Entreprise, sans conversation de plus de
+  60 jours. **Après**, relu par le vrai code dans `mba-worker` (révision `a3e6cf8a`) : la 0259 (booléen, non nul, faux,
+  5 lignes à faux), la grille de B dans l'image, 7 Entreprise et 3 Free, les mêmes durées de conservation, rien de plus
+  à purger. Fumée et fiches OAuth conformes, `aide:charger` sur l'image déployée (171 lignes, 0 retirée).
+- **Les e2e** : la console de la copie servie sur un port libre (le 3000 était pris par une autre session), suite
+  complète verte (1 667). Le seul défaut qu'elle a trouvé était dans les faux serveurs : trois specs rendaient
+  `role: 'admin'` pour `/me` quelle que soit la session, et la console, qui relit désormais le rôle par `/me`, promouvait
+  le manager ou l'agent du test. La leçon : un faux serveur qui rend une valeur fixe pour une route que la console ne
+  lisait pas devient faux le jour où elle la lit.
+- **Pas encore fait** : la publication du plugin 0.3.15 (refusée au mode auto de Claude, surface publique : commande à
+  Julien) ; l'essai partiel puis l'essai réel du Business (`docs/prive/ESSAIS-REELS.md`, 175 et 176).
+
 ## 2026-10-27 (soir) : la refonte de /ops, lot 1 (onglets, Santé, Capacité)
 
 Spec `docs/superpowers/specs/2026-10-27-ops-refonte-design.md`, plan `docs/superpowers/plans/2026-10-27-ops-refonte.md`.
