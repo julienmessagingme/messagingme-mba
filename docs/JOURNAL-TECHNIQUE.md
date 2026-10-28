@@ -20,6 +20,11 @@ déploiement comptait comme une montée à deux copies).
   derniers signaux de Meta, 172 heures de copies d'API, la lecture des files) ; la tâche `mesures-files` a tourné au
   démarrage (une passe, aucun échec, 12 ms). La table est restée vide ce soir-là : aucun job pg-boss terminé depuis
   17 h 43, faute de trafic. Les deux routes neuves rendent 401 sans session.
+- **Les jaunes** (`9c0e8476`, run 40582439423, sans migration, déployés le 2026-10-28 au matin). Relus en production
+  par le vrai code en lecture seule, avec les lectures mêmes de la route : les cinq lectures de Santé en 28 ms, cinq
+  briques vertes, aucune illisible, la jauge à 86 % sur la base, non partielle. Le relevé des files a tourné quatre fois
+  par heure toute la nuit, sans échec, sous 10 ms, et compte désormais ses lignes ; la table reste vide, aucun job
+  terminé depuis la veille.
 
 ## 2026-10-27 (soir) : l'offre Business, sous-lot A (la mécanique serveur, rien de visible)
 
