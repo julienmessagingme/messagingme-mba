@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createHmac, randomBytes } from 'node:crypto';
 import { verifierSignatureShopify } from '../src/shopify/signature';
 import {
-  donneesDeCommande, donneesDExpedition, montantAffiche, numeroDeCommandeDExpedition, schemaCommande, schemaExpedition,
+  donneesDeCommande, donneesDExpedition, montantAffiche, montantBoutique, numeroDeCommandeDExpedition, schemaCommande, schemaExpedition,
   telephoneDeCommande, telephoneDExpedition, valeurDeVariable,
 } from '../src/shopify/donnees';
 import { domaineShopify, lienInstallation, verifierBoutique } from '../src/shopify/connexion';
@@ -98,6 +98,45 @@ describe('la lecture des corps mesurés', () => {
   it('un corps qui n’a pas la forme attendue est refusé, sans lever', () => {
     expect(schemaCommande.safeParse({ name: '#1' }).success).toBe(false);
     expect(schemaCommande.safeParse(commande({ id: 'abc' })).success).toBe(false);
+  });
+});
+
+/** Le montant d'une vente attribuée (plan 2026-10-28, tâche 3) : la devise de la BOUTIQUE, pour que les ventes s'additionnent. */
+describe('le montant d’une vente attribuée', () => {
+  it('montantBoutique lit shop_money, pas ce que le client a vu', () => {
+    const c = schemaCommande.parse(commande({
+      total_price: '12.00', presentment_currency: 'USD',
+      total_price_set: { presentment_money: { amount: '13.10', currency_code: 'USD' }, shop_money: { amount: '12.00', currency_code: 'EUR' } },
+    }));
+    expect(montantBoutique(c, 'GBP')).toEqual({ montant: '12.00', devise: 'EUR' });
+    expect(montantAffiche(c)).toMatch(/13,10\s\$/);
+  });
+
+  it('sans shop_money, repli sur total_price et la devise de la boutique', () => {
+    const c = schemaCommande.parse(commande({ total_price: '30.5', total_price_set: null }));
+    expect(montantBoutique(c, 'EUR')).toEqual({ montant: '30.5', devise: 'EUR' });
+  });
+
+  it('un montant ou une devise illisible ne donne rien', () => {
+    expect(montantBoutique(schemaCommande.parse(commande({ total_price: '12,00', total_price_set: null })), 'EUR')).toBeNull();
+    expect(montantBoutique(schemaCommande.parse(commande({ total_price: '12.00', total_price_set: null })), null)).toBeNull();
+    expect(montantBoutique(schemaCommande.parse(commande({ total_price: '12.00', total_price_set: null })), 'euro')).toBeNull();
+    expect(montantBoutique(schemaCommande.parse(commande({
+      total_price: null, total_price_set: { shop_money: { amount: '-1', currency_code: 'EUR' } },
+    })), 'EUR')).toBeNull();
+  });
+
+  it('montantAffiche lit toujours presentment_money, et se passe de lui', () => {
+    const sansPresentment = schemaCommande.parse(commande({
+      total_price: '9.00', presentment_currency: 'EUR', total_price_set: { shop_money: { amount: '9.00', currency_code: 'EUR' } },
+    }));
+    expect(montantAffiche(sansPresentment)).toMatch(/9,00\s€/);
+  });
+
+  it('le drapeau test et la page d’arrivée se lisent, absents ou non', () => {
+    const c = schemaCommande.parse(commande({ test: true, landing_site: '/?utm_source=whatsapp' }));
+    expect([c.test, c.landing_site]).toEqual([true, '/?utm_source=whatsapp']);
+    expect(schemaCommande.parse(commande()).test ?? false).toBe(false);
   });
 });
 

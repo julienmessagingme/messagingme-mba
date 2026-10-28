@@ -76,7 +76,14 @@ export const schemaCommande = z.object({
   billing_address: adresse,
   total_price: texte,
   presentment_currency: texte,
-  total_price_set: z.object({ presentment_money: z.object({ amount: z.string(), currency_code: z.string() }) }).nullish(),
+  total_price_set: z.object({
+    presentment_money: z.object({ amount: z.string(), currency_code: z.string() }).nullish(),
+    shop_money: z.object({ amount: z.string(), currency_code: z.string() }).nullish(),
+  }).nullish(),
+  /** Une commande de la passerelle de test : enregistrée, jamais comptée (spec du 2026-10-28). */
+  test: z.boolean().nullish(),
+  /** La page d'arrivée de la visite qui a mené à la commande, avec sa requête : la preuve par UTM (tâche 6). */
+  landing_site: texte,
 });
 export type CommandeShopify = z.infer<typeof schemaCommande>;
 
@@ -165,6 +172,20 @@ export function montantAffiche(c: CommandeShopify): string | null {
   } catch {
     return `${montant} ${devise}`;
   }
+}
+
+/**
+ * Le montant d'une VENTE ATTRIBUÉE, dans la devise de la BOUTIQUE (`shop_money`) et non celle du client : les ventes d'un
+ * espace s'additionnent sans mélanger les devises. Sans `shop_money`, `total_price` est déjà dans la devise de la boutique.
+ * Décimal en texte, jamais un flottant ; illisible : `null`, et rien ne s'enregistre.
+ */
+export function montantBoutique(c: CommandeShopify, deviseBoutique: string | null): { montant: string; devise: string } | null {
+  const m = c.total_price_set?.shop_money;
+  const montant = m?.amount ?? c.total_price ?? null;
+  const devise = m?.currency_code ?? deviseBoutique;
+  if (montant === null || !/^\d+(\.\d+)?$/.test(montant)) return null;
+  if (devise === null || !/^[A-Z]{3}$/.test(devise)) return null;
+  return { montant, devise };
 }
 
 /** Le numéro de commande d'une expédition : son `name` sans le suffixe de l'expédition (« #1002.1 » -> « #1002 »). */

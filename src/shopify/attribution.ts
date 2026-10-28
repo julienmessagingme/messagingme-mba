@@ -37,3 +37,39 @@ export interface VenteAttribuee {
  */
 export const PREFIXE_LIGNE_SHOPIFY = 'Shopify · ';
 export const LIGNE_RELANCE_PANIER = `${PREFIXE_LIGNE_SHOPIFY}panier abandonné`;
+
+/** La fenêtre entre l'envoi et le paiement : fixe, la même pour tous les espaces (décision de Julien du 2026-10-28). */
+export const FENETRE_ATTRIBUTION_JOURS = 5;
+const FENETRE_MS = FENETRE_ATTRIBUTION_JOURS * 86_400_000;
+
+const venteDe = (t: Touche, preuve: VenteAttribuee['preuve']): VenteAttribuee => ({
+  source: t.source, campaignId: t.campaignId, preuve, relanceLe: t.source === 'relance_panier' ? t.le : null,
+});
+
+/**
+ * La source d'une commande payée, dans cet ordre (spec, « La règle d'attribution ») :
+ * 1. elle paie un panier relancé : la relance, prouvée, même si un autre envoi a suivi ;
+ * 2. Shopify rattache sa visite à nos UTM : la touche du modèle nommé, prouvée, sans limite de fenêtre ;
+ * 3. sinon le dernier envoi de la fenêtre, non prouvé. Un scénario lancé par une campagne revient à cette campagne ;
+ * 4. sinon rien.
+ */
+export function choisirSource(e: {
+  payeeLe: Date;
+  touches: readonly Touche[];
+  panierRelance: { relanceLe: Date } | null;
+  toucheUtm: Touche | null;
+}): VenteAttribuee | null {
+  if (e.panierRelance) return { source: 'relance_panier', campaignId: null, preuve: 'panier', relanceLe: e.panierRelance.relanceLe };
+  if (e.toucheUtm) return venteDe(e.toucheUtm, 'utm');
+  const paye = e.payeeLe.getTime();
+  const fenetre = e.touches
+    .filter((t) => t.le.getTime() <= paye && t.le.getTime() >= paye - FENETRE_MS)
+    .sort((a, b) => b.le.getTime() - a.le.getTime());
+  const gagnante = fenetre[0];
+  if (!gagnante) return null;
+  if (gagnante.source === 'scenario') {
+    const campagne = fenetre.find((t) => t.source === 'campagne' && t.lanceScenario);
+    if (campagne) return venteDe(campagne, null);
+  }
+  return venteDe(gagnante, null);
+}
