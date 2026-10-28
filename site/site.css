@@ -657,6 +657,20 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .c-merci .appels{justify-content:center}
 @media (max-width:960px){.c-une{grid-template-columns:minmax(0,1fr);gap:40px;padding-top:24px;padding-bottom:80px}}
 @media (max-width:560px){.c-form{grid-template-columns:minmax(0,1fr);padding:20px 16px}.c-merci{padding:72px 0 96px}}
+/* Le livre blanc des écoles (2026-10-28) : la couverture à côté de son sommaire, la case WhatsApp sur une ligne.
+   La case reprend le formulaire de contact, d'où `.c-champ.lb-case` pour défaire la largeur et le fond des champs. */
+.lb-apercu{display:grid;grid-template-columns:minmax(0,clamp(120px,14vw,190px)) minmax(0,1fr);align-items:start;gap:24px;margin-top:34px}
+.lb-couverture{display:block;width:100%;height:auto;border-radius:8px;rotate:-2deg;box-shadow:0 1px 2px rgb(0 0 0 / .3),0 30px 50px -22px var(--ombre)}
+.lb-sommaire{display:grid;gap:12px;margin:0;padding:0;list-style:none;counter-reset:lb}
+.lb-sommaire li{position:relative;padding-left:32px;color:var(--muted);font-size:.95rem;line-height:1.45}
+.lb-sommaire li::before{counter-increment:lb;content:counter(lb,decimal-leading-zero);position:absolute;left:0;top:.12em;font-size:.78rem;font-weight:700;color:var(--action-ink)}
+.c-champ.lb-case label{display:flex;align-items:flex-start;gap:10px;font-weight:500;line-height:1.45;cursor:pointer}
+.c-champ.lb-case input{flex:none;width:20px;height:20px;margin:1px 0 0;padding:0;border:0;accent-color:var(--action)}
+.lb-merci .appels{margin-bottom:28px}
+/* Le bloc d'appel de la page Écoles : la couverture à gauche, le titre et le bouton à droite. */
+.lb-bloc{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);align-items:center;gap:clamp(28px,6vw,72px)}
+.lb-bloc .f-texte{margin-bottom:28px}
+@media (max-width:560px){.lb-apercu{grid-template-columns:minmax(0,112px) minmax(0,1fr);gap:18px}.lb-bloc{grid-template-columns:minmax(0,1fr)}.lb-bloc .lb-couverture{width:150px}}
 
 /* Avant / avec Messaging Me (page Publicités) : deux outils et leurs allers-retours, face à un seul écran. Le côté
    « avant » est en retrait (pointillés, texte atténué), le côté Messaging Me reprend la carte claire de l'accueil. */

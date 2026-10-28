@@ -91,6 +91,9 @@ export interface TexteSecteur {
     readonly note?: string;
     readonly encart?: { readonly titre: readonly [string, string]; readonly texte: string };
   };
+  /** Un livre blanc du secteur, entre les usages et l'accompagnement : sa couverture, puis un bouton vers sa page de
+   * téléchargement (page Écoles, 2026-10-28). */
+  readonly livreBlanc?: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly texte: string; readonly bouton: string; readonly adresse: string };
   readonly partenaire: {
     readonly surtitre: string; readonly titre: readonly [string, string];
     readonly liste: ReadonlyArray<{ readonly titre: string; readonly texte: string }>;
@@ -325,6 +328,13 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
         note: 'Exemples illustratifs de parcours à déployer.',
         encart: { titre: ['Ce qui les questionne.', 'Ce qui freine leur décision.'], texte: 'Les données conversationnelles vous aident à enrichir vos réponses, ajuster vos contenus et affiner vos scénarios de suivi.' },
       },
+      livreBlanc: {
+        surtitre: 'Livre blanc gratuit',
+        titre: ['Recruter sur WhatsApp.', 'Le guide des écoles.'],
+        texte: '15 pages pour comprendre WhatsApp, fixer l’objectif de chaque conversation, acquérir avec les publicités Click-to-WhatsApp, automatiser depuis votre CRM et relancer sans harceler.',
+        bouton: 'Recevoir le livre blanc',
+        adresse: '/livre-blanc/whatsapp-education/',
+      },
       partenaire: {
         surtitre: 'Votre partenaire conversationnel',
         titre: ['Une stratégie de recrutement.', 'La technologie et l’accompagnement pour la déployer.'],
@@ -427,6 +437,13 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
         appel: 'Let’s build your candidate journey',
         note: 'Illustrative examples of journeys to deploy.',
         encart: { titre: ['What they wonder about.', 'What holds their decision back.'], texte: 'Conversational data helps you enrich your answers, adjust your content and refine your follow-up scenarios.' },
+      },
+      livreBlanc: {
+        surtitre: 'Free white paper',
+        titre: ['Recruiting on WhatsApp.', 'The guide for schools.'],
+        texte: '15 pages, in French, to understand WhatsApp, set the goal of each conversation, acquire with Click-to-WhatsApp ads, automate from your CRM and follow up without pestering.',
+        bouton: 'Get the white paper',
+        adresse: '/en/white-paper/whatsapp-education/',
       },
       partenaire: {
         surtitre: 'Your conversational partner',

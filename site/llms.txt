@@ -118,6 +118,11 @@
 - [Les tarifs](https://app.messagingme.fr/tarifs/) : la Free gratuite, pilotée depuis votre application ou votre assistant IA ; le Pro pour une équipe dans la console ; le Business pour une équipe qui grandit, à 349 € HT par mois ; l’Entreprise sur devis. Ce que chaque offre comprend, le crédit IA et ce que Meta facture.
 - [Pricing](https://app.messagingme.fr/en/pricing/) : the same page in English.
 
+## Livre blanc
+
+- [Recruter sur WhatsApp](https://app.messagingme.fr/livre-blanc/whatsapp-education/) : le livre blanc gratuit des écoles (15 pages, PDF) : comprendre WhatsApp, fixer l’objectif de chaque conversation, publicités Click-to-WhatsApp, CRM, relances, IA puis humain. Les cas NEOMA, EDH et EDHEC.
+- [White paper: recruiting on WhatsApp](https://app.messagingme.fr/en/white-paper/whatsapp-education/) : the free white paper for schools, in French.
+
 ## Contact
 
 - [Demander une démo](https://app.messagingme.fr/contact/)

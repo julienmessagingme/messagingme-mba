@@ -48,6 +48,9 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/cas-d-usage/bulle-whatsapp-site-lovable/': '/en/use-cases/whatsapp-bubble-lovable-site/',
   '/contact/': '/en/contact/',
   '/contact/merci/': '/en/contact/thanks/',
+  // Le livre blanc des écoles (2026-10-28) : le PDF reste en français, la page anglaise le dit.
+  '/livre-blanc/whatsapp-education/': '/en/white-paper/whatsapp-education/',
+  '/livre-blanc/whatsapp-education/merci/': '/en/white-paper/whatsapp-education/thanks/',
   // Où Shopify mène le marchand après « Installer » (l'`application_url` de l'app que la skill shopify crée).
   '/shopify/installe/': '/en/shopify/installed/',
   // La même page pour le parcours de la console (conception 2026-10-22) : « revenez dans votre console ».
