@@ -71,6 +71,11 @@ export interface TexteBoutique {
   readonly telephone: { readonly aria: string; readonly boutique: string; readonly compte: string; readonly jour: string; readonly bulles: readonly BulleTel[] };
   readonly probleme: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly texte: string; readonly source: string };
   readonly scenario: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly etapes: readonly Etape[] };
+  /** Le film (lot 3 de la conception, fait le 2026-10-28 dans `~/engageme-motion/engageme-cas-shopify`) : `site/films/<nom>`, `-en` et `-9x16`. */
+  readonly film: {
+    readonly nom: string; readonly surtitre: string; readonly titre: readonly [string, string]; readonly texte: string;
+    readonly aria: string; readonly duree: string; readonly publie: string;
+  };
   readonly branchez: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly cartes: readonly Carte[] };
   readonly ensuite: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly cartes: readonly Carte[]; readonly offre: string };
   readonly numero: {
@@ -175,6 +180,13 @@ const fr = (): TexteBoutique => {
         { titre: 'Votre agent IA lui répond', texte: 'Avec ce qu’il sait de votre boutique : vos délais, vos transporteurs, vos retours, vos produits. Sans la réponse, il vous passe la main.' },
         { titre: 'Il commande', texte: 'La confirmation arrive sur WhatsApp, puis l’avis d’expédition avec le lien de suivi.' },
       ],
+    },
+    film: {
+      nom: 'cas-shopify', surtitre: 'Le film',
+      titre: ['Votre boutique et votre WhatsApp,', 'branchés depuis Claude Code.'],
+      texte: 'Vous le demandez à Claude Code : il relie votre numéro WhatsApp, crée l’app dans votre organisation Shopify, rédige les messages que Meta approuve et fait lire votre site à votre agent IA. Puis votre client reçoit la relance, pose sa question et commande.',
+      aria: 'Film : une boutique Shopify et son WhatsApp branchés depuis Claude Code, puis la relance d’un panier, la réponse de l’agent IA et la commande',
+      duree: 'PT41S', publie: '2026-10-28T23:00:00+01:00',
     },
     branchez: {
       surtitre: 'Ce que vous branchez',
@@ -415,6 +427,13 @@ const en = (): TexteBoutique => {
         { titre: 'Your AI agent answers them', texte: 'With what it knows about your store: your delivery times, your carriers, your returns, your products. Without the answer, it hands over to you.' },
         { titre: 'They order', texte: 'The confirmation arrives on WhatsApp, then the shipping notice with the tracking link.' },
       ],
+    },
+    film: {
+      nom: 'cas-shopify', surtitre: 'The film',
+      titre: ['Your store and your WhatsApp,', 'connected from Claude Code.'],
+      texte: 'You ask Claude Code: it connects your WhatsApp number, creates the app in your Shopify organization, writes the messages Meta approves and has your AI agent read your website. Then your customer gets the reminder, asks their question and orders.',
+      aria: 'Film: a Shopify store and its WhatsApp connected from Claude Code, then a checkout reminder, the AI agent’s answer and the order',
+      duree: 'PT41S', publie: '2026-10-28T23:00:00+01:00',
     },
     branchez: {
       surtitre: 'What you connect',

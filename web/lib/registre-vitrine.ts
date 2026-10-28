@@ -22,7 +22,7 @@ export type Profil = (typeof PROFILS)[number];
 
 /**
  * `boutique` : une page Solutions pour les marchands d'une plateforme de commerce (Shopify, 2026-10-24), générée par
- * `scripts/vitrine/boutique.ts` : ni références clients ni film, deux portes (Claude Code, la console).
+ * `scripts/vitrine/boutique.ts` : ni références clients ni cas de terrain, deux portes (Claude Code, la console).
  */
 export type NatureEntree = 'cas' | 'secteur' | 'metier' | 'boutique';
 

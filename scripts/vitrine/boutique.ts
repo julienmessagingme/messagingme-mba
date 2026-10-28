@@ -1,9 +1,9 @@
 // scripts/vitrine/boutique.ts
 // Les pages « boutique » de la rubrique Solutions (la première : Boutiques Shopify, 2026-10-24), dans les deux langues,
 // depuis `boutique-textes.ts`, écrites par `npm run vitrine:cas` avec les autres pages de la rubrique. Plan
-// `docs/superpowers/plans/2026-10-24-boutiques-shopify.md`. Une troisième nature de page : ni références clients, ni film,
-// ni cas de terrain, mais deux portes (Claude Code, la console) et le guide du numéro, que `site.js` rend interactif et
-// qui reste lisible sans script (ses issues en liste).
+// `docs/superpowers/plans/2026-10-24-boutiques-shopify.md`. Une troisième nature de page : ni références clients ni cas
+// de terrain, mais deux portes (Claude Code, la console) et le guide du numéro, que `site.js` rend interactif et qui
+// reste lisible sans script (ses issues en liste). Son film (lot 3, 2026-10-28) suit le scénario et sert d'image de partage.
 import { DEPOT_PLUGIN } from '../../web/lib/demarrer';
 import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
 import { ACCUEIL, fichierDe, fil, page } from './cas';
@@ -11,6 +11,7 @@ import type { Langue } from './cas-textes';
 import { insecables } from './guide-meta';
 import { TEXTES_BOUTIQUES, type Carte, type Etape, type Issue, type Question, type Reponse, type TexteBoutique, type Voie } from './boutique-textes';
 
+const ORIGINE = 'https://app.messagingme.fr';
 const CONSOLE = 'https://console.messagingme.app';
 const BAYMARD = 'https://baymard.com/lists/cart-abandonment-rate';
 const PLUGIN: Readonly<Record<Langue, string>> = { fr: '/developpeurs/installer-le-plugin/', en: '/en/developers/install-the-plugin/' };
@@ -170,6 +171,7 @@ function guide(t: TexteBoutique, langue: Langue): string[] {
 
 function mainBoutique(t: TexteBoutique, langue: Langue): string {
   const p = t.prix;
+  const f = `/films/${t.film.nom}${langue === 'fr' ? '' : '-en'}`;
   return [
     '<main>',
     '  <section class="cadre f-une bt-une">',
@@ -200,6 +202,15 @@ function mainBoutique(t: TexteBoutique, langue: Langue): string {
     `      <p class="f-surtitre">${t.scenario.surtitre}</p>`,
     `      <h2 class="f-titre">${deux(t.scenario.titre)}</h2>`,
     ...etapes(t.scenario.etapes),
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-bloc f-film" id="film">',
+    '    <div class="cadre">',
+    `      <p class="f-surtitre">${t.film.surtitre}</p>`,
+    `      <h2 class="f-titre">${deux(t.film.titre)}</h2>`,
+    `      <p class="f-texte">${t.film.texte}</p>`,
+    `      <video class="f-video" src="${f}.mp4?v=1" poster="${f}.webp?v=1" data-vertical="${f}-9x16.mp4?v=1" data-affiche-verticale="${f}-9x16.webp?v=1" width="1280" height="720" controls muted playsinline preload="none" aria-label="${t.film.aria}"></video>`,
     '    </div>',
     '  </section>',
     '',
@@ -284,10 +295,16 @@ function pageBoutique(e: EntreeVitrine, langue: Langue): { chemin: string; conte
   // En français, la ponctuation haute et les guillemets gardent leur espace insécable.
   const html = mainBoutique(brute, langue);
   const main = langue === 'fr' ? insecables(html) : html;
+  const film = `/films/${brute.film.nom}${langue === 'fr' ? '' : '-en'}`;
   const ld = {
     '@context': 'https://schema.org',
     '@graph': [
       fil(langue, [ACCUEIL[langue], [p.titre, p.adresse]]),
+      {
+        '@type': 'VideoObject', name: brute.film.aria, description: brut(brute.film.texte),
+        thumbnailUrl: `${ORIGINE}${film}.webp`, contentUrl: `${ORIGINE}${film}.mp4`, uploadDate: brute.film.publie, duration: brute.film.duree,
+        inLanguage: langue === 'fr' ? 'fr-FR' : 'en-US', publisher: { '@id': 'https://www.messagingme.fr/#organisation' },
+      },
       {
         '@type': 'FAQPage', inLanguage: langue === 'fr' ? 'fr-FR' : 'en-US',
         mainEntity: brute.faq.questions.map((q) => ({ '@type': 'Question', name: brut(q.q), acceptedAnswer: { '@type': 'Answer', text: brut(q.r) } })),
@@ -296,7 +313,10 @@ function pageBoutique(e: EntreeVitrine, langue: Langue): { chemin: string; conte
   };
   return {
     chemin: fichierDe(p.adresse),
-    contenu: page(langue, { adresse: p.adresse, jumelle: autre.adresse, titre: brute.titre, description: brut(brute.description), ldJson: ld }, main,
+    contenu: page(langue, {
+      adresse: p.adresse, jumelle: autre.adresse, titre: brute.titre, description: brut(brute.description), ldJson: ld,
+      affiche: `${film}.webp?v=1`,
+    }, main,
       `Page « ${e.fr.titre} », GÉNÉRÉE par npm run vitrine:cas depuis scripts/vitrine/boutique-textes.ts : ne pas modifier à la main.`),
   };
 }
