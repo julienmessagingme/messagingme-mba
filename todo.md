@@ -1,5 +1,31 @@
 # todo.md : backlog
 
+## 🟡 Le chiffre d'affaires attribué : ce que la v1 laisse (spec du 2026-10-28)
+
+Spec `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`, section « Hors du chantier ».
+- **Déduire les remboursements et les annulations** (`refunds/create`, `orders/cancelled`, à réabonner pour chaque
+  boutique déjà branchée) : la v1 affiche un chiffre brut.
+- **Le détail par scénario** : `conversation_messages` ne dit pas quel scénario a envoyé ; il faut écrire son
+  identifiant sur chaque message sortant. Les scénarios comptent en bloc en v1.
+- **Le ROAS** (chiffre sur coût Meta) et une colonne de chiffre d'affaires dans la liste des campagnes.
+- **Les boutiques hors Shopify** : une route d'API « déclarer une commande » (numéro, montant, devise), pour
+  PrestaShop, WooCommerce ou un site maison.
+- **Relire l'historique au branchement** (60 jours, la limite de `read_orders`).
+
+## 🟡 Le MCP face à Wax et Kanal : ce qui manque encore (2026-10-28)
+
+Comparaison complète dans `docs/prive/MARCHE-SHOPIFY-2026-10-23.md` (hors dépôt). Le chiffre d'affaires attribué, le
+premier manque, a sa spec (ci-dessus). Restent, dans l'ordre proposé :
+1. **Des segments sur les commandes, le pays et l'activité** dans `find_contacts` (« deux commandes en 90 jours », le
+   pays par l'indicatif, « a répondu depuis ») ; un segment reste une étiquette.
+2. **Une automatisation créée en brouillon par l'assistant**, activée dans la console (Wax et Kanal le font ; la
+   relance de panier Shopify couvre déjà leur phrase de démo).
+3. **Plusieurs espaces sous une seule autorisation**, pour les agences et les intégrateurs (Wax) ; touche l'isolation
+   entre espaces.
+4. **Importer une liste de numéros dans une étiquette** (Kanal) ; un numéro importé n'a pas de consentement marketing,
+   et le schéma de l'outil doit l'annoncer.
+5. **Le modèle en carrousel** (Wax seul).
+
 ## L'offre Business, lots 2 et 3 (spec `docs/superpowers/specs/2026-10-27-offre-business-design.md`)
 
 La vitrine les dit déjà inclus dans le Business, sans « bientôt » (décision de Julien du 2026-10-27) : chaque jour sans
