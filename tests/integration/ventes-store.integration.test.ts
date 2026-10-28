@@ -4,6 +4,7 @@ import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgVentesStore } from '../../src/shopify/ventes.pg';
 import { LIGNE_RELANCE_PANIER } from '../../src/shopify/attribution';
+import { PREFIXE_LIGNE_HUBSPOT } from '../../src/hubspot-workflow/envoi';
 
 /**
  * Intégration du STORE DES VENTES (migration 0261, plan 2026-10-28, tâche 2). Ce qu'aucun faux ne prouve : quelles lignes de
@@ -78,11 +79,12 @@ describe.skipIf(!url)('le store des ventes', () => {
     ]);
   });
 
-  it('🔴 les lignes Shopify (confirmation, expédition) et [API] ne sont jamais une touche', async () => {
+  it('🔴 les lignes Shopify (confirmation, expédition), [API] et HubSpot ne sont jamais une touche', async () => {
     await vider();
     await campagne('Shopify · commande payée · #1002');
     await campagne('Shopify · commande expédiée · #1002');
     await campagne('[API] essai');
+    await campagne(`${PREFIXE_LIGNE_HUBSPOT}3f2a`);
     expect(await store.touches(T, contact, depuis, maintenant, false)).toEqual([]);
   });
 

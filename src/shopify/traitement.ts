@@ -8,7 +8,7 @@ import {
   DONNEES_PAR_EVENEMENT, donneesDeCommande, donneesDExpedition, schemaCommande, schemaDemandeDonnees,
   schemaEffacementClient, schemaExpedition, telephoneDeCommande, telephoneDExpedition, telephoneE164,
   avecPrenomDeSecours, estObjetSimple, numeroDeCommandeDExpedition, prenomDeCheckout, schemaCheckout, telephoneDeCheckout, valeurDeVariable,
-  type DonneeShopify, type EvenementShopify,
+  type CommandeShopify, type DonneeShopify, type EvenementShopify,
 } from './donnees';
 import { envoyerMessageShopify, type DepsEnvoiShopify, type IssueShopify } from './envoi';
 import { PREFIXE_LIGNE_SHOPIFY, attribuerCommande } from './attribution';
@@ -66,6 +66,8 @@ export interface DepsTraitementShopify {
   maintenant?: () => number;
   /** Les ventes attribuées (plan 2026-10-28) : les touches d'un contact, le panier relancé, la vente figée, l'anonymisation. */
   ventes: Pick<PgVentesStore, 'touches' | 'derniereToucheDuModele' | 'panierRelance' | 'enregistrer' | 'anonymiserCommandes'>;
+  /** Le budget de l'attribution, `BUDGET_ATTRIBUTION_MS` par défaut (les tests le raccourcissent). */
+  budgetAttributionMs?: number;
 }
 
 /** 200 : traité ou délibérément ignoré. 503 : Shopify doit réessayer plus tard. */
@@ -99,11 +101,7 @@ export async function traiterWebhookShopify(
       if (!c.success) return illisible(b, sujet, c.error);
       // 🔴 L'attribution AVANT tout le reste, et jamais un frein : la confirmation attendue par le client compte plus que
       // notre chiffre, et une panne ici ne doit ni la bloquer ni faire réessayer Shopify en boucle (plan 2026-10-28).
-      try {
-        await attribuerCommande(deps, b, c.data);
-      } catch (err) {
-        journaliser('error', 'shopify_attribution_en_echec', { tenantId: b.tenantId, erreur: messageDe(err) });
-      }
+      await attribuerSansFreiner(deps, b, c.data);
       // Une commande payée ferme aussi son panier : `orders/create` peut arriver après (aucun ordre entre sujets).
       await fermerSiPanier(deps, b, c.data.checkout_token, telephoneDeCommande(c.data, b.pays));
       return servir(deps, b, {
@@ -165,6 +163,28 @@ export async function traiterWebhookShopify(
       // Un sujet inconnu ne se réessaie pas.
       return OK;
   }
+}
+
+/**
+ * Le temps que l'attribution peut prendre avant la confirmation. Shopify coupe à 5 s ; base saturée, l'attribution
+ * (cinq allers-retours) pourrait les manger. Au-delà, on n'attend plus : elle finit ou se perd seule, la confirmation part.
+ */
+export const BUDGET_ATTRIBUTION_MS = 1500;
+
+/** L'attribution d'une commande, bornée dans le temps et sans jamais lever : une panne ou une lenteur se journalise. */
+async function attribuerSansFreiner(deps: DepsTraitementShopify, b: BoutiqueRecue, c: CommandeShopify): Promise<void> {
+  const budget = deps.budgetAttributionMs ?? BUDGET_ATTRIBUTION_MS;
+  let minuterie: ReturnType<typeof setTimeout> | undefined;
+  const attribution = attribuerCommande(deps, b, c).then(
+    () => 'finie' as const,
+    (err: unknown) => {
+      journaliser('error', 'shopify_attribution_en_echec', { tenantId: b.tenantId, erreur: messageDe(err) });
+      return 'finie' as const;
+    },
+  );
+  const issue = await Promise.race([attribution, new Promise<'hors_budget'>((r) => { minuterie = setTimeout(() => r('hors_budget'), budget); })]);
+  clearTimeout(minuterie);
+  if (issue === 'hors_budget') journaliser('warn', 'shopify_attribution_hors_budget', { tenantId: b.tenantId, budgetMs: budget });
 }
 
 /** Le message de relance est-il branché et actif ? Sans lui, aucun panier ne se garde : un téléphone sans raison. */

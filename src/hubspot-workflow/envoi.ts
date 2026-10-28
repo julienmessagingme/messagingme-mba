@@ -4,6 +4,12 @@ import { VALEUR_MAX_CARACTERES } from '../http/hubspot-modeles';
 import type { EnvoyerPublic } from '../shopify/envoi';
 
 /**
+ * Le nom de la ligne de Campagnes d'un envoi né d'un workflow HubSpot. 🔴 Un contrat : le chiffre d'affaires attribué
+ * (`src/shopify/ventes.pg.ts`) le reconnaît pour ne jamais en faire une source, comme un envoi par l'API.
+ */
+export const PREFIXE_LIGNE_HUBSPOT = 'HubSpot · workflow ';
+
+/**
  * L'ENVOI D'UN MODÈLE POUR UN WORKFLOW HUBSPOT, quatrième adaptateur de `lancerEnvoiPublic` après `/v1/sends`, l'outil MCP et
  * Shopify (cadrage `~/mm-hubspot/docs/2026-10-27-action-workflow-modele-cadrage.md`, décisions 1 à 11 validées par Julien
  * le 2026-10-27 ; plan du même jour, lot 1). Le cœur garde tout : la catégorie lue chez Meta (par le cache de cinq
@@ -78,7 +84,7 @@ export async function envoyerPourWorkflow(
   const r = await envoyer(e.tenantId, corps, async (unites) => {
     plafond = await compter(unites);
     return plafond === null;
-  }, { nom: `HubSpot · workflow ${e.workflowId}`, sansCampagneVide: true, serviceSeulement: true });
+  }, { nom: `${PREFIXE_LIGNE_HUBSPOT}${e.workflowId}`, sansCampagneVide: true, serviceSeulement: true });
   if (compteurEnvoiRefuse(r)) return { issue: plafond === 'jour' ? 'plafond_jour' : 'plafond_minute' };
   const c = r.corps as { code?: unknown; limite?: unknown; categorie?: unknown } | null;
   if (r.statut === 201 || r.statut === 200) return issueDuRapport(r.corps as RapportEnvoi);

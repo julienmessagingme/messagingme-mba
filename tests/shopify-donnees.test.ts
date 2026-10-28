@@ -133,6 +133,16 @@ describe('le montant d’une vente attribuée', () => {
     expect(montantAffiche(sansPresentment)).toMatch(/9,00\s€/);
   });
 
+  it('🔴 une forme inattendue des champs de l’attribution ne fait jamais refuser la commande (sinon sa confirmation ne partirait pas)', () => {
+    const c = schemaCommande.safeParse(commande({
+      test: 'oui', processed_at: 12, landing_site: { chemin: '/' },
+      total_price_set: { presentment_money: { amount: '12.00', currency_code: 'EUR' }, shop_money: { amount: 12, currency_code: 'EUR' } },
+    }));
+    expect(c.success).toBe(true);
+    expect(c.success && [c.data.test, c.data.processed_at, c.data.landing_site, c.data.total_price_set?.shop_money]).toEqual([null, null, null, null]);
+    expect(c.success && montantAffiche(c.data)).toMatch(/12,00\s€/);
+  });
+
   it('le drapeau test et la page d’arrivée se lisent, absents ou non', () => {
     const c = schemaCommande.parse(commande({ test: true, landing_site: '/?utm_source=whatsapp' }));
     expect([c.test, c.landing_site]).toEqual([true, '/?utm_source=whatsapp']);

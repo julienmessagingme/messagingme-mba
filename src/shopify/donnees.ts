@@ -78,14 +78,16 @@ export const schemaCommande = z.object({
   presentment_currency: texte,
   total_price_set: z.object({
     presentment_money: z.object({ amount: z.string(), currency_code: z.string() }).nullish(),
-    shop_money: z.object({ amount: z.string(), currency_code: z.string() }).nullish(),
+    // 🔴 Les champs que seule l'attribution lit se lisent ABSENTS sous une forme inattendue (`.catch(null)`), jamais
+    // refusés : un refus rejetterait le corps entier, et la confirmation de commande avec (plan 2026-10-28, relecture).
+    shop_money: z.object({ amount: z.string(), currency_code: z.string() }).nullish().catch(null),
   }).nullish(),
-  /** Le moment du paiement chez Shopify : la fenêtre d'attribution se compte depuis lui, pas depuis un webhook réessayé. */
-  processed_at: texte,
+  /** Le moment où Shopify a traité la commande : la fenêtre d'attribution se compte depuis lui, pas depuis un webhook réessayé. */
+  processed_at: texte.catch(null),
   /** Une commande de la passerelle de test : enregistrée, jamais comptée (spec du 2026-10-28). */
-  test: z.boolean().nullish(),
+  test: z.boolean().nullish().catch(null),
   /** La page d'arrivée de la visite qui a mené à la commande, avec sa requête : la preuve par UTM (tâche 6). */
-  landing_site: texte,
+  landing_site: texte.catch(null),
 });
 export type CommandeShopify = z.infer<typeof schemaCommande>;
 

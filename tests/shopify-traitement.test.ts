@@ -550,6 +550,16 @@ describe('l’attribution d’une commande payée', () => {
     expect(journal.issues).toEqual([['shopify:b.myshopify.com:orders/paid:1002', 'envoye']]);
   });
 
+  it('🔴 une attribution trop lente n’est pas attendue : la confirmation part dans le budget, et 200', async () => {
+    class VentesBloquees extends FauxVentes {
+      override async touches(): Promise<Touche[]> { return new Promise<Touche[]>(() => undefined); }
+    }
+    const { deps, journal } = monter({ ventes: new VentesBloquees() });
+    deps.budgetAttributionMs = 20;
+    expect(await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande(payee))).toEqual({ statut: 200 });
+    expect(journal.envois).toHaveLength(1);
+  });
+
   it('une commande d’un numéro inconnu n’écrit rien et ne crée aucune fiche', async () => {
     const ventes = new FauxVentes({ touches: [{ source: 'agent', le: new Date('2026-10-21T07:00:00Z'), campaignId: null, modele: null, lanceScenario: false }] });
     const { deps } = monter({ ventes, messages: [] });

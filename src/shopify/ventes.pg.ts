@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { PREFIXE_ENVOI_API } from '../api/cible-rcs';
+import { PREFIXE_LIGNE_HUBSPOT } from '../hubspot-workflow/envoi';
 import { LIGNE_RELANCE_PANIER, PREFIXE_LIGNE_SHOPIFY, type SourceVente, type Touche, type VenteAttribuee } from './attribution';
 
 /** Une vente à figer : la commande, son montant dans la devise de la boutique, et son attribution. */
@@ -18,8 +19,9 @@ interface LigneTouche { source: SourceVente; le: Date; campaign_id: string | nul
 /**
  * LES TOUCHES D'UN CONTACT (migration 0261, plan 2026-10-28, tâche 2), lues à deux endroits :
  * - les DESTINATAIRES de Campagnes, pour les campagnes et la relance de panier. Les autres lignes Shopify (confirmation,
- *   expédition) et les envois `[API]` (API publique, `send_template_to_contact`) n'en sont jamais une, bien qu'elles
- *   partagent l'origine `campagne` : elles se reconnaissent par leur nom (`attribution.ts`, `PREFIXE_ENVOI_API`) ;
+ *   expédition), les envois `[API]` (API publique, `send_template_to_contact`) et ceux des workflows HubSpot n'en sont
+ *   jamais une, bien qu'elles partagent l'origine `campagne` : elles se reconnaissent par leur nom (`attribution.ts`,
+ *   `PREFIXE_ENVOI_API`, `PREFIXE_LIGNE_HUBSPOT`) ;
  * - les MESSAGES du fil du contact, pour le scénario (`scenario`), l'agent IA (`ia`) et l'agent de Meta (`mba`). Le fil
  *   se trouve par son `wa_id` (chiffres du numéro, ou BSUID), la règle de `matchWaIdPredicat`, par l'index unique.
  * « Livré » = `delivered` ou `read`. En filière `application`, aucun accusé n'arrive jamais : parti sans échec suffit.
@@ -42,7 +44,7 @@ const TOUCHES = `
     from campaign_recipients r join campaigns k on k.id = r.campaign_id
    where k.tenant_id = $1 and r.contact_id = $2 and r.status = 'sent'
      and ($3::timestamptz is null or r.sent_at >= $3) and r.sent_at <= $4
-     and (k.name = $6 or not (starts_with(k.name, $7) or starts_with(k.name, $8)))
+     and (k.name = $6 or not (starts_with(k.name, $7) or starts_with(k.name, $8) or starts_with(k.name, $10)))
      and ($9::text is null or k.template_name = $9)
      and (r.delivery_status in ('delivered', 'read')
           or (r.delivery_status is distinct from 'failed' and ($5 or k.workflow_id is not null)))
@@ -106,6 +108,7 @@ export class PgVentesStore {
   ): Promise<Touche[]> {
     const res = await this.pool.query<LigneTouche>(TOUCHES, [
       tenantId, contactId, depuis, jusqua, filiereApplication, LIGNE_RELANCE_PANIER, PREFIXE_LIGNE_SHOPIFY, PREFIXE_ENVOI_API, modele,
+      PREFIXE_LIGNE_HUBSPOT,
     ]);
     return res.rows.map((r) => ({ source: r.source, le: r.le, campaignId: r.campaign_id, modele: r.modele, lanceScenario: r.lance_scenario }));
   }
