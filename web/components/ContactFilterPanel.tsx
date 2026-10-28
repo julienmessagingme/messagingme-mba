@@ -6,6 +6,7 @@ import type { ContactFilters, ContactFieldFilter, ContactFieldOp, UserFieldDef }
 import { inputClsAuto } from '@/lib/ui';
 import { BADGE_NIVEAU_RISQUE, NIVEAUX_DU_FILTRE, apiConnaitLeRisque, estNiveauRisque } from '@/lib/risque';
 import { Icone } from '@/components/Icone';
+import { Bouton } from '@/components/Bouton';
 import { EditeurFiltreAnalyse, type FiltreAnalyseValide } from '@/components/EditeurFiltreAnalyse';
 import { estFiltreAnalyse, filtreAnalyseParDefaut } from '@/lib/champs-fiche';
 import { useChampsFiltrables } from '@/lib/use-champs-filtrables';
@@ -187,6 +188,8 @@ export function ContactFilterPanel({ tenantId, filters, onChange, userFields, ta
             </span>
           ))}
           <input list="contact-filter-tags" value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag(tagInput); } }} placeholder={t('Étiquette…', 'Tag…')} className={`${inputClsAuto} w-28`} />
+          {/* Entrée n'est pas le seul geste : une étiquette choisie dans la liste se valide aussi à la souris. */}
+          <Bouton type="button" variante="secondaire" onClick={() => addTag(tagInput)} disabled={tagInput.trim() === ''} data-testid="filtre-ajouter-etiquette">{t('Ajouter', 'Add')}</Bouton>
         </div>
       </div>
 
@@ -200,6 +203,7 @@ export function ContactFilterPanel({ tenantId, filters, onChange, userFields, ta
             </span>
           ))}
           <input list="contact-filter-tags" value={tagExInput} onChange={(e) => setTagExInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTagEx(tagExInput); } }} placeholder={t('Étiquette…', 'Tag…')} className={`${inputClsAuto} w-28`} />
+          <Bouton type="button" variante="secondaire" onClick={() => addTagEx(tagExInput)} disabled={tagExInput.trim() === ''} data-testid="filtre-exclure-etiquette">{t('Ajouter', 'Add')}</Bouton>
         </div>
       </div>
       <datalist id="contact-filter-tags">{tagSuggestions.map((tg) => <option key={tg} value={tg} />)}</datalist>
