@@ -122,6 +122,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
       analyse: c.analyse && !fermeeParLOffre('analyse', fonctions),
       reponse: c.reponse && !fermeeParLOffre('reponse', fonctions),
       modeles: c.modeles && c.reponse && !fermeeParLOffre('modeles', fonctions),
+      workflows: c.workflows && !fermeeParLOffre('workflows', fonctions),
       listes: c.listes && !fermeeParLOffre('listes', fonctions),
     } : c));
   }, [fonctions]);
@@ -150,6 +151,7 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
         setChoix({
           analyse: r.hubspotAnalyse, passage: r.hubspotPassage, injoignable: r.hubspotInjoignable, reponse: r.hubspotReponse,
           modeles: r.hubspotModeles === true,
+          workflows: r.hubspotWorkflows === true,
           listes: r.hubspotListsEnabled,
           // Le mode posé par cette requête ; non demandé, le mode affiché ne bouge pas ; demandé et non posé, la ligne
           // revient à ce qu'elle était (l'avertissement le dit).
@@ -205,6 +207,11 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
       champ: 'modeles',
       titre: t('Envoyer des modèles depuis HubSpot', 'Send templates from HubSpot'),
       detail: t('Une fois la fenêtre de 24 heures fermée, la carte propose vos modèles approuvés. Un modèle Marketing ne part qu’à un contact qui a donné son accord, et rien ne part à un contact qui a dit STOP. Meta facture chaque modèle.', 'Once the 24-hour window has closed, the card offers your approved templates. A Marketing template only goes to a contact who has agreed, and nothing goes to a contact who said STOP. Meta charges for each template.'),
+    },
+    {
+      champ: 'workflows',
+      titre: t('Workflows HubSpot : envoyer des modèles WhatsApp', 'HubSpot workflows: send WhatsApp templates'),
+      detail: t('Vos workflows HubSpot envoient un modèle Service approuvé au contact inscrit, avec l’action « Envoyer un modèle WhatsApp (Messaging Me) ». Jamais à un contact qui a dit STOP, ni deux fois le même modèle au même contact en 24 heures. Au plus 60 envois par minute et 2 000 par jour. Meta facture chaque modèle.', 'Your HubSpot workflows send an approved Utility template to the enrolled contact, with the “Send a WhatsApp template (Messaging Me)” action. Never to a contact who said STOP, nor the same template to the same contact twice in 24 hours. At most 60 sends per minute and 2,000 per day. Meta charges for each template.'),
     },
     {
       champ: 'listes',

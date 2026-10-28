@@ -94,7 +94,7 @@ async function parametres(page: Page, o: { reglages: Record<string, unknown>; co
       if (o.refus) return json({ error: o.refus.error }, o.refus.status);
       return json({
         hubspotAnalyse: corps.analyse, hubspotPassage: corps.passage, hubspotInjoignable: corps.injoignable,
-        hubspotReponse: corps.reponse, hubspotModeles: corps.reponse === true && corps.modeles === true, hubspotListsEnabled: corps.listes, hubspotChoixValideLe: '2026-10-23T18:00:00.000Z',
+        hubspotReponse: corps.reponse, hubspotModeles: corps.reponse === true && corps.modeles === true, hubspotWorkflows: corps.workflows === true, hubspotListsEnabled: corps.listes, hubspotChoixValideLe: '2026-10-23T18:00:00.000Z',
         routingMode: corps.taches === undefined ? null : corps.taches ? 'mm_routing' : 'hubspot_native',
         tachesAppliquees: true, premiereValidation: true,
       });
@@ -135,7 +135,7 @@ test.describe('Tools > Intégrations > HubSpot : le choix des fonctions (lot 1bi
     await expect(page.getByTestId('integration-hubspot-listes-toggle')).toHaveAttribute('aria-pressed', 'false');
     await page.getByTestId('integration-hubspot-valider').click();
     await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(1);
-    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, listes: false, taches: true });
+    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, workflows: false, listes: false, taches: true });
     await expect(page.getByTestId('integration-hubspot-etape-choix')).toHaveCount(0);
   });
 
@@ -144,7 +144,7 @@ test.describe('Tools > Intégrations > HubSpot : le choix des fonctions (lot 1bi
     await expect(page.getByTestId('integration-hubspot-taches-toggle')).toBeDisabled();
     await page.getByTestId('integration-hubspot-injoignable-toggle').click();
     await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(1);
-    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: false, reponse: false, modeles: false, listes: false });
+    expect(trace.puts[0]).toEqual({ analyse: true, passage: true, injoignable: false, reponse: false, modeles: false, workflows: false, listes: false });
   });
 
   test('le serveur refuse : son message s’affiche, et l’interrupteur revient à sa place', async ({ page }) => {
@@ -230,5 +230,33 @@ test.describe('Paramètres > Intégrations > HubSpot : « Envoyer des modèles d
     await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(3);
     expect(trace.puts[2]).toMatchObject({ reponse: false, modeles: false });
     await expect(modeles).toHaveAttribute('aria-pressed', 'false');
+  });
+});
+
+test.describe('Paramètres > Intégrations > HubSpot : « Workflows HubSpot : envoyer des modèles WhatsApp » (action de workflow)', () => {
+  test('🔴 éteint par défaut, s’allume et part dans le choix, sans dépendre de la réponse', async ({ page }) => {
+    const trace = await parametres(page, {
+      reglages: CHOIX_FAIT,
+      compte: { hasNumber: false, hubspotPortal: { ...PORTAIL, routingMode: 'mm_routing' } },
+      offre: offre('entreprise'),
+    });
+    const workflows = page.getByTestId('integration-hubspot-workflows-toggle');
+    await expect(workflows).toHaveAttribute('aria-pressed', 'false');
+    await expect(workflows).toBeEnabled();
+    await workflows.click();
+    await expect.poll(() => trace.puts.length, { timeout: 10_000 }).toBe(1);
+    expect(trace.puts[0]).toMatchObject({ reponse: false, workflows: true });
+    await expect(workflows).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  test('🔴 une offre sans HubSpot : la ligne ne s’allume pas et dit quelle offre l’ouvre', async ({ page }) => {
+    const trace = await parametres(page, {
+      reglages: CHOIX_FAIT,
+      compte: { hasNumber: false, hubspotPortal: { ...PORTAIL, routingMode: 'mm_routing' } },
+      offre: offre('pro'),
+    });
+    await expect(page.getByTestId('integration-hubspot-workflows-toggle')).toBeDisabled();
+    await expect(page.getByTestId('integration-hubspot-workflows-offre')).toBeVisible();
+    expect(trace.puts).toHaveLength(0);
   });
 });

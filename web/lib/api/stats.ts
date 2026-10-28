@@ -731,6 +731,8 @@ export interface TenantSettings {
   hubspotReponse?: boolean;
   /** Envoyer des modèles depuis HubSpot (sous-lot « relancer »). Absent d'une API antérieure : éteint. */
   hubspotModeles?: boolean;
+  /** Workflows HubSpot : envoyer des modèles WhatsApp (l'action de workflow, migration 0259). Absent : éteint. */
+  hubspotWorkflows?: boolean;
   hubspotChoixValideLe?: string | null;
   /*
    * `prix` A QUITTE LES REGLAGES LE 2026-09-23 (lot 8, migration 0168). Il n'y a plus qu'une grille, pour
@@ -779,6 +781,8 @@ export interface ChoixHubspot {
   reponse: boolean;
   /** Envoyer des modèles depuis HubSpot quand la fenêtre est fermée (sous-lot « relancer ») : ne vaut que réponse allumée. */
   modeles: boolean;
+  /** Les workflows HubSpot du client envoient des modèles WhatsApp (l'action de workflow). Indépendant de la réponse. */
+  workflows: boolean;
   listes: boolean;
   /** Créer des tâches dans HubSpot (sinon : propriétés seulement). Vaut pour tout le portail. */
   taches: boolean;
@@ -791,6 +795,7 @@ export interface ChoixHubspotEnregistre {
   hubspotInjoignable: boolean;
   hubspotReponse: boolean;
   hubspotModeles: boolean;
+  hubspotWorkflows: boolean;
   hubspotListsEnabled: boolean;
   hubspotChoixValideLe: string | null;
   routingMode: 'mm_routing' | 'hubspot_native' | null;

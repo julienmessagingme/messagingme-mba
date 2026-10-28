@@ -1,6 +1,6 @@
 ---
 slug: hubspot-on-the-home-screen
-traduit_de: f70284
+traduit_de: 763c3f
 description: Connect HubSpot to Messaging Me: link it in Tools > Integrations, choose what syncs, reply from HubSpot, pause it or cut it off.
 ---
 # HubSpot on the Home screen: connect it, follow it, cut it off
@@ -37,6 +37,16 @@ hours, the card offers your approved templates, with their variables already fil
 check them, then “Send the template”. A Marketing template only goes to a contact who has agreed; the other
 templates go to any contact who has not said STOP and is not blocked. Meta charges for each template, and each person
 sends at most 5 a minute.
+
+**HubSpot workflows: send WhatsApp templates** is off to begin with; it requires the plan that links HubSpot, and does
+not depend on replying. The “Send a WhatsApp template (Messaging Me)” action shows up in your HubSpot contact
+workflows, but it only sends once this line is on (while it is off, the workflow history says workflows are not
+enabled). There you choose the workspace, an approved Utility template, the property holding the contact's WhatsApp
+number and, for each template variable, the property that fills it (fixed text lives in the template). Nothing goes to a contact
+who said STOP or is blocked, nor to a landline, nor the same template to the same contact twice within 24 hours;
+Marketing templates are not offered. The workflow history says, contact by contact, what was sent or why nothing was
+sent, and each send shows up in Campaigns. At most 60 sends a minute and 2,000 a day for the workspace; Meta charges for
+each template.
 
 With no portal linked, the Home screen only shows a line that sends you there. To unlink HubSpot, do the full disconnection from the HubSpot block (with no number,
 it is a button of the block, without the pause option).

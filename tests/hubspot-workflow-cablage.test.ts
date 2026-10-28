@@ -38,7 +38,8 @@ describe('le câblage de l’action de workflow HubSpot', () => {
     expect(bloc).toContain('plafonds: plafondsDesWorkflows(compteurDebit, { parMinute: config.HUBSPOT_WORKFLOWS_PAR_MINUTE, parJour: config.HUBSPOT_WORKFLOWS_PAR_JOUR }),');
   });
 
-  it('le catalogue est celui de `GET /v1/templates`', () => {
+  it('le catalogue est celui de `GET /v1/templates`, le nom de l’espace celui de `/ops`', () => {
     expect(bloc).toContain('catalogue: listerModeles,');
+    expect(bloc).toContain('nomEspace: (t: string) => opsStore.getTenantName(t),');
   });
 });

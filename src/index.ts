@@ -1912,6 +1912,7 @@ async function main(): Promise<void> {
         envoyer: (tenant, corps, compter, options) => lancerEnvoiPublic(depsEnvois, tenant, corps, undefined, compter, options),
         plafonds: plafondsDesWorkflows(compteurDebit, { parMinute: config.HUBSPOT_WORKFLOWS_PAR_MINUTE, parJour: config.HUBSPOT_WORKFLOWS_PAR_JOUR }),
         catalogue: listerModeles,
+        nomEspace: (t: string) => opsStore.getTenantName(t),
       } satisfies HubspotWorkflowDeps,
     } : {}),
     /**

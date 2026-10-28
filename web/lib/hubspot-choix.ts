@@ -28,6 +28,7 @@ export const FONCTION_REQUISE: Partial<Record<keyof ChoixHubspot, FonctionOffre>
   listes: 'crm',
   reponse: 'inbox',
   modeles: 'inbox',
+  workflows: 'crm',
 };
 
 /** La ligne est-elle fermée par l'offre ? `fonctions` absente (offre inconnue) : tout est ouvert, le serveur tranche. */
@@ -53,6 +54,7 @@ export function choixParDefaut(p: { routingMode: 'mm_routing' | 'hubspot_native'
     injoignable: true,
     reponse: false,
     modeles: false,
+    workflows: false,
     listes: false,
     taches: p.routingMode !== 'hubspot_native',
   };
@@ -71,6 +73,7 @@ export function choixActuel(s: TenantSettings, routingMode: 'mm_routing' | 'hubs
     injoignable: s.hubspotInjoignable !== false,
     reponse,
     modeles: reponse && s.hubspotModeles === true && !fermeeParLOffre('modeles', fonctions),
+    workflows: s.hubspotWorkflows === true && !fermeeParLOffre('workflows', fonctions),
     listes: s.hubspotListsEnabled === true && !fermeeParLOffre('listes', fonctions),
     taches: routingMode !== 'hubspot_native',
   };

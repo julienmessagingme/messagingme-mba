@@ -45,7 +45,7 @@ describe('fermeeParLOffre', () => {
 describe('choixParDefaut (décision 2 du cadrage)', () => {
   it('🔴 coche ce qui écrit dans HubSpot, décoche ce qui ouvre une porte, et suit le mode du portail', () => {
     expect(choixParDefaut({ routingMode: 'mm_routing', fonctions: ENTREPRISE }))
-      .toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, listes: false, taches: true });
+      .toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, workflows: false, listes: false, taches: true });
     expect(choixParDefaut({ routingMode: 'hubspot_native', fonctions: ENTREPRISE }).taches).toBe(false);
   });
   it('🔴 une fonction fermée par l’offre est décochée (le serveur refuserait de l’allumer)', () => {
@@ -56,16 +56,16 @@ describe('choixParDefaut (décision 2 du cadrage)', () => {
 describe('choixActuel', () => {
   it('lit les réglages, et un champ absent (API antérieure) prend le défaut de la migration', () => {
     const vide = {} as TenantSettings;
-    expect(choixActuel(vide, undefined)).toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, listes: false, taches: true });
+    expect(choixActuel(vide, undefined)).toEqual({ analyse: true, passage: true, injoignable: true, reponse: false, modeles: false, workflows: false, listes: false, taches: true });
     const s = { hubspotAnalyse: false, hubspotPassage: true, hubspotInjoignable: false, hubspotReponse: true, hubspotListsEnabled: true } as TenantSettings;
-    expect(choixActuel(s, 'hubspot_native')).toEqual({ analyse: false, passage: true, injoignable: false, reponse: true, modeles: false, listes: true, taches: false });
+    expect(choixActuel(s, 'hubspot_native')).toEqual({ analyse: false, passage: true, injoignable: false, reponse: true, modeles: false, workflows: false, listes: true, taches: false });
   });
 });
 
 describe('les correctifs de la relecture du lot 1bis', () => {
-  const choix = { analyse: true, passage: false, injoignable: true, reponse: false, modeles: false, listes: false, taches: true };
+  const choix = { analyse: true, passage: false, injoignable: true, reponse: false, modeles: false, workflows: false, listes: false, taches: true };
   it('🔴 « Créer des tâches » ne part QUE si on le demande (sa ligne basculée, ou la validation avec un mode connu)', () => {
-    expect(corpsDuChoix(choix, { envoyerTaches: false })).toEqual({ analyse: true, passage: false, injoignable: true, reponse: false, modeles: false, listes: false });
+    expect(corpsDuChoix(choix, { envoyerTaches: false })).toEqual({ analyse: true, passage: false, injoignable: true, reponse: false, modeles: false, workflows: false, listes: false });
     expect(corpsDuChoix(choix, { envoyerTaches: false })).not.toHaveProperty('taches');
     expect(corpsDuChoix(choix, { envoyerTaches: true })).toEqual(choix);
   });
@@ -100,7 +100,7 @@ describe('lot 3 : « Répondre aux clients depuis HubSpot » (décision D)', () 
 });
 
 describe('sous-lot « relancer » : « Envoyer des modèles depuis HubSpot » (décision E)', () => {
-  const choix = { analyse: true, passage: true, injoignable: true, reponse: true, modeles: true, listes: false, taches: true };
+  const choix = { analyse: true, passage: true, injoignable: true, reponse: true, modeles: true, workflows: false, listes: false, taches: true };
   it('🔴 éteindre la réponse éteint les modèles ; basculer une autre ligne ne les touche pas', () => {
     expect(choixApresBascule(choix, 'reponse')).toMatchObject({ reponse: false, modeles: false });
     expect(choixApresBascule(choix, 'passage')).toMatchObject({ passage: false, reponse: true, modeles: true });
@@ -113,5 +113,25 @@ describe('sous-lot « relancer » : « Envoyer des modèles depuis HubSpot » (d
     expect(choixActuel(s, 'mm_routing', new Set<FonctionOffre>(['aide'])).modeles).toBe(false);
     expect(choixParDefaut({ routingMode: 'mm_routing', fonctions: ENTREPRISE }).modeles).toBe(false);
     expect(fermeeParLOffre('modeles', PRO)).toBe(false);
+  });
+});
+
+describe('lot 2 de l’action de workflow : « Workflows HubSpot : envoyer des modèles WhatsApp » (décision 8)', () => {
+  const FREE = new Set<FonctionOffre>(['aide']);
+  it('🔴 éteint par défaut ; ouvert par l’offre qui relie HubSpot (`crm`), fermé sans', () => {
+    expect(choixParDefaut({ routingMode: 'mm_routing', fonctions: ENTREPRISE }).workflows).toBe(false);
+    expect(fermeeParLOffre('workflows', ENTREPRISE)).toBe(false);
+    expect(fermeeParLOffre('workflows', PRO)).toBe(true);
+  });
+  it('🔴 lu allumé avec l’offre, INDÉPENDANT de la réponse ; un espace descendu d’offre le lit éteint', () => {
+    const s = { hubspotWorkflows: true, hubspotReponse: false } as TenantSettings;
+    expect(choixActuel(s, 'mm_routing', ENTREPRISE).workflows).toBe(true);
+    expect(choixActuel(s, 'mm_routing', FREE).workflows).toBe(false);
+    expect(choixActuel({} as TenantSettings, 'mm_routing', ENTREPRISE).workflows).toBe(false);
+  });
+  it('éteindre la réponse ne touche pas les workflows, et il part dans le corps du choix', () => {
+    const choix = { analyse: true, passage: true, injoignable: true, reponse: true, modeles: true, workflows: true, listes: false, taches: true };
+    expect(choixApresBascule(choix, 'reponse')).toMatchObject({ reponse: false, modeles: false, workflows: true });
+    expect(corpsDuChoix(choix, { envoyerTaches: false })).toMatchObject({ workflows: true });
   });
 });

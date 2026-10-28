@@ -2,7 +2,7 @@
 description: Relier HubSpot à Messaging Me : le connecter dans Tools > Intégrations, choisir ce qui se synchronise, répondre depuis HubSpot, mettre en pause ou couper.
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: fc13a3
+source_empreinte: 496dbc
 publique: oui
 rubrique: demarrer
 rang: 6
@@ -43,6 +43,17 @@ HubSpot. Si la synchronisation du numéro est en pause, la page le dit.
 vous les vérifiez, puis « Envoyer le modèle ». Un modèle Marketing ne part qu'à un contact qui a donné son accord ;
 les autres modèles partent à tout contact qui n'a pas dit STOP et n'est pas bloqué. Meta facture chaque modèle, et
 chaque personne en envoie au plus 5 par minute.
+
+**Workflows HubSpot : envoyer des modèles WhatsApp** est éteint au départ ; il suppose l'offre qui relie HubSpot, et
+ne dépend pas de la réponse. L'action « Envoyer un modèle WhatsApp (Messaging Me) » apparaît dans vos workflows HubSpot
+de contacts, mais elle n'envoie qu'une fois cette ligne allumée (éteinte, l'historique du workflow dit que les
+workflows ne sont pas branchés). Vous y choisissez l'espace, un modèle Service approuvé, la propriété qui porte le
+numéro WhatsApp du contact et, pour chaque variable du modèle, la propriété qui la remplit (le texte fixe vit dans le
+modèle). Rien
+ne part à un contact qui a dit STOP ou qui est bloqué, ni à un numéro fixe, ni deux fois le même modèle au même
+contact en 24 heures ; les modèles Marketing ne sont pas proposés. L'historique du workflow dit, contact par contact,
+ce qui est parti ou pourquoi rien n'est parti, et chaque envoi apparaît dans Campagnes. Au plus 60 envois par minute
+et 2 000 par jour pour l'espace ; Meta facture chaque modèle.
 
 Sans portail relié, l'Accueil n'affiche qu'une ligne qui vous y renvoie. Pour délier HubSpot, faites la déconnexion complète depuis le bloc HubSpot (sans
 numéro, c'est un bouton du bloc, sans l'option de pause).

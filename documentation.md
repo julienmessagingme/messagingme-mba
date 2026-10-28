@@ -2780,7 +2780,8 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   `~/mm-hubspot/docs/2026-10-27-action-workflow-modele-cadrage.md`, `src/http/hubspot-workflow.ts`,
   `src/hubspot-workflow/envoi.ts` et `src/hubspot-workflow/plafonds.ts`, classe `signature-service`, montée avec
   `HUBSPOT_SERVICE_SECRET`). Deux routes que seul le connecteur appelle, signées comme les autres :
-  `POST /hubspot/workflow/modeles` (la liste de l'action) et `POST /hubspot/workflow/modele` (l'envoi,
+  `POST /hubspot/workflow/modeles` (la liste de l'action, avec le nom de l'espace que le connecteur montre dans la liste
+  « Espace », `nomEspace`) et `POST /hubspot/workflow/modele` (l'envoi,
   `{tenantId, telephone, modele, langue, valeurs, workflowId}`, l'espace ramené en minuscules). Un modèle est jugé par
   `jugerPourWorkflow`, pour la liste ET pour l'envoi : le verdict de `GET /v1/templates` (`verdictModele(modeleLuDe(t))`,
   variables = max des positions), puis Service seulement, sans carrousel, dix variables au plus. Trois sortes de réponses.
@@ -2812,8 +2813,10 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   laisse passer. Le cœur les appelle juste après la clé : ils comptent les TENTATIVES (un contact STOP ou bloqué, un
   numéro délié aussi), jamais un rejeu ni un `deja_envoye`. Le jour plein l'emporte sur la minute et rend
   `plafond_jour`. La route du choix écrit le réglage (champ `workflows` facultatif, fonction `crm`) et `GET /settings`
-  le rend (`hubspotWorkflows`) ; la ligne de la console et l'action dans HubSpot arrivent avec le connecteur (lot 2 du
-  plan du 2026-10-27). Le câblage est tenu par `tests/hubspot-workflow-cablage.test.ts`.
+  le rend (`hubspotWorkflows`) ; la console l'affiche dans Tools > Intégrations > HubSpot (« Workflows HubSpot : envoyer
+  des modèles WhatsApp », fonction `crm`, indépendante de la réponse) et la fiche `hubspot-sur-l-accueil` l'explique.
+  L'action elle-même vit dans le connecteur (`~/mm-hubspot`, `src/workflow/action.ts`). Le câblage est tenu par
+  `tests/hubspot-workflow-cablage.test.ts`.
 - **Le visuel d'en-tête d'un modèle envoyé depuis l'Inbox part en `media id`** (`creerEnvoiModeleInbox`,
   `mediaDuModele`) : l'adresse que l'écran passe est celle du CDN de Meta, que l'invariant 9 dit refusée en 131053 ;
   le visuel du modèle se re-téléverse comme pour le bloc de scénario. Sans visuel au modèle, ou si la préparation

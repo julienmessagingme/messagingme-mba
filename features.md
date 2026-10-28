@@ -2241,7 +2241,13 @@ scénario, comment importer des contacts.
   par minute et par personne), **« Envoyer des modèles depuis HubSpot »** (décochée, proposée réponse allumée : une fois
   la fenêtre fermée, la carte propose les modèles approuvés de l'espace, valeurs pré-remplies depuis la fiche ; un
   modèle Marketing ne part qu'à un contact qui a donné son accord, rien ne part à un contact STOP ou bloqué, au plus 5
-  modèles par minute et par personne ; éteindre la réponse l'éteint), et vos listes HubSpot comme audience de campagne
+  modèles par minute et par personne ; éteindre la réponse l'éteint), **« Workflows HubSpot : envoyer des modèles
+  WhatsApp »** (décochée, ouverte par l'offre qui relie HubSpot, indépendante de la réponse : l'action « Envoyer un modèle
+  WhatsApp (Messaging Me) » des workflows HubSpot de contacts n'envoie que cette ligne allumée ; elle envoie un modèle
+  Service approuvé au contact inscrit, le numéro et chaque variable tirés d'une propriété du contact ; jamais à un contact STOP ou bloqué,
+  ni à un fixe, ni deux fois le même modèle au même contact en 24 heures ; au plus 60 envois par minute et 2 000 par
+  jour ; chaque envoi apparaît dans Campagnes, et l'historique du workflow dit ce qui est parti ou pourquoi rien n'est
+  parti), et vos listes HubSpot comme audience de campagne
   (décochée ; un bouton **« Autoriser l'accès aux listes HubSpot »** demande ce droit au portail s'il manque).
   Valider allume aussi la synchronisation du numéro principal : avant, une installation ne branchait rien. Ensuite,
   chaque choix se change d'un interrupteur. Ce que l'offre n'ouvre pas dit l'offre qui l'ouvre (« Inclus dans

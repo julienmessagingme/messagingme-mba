@@ -65,6 +65,7 @@ function app(o: Options = {}) {
     ligneHubspot: lire('ligne', o.ligne ?? 'reliee'),
     filiere: lire('filiere', o.filiere === undefined ? 'api' : o.filiere),
     catalogue: async (t) => { lus.push(['catalogue', t]); if (o.catalogueLeve) throw new Error('Graph 503'); return CATALOGUE; },
+    nomEspace: lire('nom', 'Mutuelle Exemple'),
     envoyer: async (t, corps, compter, options) => {
       if (!(await compter(1))) return COMPTEUR_ENVOI_REFUSE;
       envois.push({ t, corps, options });
@@ -164,6 +165,7 @@ describe('POST /hubspot/workflow/modeles : ce qu’un workflow peut envoyer', ()
     // Ni Marketing, ni carrousel, ni brouillon, ni onze variables, ni un en-tête texte à variable (que rien ne remplit).
     // Les variables sont le max des positions, comme l'envoi les compte : `saut` en attend 3.
     expect(res.json()).toEqual({
+      espace: 'Mutuelle Exemple',
       modeles: [
         { name: 'suivi_devis', language: 'fr', texte: 'Bonjour {{1}}, votre devis {{2}} est prêt. {{1}}', variables: 2 },
         { name: 'saut', language: 'fr', texte: '{{1}} puis {{3}}', variables: 3 },

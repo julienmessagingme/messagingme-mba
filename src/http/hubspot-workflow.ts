@@ -42,6 +42,8 @@ export interface HubspotWorkflowDeps {
   plafonds(tenantId: string): Promise<VerdictPlafonds>;
   /** Les modèles de l'espace (le catalogue de `GET /v1/templates`, en cache une minute). */
   catalogue(tenantId: string): Promise<TemplateSummary[]>;
+  /** Le nom de l'espace : la liste « Espace » de l'action le montre (le connecteur ne connaît que des identifiants). */
+  nomEspace(tenantId: string): Promise<string | null>;
   now?: () => number;
   windowMs?: number;
 }
@@ -133,7 +135,7 @@ export function registerHubspotWorkflow(app: FastifyInstance, deps: HubspotWorkf
       const j = jugerPourWorkflow(t);
       return j.ok ? [{ name: t.name, language: t.language, texte: t.body, variables: j.variables }] : [];
     });
-    return reply.code(200).send({ modeles });
+    return reply.code(200).send({ espace: await deps.nomEspace(tenantId), modeles });
   });
 
   app.post('/hubspot/workflow/modele', async (req, reply) => {
