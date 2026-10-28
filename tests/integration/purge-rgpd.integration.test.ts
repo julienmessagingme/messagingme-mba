@@ -183,6 +183,13 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     );
     // ANCRE du tir : il existe AVANT la purge, sinon son absence plus bas ne prouverait rien.
     expect((await pool.query('select 1 from widget_tirs where tenant_id = $1 and wa_id = $2', [tenantId, WA_ID])).rowCount).toBe(1);
+    // Une vente attribuée (migration 0261, plan 2026-10-28) : son numéro de commande retrouve la personne chez Shopify.
+    await pool.query(
+      `insert into ventes_attribuees (tenant_id, commande_id, contact_id, montant, devise, payee_le, source)
+       values ($1, '820982911946154508', $2, 49.9, 'EUR', now(), 'agent')`,
+      [tenantId, contactId],
+    );
+
     // ANCRE : les deux données existent AVANT la purge. Sans elle, les assertions d'absence plus bas
     // passeraient à vide sur une insertion ratée.
     const avant = await pool.query<{ v: unknown; e: number }>(
@@ -319,6 +326,11 @@ describe.skipIf(!url)('purge RGPD — ce qui part et ce qui reste', () => {
     );
     expect(r.rowCount).toBe(1);
     expect(r.rows[0]!.ctwa_clid).toBeNull();
+  });
+
+  it('🔴 une vente attribuée perd son numéro de commande, garde montant, devise et source (migration 0261)', async () => {
+    const r = await pool.query('select commande_id, montant::text, devise, source from ventes_attribuees where tenant_id = $1', [tenantId]);
+    expect(r.rows).toEqual([{ commande_id: null, montant: '49.900', devise: 'EUR', source: 'agent' }]);
   });
 
   it('🔴 les VARIABLES du destinataire partent (migration 0174), la ligne de campagne reste', async () => {

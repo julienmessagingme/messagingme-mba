@@ -30,7 +30,7 @@ import type { Emission } from '../emails-produit/emission';
  */
 
 export interface DepsRelance extends DepsEnvoiShopify {
-  store: Pick<PgShopifyStore, 'reclamerPaniersDus' | 'noterIssuePanier' | 'panierOuvert' | 'espacesAPaniersDusEnTexte' | 'libererPanier'>;
+  store: Pick<PgShopifyStore, 'reclamerPaniersDus' | 'noterIssuePanier' | 'panierOuvert' | 'espacesAPaniersDusEnTexte' | 'libererPanier' | 'compterRelance'>;
   /** Le reste des messages du mois, lu avant de réclamer : une ESTIMATION, la porte tranche à l'envoi. */
   quota: Pick<QuotaModeles, 'etatDuMois'>;
   /** La limite de contacts atteinte prévient les admins, une fois par mois, comme un message de commande (décision 6). */
@@ -99,6 +99,12 @@ export async function relancerPaniers(deps: DepsRelance, limite = PANIERS_PAR_PA
     } else if (issue !== 'en_cours') {
       // `en_cours` : un autre appel tient la même clé d'envoi, il notera l'issue.
       await deps.store.noterIssuePanier(p.tenantId, p.jeton, issue).catch(() => undefined);
+    }
+    // Le compte anonyme des relances parties (plan 2026-10-28) : un compteur en panne ne touche ni l'envoi ni son issue.
+    if (issue === 'envoye') {
+      await deps.store.compterRelance(p.tenantId, new Date((deps.maintenant ?? Date.now)())).catch((err: unknown) => {
+        journaliser('error', 'shopify_relance_non_comptee', { tenantId: p.tenantId, erreur: texteDe(err) });
+      });
     }
     if (issue === 'limite_contacts') {
       await deps.emails.emettre({

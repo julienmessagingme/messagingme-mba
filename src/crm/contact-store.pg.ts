@@ -1649,6 +1649,13 @@ export class PgContactStore implements ContactStore {
       const convIds = fils.rows.map((r) => r.id);
       const waIds = fils.rows.map((r) => r.wa_id);
 
+      // Les ventes attribuées (migration 0261) : le numéro de commande retrouve la personne chez Shopify, il part ; le
+      // montant, la devise et la source restent, pour qu'un chiffre déjà lu ne change pas.
+      await client.query(
+        `update ventes_attribuees set commande_id = null where tenant_id = $1 and contact_id = any($2::uuid[])`,
+        [tenantId, ids],
+      );
+
       let messages = 0;
       let analyses = 0;
       if (convIds.length > 0) {

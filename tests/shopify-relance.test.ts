@@ -36,6 +36,7 @@ function monter(
   const journal = {
     limites: [] as number[], issues: [] as Array<[string, string]>, envois: [] as Array<{ corps: unknown; options: unknown }>,
     emails: [] as Emission[], exclus: [] as string[][], liberes: [] as string[], premiers: [] as DemandePremierMessage[],
+    comptees: [] as Array<[string, string]>,
   };
   const deps: DepsRelance = {
     store: {
@@ -49,6 +50,7 @@ function monter(
       panierOuvert: async (_t, jeton) => !fermes.includes(jeton),
       espacesAPaniersDusEnTexte: async () => app.enTexte ?? [],
       libererPanier: async (_t, jeton) => { journal.liberes.push(jeton); },
+      compterRelance: async (t, le) => { journal.comptees.push([t, le.toISOString()]); },
     },
     // La filière API par défaut : les tests d'avant le texte simple (plan 2026-10-23) restent ceux de l'API.
     filiere: async (t) => (app.filiere ? app.filiere(t) : 'api'),
@@ -121,6 +123,25 @@ describe('la relance d’un panier réclamé', () => {
     await relancerPaniers(deps);
     expect(journal.envois).toEqual([]);
     expect(journal.issues).toEqual([['jeton-1', 'donnee_manquante']]);
+  });
+
+  it('une relance envoyée compte une fois, à l’heure du passage ; refusée, fermée ou en panne, elle ne compte pas (plan 2026-10-28)', async () => {
+    const { deps, journal } = monter([panier(), panier({ jeton: 'jeton-2' }), panier({ jeton: 'jeton-3', lien: '' })], async (corps) => {
+      if (JSON.stringify(corps).includes('jeton-2')) throw new Error('panne');
+      return { statut: 201, corps: rapport() };
+    }, ['jeton-4']);
+    await relancerPaniers(deps);
+    expect(journal.comptees).toEqual([['t1', '2026-10-22T10:00:00.000Z']]);
+    const ferme = monter([panier({ jeton: 'jeton-4' })], undefined, ['jeton-4']);
+    await relancerPaniers(ferme.deps);
+    expect(ferme.journal.comptees).toEqual([]);
+  });
+
+  it('un compteur en panne ne change rien à la relance ni à son issue', async () => {
+    const { deps, journal } = monter([panier()]);
+    deps.store.compterRelance = async () => { throw new Error('base indisponible'); };
+    expect(await relancerPaniers(deps)).toEqual({ reclames: 1, issues: { envoye: 1 } });
+    expect(journal.issues).toEqual([['jeton-1', 'envoye']]);
   });
 
   it('🔴 une panne en route : la relance est perdue mais notée, jamais renvoyée (une seule relance)', async () => {
