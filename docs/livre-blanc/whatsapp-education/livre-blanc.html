@@ -276,7 +276,7 @@
 .schema.reel .fleche{padding-top:0;align-self:center}
 .schema.reel{padding:6mm 6mm 6mm}
 .atout:last-child b{color:var(--bleu)}
-.iphone{width:264px;height:556px;border:0;zoom:.5;justify-self:center;background:transparent}
+.iphone{width:34mm;display:block;justify-self:center;filter:drop-shadow(0 3mm 6mm rgb(0 0 0 / .5))}
 .exemple{padding:5mm 6mm}
 .exemple{grid-template-columns:1.5fr 1fr}
 .neoma{margin:4mm 0 0;display:grid;grid-template-columns:44mm 1fr;gap:4mm;align-items:center}
@@ -299,8 +299,7 @@
 .btn-wa.lien::before{content:"↗ ";font-weight:700}
 .regle-or{align-self:center;background:var(--nuit);color:#fff;border-radius:5mm;padding:6mm;font-family:var(--titre);font-weight:800;font-size:21pt;line-height:1.05;font-variation-settings:"wdth" 82}
 .regle-or span{display:block;font-family:var(--texte);font-size:7.4pt;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--soleil);margin-bottom:2.4mm}
-/* Le zoom s'applique aussi au décalage : top et right sont écrits divisés par lui (172 mm et 20 mm à l'arrivée). */
-.iphone-couv{position:absolute;right:32mm;top:277mm;width:264px;height:556px;border:0;zoom:.62;background:transparent;transform:rotate(-4deg);z-index:2}
+.iphone-couv{position:absolute;right:20mm;top:172mm;width:44mm;transform:rotate(-4deg);z-index:2;filter:drop-shadow(0 4mm 8mm rgb(0 0 0 / .55))}
 
 /* ---------- La page CRM (2026-10-28) ---------- */
 .crm-g{display:grid;grid-template-columns:1.1fr .9fr;gap:6mm;align-items:start}
@@ -381,7 +380,7 @@
     <span>Comprendre l’API</span><span>La stratégie</span><span>Click-to-WhatsApp</span>
     <span>CRM &amp; relances</span><span>IA puis humain</span><span>Ce qui ne marche pas</span>
   </div>
-  <iframe class="iphone-couv" src="telephone-rappel.html" title="Un rappel d’entretien sur WhatsApp" scrolling="no"></iframe>
+  <img class="iphone-couv" src="img/telephone-rappel.png" alt="Un rappel d’entretien sur WhatsApp">
   <div class="bas"><strong>app.messagingme.fr</strong><span>Simplement conversationnel.</span></div>
 </section>
 
@@ -765,7 +764,7 @@
       <h3>Tous les candidats convoqués aux entretiens.</h3>
       <p>Vous importez la liste avec la date de chaque entretien. Messaging Me envoie seul un rappel 48 heures avant, avec le lieu et deux boutons : « Je confirme » et « Je dois décaler ». Une date reportée ? Le rappel suit la nouvelle date.</p>
     </div>
-    <iframe class="iphone" src="telephone-rappel.html" title="Le rappel d’entretien sur WhatsApp" scrolling="no"></iframe>
+    <img class="iphone" src="img/telephone-rappel.png" alt="Le rappel d’entretien sur WhatsApp">
   </div>
   <div class="api-bas">
     <div class="encart f">
