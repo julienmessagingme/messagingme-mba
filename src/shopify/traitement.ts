@@ -14,6 +14,7 @@ import { envoyerMessageShopify, type DepsEnvoiShopify, type IssueShopify } from 
 import { PREFIXE_LIGNE_SHOPIFY, attribuerCommande } from './attribution';
 import type { EtatBoutique, OrigineBoutique, PgShopifyStore } from './store.pg';
 import type { PgVentesStore } from './ventes.pg';
+import type { ProgrammerPreuve } from './preuve-utm';
 
 /**
  * LE TRAITEMENT D'UN WEBHOOK SHOPIFY DÉJÀ VÉRIFIÉ (plan 2026-10-21, lot 1), sujet par sujet.
@@ -68,6 +69,8 @@ export interface DepsTraitementShopify {
   ventes: Pick<PgVentesStore, 'touches' | 'derniereToucheDuModele' | 'panierRelance' | 'enregistrer' | 'anonymiserCommandes'>;
   /** Le budget de l'attribution, `BUDGET_ATTRIBUTION_MS` par défaut (les tests le raccourcissent). */
   budgetAttributionMs?: number;
+  /** Enfiler la relecture de la preuve par UTM d'une commande (file `shopify-preuve-utm`, traitée par le worker). */
+  programmerPreuve: ProgrammerPreuve;
 }
 
 /** 200 : traité ou délibérément ignoré. 503 : Shopify doit réessayer plus tard. */

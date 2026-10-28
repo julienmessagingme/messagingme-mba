@@ -1,4 +1,5 @@
 import { montantBoutique, telephoneDeCommande, type CommandeShopify } from './donnees';
+import { DELAI_PREUVE_MS } from './preuve-utm';
 import type { BoutiqueRecue, DepsTraitementShopify } from './traitement';
 
 /**
@@ -81,10 +82,11 @@ export function choisirSource(e: {
  * Attribue une commande payée et la fige (`orders/paid`, plan 2026-10-28, tâche 4). Rien ne s'écrit pour une commande
  * sans téléphone, d'un numéro sans fiche (aucune fiche n'est créée : elle compterait dans la limite de l'offre), au
  * montant illisible, ou sans source. Le paiement se date par Shopify (`processed_at`), sinon par la réception.
- * La preuve par UTM attend le verdict du lot 0 : `toucheUtm` reste `null` d'ici là.
+ * La preuve par UTM n'est pas dans le webhook (mesuré le 2026-10-28) : sauf panier relancé payé, la réception PROGRAMME sa
+ * relecture 30 minutes plus tard (`src/shopify/preuve-utm.ts`), après avoir figé la vente, qu'il y en ait une ou non.
  */
 export async function attribuerCommande(
-  deps: Pick<DepsTraitementShopify, 'ventes' | 'ficheParTelephone' | 'filiere' | 'maintenant'>,
+  deps: Pick<DepsTraitementShopify, 'ventes' | 'ficheParTelephone' | 'filiere' | 'maintenant' | 'programmerPreuve'>,
   b: Pick<BoutiqueRecue, 'tenantId' | 'pays' | 'devise'>,
   c: CommandeShopify,
 ): Promise<void> {
@@ -102,8 +104,13 @@ export async function attribuerCommande(
     ? []
     : await deps.ventes.touches(b.tenantId, contactId, new Date(payeeLe.getTime() - FENETRE_MS), payeeLe, filiereApplication);
   const vente = choisirSource({ payeeLe, touches, panierRelance, toucheUtm: null });
-  if (vente === null) return;
-  await deps.ventes.enregistrer(b.tenantId, {
-    commandeId: String(c.id), contactId, ...montant, payeeLe, test: c.test === true, ...vente,
-  });
+  const commandeId = String(c.id);
+  const test = c.test === true;
+  if (vente !== null) await deps.ventes.enregistrer(b.tenantId, { commandeId, contactId, ...montant, payeeLe, test, ...vente });
+  // La preuve `panier` ne se remplace jamais : rien à relire.
+  if (panierRelance) return;
+  await deps.programmerPreuve(
+    { tenantId: b.tenantId, commandeId, contactId, ...montant, payeeLe: payeeLe.toISOString(), test, essai: 0 },
+    new Date((deps.maintenant ?? Date.now)() + DELAI_PREUVE_MS),
+  );
 }

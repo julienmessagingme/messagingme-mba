@@ -8,6 +8,7 @@ import type { Filiere } from '../src/application/comptes';
 import type { DemandePremierMessage, ResultatPremier } from '../src/application/premier-message';
 import type { Touche } from '../src/shopify/attribution';
 import type { VenteAEnregistrer } from '../src/shopify/ventes.pg';
+import { DELAI_PREUVE_MS, type JobPreuve } from '../src/shopify/preuve-utm';
 
 /**
  * LE TRAITEMENT D'UN WEBHOOK SHOPIFY VÉRIFIÉ, ET SON ENVOI (plan 2026-10-21, lot 1).
@@ -71,7 +72,7 @@ const rapport = (over: Partial<RapportEnvoi> = {}): RapportEnvoi => ({
 
 function monter(o: {
   messages?: MessageBranche[]; reservation?: Reservation; reponse?: ResultatEnvoiPublic; envoyerLeve?: boolean;
-  filiere?: Filiere | null; premier?: ResultatPremier; ventes?: FauxVentes;
+  filiere?: Filiere | null; premier?: ResultatPremier; ventes?: FauxVentes; programmerLeve?: boolean;
 } = {}) {
   const journal = {
     reserve: [] as string[], issues: [] as Array<[string, string]>, liberes: [] as string[], liees: [] as unknown[],
@@ -79,6 +80,7 @@ function monter(o: {
     coupees: [] as string[], boutiquesEffacees: [] as string[],
     paniers: [] as unknown[], fermes: [] as string[], fermesExistants: [] as string[], fermesParNumero: [] as string[],
     paniersEffaces: [] as string[], premiers: [] as DemandePremierMessage[],
+    preuves: [] as Array<{ job: JobPreuve; quand: Date }>,
   };
   const deps: DepsTraitementShopify = {
     store: {
@@ -115,6 +117,10 @@ function monter(o: {
     pageOffre: 'https://console.test/offre',
     maintenant: () => Date.parse('2026-10-21T10:00:00Z'),
     ventes: o.ventes ?? new FauxVentes(),
+    programmerPreuve: async (job, quand) => {
+      if (o.programmerLeve) throw new Error('file indisponible');
+      journal.preuves.push({ job, quand });
+    },
   };
   return { deps, journal };
 }
@@ -604,6 +610,37 @@ describe('l’attribution d’une commande payée', () => {
     const { deps } = monter({ ventes });
     await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande({ ...payee, processed_at: 'demain' }));
     expect(ventes.enregistrees[0]!.payeeLe).toEqual(new Date('2026-10-21T10:00:00Z'));
+  });
+
+  it('🔴 une commande d’une fiche connue programme la relecture de sa preuve à 30 min, même sans touche dans la fenêtre', async () => {
+    for (const ventes of [new FauxVentes(), new FauxVentes({ touches: [{ source: 'agent', le: new Date('2026-10-20T08:00:00Z'), campaignId: null, modele: null, lanceScenario: false }] })]) {
+      const { deps, journal } = monter({ ventes });
+      await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande(payee));
+      expect(journal.preuves).toEqual([{
+        job: { tenantId: T, commandeId: '1002', contactId: 'fiche-1', montant: '49.90', devise: 'EUR', payeeLe: '2026-10-21T07:30:00.000Z', test: false, essai: 0 },
+        quand: new Date(Date.parse('2026-10-21T10:00:00Z') + DELAI_PREUVE_MS),
+      }]);
+    }
+  });
+
+  it('le panier relancé payé, un numéro inconnu ou un montant illisible ne programment rien', async () => {
+    const panier = monter({ ventes: new FauxVentes({ panier: { relanceLe: new Date('2026-10-21T06:00:00Z') } }) });
+    await traiterWebhookShopify(panier.deps, BOUTIQUE, 'orders/paid', commande(payee));
+    expect(panier.journal.preuves).toEqual([]);
+    const inconnu = monter();
+    await traiterWebhookShopify(inconnu.deps, BOUTIQUE, 'orders/paid', commande({ ...payee, shipping_address: { first_name: 'X', phone: '+33611110000', country_code: 'FR' } }));
+    expect(inconnu.journal.preuves).toEqual([]);
+    const illisible = monter();
+    await traiterWebhookShopify(illisible.deps, { ...BOUTIQUE, devise: null }, 'orders/paid', commande({ processed_at: payee.processed_at, total_price: '12.00' }));
+    expect(illisible.journal.preuves).toEqual([]);
+  });
+
+  it('🔴 un échec de programmation ne change rien à la vente ni à la confirmation', async () => {
+    const ventes = new FauxVentes({ touches: [{ source: 'agent', le: new Date('2026-10-20T08:00:00Z'), campaignId: null, modele: null, lanceScenario: false }] });
+    const { deps, journal } = monter({ ventes, programmerLeve: true });
+    expect(await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande(payee))).toEqual({ statut: 200 });
+    expect(ventes.enregistrees).toHaveLength(1);
+    expect(journal.envois).toHaveLength(1);
   });
 
   it('customers/redact anonymise les commandes nommées', async () => {

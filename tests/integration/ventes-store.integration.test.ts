@@ -153,6 +153,34 @@ describe.skipIf(!url)('le store des ventes', () => {
     expect(r).toEqual({ commande_id: null, contact_id: null, montant: '12.500', devise: 'EUR', source: 'relance_panier' });
   });
 
+  it('🔴 appliquerPreuveUtm met à jour une vente sans preuve, jamais une preuve panier', async () => {
+    await vider();
+    const k = await campagne('Soldes', { modele: 'soldes_hiver' });
+    const base = { contactId: contact, montant: '20', devise: 'EUR', payeeLe: maintenant, test: false };
+    await store.enregistrer(T, { ...base, commandeId: 'u1', source: 'agent', campaignId: null, preuve: null, relanceLe: null });
+    await store.enregistrer(T, { ...base, commandeId: 'u2', source: 'relance_panier', campaignId: null, preuve: 'panier', relanceLe: ilYA(2) });
+    const prouvee = { ...base, source: 'campagne' as const, campaignId: k, preuve: 'utm' as const, relanceLe: null };
+    expect(await store.appliquerPreuveUtm(T, { ...prouvee, commandeId: 'u1' })).toBe('appliquee');
+    expect(await store.appliquerPreuveUtm(T, { ...prouvee, commandeId: 'u2' })).toBe('ignoree');
+    const r = (await pool.query(`select commande_id, source, campaign_id, preuve from ventes_attribuees where tenant_id = $1 order by commande_id`, [T])).rows;
+    expect(r).toEqual([
+      { commande_id: 'u1', source: 'campagne', campaign_id: k, preuve: 'utm' },
+      { commande_id: 'u2', source: 'relance_panier', campaign_id: null, preuve: 'panier' },
+    ]);
+  });
+
+  it('🔴 appliquerPreuveUtm insère une vente prouvée pour une fiche vivante, rien pour une fiche anonymisée', async () => {
+    await vider();
+    const vente = { contactId: contact, montant: '20', devise: 'EUR', payeeLe: maintenant, test: false, source: 'agent' as const, campaignId: null, preuve: 'utm' as const, relanceLe: null };
+    expect(await store.appliquerPreuveUtm(T, { ...vente, commandeId: 'n1' })).toBe('appliquee');
+    const anonyme = (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, anonymized_at) values ($1, 'anon:itest', now()) returning id`, [T],
+    )).rows[0]!.id;
+    expect(await store.appliquerPreuveUtm(T, { ...vente, commandeId: 'n2', contactId: anonyme })).toBe('ignoree');
+    const r = (await pool.query(`select commande_id, preuve from ventes_attribuees where tenant_id = $1 order by commande_id`, [T])).rows;
+    expect(r).toEqual([{ commande_id: 'n1', preuve: 'utm' }]);
+  });
+
   it('panierRelance rend la date d’une relance partie, rien pour un panier non relancé ou refusé', async () => {
     await pool.query(
       `insert into shopify_paniers (tenant_id, jeton, telephone, relance_le, issue) values

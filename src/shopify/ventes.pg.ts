@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { PREFIXE_ENVOI_API } from '../api/cible-rcs';
 import { PREFIXE_LIGNE_HUBSPOT } from '../hubspot-workflow/envoi';
+import { ficheActive } from '../crm/contact-store.pg';
 import { LIGNE_RELANCE_PANIER, PREFIXE_LIGNE_SHOPIFY, type SourceVente, type Touche, type VenteAttribuee } from './attribution';
 
 /** Une vente à figer : la commande, son montant dans la devise de la boutique, et son attribution. */
@@ -91,6 +92,34 @@ export class PgVentesStore {
       [tenantId, v.commandeId, v.contactId, v.montant, v.devise, v.payeeLe, v.source, v.campaignId, v.preuve, v.relanceLe, v.test],
     );
     return (res.rowCount ?? 0) > 0 ? 'enregistree' : 'deja';
+  }
+
+  /**
+   * La preuve par UTM, relue après coup (`src/shopify/preuve-utm.ts`) : la vente de la commande prend sa source prouvée,
+   * sauf si son panier relancé la prouve déjà (la preuve `panier` ne se remplace jamais) ; absente (aucune touche dans la
+   * fenêtre à la réception), elle se crée, mais seulement pour une fiche encore VIVANTE : une demande d'effacement arrivée
+   * entre-temps ne doit pas recréer de lien vers la personne. Une seule instruction : l'instantané commun des CTE fait
+   * que l'insertion ne voit pas la mise à jour, et n'insère que s'il n'existait aucune vente.
+   */
+  async appliquerPreuveUtm(tenantId: string, v: VenteAEnregistrer): Promise<'appliquee' | 'ignoree'> {
+    const res = await this.pool.query<{ n: number }>(
+      `with maj as (
+         update ventes_attribuees set source = $7, campaign_id = $8, preuve = $9, relance_le = $10
+          where tenant_id = $1 and commande_id = $2 and preuve is distinct from 'panier'
+         returning 1
+       ), ins as (
+         insert into ventes_attribuees
+           (tenant_id, commande_id, contact_id, montant, devise, payee_le, source, campaign_id, preuve, relance_le, test)
+         select $1, $2, $3, $4::numeric, $5, $6, $7, $8, $9, $10, $11
+          where not exists (select 1 from ventes_attribuees where tenant_id = $1 and commande_id = $2)
+            and exists (select 1 from contacts c where c.tenant_id = $1 and c.id = $3 and ${ficheActive('c')})
+         on conflict (tenant_id, commande_id) where commande_id is not null do nothing
+         returning 1
+       )
+       select ((select count(*) from maj) + (select count(*) from ins))::int as n`,
+      [tenantId, v.commandeId, v.contactId, v.montant, v.devise, v.payeeLe, v.source, v.campaignId, v.preuve, v.relanceLe, v.test],
+    );
+    return (res.rows[0]?.n ?? 0) > 0 ? 'appliquee' : 'ignoree';
   }
 
   /** `customers/redact` : ces commandes perdent leur numéro et leur contact ; le montant, la devise et la source restent. */

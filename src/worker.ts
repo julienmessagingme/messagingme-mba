@@ -20,6 +20,8 @@ import { creerApresLAgent } from './mba/lien-de-test';
 import { PgEventStore } from './webhooks/store';
 import { PgCampaignStore, PgQualityProvider } from './campaign/store.pg';
 import { PgShopifyStore } from './shopify/store.pg';
+import { PgVentesStore } from './shopify/ventes.pg';
+import { FILE_PREUVE_UTM, traiterPreuveUtm, type DepsPreuveUtm } from './shopify/preuve-utm';
 import { activerSelonStatut, FILE_OUBLI_MODELE, suppressionDesModeles, traiterOubli, type DepsActivation, type ProgrammerOubli } from './shopify/preparation';
 import { PgTemplateHintStore } from './crm/template-hints.pg';
 import { campaignRunJob, type CapacitesMoteur } from './campaign/run-job';
@@ -492,6 +494,18 @@ export async function demarrerWorker(): Promise<void> {
     programmerOubli: programmerOubliShopify,
   };
   await queue.work(FILE_OUBLI_MODELE, async (data) => { await traiterOubli(oubliShopify, data); });
+
+  /**
+   * La preuve par UTM d'une vente (plan 2026-10-28, tâche 6b) : 30 minutes après la commande, le parcours client relu chez
+   * Shopify ; si sa dernière visite vient de nos liens, la vente devient prouvée. Ne lève jamais (un job ne boucle pas).
+   */
+  const preuveUtm: DepsPreuveUtm = {
+    store: new PgShopifyStore(pool, config.ENCRYPTION_KEY),
+    ventes: new PgVentesStore(pool),
+    filiere: (t) => comptesApplication.filiereDe(t),
+    programmer: (job, quand) => queue.enqueue(FILE_PREUVE_UTM, job, { groupId: job.tenantId, startAfter: quand }),
+  };
+  await queue.work(FILE_PREUVE_UTM, async (data) => { await traiterPreuveUtm(preuveUtm, data); });
 
   /**
    * 🔴 LA PORTE D'UNE FREE PLEINE (décision de Julien du 2026-10-25, `src/webhooks/espace-plein.ts`), sur les deux files

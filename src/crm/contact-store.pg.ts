@@ -186,7 +186,7 @@ export interface FicheASupprimer {
 const estUnicite = (err: unknown): boolean => (err as { code?: string }).code === '23505';
 
 /** Une fiche active (alias donné) : ni supprimée, ni anonymisée. Un numéro qu'elle porte n'est pas une création. */
-function ficheActive(alias: string): string {
+export function ficheActive(alias: string): string {
   return `${alias}.deleted_at is null and ${alias}.anonymized_at is null`;
 }
 const FICHE_ACTIVE = ficheActive('x');
