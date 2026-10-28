@@ -96,8 +96,9 @@ et les annulations **ne sont pas déduits** en v1 : le chiffre s'appelle « brut
   le panier relancé n'est pas en cause programme une tâche de fond, 30 minutes plus tard. Elle relit le parcours de la
   commande chez Shopify (le jeton de l'app de la boutique) ; si la dernière visite vient de nos UTM, la vente devient
   PROUVÉE et revient à la dernière touche du modèle nommé (règle 2), qu'elle ait été enregistrée ou non à la réception.
-  Un parcours pas encore prêt se relit plus tard, quelques fois. La preuve `panier` ne se remplace jamais. Le chiffre
-  d'une commande peut donc changer dans sa première heure, jamais après.
+  Un parcours pas encore prêt se relit plus tard, quatre fois au plus (à 30, 60, 90 et 120 minutes, plus le retard de
+  la file). La preuve `panier` ne se remplace jamais. Le chiffre d'une commande peut donc changer dans ses deux à trois
+  premières heures, jamais après (relecture du lot 6 : « la première heure » était faux).
 - *Mon choix* : une vente prouvée par UTM qui n'avait pas été enregistrée à la réception (aucune touche dans la
   fenêtre) n'est créée que si la fiche est encore vivante (ni supprimée, ni anonymisée) : une demande d'effacement
   arrivée entre-temps ne doit pas recréer de lien vers la personne.
@@ -108,7 +109,7 @@ et les annulations **ne sont pas déduits** en v1 : le chiffre s'appelle « brut
   arriver deux fois), le contact, le montant et sa devise (jamais en flottant), la date de paiement, la source et son
   identifiant (la campagne, par exemple), la preuve (`panier`, `utm` ou aucune).
 - **L'attribution se calcule à la réception, puis elle est figée** (sauf la preuve par UTM, qui peut la reprendre dans
-  sa première heure, voir plus haut). Les chiffres d'un mois passé ne bougent plus quand
+  ses premières heures, voir plus haut). Les chiffres d'un mois passé ne bougent plus quand
   des messages sont purgés ou qu'un contact est supprimé.
 - **Une commande d'un inconnu ne crée jamais de fiche** (elle compterait dans la limite de l'offre) et ne laisse aucune
   trace.

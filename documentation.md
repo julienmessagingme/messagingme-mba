@@ -2380,6 +2380,19 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   `customers/redact` et l'effacement du branchement (`effacerBranchement`) vident aussi `contact_id` ; montant, devise,
   date et source restent. `relances_panier_jour` compte les relances PARTIES par jour de Paris, sans personne : les
   paniers, eux, partent à 7 jours avec leur téléphone.
+- 🔴 **la redirection d'un lien tracé porte nos UTM pour un espace qui a une boutique branchée** (`src/links/utm.ts`,
+  `src/http/links.ts`) : `utm_source=whatsapp`, `utm_medium=messagingme`, `utm_campaign=<nom du modèle>`, ajoutés APRÈS
+  le remplissage des champs, jamais par-dessus un `utm_` du marchand, et AJOUTÉS au texte de la requête, jamais par
+  resérialisation (un lien déjà livré ne change que par cet ajout). Un lien sans modèle (RCS) n'en porte pas. Le
+  marchand les voit dans ses propres rapports Shopify ;
+- **la preuve par UTM se relit 30 minutes après la commande** (file `shopify-preuve-utm`, worker principal,
+  `src/shopify/preuve-utm.ts`) : le webhook ne porte que la page d'arrivée de la PREMIÈRE visite, et Shopify calcule le
+  parcours client après coup (mesuré : 14 minutes). La réception programme la relecture APRÈS avoir figé la vente (sauf
+  panier relancé payé) ; le worker relit `customerJourneySummary.lastVisit` (API `2026-10`, jeton `client_credentials`
+  de l'app de la boutique) toutes les 30 minutes, quatre essais au plus ; nos UTM rendent la vente prouvée et la donnent
+  à la dernière touche du modèle nommé (`appliquerPreuveUtm`) : jamais par-dessus une preuve `panier`, et une vente
+  absente n'est créée que pour une fiche vivante et une boutique branchée avant le paiement (un rebranchement suit un
+  effacement qui a pu anonymiser la vente). Une panne de Shopify se relit plus tard ; seule une panne de notre base lève.
 
 - 🔴 **chaque envoi né d'un événement Shopify écrit la fiche consentante** (décision de Julien du 2026-10-26 : le
   consentement des clients relève du marchand, aucune affirmation ne lui est demandée, ni par Claude ni par la

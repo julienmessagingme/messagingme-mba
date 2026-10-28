@@ -18,7 +18,7 @@
 | CI | lue job par job sur `gh run view <id> --json jobs`, jamais sur le code de sortie du watch ; un rouge `toomanyrequests` (Docker Hub) n'a rien vérifié ; un rouge `unauthorized` sur la connexion à Docker Hub = jeton expiré ou révoqué, ou secret absent (CLAUDE.md) |
 | Le récit | les lots déployés sont sortis de ce fichier le 2026-10-10, texte d'origine, vers [docs/JOURNAL-TECHNIQUE.md](docs/JOURNAL-TECHNIQUE.md) ; les essais dus vivent dans `docs/prive/ESSAIS-REELS.md`, les restes dans [todo.md](todo.md) |
 
-## LE CHIFFRE D'AFFAIRES ATTRIBUÉ (SHOPIFY) : LOT 1 (TÂCHES 1 À 5) LIVRÉ, TÂCHE 6 ET LOT 2 À VENIR
+## LE CHIFFRE D'AFFAIRES ATTRIBUÉ (SHOPIFY) : LOTS 0 ET 1 LIVRÉS, ESSAI RÉEL ET LOT 2 À VENIR
 
 Spec [docs/superpowers/specs/2026-10-28-revenus-attribues-design.md](docs/superpowers/specs/2026-10-28-revenus-attribues-design.md),
 validée par Julien le 2026-10-28 : une commande payée est attribuée au dernier envoi livré dans les 5 jours (campagne,
@@ -29,11 +29,14 @@ Shopify et la page Shopify.
   Tâches 1 à 5 livrées (migration 0261, enregistrement et attribution à la réception, purge RGPD, compteur des
   relances), relues sans rouge, trois jaunes corrigés ; les autres au `todo.md`. Les invariants : `documentation.md`
   § Les tables `shopify_*`. Rien ne s'affiche encore.
-- **Tâche 0, mesuré** : les messages sortants des trois derniers jours ont tous leur statut de livraison, agent de Meta
-  compris (sonde de production du 2026-10-28). **Reste** : deux commandes de test de Julien sur `messaging-me-essai`
-  par une adresse UTM (cookies acceptés, puis refusés), pour savoir si Shopify rend `landing_site` et ses UTM.
-- **Ensuite** : la tâche 6 (UTM de la redirection) si la mesure le permet, en petit lot relu à part ; puis le plan du
-  lot 2 (l'outil MCP, Quantitatif > Shopify, la page Shopify) ; l'essai réel du plan clôt les lots 0 et 1.
+- **Tâche 0, mesurée** (commande #1003 de Julien sur `messaging-me-essai`) : le webhook ne porte pas la preuve, le
+  parcours client la porte un quart d'heure plus tard ; décision de Julien, une relecture différée (spec, « La preuve
+  par UTM »). Accusés de livraison présents, agent de Meta compris.
+- **Tâche 6** : 6a (nos UTM sur la redirection des espaces branchés sur Shopify) et 6b (la relecture à 30 minutes),
+  relues sans rouge, deux jaunes corrigés, les autres au `todo.md`.
+- **Reste** : l'essai réel (une campagne avec lien tracé reçue par Julien, un clic, une commande de la boutique de dev ;
+  30 minutes après, la vente porte `preuve = utm` et la campagne) ; puis le plan du lot 2 (l'outil MCP, Quantitatif >
+  Shopify, la page Shopify), qui portera aussi la section de `features.md` et sa fiche d'aide.
 
 ## LE CENTRE D'AIDE (EN COURS)
 
