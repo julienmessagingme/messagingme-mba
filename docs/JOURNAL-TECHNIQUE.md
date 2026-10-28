@@ -4,6 +4,26 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 (soir) : la refonte de /ops, lot 2 (Cockpit et la mémoire des workers)
+
+`0d5c4b7f`. Le jeton Cockpit d'abord : créé par Julien en lecture des métriques (un premier, créé en ÉCRITURE par
+erreur, refusé en 403 et supprimé), posé dans les secrets de `mba-api` (d'abord en variable ordinaire, déplacé en
+secrète). Les noms de séries puis chaque formule ont été mesurés avec lui avant d'être écrits (`docs/prive/
+cockpit-metriques.txt`, `cockpit-formules.txt`). Une relecture indépendante : aucun 🔴, les jaunes utiles corrigés dans
+le même commit (relus au lot 3).
+
+- **Migrations 0260 (`memoire_workers`) et 0261 (`ventes_attribuees`, de la session des ventes attribuées)**, en `avant`,
+  run 40744835601. Le déploiement de cette session (`973c3569`, 0261 seule), en attente d'approbation, bloquait le mien
+  dans le groupe `concurrency` : annulé par moi sur la décision de Julien (« lance le tien »), le mien contenant son
+  commit. `2 migration(s) appliquée(s)`. ⚠️ La 0261 reste à relire en base par sa session, qui n'était plus active.
+- **Relu après, en lecture seule par la machine des workers** : colonnes, types, nullabilité, défaut de `maj`, la clé
+  primaire sous son nom ; les deux workers à `0d5c4b7f` relèvent leur mémoire (principal 143 Mo, analyse 137 Mo, sur
+  1 Gio), la tâche `memoire-workers` sans échec (au plus 15 ms) ; `actuelles()` et `evaluerSante` par le vrai code :
+  mémoire des workers verte à 13,3 %. Les tables de 0261 existent. Les briques de Cockpit se lisent dans l'API, seule à
+  porter le jeton : leur preuve est l'essai réel 178 de Julien (`/ops` sur téléphone).
+- ⚠️ **Le bastion n'accepte que l'adresse du poste de Julien** : quand il change de réseau, les sondes en lecture par la
+  machine échouent en délai dépassé (vécu ce soir), le déploiement non (il ouvre le bastion à son exécuteur).
+
 ## 2026-10-28 (suite) : l'offre Business, les captures de « Choisir mon offre » et la fiche HubSpot
 
 - **Les captures** (`45ce0858`) : les huit captures de la fiche publique « Choisir mon offre » montraient encore la page
