@@ -1082,11 +1082,12 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 @keyframes as-onde{0%,55%{scale:.9;opacity:0}62%{opacity:.9}100%{scale:1.45;opacity:0}}
 @media (max-width:960px){.assistants{width:min(100%,460px)}}
 /* La une des pages de cas : la marque au centre, Claude Code, Codex, Lovable et WhatsApp en orbite (cas.ts, orbite()). Chaque
-   satellite se place sur l'ellipse (42 x 19 cqw) par cos() et sin() de l'angle --t, animé sur la figure ; devant
+   satellite se place sur l'ellipse (42 x 19 cqw) par cos() et sin() de l'angle --or-angle (un nom enregistré par @property vaut pour toute la vitrine, d'où le
+   préfixe : tests/vitrine-proprietes-css.test.ts), animé sur la figure ; devant
    (sin > 0) il grossit et passe au-dessus de la marque, derrière il rapetisse et passe dessous. */
-@property --t{syntax:"<angle>";inherits:true;initial-value:0deg}
+@property --or-angle{syntax:"<angle>";inherits:true;initial-value:0deg}
 .orbite{position:relative;width:min(100%,580px);aspect-ratio:100 / 86;margin:0 auto;container-type:inline-size;isolation:isolate}
-.or-halo{position:absolute;left:50%;top:50%;width:66cqw;aspect-ratio:1;translate:-50% -50%;border-radius:50%;background:radial-gradient(closest-side,hsl(calc(172deg + cos(var(--t)) * 34deg) 100% 50% / .34),rgb(23 199 78 / .1) 58%,rgb(0 155 255 / 0));z-index:0}
+.or-halo{position:absolute;left:50%;top:50%;width:66cqw;aspect-ratio:1;translate:-50% -50%;border-radius:50%;background:radial-gradient(closest-side,hsl(calc(172deg + cos(var(--or-angle)) * 34deg) 100% 50% / .34),rgb(23 199 78 / .1) 58%,rgb(0 155 255 / 0));z-index:0}
 .or-arc{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 .or-arc path{fill:none;stroke:rgb(111 194 254 / .3);stroke-width:1.5;stroke-dasharray:2 7;stroke-linecap:round;vector-effect:non-scaling-stroke}
 .or-arriere{z-index:3}
@@ -1096,18 +1097,18 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
    de la marque, une teinte entre son vert (138°) et son bleu (206°) qui suit l'angle ; la tranche et la face la prennent
    du côté de la marque (le dégradé part dans la direction --ang + 90°), et un reflet glisse sur la face avec cos(--ang). */
 .or-centre,.or-sat{--lum:hsl(calc(172deg + cos(var(--ang)) * 34deg) 100% 60%)}
-.or-centre{position:absolute;left:50%;top:50%;width:31cqw;aspect-ratio:1;translate:-50% -50%;z-index:10;perspective:90cqw;--ang:var(--t);--rayon:24%;--pas:-.32cqw;--face:linear-gradient(150deg,#1D33C9,#0B137A 55%,#060B4F);--bord:#040833}
+.or-centre{position:absolute;left:50%;top:50%;width:31cqw;aspect-ratio:1;translate:-50% -50%;z-index:10;perspective:90cqw;--ang:var(--or-angle);--rayon:24%;--pas:-.32cqw;--face:linear-gradient(150deg,#1D33C9,#0B137A 55%,#060B4F);--bord:#040833}
 .or-bloc{position:absolute;inset:0;transform-style:preserve-3d}
-.or-centre .or-bloc{transform:rotateX(12deg) rotateY(calc(sin(var(--t) * 2) * 18deg)) translateY(calc(sin(var(--t) * 3) * -1.2cqw))}
+.or-centre .or-bloc{transform:rotateX(12deg) rotateY(calc(sin(var(--or-angle) * 2) * 18deg)) translateY(calc(sin(var(--or-angle) * 3) * -1.2cqw))}
 .or-bloc i{position:absolute;inset:0;border-radius:var(--rayon);background:linear-gradient(calc(var(--ang) + 90deg),color-mix(in oklab,var(--lum) calc(72% - var(--z) * 4%),var(--bord)),var(--bord) 62%);transform:translateZ(calc(var(--z) * var(--pas)))}
 .or-face{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden;border-radius:var(--rayon);background:var(--face);box-shadow:inset 0 1px 0 rgb(255 255 255 / .5),inset 0 -1.4cqw 3cqw rgb(0 0 0 / .16)}
 .or-face::before{content:"";position:absolute;inset:0;background:linear-gradient(calc(var(--ang) + 90deg),var(--lum),rgb(255 255 255 / 0) 62%);opacity:.42}
 .or-face svg{position:relative}
 .or-face::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,rgb(255 255 255 / 0) 38%,rgb(255 255 255 / .5) 49%,rgb(255 255 255 / 0) 60%) calc(50% + cos(var(--ang)) * 30%) 0 / 300% 100% no-repeat}
 .or-centre .or-face::after{opacity:.6}
-.or-centre .or-face{box-shadow:inset 0 1px 0 rgb(255 255 255 / .35),inset 0 -18px 34px rgb(0 0 0 / .25),0 0 70px hsl(calc(172deg + cos(var(--t)) * 34deg) 100% 50% / .42)}
+.or-centre .or-face{box-shadow:inset 0 1px 0 rgb(255 255 255 / .35),inset 0 -18px 34px rgb(0 0 0 / .25),0 0 70px hsl(calc(172deg + cos(var(--or-angle)) * 34deg) 100% 50% / .42)}
 .or-marque{width:70%;aspect-ratio:858 / 432;height:auto}
-.or-sat{position:absolute;left:50%;top:50%;width:18cqw;aspect-ratio:1;--ang:calc(var(--a) + var(--t));--rayon:26%;--pas:-.3cqw;perspective:60cqw;translate:calc(-50% + cos(var(--ang)) * 42cqw) calc(-50% + sin(var(--ang)) * 19cqw);scale:calc(.8 + sin(var(--ang)) * .2);z-index:calc(12 + sin(var(--ang)) * 8);filter:brightness(calc(.86 + sin(var(--ang)) * .14)) drop-shadow(0 1.8cqw 2.4cqw hsl(calc(172deg + cos(var(--ang)) * 34deg) 100% 42% / .45))}
+.or-sat{position:absolute;left:50%;top:50%;width:18cqw;aspect-ratio:1;--ang:calc(var(--a) + var(--or-angle));--rayon:26%;--pas:-.3cqw;perspective:60cqw;translate:calc(-50% + cos(var(--ang)) * 42cqw) calc(-50% + sin(var(--ang)) * 19cqw);scale:calc(.8 + sin(var(--ang)) * .2);z-index:calc(12 + sin(var(--ang)) * 8);filter:brightness(calc(.86 + sin(var(--ang)) * .14)) drop-shadow(0 1.8cqw 2.4cqw hsl(calc(172deg + cos(var(--ang)) * 34deg) 100% 42% / .45))}
 .or-sat .or-bloc{transform:rotateX(16deg) rotateY(calc(cos(var(--ang)) * 38deg))}
 .or-logo{width:54%;height:54%}
 .or-claude{--face:#F0EEE6;--bord:#8F8778}
@@ -1117,13 +1118,13 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .or-lovable{--face:#15151B;--bord:#020205}
 .or-whatsapp{--face:#25D366;--bord:#0E6E3A}
 .or-whatsapp .or-logo{width:82%;height:82%}
-.or-point{position:absolute;left:50%;top:50%;width:1.8cqw;aspect-ratio:1;border-radius:50%;background:#25D366;box-shadow:0 0 0 .7cqw rgb(37 211 102 / .18),0 0 3cqw rgb(37 211 102 / .9);--ang:calc(var(--a) + var(--t) * 2);translate:calc(-50% + cos(var(--ang)) * 42cqw) calc(-50% + sin(var(--ang)) * 19cqw);z-index:calc(11 + sin(var(--ang)) * 8)}
+.or-point{position:absolute;left:50%;top:50%;width:1.8cqw;aspect-ratio:1;border-radius:50%;background:#25D366;box-shadow:0 0 0 .7cqw rgb(37 211 102 / .18),0 0 3cqw rgb(37 211 102 / .9);--ang:calc(var(--a) + var(--or-angle) * 2);translate:calc(-50% + cos(var(--ang)) * 42cqw) calc(-50% + sin(var(--ang)) * 19cqw);z-index:calc(11 + sin(var(--ang)) * 8)}
 .or-nom{position:absolute;left:50%;top:calc(100% + 3.4cqw);translate:-50% 0;color:#FFFFFF;font-size:clamp(.78rem,2.7cqw,.98rem);font-weight:700;letter-spacing:-.01em;white-space:nowrap}
 @media (prefers-reduced-motion:no-preference){
   .js .orbite{animation:or-tourne 18s linear infinite}
   .js .or-centre::after{content:"";position:absolute;inset:0;border-radius:24%;border:2px solid rgb(37 211 102 / .5);animation:as-onde 3.2s ease-out infinite}
 }
-@keyframes or-tourne{to{--t:360deg}}
+@keyframes or-tourne{to{--or-angle:360deg}}
 @media (max-width:960px){.orbite{width:min(100%,440px)}}
 .cas-schema{padding:56px 0}
 .dessin{margin:28px 0 0}

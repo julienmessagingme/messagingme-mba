@@ -134,7 +134,7 @@ export function extraitDe(cle: string, partie: string): ExempleCode {
  * La une de chaque page de cas, à droite du titre (Julien, 2026-10-26 : « le logo Messaging Me avec les logos de Claude
  * Code, Codex et Lovable qui tournent autour », puis « un logo WhatsApp qui tourne autour aussi ») : la marque sur une
  * tuile épaisse au centre, les trois assistants et WhatsApp en orbite sur une ellipse. Chaque tuile se place par
- * `cos()` et `sin()` d'un angle animé (`@property --t`, site.css) : devant, elle grossit et passe devant la marque ;
+ * `cos()` et `sin()` d'un angle animé (`@property --or-angle`, site.css) : devant, elle grossit et passe devant la marque ;
  * derrière, elle rapetisse et passe dessous. Sans animation (prefers-reduced-motion, ou un navigateur sans
  * `@property`), les tuiles restent à leur angle de départ.
  *

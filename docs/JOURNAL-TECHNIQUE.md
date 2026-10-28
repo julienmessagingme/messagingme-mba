@@ -4,6 +4,24 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 (soir) : les téléphones de l'accueil vides deux jours, une propriété CSS enregistrée pour toute la vitrine
+
+Signalé par Julien : les écrans des deux téléphones de la une restaient vides longtemps, et la conversation ne
+s'affichait que quelques secondes. Mesuré dans un vrai navigateur sur la production : la classe `tour` était posée à
+0,3 s, mais chaque message calculait `animation: none` et restait à opacité 0 tout le tour ; il ne devenait visible
+qu'à 13,7 s, quand `sortie` lançait le fondu de sortie, qui part d'une opacité 1.
+- **La cause** : l'orbite des pages de cas (`15cfdb75`, 2026-10-26) a enregistré `@property --t{syntax:"<angle>"}`.
+  Un nom enregistré vaut pour TOUTE la feuille : les `--t:.4s` des messages (un délai) n'étaient plus des angles,
+  retombaient sur `0deg`, et `animation: msg-entre .45s … var(--t) both` devenait invalide au calcul. Aucune erreur,
+  ni console ni CSS.
+- **Le correctif** : la propriété de l'orbite s'appelle `--or-angle`, l'orbite tourne comme avant (mesuré sur
+  `/cas-d-usage/prise-de-rendez-vous/`). La page développeurs n'était pas touchée : son terminal lit son `--t` en
+  JavaScript, dans l'attribut.
+- **La garde** : `tests/vitrine-proprietes-css.test.ts` exige que toute valeur donnée à un nom enregistré, dans
+  `site.css` comme dans les pages, soit de son type ; rouge sur l'ancien code (42 valeurs), vert après.
+- ⚠️ Le panneau du navigateur de l'application, masqué, ne fait aucun rendu (ni `requestAnimationFrame`, ni
+  `IntersectionObserver`) : il y « reproduisait » une panne qui n'était pas celle-là. La mesure s'est faite avec Playwright.
+
 ## 2026-10-28 (soir) : le chiffre d'affaires attribué, lot 1 (l'enregistrement, rien d'affiché)
 
 Spec `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`, plan `docs/superpowers/plans/2026-10-28-revenus-attribues-lots-0-1.md`
