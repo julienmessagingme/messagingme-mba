@@ -9,6 +9,9 @@ eux est une promesse publique en attente.
   Business ; l'Entreprise reste sur notre clé avec un plafond mensuel), HubSpot seul (la fonction `crm` se scinde : HubSpot
   au Business, Salesforce et Batch à l'Entreprise ; la garde du bouton « Connecter HubSpot »), Mes tableaux (une fonction
   propre, 4 tableaux en Business). À la livraison, les lignes de la carte Business prennent leur marque `data-fonction`.
+  ⚠️ La fiche d'aide HubSpot dit déjà « Avec l'offre Business », comme la vitrine (décision de Julien, 2026-10-28) :
+  jusqu'à la scission, un Business qui connecte HubSpot reçoit un refus d'offre (`crm`). À la livraison, le cas HubSpot
+  de `tests/aide-fiches-format.test.ts` redevient dérivé de `DROITS`.
 - **Lot 3, l'e-mail aller-retour** : la réponse à un e-mail de scénario revient dans la conversation, l'équipe répond par
   e-mail depuis l'Inbox (fournisseur de réception à choisir, webhook signé, STOP sur le nouveau chemin d'envoi).
 - **Un geste de `/ops` échoué ne se rejoue pas seul** (jaune 13 de la relecture de A) : une route qui rejoue le seul geste

@@ -7,7 +7,7 @@ publique: oui
 rubrique: demarrer
 rang: 6
 captures: non
-offre: entreprise
+offre: business
 ---
 # HubSpot sur l'Accueil : le brancher, le suivre, le couper
 
@@ -26,8 +26,8 @@ branchez : la fiche contact et l'analyse de chaque conversation, la tâche immé
 humain, la création de tâches (sinon les propriétés seulement), le contact injoignable, la réponse aux clients
 depuis HubSpot, vos listes comme audience de campagne. Chaque choix se change ensuite d'un interrupteur.
 
-**Répondre aux clients depuis HubSpot** est éteint au départ ; il suppose un portail HubSpot relié, ce que permet
-l'offre Entreprise. Allumé, toute personne du
+**Répondre aux clients depuis HubSpot** est éteint au départ ; il suppose un portail HubSpot relié, ce que permettent
+les offres Business et Entreprise. Allumé, toute personne du
 portail lit la conversation et répond depuis la carte Messaging Me de la fiche contact, signée de son adresse, tant
 que la fenêtre de 24 heures est ouverte ; « Rendre au robot » redonne la main à l'agent. La carte n'écrit jamais à
 un contact qui a dit STOP ni à un contact bloqué. Une conversation qu'un membre tient ne se répond que par lui, un

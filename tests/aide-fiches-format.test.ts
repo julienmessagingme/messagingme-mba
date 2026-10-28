@@ -249,15 +249,18 @@ describe('les fiches publiques', () => {
         'garder-mon-application-whatsapp-business', 'la-fenetre-de-24-heures']);
   });
 
-  it('🔴 spec Business : chaque fiche dit l’offre la moins chère qui ouvre sa fonction (publicités, RCS, chaînes et HubSpot : l’Entreprise)', () => {
+  it('🔴 spec Business : chaque fiche dit l’offre la moins chère qui ouvre sa fonction (publicités, RCS et chaînes : l’Entreprise)', () => {
     const fonctionDe: Record<string, Fonction> = {
       'creer-une-publicite': 'publicites', 'envoyer-un-message-rcs': 'rcs', 'publier-sur-ma-chaine-whatsapp': 'chaines',
-      'hubspot-sur-l-accueil': 'crm', 'le-repondeur-de-meta': 'agent_meta', 'repondre-dans-l-inbox': 'inbox',
+      'le-repondeur-de-meta': 'agent_meta', 'repondre-dans-l-inbox': 'inbox',
     };
     for (const [cle, fonction] of Object.entries(fonctionDe)) {
       const attendue = (['pro', 'business', 'entreprise'] as const).find((o) => DROITS[o].fonctions.has(fonction));
       expect(publiques.find((f) => f.cle === cle)?.publication.offre, cle).toBe(attendue);
     }
+    // HubSpot dit le Business, comme la vitrine (décision de Julien, 2026-10-28), alors que la grille le ferme encore sous
+    // `crm`, à l'Entreprise : le lot 2 scinde `crm` (spec, § HubSpot seul), et ce cas redevient alors dérivé de `DROITS`.
+    expect(publiques.find((f) => f.cle === 'hubspot-sur-l-accueil')?.publication.offre).toBe('business');
     expect(() => publicationDe('---\npublique: oui\nrubrique: demarrer\nrang: 1\noffre: oui\n---\n# T')).toThrow(/offre/);
   });
 

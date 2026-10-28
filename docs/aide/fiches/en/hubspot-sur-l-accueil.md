@@ -1,6 +1,6 @@
 ---
 slug: hubspot-on-the-home-screen
-traduit_de: 5e9436
+traduit_de: f70284
 description: Connect HubSpot to Messaging Me: link it in Tools > Integrations, choose what syncs, reply from HubSpot, pause it or cut it off.
 ---
 # HubSpot on the Home screen: connect it, follow it, cut it off
@@ -20,8 +20,8 @@ plug in: the contact record and the analysis of every conversation, the immediat
 human, the creation of tasks (otherwise properties only), the unreachable contact, replying to customers from
 HubSpot, your lists as campaign audiences. Each choice can then be changed with a switch.
 
-**Replying to customers from HubSpot** is off at first; it needs a linked HubSpot portal, which the Enterprise plan
-allows. Once on, anyone in the
+**Replying to customers from HubSpot** is off at first; it needs a linked HubSpot portal, which the Business and
+Enterprise plans allow. Once on, anyone in the
 portal reads the conversation and replies from the Messaging Me card of the contact record, signed with their
 address, as long as the 24-hour window is open; “Hand back to the bot” gives control back to the agent. The card
 never writes to a contact who said STOP or to a blocked contact. A conversation held by a member can only be answered
