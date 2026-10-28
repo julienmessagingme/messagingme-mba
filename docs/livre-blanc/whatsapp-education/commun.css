@@ -70,12 +70,12 @@ body{font-family:var(--texte);color:var(--encre);background:#888}
 .carte li::before{position:absolute;left:0;top:.2mm;width:3.8mm;height:3.8mm;border-radius:50%;display:grid;place-items:center;font-size:6.6pt;font-weight:800}
 .carte li.oui::before{content:"✓";background:var(--wa-pale);color:var(--wa-fonce)}
 .carte li.non::before{content:"✕";background:#FDE4E1;color:#C4351F}
-.carte li.note::before{content:"!";background:#FFF3C2;color:#8A6400}
+.carte li.alerte::before{content:"!";background:#FFF3C2;color:#8A6400}
 .carte.api{background:var(--nuit);color:var(--blanc);border:0;box-shadow:0 4mm 10mm -3mm rgb(1 6 48 / .45)}
 .carte.api .eti{color:var(--ciel)}
 .carte.api .pour{color:var(--wa)}
 .carte.api li.oui::before{background:var(--wa);color:var(--nuit)}
-.carte.api li.note::before{background:var(--soleil);color:var(--nuit)}
+.carte.api li.alerte::before{background:var(--soleil);color:var(--nuit)}
 .carte.api .badge{position:absolute;top:-4mm;right:-2mm;background:var(--soleil);color:var(--nuit);font-family:var(--titre);font-weight:800;
   font-size:8.2pt;padding:1.6mm 3.2mm;border-radius:99px;transform:rotate(5deg);box-shadow:0 1.5mm 0 rgb(1 6 48 / .2)}
 .encart{position:absolute;top:216mm;left:16mm;width:92mm;background:var(--bleu);color:var(--blanc);border-radius:6mm 6mm 6mm 1.5mm;padding:5.5mm 6mm 5.5mm;

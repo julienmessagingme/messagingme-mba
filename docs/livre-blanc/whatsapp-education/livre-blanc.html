@@ -67,6 +67,15 @@
 .paliers .bas-p{display:grid;grid-template-columns:repeat(5,1fr);gap:2.6mm;margin-top:2mm;font-size:6.8pt;color:rgb(255 255 255 / .7);line-height:1.3}
 .paliers .bas-p .auto{grid-column:3/6;border-top:.3mm dashed rgb(255 255 255 / .35);padding-top:1.4mm;text-align:center}
 .api-bas{display:grid;grid-template-columns:1fr 1fr;gap:7mm;align-items:start}
+.entete-wa{display:flex;align-items:center;gap:2.4mm;background:#fff;color:#111B21;border-radius:3mm;padding:2.2mm 3mm;margin:.6mm 0 3mm;box-shadow:0 2mm 5mm -2mm rgb(1 6 48 / .4)}
+.entete-wa .av{width:8mm;height:8mm;border-radius:50%;flex:none;display:grid;place-items:center;background:linear-gradient(135deg,var(--bleu),var(--nuit));color:#fff;font-family:var(--titre);font-weight:800;font-size:8pt}
+.entete-wa .nom{display:flex;align-items:center;gap:1.2mm;font-weight:700;font-size:10pt;line-height:1.2}
+.entete-wa small{display:block;font-size:7pt;color:#667781}
+.entete-wa .illus{margin-left:auto;align-self:flex-start;font-size:5.8pt;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#9AA1B6}
+.coche-v{position:relative;display:inline-block;width:4.2mm;height:4.2mm;flex:none}
+.coche-v::before,.coche-v::after{content:"";position:absolute;inset:.45mm;background:#1A8CFF;border-radius:.9mm}
+.coche-v::after{transform:rotate(45deg)}
+.coche-v svg{position:absolute;inset:0;width:100%;height:100%;z-index:1}
 
 /* ---------- Ce qui marche ---------- */
 .moments{display:flex;flex-direction:column;gap:2.6mm;position:relative}
@@ -254,6 +263,58 @@
 .colophon{margin-top:auto;display:flex;justify-content:space-between;align-items:end;border-top:.25mm solid rgb(255 255 255 / .16);padding-top:4mm;font-size:7.6pt;color:rgb(255 255 255 / .55)}
 .colophon img{height:6.4mm;display:block;margin-bottom:1.6mm}
 
+/* ---------- Les vrais écrans (2026-10-28) ---------- */
+.etapes-r{display:grid;grid-template-columns:50mm 6mm 42mm 6mm 1fr;align-items:start}
+.et{margin:0;display:flex;flex-direction:column;align-items:center;gap:3mm}
+.et .lab{align-self:flex-start;display:flex;align-items:center;gap:1.6mm;font-size:7.6pt;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ciel)}
+.et .lab i{font-style:normal;width:5.4mm;height:5.4mm;border-radius:50%;background:var(--soleil);color:var(--nuit);display:grid;place-items:center;font-family:var(--titre);font-size:8pt;letter-spacing:0}
+.et img{display:block}
+.et .pub-img{width:50mm;border-radius:2.4mm;box-shadow:0 3mm 9mm -2mm rgb(0 0 0 / .55)}
+.et .tel-img{width:42mm;filter:drop-shadow(0 3mm 6mm rgb(0 0 0 / .5))}
+.et .fiche-img{width:100%;border-radius:2.4mm;box-shadow:0 3mm 9mm -2mm rgb(0 0 0 / .55)}
+.et figcaption{font-size:7.8pt;line-height:1.38;color:rgb(255 255 255 / .82);text-align:center}
+.schema.reel .fleche{padding-top:0;align-self:center}
+.schema.reel{padding:6mm 6mm 6mm}
+.atout:last-child b{color:var(--bleu)}
+.iphone{width:264px;height:556px;border:0;zoom:.5;justify-self:center;background:transparent}
+.exemple{padding:5mm 6mm}
+.exemple{grid-template-columns:1.5fr 1fr}
+.neoma{margin:4mm 0 0;display:grid;grid-template-columns:44mm 1fr;gap:4mm;align-items:center}
+.neoma img{width:44mm;display:block;filter:drop-shadow(0 3mm 6mm rgb(1 6 48 / .3))}
+.neoma figcaption{font-size:9pt;line-height:1.48;color:#2A2F4A}
+.neoma figcaption .note{display:block;margin-top:2mm}
+
+/* ---------- La stratégie (2026-10-28) ---------- */
+.objectifs{display:flex;flex-direction:column;gap:2.2mm}
+.obj-tete,.obj{display:grid;grid-template-columns:1.35fr .95fr 1.2fr .85fr;gap:4mm;align-items:center}
+.obj-tete{padding:0 4.4mm;font-size:7pt;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--gris)}
+.obj{background:var(--blanc);border:.3mm solid var(--trait);border-radius:4mm;padding:3.4mm 4.4mm}
+.obj b{display:flex;align-items:center;gap:2mm;font-family:var(--titre);font-weight:800;font-variation-settings:"wdth" 85;font-size:11.6pt;line-height:1.1}
+.obj b i{font-style:normal;flex:none;width:6mm;height:6mm;border-radius:50%;background:var(--nuit);color:var(--soleil);display:grid;place-items:center;font-size:8pt}
+.obj small{display:block;font-size:8pt;line-height:1.35;color:var(--gris);margin-top:1.2mm;padding-left:8mm}
+.obj p{font-size:8.4pt;line-height:1.38;color:#2A2F4A}
+.obj .mesure{font-weight:700;color:var(--wa-fonce)}
+.obj > div:nth-child(2){display:flex;flex-direction:column;gap:1.2mm;align-items:flex-start}
+.btn-wa{display:inline-block;background:#fff;border:.3mm solid #D8DEE4;border-radius:2mm;padding:1.6mm 3mm;font-size:8.2pt;font-weight:600;color:#027EB5;box-shadow:0 .5mm 1mm rgb(11 20 26 / .1)}
+.btn-wa.lien::before{content:"↗ ";font-weight:700}
+.regle-or{align-self:center;background:var(--nuit);color:#fff;border-radius:5mm;padding:6mm;font-family:var(--titre);font-weight:800;font-size:21pt;line-height:1.05;font-variation-settings:"wdth" 82}
+.regle-or span{display:block;font-family:var(--texte);font-size:7.4pt;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--soleil);margin-bottom:2.4mm}
+/* Le zoom s'applique aussi au décalage : top et right sont écrits divisés par lui (172 mm et 20 mm à l'arrivée). */
+.iphone-couv{position:absolute;right:32mm;top:277mm;width:264px;height:556px;border:0;zoom:.62;background:transparent;transform:rotate(-4deg);z-index:2}
+
+/* ---------- La page CRM (2026-10-28) ---------- */
+.crm-g{display:grid;grid-template-columns:1.1fr .9fr;gap:6mm;align-items:start}
+.crm-fiche{margin:0}
+.crm-fiche img{width:100%;display:block;border-radius:3mm;box-shadow:0 4mm 12mm -4mm rgb(1 6 48 / .35)}
+.crm-fiche figcaption{font-size:8.4pt;color:#2A2F4A;margin-top:2.4mm}
+.crm-fiche figcaption span{color:var(--gris)}
+.crm-logos{display:flex;flex-direction:column;gap:3mm}
+.crm-l{background:var(--blanc);border:.3mm solid var(--trait);border-radius:4mm;padding:3.4mm 4mm}
+.crm-logo{height:9mm;display:flex;align-items:center;margin-bottom:1.6mm}
+.crm-logo img{max-height:9mm;max-width:42mm;display:block}
+.nom-crm{font-family:var(--titre);font-weight:800;font-size:14pt;color:var(--nuit)}
+.crm-l p{font-size:8.2pt;line-height:1.38;color:#2A2F4A}
+
 /* ---------- Corrections après relecture ---------- */
 .flux > .numero{font-size:118pt;top:12mm;right:11mm}
 .flux .chapo{max-width:150mm}
@@ -266,7 +327,8 @@
 .p-api{gap:4mm}
 .p-api .piece{padding:3.4mm 4.2mm}
 .p-api .piece p{font-size:8.4pt}
-.p-api .marches{height:25mm}
+.p-api .marches{height:22mm}
+.p-api .m1{height:10mm} .p-api .m2{height:13mm} .p-api .m3{height:16mm} .p-api .m4{height:19mm} .p-api .m5{height:22mm}
 .p-api .paliers{padding:4.2mm 5.6mm 4mm}
 .pub,.tel,.fiche{font-size:7.6pt}
 .pub .vis{height:26mm}
@@ -314,15 +376,11 @@
   <p class="sous serif">Le guide pour transformer chaque intérêt en conversation, et chaque conversation en candidature.</p>
   <div class="sommaire">
     <b>Dans ce guide</b>
-    <span>Comprendre l’API</span><span>Les chiffres</span><span>Click-to-WhatsApp</span>
+    <span>Comprendre l’API</span><span>La stratégie</span><span>Click-to-WhatsApp</span>
     <span>CRM &amp; relances</span><span>IA puis humain</span><span>Ce qui ne marche pas</span>
   </div>
-  <div class="fil">
-    <div class="bulle ecole"><span class="qui">Admissions · École de commerce</span>Bonjour Léa, votre dossier pour le Bachelor est complet. On prépare votre entretien avec l’équipe admissions ?<small>17:42</small></div>
-    <div class="bulle candidat">Oui, avec plaisir ! Jeudi en fin de journée, c’est possible ?<small>17:44 ✓✓</small></div>
-    <div class="choix"><span>Jeudi 18 h</span><span>Voir les créneaux</span></div>
-  </div>
-  <div class="bas"><strong>app.messagingme.fr</strong><span>La plateforme conversationnelle qui comprend chaque conversation.</span></div>
+  <iframe class="iphone-couv" src="telephone-rappel.html" title="Un rappel d’entretien sur WhatsApp" scrolling="no"></iframe>
+  <div class="bas"><strong>app.messagingme.fr</strong><span>Simplement conversationnel.</span></div>
 </section>
 
 <!-- ============ 2. ÉDITO ET SOMMAIRE ============ -->
@@ -343,15 +401,16 @@
         <li><b>01</b>Comprendre WhatsApp<i>03</i></li>
         <li><b>02</b>Le compte API, pièce par pièce<i>04</i></li>
         <li><b>03</b>Les chiffres<i>05</i></li>
-        <li><b>04</b>Le bon moment, la bonne valeur<i>06</i></li>
-        <li><b>05</b>Acquérir avec Click-to-WhatsApp<i>07</i></li>
-        <li><b>06</b>Ils le font déjà<i>08</i></li>
-        <li><b>07</b>L’automatisation CRM<i>09</i></li>
-        <li><b>08</b>Démarrer sans CRM<i>10</i></li>
-        <li><b>09</b>Relancer sans harceler<i>11</i></li>
-        <li><b>10</b>L’IA d’abord, l’humain ensuite<i>12</i></li>
-        <li><b>11</b>Ce qui ne marche pas<i>13</i></li>
-        <li class="fin"><b>✓</b>Votre check-list de démarrage<i>14</i></li>
+        <li><b>04</b>La stratégie : un objectif par conversation<i>06</i></li>
+        <li><b>05</b>Le bon moment, la bonne valeur<i>07</i></li>
+        <li><b>06</b>Acquérir avec Click-to-WhatsApp<i>08</i></li>
+        <li><b>07</b>Ils le font déjà<i>09</i></li>
+        <li><b>08</b>L’automatisation CRM<i>10</i></li>
+        <li><b>09</b>Démarrer sans CRM<i>11</i></li>
+        <li><b>10</b>Relancer sans harceler<i>12</i></li>
+        <li><b>11</b>L’IA d’abord, l’humain ensuite<i>13</i></li>
+        <li><b>12</b>Ce qui ne marche pas<i>14</i></li>
+        <li class="fin"><b>✓</b>Votre check-list de démarrage<i>15</i></li>
       </ol>
     </div>
   </div>
@@ -382,10 +441,10 @@
       <h3>WhatsApp Business</h3>
       <div class="pour">pour la petite structure</div>
       <ul>
-        <li class="oui">Gratuite, avec un profil d’entreprise</li>
-        <li class="oui">Réponses rapides et étiquettes</li>
+        <li class="oui">Gratuite, avec réponses rapides et étiquettes</li>
+        <li class="non">Le candidat voit un numéro, pas le nom de l’école</li>
         <li class="non">Diffusions limitées aux contacts qui ont enregistré votre numéro</li>
-        <li class="non">Pas de lien avec votre CRM</li>
+        <li class="non">Pas de lien avec votre CRM : ni industrialisation, ni automatisation</li>
       </ul>
     </div>
     <div class="carte api">
@@ -397,7 +456,7 @@
         <li class="oui">Campagnes vers des milliers de candidats qui ont donné leur accord</li>
         <li class="oui">Branchée sur votre CRM, vos formulaires et vos publicités</li>
         <li class="oui">Toute l’équipe admissions sur un seul numéro, l’IA en premier relais</li>
-        <li class="note">Écrire en premier passe par un modèle validé par Meta, facturé au message</li>
+        <li class="alerte">Écrire en premier passe par un modèle validé par Meta, facturé au message</li>
       </ul>
     </div>
   </div>
@@ -444,7 +503,12 @@
   <div class="api-bas">
     <div class="encart f">
       <div class="eti">La coche bleue</div>
-      <p><strong>Elle signale un compte officiel.</strong> Meta l’accorde sur demande, après examen, si l’école est sur la plateforme depuis 30 jours, si son portefeuille est vérifié, si le numéro a la double authentification et un nom d’affichage approuvé.</p>
+      <div class="entete-wa">
+        <div class="av">EH</div>
+        <div><div class="nom">École Horizon<span class="coche-v"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.6 8.3l2.2 2.2 4.6-4.8" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div><small>Compte officiel</small></div>
+        <span class="illus">Illustration</span>
+      </div>
+      <p><strong>Elle signale un compte officiel</strong>, à côté du nom. Meta l’accorde sur demande, après examen : 30 jours sur la plateforme, portefeuille vérifié, double authentification et nom d’affichage approuvé.</p>
       <p>Pas indispensable pour démarrer vos campagnes.</p>
     </div>
     <div class="retenir f">
@@ -456,7 +520,7 @@
       </ol>
     </div>
   </div>
-  <p class="note">Source : Meta, documentation de la WhatsApp Business Platform, pages « Messaging limits » et « Official Business Accounts », consultées le 28 octobre 2026.</p>
+  <p class="note">Source : Meta, documentation WhatsApp Business Platform (« Messaging limits », « Official Business Accounts »), octobre 2026.</p>
   <div class="signature">Messaging Me · Livre blanc 2026</div>
   <div class="folio">04</div>
 </section>
@@ -472,8 +536,8 @@
       <p class="petit">Indice 41,5, devant Samsung (41,4).</p>
     </div>
     <div class="tuile t-audience">
-      <div class="gros titre">49,2 M</div>
-      <p>de visiteurs uniques chaque mois en France : la 3<sup style="font-size:.62em;margin:0;vertical-align:.45em">e</sup>&nbsp;marque la plus visitée du pays.<sup>2</sup></p>
+      <div class="gros titre">56 M</div>
+      <p>d’utilisateurs de WhatsApp en France.<sup>2</sup></p>
     </div>
     <div class="tuile t-ouvert">
       <div class="gros titre">891</div>
@@ -497,14 +561,43 @@
       <p>d’échange libre après chaque réponse d’un candidat.</p>
     </div>
   </div>
-  <p class="sources"><b>Sources.</b> 1. YouGov, Best Brand Rankings 2026, indices BrandIndex du 1<sup>er</sup> janvier au 31 décembre 2025 (article du 9 février 2026). 2. Médiamétrie, Audience Internet Global, février 2026, internautes de 11 ans et plus. 3. Enquête Kantar pour Meta, citée dans l’étude BCG et Meta du 9 avril 2026. 4. Étude BCG et Meta, 9 avril 2026. 5. Meta, Top Trends 2026 (891 ouvertures par mois).</p>
+  <p class="sources"><b>Sources.</b> 1. YouGov, Best Brand Rankings 2026, indices BrandIndex du 1<sup>er</sup> janvier au 31 décembre 2025 (article du 9 février 2026). 2. Meta, 2026. 3. Enquête Kantar pour Meta, citée dans l’étude BCG et Meta du 9 avril 2026. 4. Étude BCG et Meta, 9 avril 2026. 5. Meta, Top Trends 2026 (891 ouvertures par mois).</p>
   <div class="folio">05</div>
+</section>
+
+<!-- ============ 6 bis. 04 LA STRATÉGIE ============ -->
+<section class="page flux p-strat">
+  <div class="course"><span class="chap">04 · La stratégie</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">04</div>
+  <h2 class="titre">Avant d’écrire, <em>fixez l’objectif</em>.</h2>
+  <p class="chapo">Une conversation sans objectif s’arrête au premier « merci ». <strong>Chaque message sert une intention, et une seule</strong> : c’est elle qui décide du texte, du bouton, de qui reprend la main et de ce que vous mesurerez.</p>
+  <div class="objectifs">
+    <div class="obj-tete"><span>L’objectif</span><span>Le bouton</span><span>La suite</span><span>On mesure</span></div>
+    <div class="obj"><div><b><i>1</i>Prendre un rendez-vous</b><small>Entretien d’admission, visite du campus, appel avec un conseiller.</small></div><div><span class="btn-wa">Choisir un créneau</span></div><p>Le rendez-vous part dans l’agenda de l’équipe ; le rappel arrive la veille.</p><p class="mesure">Rendez-vous pris, présents</p></div>
+    <div class="obj"><div><b><i>2</i>Faire reprendre par une personne</b><small>Un dossier complexe, un financement, un candidat international.</small></div><div><span class="btn-wa">Parler à un conseiller</span></div><p>La conversation arrive à l’équipe ou à un ambassadeur, avec tout son historique.</p><p class="mesure">Délai de reprise, conversations traitées</p></div>
+    <div class="obj"><div><b><i>3</i>Renvoyer vers votre site</b><small>La candidature en ligne, la page du programme, le dépôt d’une pièce.</small></div><div><span class="btn-wa lien">Déposer ma candidature</span></div><p>Une relance part si la candidature n’est pas finalisée.</p><p class="mesure">Clics, candidatures déposées</p></div>
+    <div class="obj"><div><b><i>4</i>Inscrire à un événement</b><small>Journée portes ouvertes, webinar, journée d’immersion.</small></div><div><span class="btn-wa">Je m’inscris</span></div><p>La confirmation, le rappel la veille, le plan d’accès ou le lien du webinar.</p><p class="mesure">Inscrits, présents</p></div>
+    <div class="obj"><div><b><i>5</i>Qualifier pour orienter</b><small>Niveau d’études, programme visé, campus, financement.</small></div><div><span class="btn-wa">Terminale</span><span class="btn-wa">Bac +2</span></div><p>Le candidat part dans le bon parcours, et sa fiche CRM se complète toute seule.</p><p class="mesure">Fiches complétées, répartition par programme</p></div>
+  </div>
+  <div class="api-bas">
+    <div class="regle-or"><span>La règle</span>Un message, un objectif, un bouton.</div>
+    <div class="retenir f">
+      <div class="etiquette">À retenir</div>
+      <ol>
+        <li>Écrivez l’objectif avant d’écrire le message.</li>
+        <li>Un seul bouton principal : celui de l’objectif.</li>
+        <li>Décidez à l’avance qui reprend, et comment vous saurez que ça a marché.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="signature">Messaging Me · Livre blanc 2026</div>
+  <div class="folio">06</div>
 </section>
 
 <!-- ============ 6. 04 LE BON MOMENT ============ -->
 <section class="page flux">
-  <div class="course"><span class="chap">04 · Ce qui marche</span><span>Recruter sur WhatsApp</span></div>
-  <div class="numero titre">04</div>
+  <div class="course"><span class="chap">05 · Ce qui marche</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">05</div>
   <h2 class="titre">Le bon moment. Ou quelque chose <em>qui a de la valeur</em>.</h2>
   <p class="chapo">Un message WhatsApp qui marche répond à l’une de deux questions : <strong>que vient de faire le candidat ? Que puis-je lui apporter ?</strong> S’il ne répond à aucune des deux, il ne part pas.</p>
   <div class="deux">
@@ -538,74 +631,50 @@
     </ol>
   </div>
   <div class="signature">Messaging Me · Livre blanc 2026</div>
-  <div class="folio">06</div>
+  <div class="folio">07</div>
 </section>
 
 <!-- ============ 7. 05 CLICK-TO-WHATSAPP ============ -->
 <section class="page flux">
-  <div class="course"><span class="chap">05 · Click-to-WhatsApp</span><span>Recruter sur WhatsApp</span></div>
-  <div class="numero titre">05</div>
+  <div class="course"><span class="chap">06 · Click-to-WhatsApp</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">06</div>
   <h2 class="titre">Acquérir : de la pub à la conversation, <em>en un geste</em>.</h2>
   <p class="chapo">Une publicité Click-to-WhatsApp, c’est une pub Facebook ou Instagram dont le bouton ouvre une conversation WhatsApp avec votre école. <strong>Pas de page d’atterrissage, pas de formulaire</strong> : le candidat arrive avec un message déjà écrit, et votre scénario lui répond dans la seconde.</p>
-  <div class="schema">
-    <div class="etapes4">
-      <div class="etape">
+  <div class="schema reel">
+    <div class="etapes-r">
+      <figure class="et">
         <div class="lab"><i>1</i>La pub</div>
-        <div class="pub">
-          <div class="t"><div class="av"></div><div><b>École Horizon</b><small>Sponsorisé</small></div></div>
-          <div class="txt">Votre projet à l’international commence par une question.</div>
-          <div class="vis"><b>Bachelor International</b><span>Rentrée 2027 · 4 campus</span></div>
-          <div class="bt">Envoyer un message WhatsApp</div>
-        </div>
-      </div>
+        <img class="pub-img" src="../../../site/img/education-edhec-publicite.webp" alt="Une publicité EDHEC International BBA dont le bouton ouvre une conversation WhatsApp">
+        <figcaption>Un bouton WhatsApp, à la place d’un formulaire.</figcaption>
+      </figure>
       <div class="fleche">→</div>
-      <div class="etape">
-        <div class="lab"><i>2</i>Le clic</div>
-        <div class="tel">
-          <div class="entete"><div class="av"></div>École Horizon</div>
-          <div class="b-out">Bonjour ! Je voudrais des informations sur le Bachelor International.</div>
-          <div class="b-in"><span class="ia">Assistant de l’école</span>Avec plaisir ! Vous êtes en terminale, ou déjà dans le supérieur ?</div>
-          <div class="puces"><span>Terminale</span><span>Bac +1 ou +2</span></div>
-        </div>
-      </div>
+      <figure class="et">
+        <div class="lab"><i>2</i>La conversation</div>
+        <img class="tel-img" src="../../../site/img/education-edh-international.webp" alt="Venu d’une publicité Instagram, un candidat étranger échange avec EDH sur WhatsApp">
+        <figcaption>Le candidat arrive avec un message déjà écrit ; l’assistant le qualifie en quelques boutons.</figcaption>
+      </figure>
       <div class="fleche">→</div>
-      <div class="etape">
-        <div class="lab"><i>3</i>La qualification</div>
-        <div class="tel">
-          <div class="b-out">Terminale. Et il y a des bourses ?</div>
-          <div class="b-in"><span class="ia">Assistant de l’école</span>Oui, sur critères sociaux et au mérite. Je vous mets en relation avec Inès, des admissions : elle vous écrit ici même.</div>
-        </div>
-      </div>
-      <div class="fleche">→</div>
-      <div class="etape">
-        <div class="lab"><i>4</i>La reprise</div>
-        <div class="fiche">
-          <div class="nm"><div class="av">CM</div>Camille M.</div>
-          <span class="tag">Prospect qualifié</span>
-          <dl><dt>Programme</dt><dd>Bachelor International</dd><dt>Niveau</dt><dd>Terminale</dd><dt>Intention</dt><dd>Financement</dd><dt>Source</dt><dd>Pub Instagram</dd></dl>
-          <div class="qui">→ Inès, admissions, reprend</div>
-        </div>
-      </div>
+      <figure class="et">
+        <div class="lab"><i>3</i>La reprise</div>
+        <img class="fiche-img" src="img/fiche-candidat.png" alt="La fiche de la candidate dans le CRM, mise à jour par Messaging Me">
+        <figcaption>La fiche arrive dans le CRM, analysée, avec la prochaine action pour l’équipe admissions.</figcaption>
+      </figure>
     </div>
   </div>
   <div class="trois">
     <div class="atout"><b>72 h</b><p>de messages offerts après le clic : vous ne payez que la pub.</p></div>
     <div class="atout"><b>1 écran</b><p>La pub, le scénario qui répond et les résultats, au même endroit dans Messaging Me.</p></div>
-    <div class="atout"><b>€ / qualifié</b><p>Coût par clic, par prospect et par conversation qualifiée : vous coupez ou relancez, pub par pub.</p></div>
+    <div class="atout"><b>11 pays</b><p>où le Groupe EDH promeut ses écoles avec des campagnes Click-to-WhatsApp.</p></div>
   </div>
-  <div class="encart f">
-    <div class="eti">Sur le terrain</div>
-    <p><strong>Le Groupe EDH</strong> promeut ainsi ses écoles et ses formations <strong>dans 11 pays</strong>, avec des campagnes Click-to-WhatsApp et des messages marketing.</p>
-  </div>
-  <p class="note">Exemple illustratif : l’école, la publicité et la candidate sont fictives. Cas EDH : cas client présenté par Messaging Me, mai 2026.</p>
+  <p class="note">Publicité EDHEC International BBA et conversation du Groupe EDH : cas clients présentés par Messaging Me, mai 2026. La fiche CRM est un exemple.</p>
   <div class="signature">Messaging Me · Livre blanc 2026</div>
-  <div class="folio">07</div>
+  <div class="folio">08</div>
 </section>
 
 <!-- ============ 8. 06 ILS LE FONT DÉJÀ ============ -->
 <section class="page flux nuit-p cas-p">
-  <div class="course"><span class="chap">06 · Ils le font déjà</span><span>Recruter sur WhatsApp</span></div>
-  <div class="numero titre">06</div>
+  <div class="course"><span class="chap">07 · Ils le font déjà</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">07</div>
   <h2 class="titre">Ils le font déjà.</h2>
   <p class="citation">Trois écoles, trois façons d’engager la conversation.</p>
   <div class="cas-g">
@@ -639,13 +708,13 @@
   <p class="citation" style="font-size:21pt;color:rgb(255 255 255 / .85)">Le point commun : chaque message arrive au moment où le candidat a une décision à prendre.</p>
   <p class="note">Source : cas clients présentés par Messaging Me, mai 2026.</p>
   <div class="signature">Messaging Me · Livre blanc 2026</div>
-  <div class="folio">08</div>
+  <div class="folio">09</div>
 </section>
 
 <!-- ============ 9. 07 L'AUTOMATISATION CRM ============ -->
 <section class="page flux">
-  <div class="course"><span class="chap">07 · L’automatisation CRM</span><span>Recruter sur WhatsApp</span></div>
-  <div class="numero titre">07</div>
+  <div class="course"><span class="chap">08 · L’automatisation CRM</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">08</div>
   <h2 class="titre">L’automatisation CRM : <em>le moteur</em> de ce qui marche.</h2>
   <p class="chapo">Votre CRM sait où en est chaque candidat. L’automatisation, c’est laisser <strong>chaque changement d’étape déclencher le bon message WhatsApp</strong>, puis faire revenir la réponse dans la fiche. Personne n’envoie rien à la main, et personne n’oublie personne.</p>
   <div class="boucle">
@@ -658,24 +727,26 @@
     <div class="noeud fin"><i>4</i><b>L’analyse revient dans la fiche</b><span>Intention, urgence, prochaine action : on sait qui appeler.</span></div>
     <div class="retour"><span>et la boucle recommence à l’étape suivante</span></div>
   </div>
-  <div class="captures">
-    <div class="capture"><div class="fen"><div class="barre-f"><i></i><i></i><i></i><b>HubSpot</b></div><div class="vide">Capture HubSpot<br>à venir</div></div>
-      <h4>HubSpot</h4><p>L’analyse de chaque conversation arrive dans HubSpot, et vos listes HubSpot deviennent des audiences de campagne.</p></div>
-    <div class="capture"><div class="fen"><div class="barre-f"><i></i><i></i><i></i><b>Salesforce</b></div><div class="vide">Capture Salesforce<br>à venir</div></div>
-      <h4>Salesforce</h4><p>L’analyse de chaque conversation arrive dans Salesforce : votre équipe sait qui appeler, et quand.</p></div>
-    <div class="capture"><div class="fen"><div class="barre-f"><i></i><i></i><i></i><b>Microsoft Dynamics</b></div><div class="vide">Capture Microsoft Dynamics<br>à venir</div></div>
-      <h4>Microsoft Dynamics</h4><p>Par l’API ou un webhook : votre CRM prévient Messaging Me à chaque changement d’étape.</p></div>
-    <div class="capture"><div class="fen"><div class="barre-f"><i></i><i></i><i></i><b>Oscar</b></div><div class="vide">Capture Oscar<br>à venir</div></div>
-      <h4>Oscar</h4><p>Même principe : un appel à l’API ou un webhook au changement d’étape, ou un export importé.</p></div>
+  <div class="crm-g">
+    <figure class="crm-fiche">
+      <img src="img/fiche-candidat.png" alt="La fiche d’une candidate dans le CRM, mise à jour par Messaging Me">
+      <figcaption>Ce que votre équipe voit dans le CRM, après chaque conversation. <span>Exemple.</span></figcaption>
+    </figure>
+    <div class="crm-logos">
+      <div class="crm-l"><div class="crm-logo"><span class="nom-crm">HubSpot</span></div><p>L’analyse de chaque conversation arrive dans HubSpot, et vos listes HubSpot deviennent des audiences de campagne.</p></div>
+      <div class="crm-l"><div class="crm-logo"><span class="nom-crm">Salesforce</span></div><p>L’analyse de chaque conversation arrive dans Salesforce : votre équipe sait qui appeler, et quand.</p></div>
+      <div class="crm-l"><div class="crm-logo"><span class="nom-crm">Microsoft Dynamics 365</span></div><p>Par l’API ou un webhook : votre CRM prévient Messaging Me à chaque changement d’étape.</p></div>
+      <div class="crm-l"><div class="crm-logo"><span class="nom-crm">Oscar</span></div><p>Même principe : un appel à l’API ou un webhook au changement d’étape, ou un export importé.</p></div>
+    </div>
   </div>
   <div class="signature">Messaging Me · Livre blanc 2026</div>
-  <div class="folio">09</div>
+  <div class="folio">10</div>
 </section>
 
 <!-- ============ 10. 08 DÉMARRER SANS CRM ============ -->
 <section class="page flux">
-  <div class="course"><span class="chap">08 · Démarrer sans CRM</span><span>Recruter sur WhatsApp</span></div>
-  <div class="numero titre">08</div>
+  <div class="course"><span class="chap">09 · Démarrer sans CRM</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">09</div>
   <h2 class="titre">Pas de CRM branché ? <em>Commencez quand même</em>.</h2>
   <div class="non-g">
     <div class="gros-non">Non.</div>
@@ -692,11 +763,7 @@
       <h3>Tous les candidats convoqués aux entretiens.</h3>
       <p>Vous importez la liste avec la date de chaque entretien. Messaging Me envoie seul un rappel 48 heures avant, avec le lieu et deux boutons : « Je confirme » et « Je dois décaler ». Une date reportée ? Le rappel suit la nouvelle date.</p>
     </div>
-    <div class="tel modele">
-      <div class="entete"><div class="av"></div>École Horizon</div>
-      <div class="b-in"><span class="gabarit">Modèle · rappel</span>Bonjour Hugo, votre entretien d’admission a lieu jeudi à 14 h, campus de Lyon, salle B204. À jeudi !
-        <div class="boutons"><span>Je confirme</span><span>Je dois décaler</span></div></div>
-    </div>
+    <iframe class="iphone" src="telephone-rappel.html" title="Le rappel d’entretien sur WhatsApp" scrolling="no"></iframe>
   </div>
   <div class="api-bas">
     <div class="encart f">
@@ -713,13 +780,13 @@
     </div>
   </div>
   <div class="signature">Messaging Me · Livre blanc 2026</div>
-  <div class="folio">10</div>
+  <div class="folio">11</div>
 </section>
 
 <!-- ============ 11. 09 RELANCER SANS HARCELER ============ -->
 <section class="page flux nuit-p rel-p">
-  <div class="course"><span class="chap">09 · Les relances</span><span>Recruter sur WhatsApp</span></div>
-  <div class="numero titre">09</div>
+  <div class="course"><span class="chap">10 · Les relances</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">10</div>
   <h2 class="titre">Relancer <em>sans harceler</em>.</h2>
   <p class="chapo">Une relance n’est pas le même message envoyé deux fois. <strong>C’est un autre angle, au bon moment</strong>, et elle s’arrête dès que le candidat répond.</p>
   <div class="frise">
@@ -745,13 +812,13 @@
     </ol>
   </div>
   <div class="signature">Messaging Me · Livre blanc 2026</div>
-  <div class="folio">11</div>
+  <div class="folio">12</div>
 </section>
 
 <!-- ============ 12. 10 L'IA D'ABORD ============ -->
 <section class="page flux">
-  <div class="course"><span class="chap">10 · L’IA puis l’humain</span><span>Recruter sur WhatsApp</span></div>
-  <div class="numero titre">10</div>
+  <div class="course"><span class="chap">11 · L’IA puis l’humain</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">11</div>
   <h2 class="titre">L’IA d’abord. Vos équipes ensuite. <em>Vos ambassadeurs aussi</em>.</h2>
   <div class="hyb">
     <div>
@@ -760,15 +827,10 @@
         <p>Une IA répond tout de suite, jour et nuit, à partir de vos contenus : programmes, frais, admissions, logement. Elle annonce qu’elle est une IA.</p>
         <p>Dès qu’une question sort de ce qu’elle sait, ou qu’un candidat demande à parler à quelqu’un, <strong>elle passe la main à un humain</strong>, et ne reprend pas la parole d’elle-même.</p>
       </div>
-      <div class="fil-h">
-        <div class="b-out">Bonjour, le Bachelor est-il accessible en alternance ?<small style="display:block;text-align:right;font-size:6pt;color:#667781">23:14</small></div>
-        <div class="b-in ia"><span class="qui">ASSISTANT DE L’ÉCOLE · 23:14</span>Vous échangez avec un assistant automatique. Oui, à partir de la 3e année, en alternance.</div>
-        <div class="b-out">Et la vie étudiante, ça ressemble à quoi ? Je peux parler à un étudiant ?</div>
-        <div class="b-in ia"><span class="qui">ASSISTANT DE L’ÉCOLE</span>Je vous mets en relation avec Inès, étudiante ambassadrice. Elle vous répond ici même.</div>
-        <div class="relais">Conversation attribuée à Inès</div>
-        <div class="b-in amb"><span class="qui">INÈS · AMBASSADRICE · 9:02</span>Bonjour ! Je suis en 2e année. Posez-moi toutes vos questions sur la vie du campus.</div>
-      </div>
-      <p class="note" style="margin-top:2mm">Exemple illustratif, école fictive.</p>
+      <figure class="neoma">
+        <img src="../../../site/img/education-neoma-oraux.webp" alt="NEOMA invite ses admissibles à un webinar sur WhatsApp, puis oriente une question vers le service Admissions">
+        <figcaption><strong>NEOMA.</strong> L’assistant invite les admissibles au webinar des oraux, répond, puis transmet une question au service Admissions : un conseiller prend le relais.<span class="note">Cas client présenté par Messaging Me, mai 2026.</span></figcaption>
+      </figure>
     </div>
     <div class="roles">
       <div class="role r-ia"><div class="ic">IA</div><div><h4>L’IA</h4><ul><li>Répond en quelques secondes, à toute heure</li><li>S’appuie uniquement sur vos contenus</li><li>Annonce qu’elle est une IA</li></ul></div></div>
@@ -785,13 +847,13 @@
     </div>
   </div>
   <div class="signature">Messaging Me · Livre blanc 2026</div>
-  <div class="folio">12</div>
+  <div class="folio">13</div>
 </section>
 
 <!-- ============ 13. 11 CE QUI NE MARCHE PAS ============ -->
 <section class="page flux jaune">
-  <div class="course"><span class="chap">11 · Ce qui ne marche pas</span><span>Recruter sur WhatsApp</span></div>
-  <div class="numero titre">11</div>
+  <div class="course"><span class="chap">12 · Ce qui ne marche pas</span><span>Recruter sur WhatsApp</span></div>
+  <div class="numero titre">12</div>
   <h2 class="titre">Ce qui ne marche pas : le marketing pur.</h2>
   <p class="citation">WhatsApp n’est pas un e-mail de plus. C’est une conversation, ou ce n’est rien.</p>
   <div class="duel">
@@ -824,7 +886,7 @@
   </div>
   <div class="gravite"><b>!</b><p><strong>Pourquoi c’est grave.</strong> Chaque candidat qui bloque ou signale votre numéro fait baisser sa qualité aux yeux de Meta. Et la qualité de vos messages décide de vos limites d’envoi.</p></div>
   <div class="signature">Messaging Me · Livre blanc 2026</div>
-  <div class="folio">13</div>
+  <div class="folio">14</div>
 </section>
 
 <!-- ============ 14. CHECK-LIST ET CONTACT ============ -->
@@ -851,7 +913,7 @@
     </div>
   </div>
   <div class="colophon">
-    <div><img src="../../../site/messagingme-logo-blanc.png" alt="Messaging Me">La plateforme conversationnelle qui comprend chaque conversation.</div>
+    <div><img src="../../../site/messagingme-logo-blanc.png" alt="Messaging Me">Simplement conversationnel.</div>
     <div style="text-align:right">© 2026 Messaging Me<br>6, rue d’Armaillé, 75017 Paris</div>
   </div>
 </section>
