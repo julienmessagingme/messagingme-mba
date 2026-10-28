@@ -69,6 +69,16 @@
       "source": "/en/use-cases/",
       "destination": "/en/solutions/saas-and-app-builders/",
       "permanent": true
+    },
+    {
+      "source": "/whatsapp",
+      "destination": "https://wa.me/33525680250?text=Bonjour%2C%20je%20viens%20du%20livre%20blanc%20Recruter%20sur%20WhatsApp",
+      "permanent": false
+    },
+    {
+      "source": "/whatsapp/",
+      "destination": "https://wa.me/33525680250?text=Bonjour%2C%20je%20viens%20du%20livre%20blanc%20Recruter%20sur%20WhatsApp",
+      "permanent": false
     }
   ],
   "headers": [
