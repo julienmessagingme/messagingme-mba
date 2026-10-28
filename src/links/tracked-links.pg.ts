@@ -31,6 +31,10 @@ export interface LienTrace extends CibleLien {
 export interface DestinationLien {
   tenantId: string;
   destination: string;
+  /** Le modèle WhatsApp du lien (`null` pour un message RCS) : la campagne de nos UTM (plan 2026-10-28, tâche 6a). */
+  modele: string | null;
+  /** L'espace a une boutique Shopify branchée : alors seulement, la redirection porte nos UTM. */
+  boutique: boolean;
 }
 
 /** Identité du clic et valeurs utilisables dans une destination à champs. */
@@ -116,12 +120,14 @@ export class PgTrackedLinkStore {
    * livrés, et un lien qui marche sans être mesuré vaut mieux qu'un lien mort.
    */
   async getByCode(code: string): Promise<DestinationLien | null> {
-    const res = await this.pool.query<{ tenant_id: string; destination: string }>(
-      `select tenant_id, destination from tracked_links where code = lower($1)`,
+    const res = await this.pool.query<{ tenant_id: string; destination: string; template_name: string | null; boutique: boolean }>(
+      `select l.tenant_id, l.destination, l.template_name,
+              exists (select 1 from shopify_boutiques b where b.tenant_id = l.tenant_id and b.etat = 'connectee') as boutique
+         from tracked_links l where l.code = lower($1)`,
       [code],
     );
     const r = res.rows[0];
-    return r ? { tenantId: r.tenant_id, destination: r.destination } : null;
+    return r ? { tenantId: r.tenant_id, destination: r.destination, modele: r.template_name, boutique: r.boutique } : null;
   }
 
   /**

@@ -23,7 +23,7 @@ function app(over: Partial<LiensDep & Pick<LinksRouteDeps, 'signalerClic' | 'enV
       ...liensInertes,
       getByCode: async (code): Promise<DestinationLien | null> => {
         cap.lus.push(code);
-        return code === CODE ? { tenantId: 't1', destination: 'https://client.fr/promo' } : null;
+        return code === CODE ? { tenantId: 't1', destination: 'https://client.fr/promo', modele: null, boutique: false } : null;
       },
       recordClick: async (code, tenantId) => { cap.clics.push({ code, tenantId }); },
       ...liens,
@@ -92,7 +92,7 @@ describe('redirection publique /r/:code', () => {
   it('🔴 destination devenue INVALIDE -> refus, PAS de redirection (garde open redirect à la lecture)', async () => {
     // Notre domaine ne doit jamais servir de tremplin. La destination a été validée à l'écriture, mais une
     // ligne modifiée hors console, ou une règle durcie depuis, ne doit pas passer.
-    const { server, cap } = app({ getByCode: async () => ({ tenantId: 't1', destination: 'javascript:alert(1)' }) });
+    const { server, cap } = app({ getByCode: async () => ({ tenantId: 't1', destination: 'javascript:alert(1)', modele: null, boutique: false }) });
     const res = await server.inject({ method: 'GET', url: `/r/${CODE}` });
     expect(res.statusCode).toBe(422);
     expect(res.headers.location).toBeUndefined();
@@ -246,7 +246,7 @@ describe('RC7 : une destination à champs se remplit AU CLIC avec la fiche de ce
   function appChamps(destination: string, fiches: Record<string, Record<string, string | null>> = {}, over: Partial<LiensDep> = {}) {
     const lectures: Array<{ tenantId: string; jeton: string; avecChamps: boolean }> = [];
     const { server, cap } = app({
-      getByCode: async (code) => (code === CODE ? { tenantId: 't1', destination } : null),
+      getByCode: async (code) => (code === CODE ? { tenantId: 't1', destination, modele: null, boutique: false } : null),
       resoudreJeton: async (tenantId, jeton, avecChamps) => {
         lectures.push({ tenantId, jeton, avecChamps });
         const champs = fiches[`${tenantId}:${jeton}`];
@@ -389,5 +389,37 @@ describe('RC7 : une destination à champs se remplit AU CLIC avec la fiche de ce
       expect(lectures, destination).toEqual([{ tenantId: 't1', jeton: JETON, avecChamps: false }]);
       await server.close();
     }
+  });
+});
+
+/** Les UTM de nos liens (plan 2026-10-28, tâche 6a) : seulement pour un espace qui a une boutique Shopify branchée. */
+describe('les UTM de la redirection', () => {
+  const lien = (boutique: boolean, destination = 'https://boutique.fr/commande/{numero_commande}', modele: string | null = 'soldes_hiver') =>
+    async (code: string): Promise<DestinationLien | null> => (code === CODE ? { tenantId: 't1', destination, modele, boutique } : null);
+  const JETON = 'abcdefghjkmnpqrs';
+
+  it('sans boutique branchée, la destination ne change pas', async () => {
+    const { server } = app({ getByCode: lien(false, 'https://client.fr/promo') });
+    const res = await server.inject({ method: 'GET', url: `/r/${CODE}` });
+    expect(res.headers.location).toBe('https://client.fr/promo');
+    await server.close();
+  });
+
+  it('avec boutique, la redirection porte les UTM, APRÈS le remplissage des champs', async () => {
+    const { server } = app({
+      getByCode: lien(true),
+      resoudreJeton: async () => ({ contactId: 'contact-1', champs: { numero_commande: 'A1234' } }),
+    });
+    const res = await server.inject({ method: 'GET', url: `/r/${CODE}/${JETON}` });
+    expect(res.statusCode).toBe(302);
+    expect(res.headers.location).toBe('https://boutique.fr/commande/A1234?utm_source=whatsapp&utm_medium=messagingme&utm_campaign=soldes_hiver');
+    await server.close();
+  });
+
+  it('un lien sans modèle (message RCS) ne porte pas d’UTM WhatsApp', async () => {
+    const { server } = app({ getByCode: lien(true, 'https://boutique.fr/', null) });
+    const res = await server.inject({ method: 'GET', url: `/r/${CODE}` });
+    expect(res.headers.location).toBe('https://boutique.fr/');
+    await server.close();
   });
 });

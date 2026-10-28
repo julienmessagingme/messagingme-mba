@@ -4,6 +4,7 @@ import { estClicAutomatique } from '../links/clic-automatique';
 import { estJeton } from '../links/jeton-contact';
 import { porteDesChamps, remplirChampsUrl } from '../links/champs-url';
 import type { DestinationLien, ResolutionJetonLien } from '../links/tracked-links.pg';
+import { avecUtm } from '../links/utm';
 import { journaliser } from '../lib/journal';
 import { escapeHtml as echappe } from '../crm/render';
 import type { TravauxEnVol } from '../lib/en-vol';
@@ -150,6 +151,10 @@ export function registerLinks(app: FastifyInstance, deps: LinksRouteDeps): void 
         location = remplirChampsUrl(lien.destination, null);
       }
     }
+
+    // Nos UTM, APRÈS les champs, pour un lien de modèle d'un espace qui a une boutique Shopify : Shopify les relit dans le
+    // parcours de la commande, et c'est la preuve de la vente (plan 2026-10-28, tâche 6a). Jamais par-dessus ceux du marchand.
+    if (lien.boutique && lien.modele) location = avecUtm(location, lien.modele);
 
     // 302 et non 301 : un 301 est mis en cache par le navigateur, qui n'appellerait plus jamais notre route.
     // On perdrait tous les clics suivants de la même personne, et on ne pourrait plus changer la destination.
