@@ -95,10 +95,15 @@ describe.each(['fr', 'en'] as const)('la page du livre blanc (%s) et sa route', 
     expect(deposes).toHaveLength(0);
   });
 
-  it('la page « merci » porte le PDF, et le PDF existe', () => {
+  // Chaque langue a son PDF (le livre blanc anglais depuis le 2026-10-28), et c'est un vrai PDF : un patch qui l'aurait
+  // converti en texte (Git for Windows, `diff=astextplain`) passerait le seul test d'existence.
+  it('la page « merci » porte le PDF de sa langue, et le PDF existe', () => {
     const lien = /<a class="bouton bouton-plein" href="([^"]+\.pdf)" download>/.exec(page(pages.merci));
     expect(lien).not.toBeNull();
-    expect(existsSync(fichier(lien![1]!))).toBe(true);
+    expect(lien![1]).toBe(langue === 'fr'
+      ? '/livre-blanc/whatsapp-education/livre-blanc-recruter-sur-whatsapp.pdf'
+      : '/livre-blanc/whatsapp-education/white-paper-recruiting-on-whatsapp.pdf');
+    expect(readFileSync(fichier(lien![1]!)).subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
 
   it('un envoi refusé revient sur ce formulaire, que site.js sait signaler', async () => {

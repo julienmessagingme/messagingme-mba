@@ -3,7 +3,8 @@
 //   node scripts/livre-blanc/imprimer.mjs docs/livre-blanc/whatsapp-education/livre-blanc.html sortie.pdf [dossier-images]
 //
 // La typographie française (espace fine insécable avant ; : ? ! % » et après «) se pose ici, sur le texte de la page
-// seulement : la source reste lisible et l'éditer n'oblige pas à taper des espaces invisibles. Avec un dossier d'images,
+// seulement, et seulement si la page est en français (`lang`) : la source reste lisible et l'éditer n'oblige pas à taper
+// des espaces invisibles. Avec un dossier d'images,
 // chaque page y est aussi rendue en PNG, pour relire la mise en page sans ouvrir le PDF.
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -22,6 +23,7 @@ const navigateur = await chromium.launch();
 const page = await navigateur.newPage({ viewport: { width: 794, height: 1123 }, deviceScaleFactor: 1.5 });
 await page.goto(pathToFileURL(resolve(source)).href, { waitUntil: 'networkidle' });
 await page.evaluate(() => {
+  if (!document.documentElement.lang.startsWith('fr')) return document.fonts.ready;
   const textes = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = textes.nextNode(); n; n = textes.nextNode()) {
     n.nodeValue = n.nodeValue.replace(/ ([;:?!%»])/g, ' $1').replace(/« /g, '« ');

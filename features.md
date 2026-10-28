@@ -91,8 +91,10 @@ accompagner, faire avancer) avec chacun un exemple de conversation entre l'écol
 l'appel « Parlons de vos recrutements ». Les écrans de NEOMA et d'EDH sont en iPhone 3D, les trois écoles en logos.
 
 ✅ **La vitrine a son livre blanc des écoles** (2026-10-28, en service) : « Recruter sur WhatsApp », 15 pages, sur
-`app.messagingme.fr/livre-blanc/whatsapp-education/` (jumelle `/en/white-paper/whatsapp-education/`, qui dit que le PDF
-est en français), annoncé par une section de la page Enseignement supérieur. Le visiteur laisse prénom, nom, e-mail
+`app.messagingme.fr/livre-blanc/whatsapp-education/`, annoncé par une section de la page Enseignement supérieur. Sa
+jumelle `/en/white-paper/whatsapp-education/` donne la version anglaise, « Recruiting on WhatsApp » (2026-10-28 au soir) :
+les captures des trois écoles y restent en français, comme elles ont été publiées, et le QR code de la dernière page
+ouvre WhatsApp avec un premier message en anglais. Le visiteur laisse prénom, nom, e-mail
 professionnel, établissement, fonction et téléphone portable, et peut cocher « J’accepte que Messaging Me me recontacte
 sur WhatsApp ». Il arrive sur la page de téléchargement du PDF dans tous les cas. Son contact entre dans HubSpot (le
 formulaire « Livre blanc éducation »), puis dans l'une des deux listes « WhatsApp OK » ou « e-mail seulement » selon la

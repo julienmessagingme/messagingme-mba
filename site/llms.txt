@@ -121,7 +121,7 @@
 ## Livre blanc
 
 - [Recruter sur WhatsApp](https://app.messagingme.fr/livre-blanc/whatsapp-education/) : le livre blanc gratuit des écoles (15 pages, PDF) : comprendre WhatsApp, fixer l’objectif de chaque conversation, publicités Click-to-WhatsApp, CRM, relances, IA puis humain. Les cas NEOMA, EDH et EDHEC.
-- [White paper: recruiting on WhatsApp](https://app.messagingme.fr/en/white-paper/whatsapp-education/) : the free white paper for schools, in French.
+- [White paper: recruiting on WhatsApp](https://app.messagingme.fr/en/white-paper/whatsapp-education/) : the free white paper for schools (15 pages, PDF in English): understanding WhatsApp, the goal of each conversation, Click-to-WhatsApp ads, CRM, follow-ups, AI then humans. The NEOMA, EDH and EDHEC cases.
 
 ## Contact
 

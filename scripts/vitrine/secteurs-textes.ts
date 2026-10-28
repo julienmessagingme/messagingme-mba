@@ -441,7 +441,7 @@ export const TEXTES_SECTEURS: Readonly<Record<string, Record<Langue, TexteSecteu
       livreBlanc: {
         surtitre: 'Free white paper',
         titre: ['Recruiting on WhatsApp.', 'The guide for schools.'],
-        texte: '15 pages, in French, to understand WhatsApp, set the goal of each conversation, acquire with Click-to-WhatsApp ads, automate from your CRM and follow up without pestering.',
+        texte: '15 pages to understand WhatsApp, set the goal of each conversation, acquire with Click-to-WhatsApp ads, automate from your CRM and follow up without pestering.',
         bouton: 'Get the white paper',
         adresse: '/en/white-paper/whatsapp-education/',
       },

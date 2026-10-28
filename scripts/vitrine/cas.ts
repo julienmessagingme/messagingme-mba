@@ -635,7 +635,7 @@ export function pagesSecteurs(): Array<{ chemin: string; contenu: string }> {
       ...(t.livreBlanc ? [
         '  <section class="f-bloc sec-livre-blanc">',
         '    <div class="cadre lb-bloc">',
-        '      <img class="lb-couverture" src="/img/livre-blanc-whatsapp-education.webp" alt="" width="600" height="849" loading="lazy">',
+        `      <img class="lb-couverture" src="/img/livre-blanc-whatsapp-education${sf}.webp" alt="" width="600" height="849" loading="lazy">`,
         '      <div>',
         `        <p class="f-surtitre">${t.livreBlanc.surtitre}</p>`,
         `        <h2 class="f-titre">${deux(t.livreBlanc.titre)}</h2>`,

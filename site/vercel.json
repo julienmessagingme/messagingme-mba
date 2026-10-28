@@ -79,6 +79,16 @@
       "source": "/whatsapp/",
       "destination": "https://wa.me/33525680250?text=Bonjour%2C%20je%20viens%20du%20livre%20blanc%20Recruter%20sur%20WhatsApp",
       "permanent": false
+    },
+    {
+      "source": "/en/whatsapp",
+      "destination": "https://wa.me/33525680250?text=Hi%2C%20I%20just%20read%20the%20white%20paper%20Recruiting%20on%20WhatsApp",
+      "permanent": false
+    },
+    {
+      "source": "/en/whatsapp/",
+      "destination": "https://wa.me/33525680250?text=Hi%2C%20I%20just%20read%20the%20white%20paper%20Recruiting%20on%20WhatsApp",
+      "permanent": false
     }
   ],
   "headers": [

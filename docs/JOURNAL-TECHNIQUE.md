@@ -4,6 +4,26 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 (soir) : le livre blanc des écoles en anglais
+
+Demandé par Julien après l'essai réel de la version française : la page anglaise faisait télécharger le PDF français.
+- **La source** `docs/livre-blanc/whatsapp-education/white-paper.html` est écrite depuis `livre-blanc.html` par une table de
+  fragments (chacun trouvé le nombre de fois attendu, puis plus un mot français hors des noms propres) : le même gabarit,
+  donc les mêmes styles. Typographie et nombres américains (`2,000`, `83%`, `10 am`).
+- **Les visuels** : le téléphone du rappel (`telephone-rappel-en.html`, « Horizon School ») et la fiche CRM
+  (`img/fiche-candidat-en.png`, refaite par le script de la française, libellés traduits) ; le QR code `qr-en.svg` (même
+  forme que `qr.svg`, retrouvée en le régénérant : marge nulle, correction M) vers `/en/whatsapp/`, redirection ajoutée à
+  `site/vercel.json` avec un premier message en anglais. Les captures NEOMA, EDH et EDHEC restent en français : ce sont
+  les campagnes publiées des écoles, leurs visuels portent leur texte, et la légende le dit.
+- **L'imprimeur** posait les espaces fines françaises sur toute page : il ne le fait plus que sur `lang="fr"`. Relecture
+  page par page des 15 pages : trois reprises (un titre de trois lignes qui mordait sur les tuiles, l'icône « IA », une
+  colonne « What you measure » sur deux lignes).
+- **La vitrine** : la page « thanks » mène à `white-paper-recruiting-on-whatsapp.pdf` (sous `/livre-blanc/`, donc couvert
+  par le `noindex` des PDF), les mentions « in French » sont parties, la couverture anglaise (`-en.webp`) s'affiche sur
+  la page du formulaire et sur la page Écoles. `tests/livre-blanc-page.test.ts` exige le PDF de chaque langue et son
+  en-tête `%PDF-`, vérifié dans les deux sens (la page anglaise remise sur le PDF français : rouge).
+- Reste : la séquence HubSpot relance en français un visiteur venu de la page anglaise.
+
 ## 2026-10-28 (soir) : les téléphones de l'accueil vides deux jours, une propriété CSS enregistrée pour toute la vitrine
 
 Signalé par Julien : les écrans des deux téléphones de la une restaient vides longtemps, et la conversation ne
