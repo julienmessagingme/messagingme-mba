@@ -148,14 +148,22 @@
 // ajoute seulement le message d'erreur au retour, le brouillon gardé le temps de l'onglet, et le bouton désactivé
 // pendant l'envoi. Le stockage peut être refusé (navigation privée) : tout est dans des try.
 (function () {
-  var CLE = 'engageme-contact';
-  if (document.querySelector('.c-merci')) { try { sessionStorage.removeItem(CLE); } catch (e) {} return; }
+  // Un brouillon PAR formulaire : le contact et le livre blanc ont des champs du même nom (`nom`, `email`) qui ne
+  // veulent pas dire la même chose (« Nom et prénom » d'un côté, le nom de famille de l'autre).
+  var CLES = ['engageme-contact', 'engageme-livre-blanc'];
+  if (document.querySelector('.c-merci')) { try { CLES.forEach(function (k) { sessionStorage.removeItem(k); }); } catch (e) {} return; }
   var form = document.querySelector('form.c-form');
   if (!form) return;
+  var CLE = /\/vitrine\/livre-blanc$/.test(form.getAttribute('action') || '') ? CLES[1] : CLES[0];
   var champs = [].slice.call(form.querySelectorAll('input[name]:not([name="site"]), textarea[name]'));
+  // Une case se garde par `checked`, jamais par sa valeur (toujours « oui ») : sinon un retour en erreur la décoche,
+  // et le visiteur qui avait accepté WhatsApp repart sans, sans le voir.
   try {
     var brouillon = JSON.parse(sessionStorage.getItem(CLE) || '{}');
-    champs.forEach(function (c) { if (typeof brouillon[c.name] === 'string' && !c.value) c.value = brouillon[c.name]; });
+    champs.forEach(function (c) {
+      if (c.type === 'checkbox') { if (typeof brouillon[c.name] === 'boolean') c.checked = brouillon[c.name]; }
+      else if (typeof brouillon[c.name] === 'string' && !c.value) c.value = brouillon[c.name];
+    });
   } catch (e) {}
   // Venu d'un bouton « Demander une démo » : le message est pré-rempli avec la fonctionnalité, si rien n'est déjà
   // écrit. Seules les quatre pages connues : aucun texte n'est recopié de l'adresse. La page anglaise
@@ -189,7 +197,7 @@
   }
   form.addEventListener('input', function () {
     var b = {};
-    champs.forEach(function (c) { b[c.name] = c.value; });
+    champs.forEach(function (c) { b[c.name] = c.type === 'checkbox' ? c.checked : c.value; });
     try { sessionStorage.setItem(CLE, JSON.stringify(b)); } catch (e) {}
   });
 

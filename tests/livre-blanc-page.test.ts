@@ -33,10 +33,12 @@ const SAISIES: Record<string, string> = {
   mobile: '06 12 34 56 78', site: '',
 };
 
-function rempli(champs: Champ[]): string {
+function rempli(champs: Champ[], { caseCochee = true } = {}): string {
   const p = new URLSearchParams();
   for (const c of champs) {
-    if (c.type === 'checkbox' || c.type === 'hidden') p.set(c.name, c.value ?? '');
+    // Une case décochée n'est pas envoyée du tout par le navigateur.
+    if (c.type === 'checkbox') { if (caseCochee) p.set(c.name, c.value ?? ''); }
+    else if (c.type === 'hidden') p.set(c.name, c.value ?? '');
     else if (c.name in SAISIES) p.set(c.name, SAISIES[c.name]!);
     else throw new Error(`champ inconnu du test : ${c.name}`);
   }
@@ -59,7 +61,7 @@ describe.each(['fr', 'en'] as const)('la page du livre blanc (%s) et sa route', 
     expect(champs.find((c) => c.name === 'mobile')!.type).toBe('tel');
   });
 
-  it('rempli tel que la page le déclare, il est accepté et mène à une page « merci » qui existe', async () => {
+  async function envoyer(corps: string, ip: string) {
     const soumis: DemandeLivreBlanc[] = [];
     const deposes: unknown[] = [];
     const app = Fastify({ logger: false });
@@ -69,15 +71,28 @@ describe.each(['fr', 'en'] as const)('la page du livre blanc (%s) et sa route', 
       secours: { enabled: true, envoyer: async () => {} },
     });
     const res = await app.inject({
-      method: 'POST', url: new URL(action).pathname, payload: rempli(champs),
-      headers: { 'content-type': 'application/x-www-form-urlencoded', 'cf-connecting-ip': '203.0.113.9' },
+      method: 'POST', url: new URL(action).pathname, payload: corps,
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'cf-connecting-ip': ip },
     });
+    return { res, soumis, deposes };
+  }
+
+  it('rempli tel que la page le déclare, il est accepté et mène à une page « merci » qui existe', async () => {
+    const { res, soumis, deposes } = await envoyer(rempli(champs), '203.0.113.9');
     expect(res.statusCode).toBe(303);
     expect(res.headers.location).toBe(`${VITRINE}${pages.merci}`);
     expect(soumis).toHaveLength(1);
     expect(soumis[0]).toMatchObject({ mobile: '+33612345678', whatsapp: 'oui' });
     expect(deposes).toHaveLength(1);
     expect(existsSync(fichier(pages.merci))).toBe(true);
+  });
+
+  it('la case laissée décochée : le PDF quand même, HubSpot sans WhatsApp, personne dans SANDBOX', async () => {
+    const { res, soumis, deposes } = await envoyer(rempli(champs, { caseCochee: false }), '203.0.113.11');
+    expect(res.headers.location).toBe(`${VITRINE}${pages.merci}`);
+    expect(soumis).toHaveLength(1);
+    expect(soumis[0]!.whatsapp).toBeUndefined();
+    expect(deposes).toHaveLength(0);
   });
 
   it('la page « merci » porte le PDF, et le PDF existe', () => {
@@ -95,5 +110,28 @@ describe.each(['fr', 'en'] as const)('la page du livre blanc (%s) et sa route', 
     });
     expect(res.headers.location).toBe(`${VITRINE}${pages.formulaire}?erreur=champs#formulaire`);
     expect(page(pages.formulaire)).toContain('<p class="c-erreur" role="alert" hidden></p>');
+  });
+});
+
+describe('autour du formulaire', () => {
+  const siteJs = readFileSync(new URL('site.js', SITE), 'utf8');
+
+  // site.js n'a pas de test qui l'exécute : on tient les deux décisions par leur texte.
+  it('site.js garde un brouillon par formulaire, et la case par son état coché', () => {
+    expect(siteJs).toContain("var CLES = ['engageme-contact', 'engageme-livre-blanc'];");
+    expect(siteJs).toMatch(/\/\\\/vitrine\\\/livre-blanc\$\/\.test\(form\.getAttribute\('action'\)/);
+    expect(siteJs).toContain("b[c.name] = c.type === 'checkbox' ? c.checked : c.value;");
+    expect(siteJs).toContain("if (typeof brouillon[c.name] === 'boolean') c.checked = brouillon[c.name];");
+  });
+
+  it('le PDF n’est pas indexé (on le donne contre le formulaire), et la page qui le présente l’est', () => {
+    const vercel = JSON.parse(readFileSync(new URL('vercel.json', SITE), 'utf8')) as {
+      headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
+    };
+    const regle = vercel.headers.find((h) => h.headers.some((x) => x.key === 'X-Robots-Tag'));
+    expect(regle).toEqual({ source: '/livre-blanc/(.*).pdf', headers: [{ key: 'X-Robots-Tag', value: 'noindex' }] });
+    const pdf = /href="(\/livre-blanc\/[^"]+\.pdf)"/.exec(page(PAGES_LIVRE_BLANC.fr.merci))![1]!;
+    expect(pdf.startsWith('/livre-blanc/') && pdf.endsWith('.pdf')).toBe(true);
+    expect(page(PAGES_LIVRE_BLANC.fr.formulaire)).not.toContain('noindex');
   });
 });

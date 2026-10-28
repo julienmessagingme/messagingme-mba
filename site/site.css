@@ -666,6 +666,7 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .lb-sommaire li::before{counter-increment:lb;content:counter(lb,decimal-leading-zero);position:absolute;left:0;top:.12em;font-size:.78rem;font-weight:700;color:var(--action-ink)}
 .c-champ.lb-case label{display:flex;align-items:flex-start;gap:10px;font-weight:500;line-height:1.45;cursor:pointer}
 .c-champ.lb-case input{flex:none;width:20px;height:20px;margin:1px 0 0;padding:0;border:0;accent-color:var(--action)}
+.c-champ.lb-case input:focus-visible{outline:2px solid var(--action);outline-offset:2px;box-shadow:none}
 .lb-merci .appels{margin-bottom:28px}
 /* Le bloc d'appel de la page Écoles : la couverture à gauche, le titre et le bouton à droite. */
 .lb-bloc{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);align-items:center;gap:clamp(28px,6vw,72px)}
@@ -1197,7 +1198,7 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .sec-logo{display:inline-flex;align-items:center;justify-content:center;height:46px;padding:0 16px;border-radius:10px;background:#FFFFFF}
 .sec-logo img{display:block;width:auto;height:18px}
 .sec-logo img[src$="logo-sncf.svg"]{height:30px}
-.sec-enjeux,.sec-terrain,.sec-usages,.sec-partenaire{padding:72px 0}
+.sec-enjeux,.sec-terrain,.sec-usages,.sec-livre-blanc,.sec-partenaire{padding:72px 0}
 .sec-trois{list-style:none;margin:32px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}
 .sec-trois h3{margin:6px 0 10px;font-size:1.15rem;line-height:1.3}
 .sec-trois p{margin:0;color:var(--muted)}
