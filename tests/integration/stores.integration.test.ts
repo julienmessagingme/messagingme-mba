@@ -271,7 +271,8 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
 
     // La redirection marche AVANT toute confirmation : si Meta a accepté mais que notre confirmation a
     // échoué, le lien circule déjà dans des messages livrés et doit fonctionner.
-    expect(await store.getByCode(code)).toEqual({ tenantId, destination: 'https://client.fr/promo' });
+    // Le modèle du lien et l'absence de boutique Shopify voyagent avec lui (les UTM de la redirection, plan 2026-10-28).
+    expect(await store.getByCode(code)).toEqual({ tenantId, destination: 'https://client.fr/promo', modele: nom, boutique: false });
     // ... alors que les mesures, elles, ignorent un lien non confirmé (sinon : une case qui ment).
     expect(await store.listByTemplates(tenantId, [nom])).toEqual([]);
 
@@ -383,7 +384,7 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await store.listByTemplates(tenantId, [nom])).toHaveLength(1);
     await store.deconfirmer(tenantId, [code]);
     expect(await store.listByTemplates(tenantId, [nom])).toEqual([]);
-    expect(await store.getByCode(code)).toEqual({ tenantId, destination: 'https://client.fr/commande/{numero_commande}' });
+    expect(await store.getByCode(code)).toEqual({ tenantId, destination: 'https://client.fr/commande/{numero_commande}', modele: nom, boutique: false });
   });
 
   it('auth : createTenantWithAdmin (transaction) + createPending + setPassword + getAuthState(tenantStatus)', async () => {
