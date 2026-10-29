@@ -154,6 +154,7 @@ import { verifierCleRcs } from './rcs/channel-info';
 import { fetchGet } from './lib/http-get';
 import { lireConsommationEquipe } from './agent/llm/consommation-equipe';
 import { creerLecteurCockpit } from './ops/cockpit';
+import { creerLecteurFacture } from './ops/facture-scaleway';
 import { lireCatalogueGateway } from './agent/llm/modeles-gateway';
 import { modelesProposables, type ModeleGateway } from './agent/modeles';
 import { contactVars } from './crm/render';
@@ -2937,6 +2938,15 @@ async function main(): Promise<void> {
           jeton: config.COCKPIT_TOKEN.trim(),
           http: fetchGet,
           signaler: (detail) => { journaliser('warn', 'cockpit_illisible', detail); },
+        })
+        : null,
+      // Le coût Scaleway (lot 3) : la clé dédiée, sans espace autour ; un échec se journalise par son statut seul.
+      facture: config.SCW_FACTURATION_CLE.trim() !== ''
+        ? creerLecteurFacture({
+          cle: config.SCW_FACTURATION_CLE.trim(),
+          organisationId: config.SCW_ORGANISATION_ID,
+          http: fetchGet,
+          signaler: (detail) => { journaliser('warn', 'facture_scaleway_illisible', detail); },
         })
         : null,
       stockage: new PgStockageStore(pool),

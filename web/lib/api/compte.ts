@@ -472,6 +472,24 @@ export function getOpsCapacite(sessionOps: string, jours = 30): Promise<Capacite
   return appelOps(sessionOps, `/ops/capacite?jours=${jours}`);
 }
 
+/** Le coût Scaleway du mois (lot 3), hors taxes et avant remise ; `cout: null` = lecture en échec. */
+export interface CoutScalewayOps {
+  periode: string;
+  totalHt: number;
+  remiseHt: number;
+  projectionHt: number | null;
+  joursEcoules: number;
+  joursDuMois: number;
+  postes: Array<{ categorie: string; montantHt: number }>;
+  lignes: Array<{ produit: string; categorie: string; montantHt: number }>;
+  majLe: string | null;
+}
+export type CoutOps = { configure: false } | { configure: true; cout: CoutScalewayOps | null };
+
+export function getOpsCout(sessionOps: string): Promise<CoutOps> {
+  return appelOps(sessionOps, '/ops/cout');
+}
+
 /**
  * La jauge du budget d'équipe Vercel (lot 14), en dollars. `configure: false` = jeton de compte non configuré ;
  * `limiteDollars: null` = aucun budget d'équipe chez Vercel. Les autres champs suivent `configure: true`.

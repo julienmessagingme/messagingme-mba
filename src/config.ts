@@ -479,6 +479,14 @@ export const schema = z.object({
   COCKPIT_URL: z.string().default('https://04311b18-58d2-4780-8c22-c9a77e7a806e.metrics.cockpit.nl-ams.scw.cloud'),
   COCKPIT_TOKEN: z.string().default(''),
   /**
+   * Le coût Scaleway du mois dans `/ops` (refonte, lot 3) : la clé SECRÈTE d'une application IAM dédiée
+   * (`ops-facturation`, `BillingReadOnly` au niveau de l'organisation, jamais `claude-code` ni `github-deploy`), posée par
+   * Julien dans les secrets du conteneur de l'API, et l'organisation (pas un secret, son défaut ici). Clé vide : la carte
+   * du coût dit « non configurée », rien d'autre ne change ; jamais de refus au démarrage.
+   */
+  SCW_FACTURATION_CLE: z.string().default(''),
+  SCW_ORGANISATION_ID: z.string().default('296c2c6b-4d7f-442b-a211-2526b15a5ee8'),
+  /**
    * Modèle de l'IA de construction, à ne pas confondre avec celui d'un agent. Celle-ci tourne rarement
    * (reglage et optimisation) et joue le role le plus dur : elle merite un modele plus fort que le runtime.
    * Vide -> repli sur LLM_MODEL.

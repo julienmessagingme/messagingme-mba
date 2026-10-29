@@ -18,6 +18,7 @@ import type { PointCapaciteHeure } from '../ops/pool-attentes.pg';
 import type { PointFileHeure } from '../ops/mesures-files.pg';
 import type { MemoireWorker, PointMemoireHeure } from '../ops/memoire-workers.pg';
 import type { LecteurCockpit } from '../ops/cockpit';
+import type { LecteurFacture } from '../ops/facture-scaleway';
 import { messageDe } from '../lib/erreur';
 import { makeTraceOps, type AuditSink } from '../audit/journal';
 
@@ -157,6 +158,8 @@ export interface OpsRouteDeps {
   };
   /** Cockpit, l'outil de mesure de Scaleway (lot 2) : `null` tant que `COCKPIT_TOKEN` n'est pas posé. */
   cockpit: LecteurCockpit | null;
+  /** Le coût Scaleway du mois (lot 3) : `null` tant que `SCW_FACTURATION_CLE` n'est pas posée. */
+  facture: LecteurFacture | null;
   /**
    * Les octets en base, fichiers compris. Coûteux (le catalogue entier) : servi par sa propre route, jamais par
    * la vue d'ensemble, que l'écran recharge à chaque ouverture et sur demande.
@@ -337,6 +340,16 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
     // Cockpit : `series` vaut `null` quand il n'a rien rendu ; l'écran le dit (« mesure indisponible »).
     const cockpit = deps.cockpit ? { configure: true, series } : { configure: false };
     return reply.code(200).send({ jours, heures, files, memoires, cockpit, seuils: SEUILS_SANTE });
+  });
+
+  /**
+   * Le coût Scaleway du mois (lot 3) : sa propre route, lue à l'ouverture de l'onglet Capacité, gardée trois heures par
+   * le lecteur. `cout: null` : la lecture a échoué (l'écran dit « indisponible ») ; jamais une 500, jamais la clé.
+   */
+  app.get('/ops/cout', opts, async (_req, reply) => {
+    if (!deps.facture) return reply.code(200).send({ configure: false });
+    const cout = await deps.facture.lire().catch(() => null);
+    return reply.code(200).send({ configure: true, cout });
   });
 
   /** Les octets en base : lus une fois à l'ouverture de l'écran, pas à chaque chargement de la vue d'ensemble (voir `PgStockageStore`). */

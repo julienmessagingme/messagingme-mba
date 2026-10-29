@@ -3918,7 +3918,8 @@ coupable en une mesure.
 
 Tous côté serveur, jamais dans le bundle `web/` ni en `NEXT_PUBLIC_*` : `META_ACCESS_TOKEN`,
 `META_APP_SECRET`, `ENCRYPTION_KEY`, `AUTH_SECRET` (il signe aussi les sessions d'exploitation), `AI_GATEWAY_API_KEY`, `VERCEL_API_TOKEN`,
-`COCKPIT_TOKEN` (lecture seule des métriques de Scaleway, `/ops`), la clé Supabase.
+`COCKPIT_TOKEN` (lecture seule des métriques de Scaleway, `/ops`), `SCW_FACTURATION_CLE` (lecture seule de la
+facturation de Scaleway, `/ops`), la clé Supabase.
 
 🔴 **`VERCEL_API_TOKEN` n'est pas un secret comme les autres, et le confondre avec `AI_GATEWAY_API_KEY`
 coûterait cher.** La seconde ne sait que DÉPENSER sous un plafond ; le premier sait FABRIQUER des clés
@@ -4675,6 +4676,20 @@ arrivant sur un autre onglet, et Santé rend elle-même la révision affichée s
   démarré depuis plus de 3 minutes, sans relevé frais : son relevé échoue, la pastille est orange (sous saturation,
   c'est justement l'écriture qui tombe). Une lecture en échec, orange aussi. ⚠️ Un relevé par minute ne voit pas une
   montée jusqu'à l'arrêt en moins d'une minute ; seule la ligne « Worker démarré » des incidents la trahit.
+- **Le coût Scaleway du mois** (lot 3, `src/ops/facture-scaleway.ts`, `GET /ops/cout`, carte en tête de Capacité) :
+  la consommation depuis le 1er par l'API de facturation (`v2beta1/consumptions`, hors taxes, avant remise), sa
+  projection AU RYTHME DU MOIS (la spec : le coût rapporté aux jours écoulés, étendu au mois ; une réduction faite en
+  cours de mois n'y entre qu'en partie, l'écran le dit), le détail par poste de la facture et les lignes les plus
+  chères, la remise que Scaleway annonce. Le chiffre couvre TOUTE l'organisation (un second projet s'y ajouterait).
+  Le mois est demandé explicitement et le cache tombe quand il change ; la projection se rapporte aux jours couverts
+  par les données (jusqu'à la mise à jour de Scaleway). La pagination finit sur une page incomplète ; au-delà de dix
+  pages, rien plutôt qu'un total tronqué. Une lecture en échec garde la dernière bonne valeur du mois, un jour au plus.
+  Une clé DÉDIÉE : application IAM `ops-facturation`, `BillingReadOnly` au
+  niveau de l'ORGANISATION, `SCW_FACTURATION_CLE` dans les secrets du conteneur de l'API (jamais la clé de
+  `claude-code` ni celle du déploiement) ; l'organisation a son défaut dans `src/config.ts`. La forme de la réponse a
+  été MESURÉE avant d'être écrite ; une autre forme, une autre devise, un refus ou un délai rendent « indisponible »,
+  signalés par leur statut seul (`facture_scaleway_illisible`). Trois heures de cache (Scaleway met la consommation à
+  jour quelques fois par jour), cinq minutes après un échec.
 - Les briques de Santé du lot 2, et leurs seuils (`SEUILS_SANTE`, ceux de la spec) : mémoire des workers (le plus
   chargé, 70 et 85 % de sa limite), machine des workers (processeur sur 15 min, 60 et 80 %), processeur de la base
   (60 et 80 %, rouge : DB-DEV-L), porte HubSpot (éveillée ou endormie, jamais une panne). La jauge compte aussi le

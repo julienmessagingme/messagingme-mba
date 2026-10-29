@@ -354,7 +354,7 @@ export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages'
 export const opsInerte: Pick<OpsRouteDeps,
   'deposerJetonPub' | 'lireGrillePrix' | 'reglages' | 'verrouillerEspace' | 'observerTenant'
   | 'file' | 'heartbeat' | 'soldeAgent' | 'rechargerAgent' | 'etatPoolInstantane' | 'attentesPool' | 'latencesHttp'
-  | 'mesuresTaches' | 'sante' | 'capacite' | 'cockpit' | 'stockage' | 'vercel'
+  | 'mesuresTaches' | 'sante' | 'capacite' | 'cockpit' | 'facture' | 'stockage' | 'vercel'
   | 'balayerRisque' | 'reinitialiserMfa' | 'audit'> = {
   audit: journalMuet,
   deposerJetonPub: neDevraitPasEtreAppelee('deposerJetonPub'),
@@ -381,6 +381,8 @@ export const opsInerte: Pick<OpsRouteDeps,
   capacite: { parHeure: async () => [], files: async () => [], memoires: async () => [] },
   // Aucun jeton Cockpit : ses briques et ses courbes sont absentes.
   cockpit: null,
+  // Aucune clé de facturation : la carte du coût dit « non configurée ».
+  facture: null,
   // Une base vide : aucune famille, aucune table.
   stockage: { mesurer: async () => ({ baseOctets: 0, familles: [], tables: [], mesureLe: '1970-01-01T00:00:00.000Z' }) },
   // Aucun jeton de compte Vercel : la carte dit « non configurée ».

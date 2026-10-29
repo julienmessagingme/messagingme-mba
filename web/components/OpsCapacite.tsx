@@ -6,6 +6,7 @@ import { ApiError } from '@/lib/http';
 import { useT } from '@/lib/i18n';
 import { DailyChart } from '@/components/DailyChart';
 import { Squelette } from '@/components/Squelette';
+import { OpsCout } from '@/components/OpsCout';
 import { alerte, brand, danger, ink, navy, succes } from '@/lib/couleurs';
 import { dayKey } from '@/lib/day';
 import { cockpitParJour, copiesDeLHeure, debutMesure, memoireWorkerParJour, MINUTES_MONTEE_MIN, montees7Jours, parJour, retardParJour, rolesDeMemoire } from '@/lib/ops-capacite';
@@ -15,7 +16,7 @@ import { cockpitParJour, copiesDeLHeure, debutMesure, memoireWorkerParJour, MINU
  * courbe ce que veut dire en franchir le seuil. Les copies d'API, le retard des files et les attentes du pool sont nos
  * mesures ; le processeur, la mémoire, les connexions et le disque viennent de Cockpit (lot 2), la mémoire de chaque
  * worker de son propre relevé. Une API d'avant le lot 2 ne rend ni `cockpit` ni `memoires` : leurs courbes ne
- * s'affichent pas. Le coût arrive au lot 3.
+ * s'affichent pas. Le coût du mois (lot 3) est la carte de tête (`OpsCout`).
  */
 const COULEURS_WORKERS = [navy[400], succes[500], alerte[700], danger[600]];
 
@@ -60,6 +61,7 @@ export function OpsCapacite({ jeton, onPerdue }: { jeton: string; onPerdue: () =
 
   return (
     <div className="space-y-4" data-testid="ops-capacite">
+      <OpsCout jeton={jeton} onPerdue={onPerdue} />
       <section className={bloc} data-testid="ops-capacite-copies">
         <Courbe
           title={t('Copies d’API allumées', 'API copies running')}
