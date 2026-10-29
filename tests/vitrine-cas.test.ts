@@ -7,7 +7,8 @@ import { CATALOGUE_MCP } from '../web/lib/partage/catalogue-mcp';
 import { PAGES_DOC } from '../web/lib/doc-api-pages';
 import { ENTREES } from '../web/lib/registre-vitrine';
 import { extraitDe, fichierDe, llmsAvecCas, pagesGenerees } from '../scripts/vitrine/cas';
-import { TEXTES_CAS } from '../scripts/vitrine/cas-textes';
+import { TEXTES_CARREFOUR, TEXTES_CAS } from '../scripts/vitrine/cas-textes';
+import { OUTILS } from '../src/mcp/outils';
 import { SITE, lire, parAttribut, texte } from './vitrine-lecture';
 
 /**
@@ -92,5 +93,34 @@ describe('les pages de cas d’usage', () => {
         });
       });
     }
+  }
+});
+
+describe('la page « SaaS et app builders » : ce que Claude fait sans code (plan `2026-10-28-vitrine-cas-mcp.md`)', () => {
+  for (const langue of ['fr', 'en'] as const) {
+    it(`🔴 ${langue} : chaque outil cité existe, et chaque ligne porte la plus haute offre de ses outils`, () => {
+      const c = TEXTES_CARREFOUR[langue];
+      const section = lire(fichierDe(c.adresse)).match(/<section class="f-bloc" id="claude">[\s\S]*?<\/section>/)?.[0] ?? '';
+      const lignes = section.split('<li>').slice(1);
+      const attendues = c.claude.colonnes.flatMap((col) => col.lignes);
+      expect(lignes.length).toBe(attendues.length);
+      // L'offre relue ici sans le module de la page : la plus petite qui ouvre la fonction de chaque outil (`null` = la Free).
+      const rangs = ['base', 'pro', 'business', 'entreprise'] as const;
+      attendues.forEach((l, i) => {
+        const offres = l.outils.map((o) => {
+          expect(Object.keys(CATALOGUE_MCP), o).toContain(o);
+          expect(lignes[i], o).toContain(`<code>${o}</code>`);
+          const f = OUTILS.find((x) => x.nom === o)!.fonction;
+          return rangs.findIndex((r) => f === null || DROITS[r].fonctions.has(f));
+        });
+        // Le texte visible en littéral : un nom d'offre faussé dans le module se verrait aussi.
+        const offre = rangs[Math.max(...offres)]!;
+        const libelle = { fr: { base: 'Offre Free', pro: 'Offre Pro', business: 'Offre Business', entreprise: 'Offre Entreprise' }, en: { base: 'Free plan', pro: 'Pro plan', business: 'Business plan', entreprise: 'Enterprise plan' } }[langue][offre];
+        expect(lignes[i], l.texte).toContain(`data-etiquette="${offre}">${libelle}</span>`);
+      });
+      // Une étiquette qui ne varierait jamais ne prouverait rien.
+      expect(section).toContain('data-etiquette="base"');
+      expect(section).toContain('data-etiquette="pro"');
+    });
   }
 });

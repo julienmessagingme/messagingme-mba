@@ -3,6 +3,9 @@
 // (`scripts/vitrine/cas.ts` les assemble). Chaque nom d'outil, de route ou d'événement cité entre <code> doit exister
 // dans le produit (`tests/vitrine-cas.test.ts`), et chaque chiffre d'offre porte `data-offre`.
 
+import type { NomOutilMcp } from '../../web/lib/partage/catalogue-mcp';
+import type { IconeFamille } from '../plugin/construire';
+
 export type Langue = 'fr' | 'en';
 
 export interface TexteCas {
@@ -46,6 +49,18 @@ export interface TexteChapeau {
   readonly cas: { readonly titre: string; readonly texte: string };
   readonly film: { readonly nom: string; readonly titre: string; readonly texte: string; readonly aria: string; readonly duree: string; readonly publie: string };
   readonly etapes: { readonly titre: string; readonly liste: ReadonlyArray<{ readonly titre: string; readonly texte: string }>; readonly lien: string };
+  /**
+   * « Et depuis Claude, sans écrire de code » (décision 5 de Julien, 2026-10-28) : trois colonnes au style de « Ce que vous
+   * pouvez construire ». Chaque ligne cite ses outils, et son étiquette d'offre se calcule (`offreDeLaCarte`) ; `lien`
+   * mène à une page de la vitrine.
+   */
+  readonly claude: {
+    readonly titre: string; readonly texte: string; readonly avec: string; readonly doc: string;
+    readonly colonnes: ReadonlyArray<{
+      readonly titre: string; readonly icone: IconeFamille;
+      readonly lignes: ReadonlyArray<{ readonly texte: string; readonly outils: readonly NomOutilMcp[]; readonly lien?: string }>;
+    }>;
+  };
 }
 
 export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
@@ -72,6 +87,37 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
       ],
       lien: 'Les trois étapes en détail',
     },
+    claude: {
+      titre: 'Et depuis Claude, sans écrire de code.',
+      texte: 'Ce que vous demandez à Claude Code, ou à votre assistant IA, une fois votre espace relié. Chaque ligne dit l’offre qui l’ouvre.',
+      avec: 'Avec', doc: 'Tous les outils du serveur MCP',
+      colonnes: [
+        {
+          titre: 'Vos utilisateurs', icone: 'chats',
+          lignes: [
+            { texte: 'Les champs de vos fiches (offre, fin d’essai) créés par Claude, et un utilisateur retrouvé en une question.', outils: ['create_field', 'search_contacts'] },
+            { texte: 'Une annonce à vos utilisateurs, préparée par Claude et lancée à votre oui.', outils: ['find_contacts', 'prepare_campaign', 'launch_campaign'] },
+            { texte: 'Le droit à l’effacement en une demande, conversations comprises.', outils: ['prepare_contacts_deletion', 'delete_contacts'] },
+          ],
+        },
+        {
+          titre: 'Votre app', icone: 'prises',
+          lignes: [
+            { texte: 'Vos webhooks inscrits, testés et rejoués depuis Claude.', outils: ['create_webhook_endpoint', 'send_test_event', 'replay_webhook_delivery'] },
+            { texte: 'Votre agent IA qui déclenche votre code quand un client demande une démo, une résiliation ou un rappel.', outils: ['set_agent_action'] },
+            { texte: 'Vos modèles écrits par Claude et soumis à Meta, et le motif d’un refus.', outils: ['create_template', 'get_template_status'] },
+          ],
+        },
+        {
+          titre: 'Vos clients et vos chiffres', icone: 'cloche',
+          lignes: [
+            { texte: 'Les boutiques Shopify de vos clients, branchées en une demande.', outils: ['connect_shopify', 'set_shopify_message'], lien: '/solutions/shopify/' },
+            { texte: 'Le numéro de leur application WhatsApp Business gardé, et votre app qui écrit dessus.', outils: ['start_whatsapp_connection'] },
+            { texte: 'Demandez à Claude vos messages livrés, lus ou en échec.', outils: ['get_message_stats'] },
+          ],
+        },
+      ],
+    },
   },
   en: {
     adresse: '/en/solutions/saas-and-app-builders/', fil: 'SaaS and app builders',
@@ -95,6 +141,37 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
         { titre: 'You connect your number', texte: 'You need a free Meta Business account, which Meta’s window has you create along the way if you lack one. No number? We provide one.' },
       ],
       lien: 'The three steps in detail',
+    },
+    claude: {
+      titre: 'And from Claude, without writing code.',
+      texte: 'What you ask Claude Code, or your AI assistant, once your workspace is connected. Each line shows the plan that opens it.',
+      avec: 'With', doc: 'All the MCP server tools',
+      colonnes: [
+        {
+          titre: 'Your users', icone: 'chats',
+          lignes: [
+            { texte: 'Your records’ fields (plan, trial end) created by Claude, and a user found in one question.', outils: ['create_field', 'search_contacts'] },
+            { texte: 'An announcement to your users, prepared by Claude and launched once you say yes.', outils: ['find_contacts', 'prepare_campaign', 'launch_campaign'] },
+            { texte: 'The right to erasure in one request, conversations included.', outils: ['prepare_contacts_deletion', 'delete_contacts'] },
+          ],
+        },
+        {
+          titre: 'Your app', icone: 'prises',
+          lignes: [
+            { texte: 'Your webhooks registered, tested and replayed from Claude.', outils: ['create_webhook_endpoint', 'send_test_event', 'replay_webhook_delivery'] },
+            { texte: 'Your AI agent triggering your code when a customer asks for a demo, a cancellation or a callback.', outils: ['set_agent_action'] },
+            { texte: 'Your templates written by Claude and submitted to Meta, and the reason for a rejection.', outils: ['create_template', 'get_template_status'] },
+          ],
+        },
+        {
+          titre: 'Your clients and your figures', icone: 'cloche',
+          lignes: [
+            { texte: 'Your clients’ Shopify stores, connected in one request.', outils: ['connect_shopify', 'set_shopify_message'], lien: '/en/solutions/shopify-stores/' },
+            { texte: 'Their WhatsApp Business app number kept, with your app sending from it.', outils: ['start_whatsapp_connection'] },
+            { texte: 'Ask Claude which of your messages were delivered, read or failed.', outils: ['get_message_stats'] },
+          ],
+        },
+      ],
     },
   },
 };

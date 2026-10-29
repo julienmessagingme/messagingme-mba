@@ -91,6 +91,22 @@
     },
     {
      "@type": "Question",
+     "name": "Puis-je envoyer une promotion à mes clients ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Oui, avec l’offre Pro : Claude prépare la campagne, vous montre qui la recevra, et ne la lance qu’avec votre oui. Elle ne part qu’à ceux qui ont accepté WhatsApp, depuis un numéro API, et un STOP est toujours respecté. Avec la Free, Claude envoie un message à un client à la fois."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Puis-je répondre moi-même à mes clients ?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Oui, en le demandant à Claude : il vous montre qui vous a écrit, vous répondez dans les 24 heures qui suivent leur message, et vous reprenez la main sur votre agent IA quand vous le voulez. Avec le Pro, votre équipe répond aussi depuis l’Inbox de la console."
+     }
+    },
+    {
+     "@type": "Question",
      "name": "Quel numéro WhatsApp utiliser ?",
      "acceptedAnswer": {
       "@type": "Answer",
@@ -284,6 +300,7 @@
       <div class="appels">
         <a class="bouton bouton-plein" href="#commencer">Brancher gratuitement avec Claude Code</a>
         <a class="bouton bouton-trait" href="https://console.messagingme.app/signup?offre=pro">Tout faire depuis la console</a>
+        <a class="bouton bouton-texte" href="#claude">Tout ce que Claude fait <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
       <p class="bt-compat"><span>Se branche à votre boutique</span><span class="bt-compat-logo"><img class="logo-shopify" src="/img/logos/shopify-noir.svg" width="105" height="30" alt="Shopify"></span></p>
     </div>
@@ -353,15 +370,174 @@
     </div>
   </section>
 
-  <section class="f-bloc">
+  <section class="f-bloc bande-claire" id="claude">
     <div class="cadre">
-      <p class="f-surtitre">Et ensuite</p>
-      <h2 class="f-titre">Ce que la conversation <span class="sec-accent">rend possible.</span></h2>
-      <ul class="bt-cartes">
-        <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><h3>«&nbsp;Où est ma commande&nbsp;?&nbsp;»</h3><p>Votre agent IA répond sur la livraison d’après vos pages, et vous passe la main pour un colis précis.</p></li>
-        <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span><h3>Vos promotions <span class="bt-offre">Offre Pro</span></h3><p>Une campagne à vos clients, qui part à ceux qui ont accepté WhatsApp.</p></li>
-        <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><h3>La publicité Click-to-WhatsApp <span class="bt-offre">Offre Entreprise</span></h3><p>Une publicité Facebook ou Instagram qui ouvre la conversation, et votre agent IA qui la reprend.</p></li>
+      <p class="f-surtitre">Avec Claude Code</p>
+      <h2 class="f-titre">Tout ce que Claude fait <span class="sec-accent">pour votre boutique.</span></h2>
+      <p class="f-texte">Votre boutique branchée, vous demandez, Claude le fait. Chaque carte dit l’offre qui l’ouvre&nbsp;: la Free couvre déjà l’essentiel, le Pro ajoute vos campagnes et leurs chiffres, votre équipe et le bilan de votre agent IA.</p>
+      <h3 class="bt-besoin">Répondre à vos clients</h3>
+      <ul class="bt-cartes bt-cartes-claude">
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-lightning"/></svg></span><span class="bt-offre" data-etiquette="base">Offre Free</span></div><h4>Votre agent IA connaît votre boutique</h4><p>Claude lit vos pages de livraison, de retours et vos produits, et en nourrit votre agent IA, qui répond quand un client écrit, sur votre crédit IA prépayé.</p><p class="bt-avec">Avec <code>import_site</code>, <code>create_agent</code>, <code>activate_agent</code>, <code>set_default_responder</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span class="bt-offre" data-etiquette="base">Offre Free</span></div><h4>«&nbsp;Où est ma commande&nbsp;?&nbsp;»</h4><p>Le lien de suivi part dans l’avis d’expédition. Votre agent IA répond sur les délais d’après vos pages, et vous passe la main pour un colis précis, en annonçant vos heures d’ouverture.</p><p class="bt-avec">Avec <code>set_shopify_message</code>, <code>set_business_hours</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span class="bt-offre" data-etiquette="base">Offre Free</span></div><h4>Vous répondez depuis Claude</h4><p>«&nbsp;Qui m’a écrit aujourd’hui&nbsp;?&nbsp;», puis votre réponse dans les 24&nbsp;heures qui suivent le message du client, avec une photo de produit ou des boutons. Vous prenez la main sur votre agent IA, et vous la lui rendez.</p><p class="bt-avec">Avec <code>list_conversations</code>, <code>reply_in_open_window</code>, <code>send_message</code>, <code>control_conversation</code></p></li>
+        <li class="bt-payante"><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg></span><span class="bt-offre" data-etiquette="pro">Offre Pro</span></div><h4>Votre équipe répond dans l’Inbox</h4><p>La console partage les conversations entre vous&nbsp;: chacun voit qui répond, les attribue, les étiquette et reprend la main à votre agent IA.</p><p class="bt-avec">Avec <code>assign_conversation</code>, <code>tag_conversation</code></p></li>
       </ul>
+      <h3 class="bt-besoin">Vendre et faire revenir</h3>
+      <ul class="bt-cartes bt-cartes-claude">
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-whatsapp"/></svg></span><span class="bt-offre" data-etiquette="base">Offre Free</span></div><h4>La bulle WhatsApp sur votre boutique</h4><p>Claude crée la bulle et vous donne la balise à coller dans votre thème&nbsp;: vos visiteurs vous écrivent sur WhatsApp d’un clic, et votre agent IA répond.</p><p class="bt-avec">Avec <code>create_widget</code>, <code>update_widget</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span><span class="bt-offre" data-etiquette="base">Offre Free</span></div><h4>Un message à un client précis</h4><p>Un geste après un retard, un article revenu pour qui l’attendait&nbsp;: Claude écrit le message, le fait approuver par Meta et l’envoie depuis votre numéro API.</p><p class="bt-avec">Avec <code>create_template</code>, <code>send_template_to_contact</code></p></li>
+        <li class="bt-payante"><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-broadcast"/></svg></span><span class="bt-offre" data-etiquette="pro">Offre Pro</span></div><h4>Vos promotions, à votre oui</h4><p>Claude prépare une campagne à vos clients qui ont accepté WhatsApp, vous montre qui la recevra, qui en est écarté et pourquoi, puis la lance ou la programme quand vous dites oui.</p><p class="bt-avec">Avec <code>find_contacts</code>, <code>prepare_campaign</code>, <code>launch_campaign</code></p></li>
+        <li class="bt-payante"><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><span class="bt-offre" data-etiquette="entreprise">Offre Entreprise</span></div><h4>La publicité Click-to-WhatsApp</h4><p>Une publicité Facebook ou Instagram qui ouvre la conversation, et votre agent IA qui la reprend.</p><p class="bt-avec">Dans la console</p></li>
+      </ul>
+      <h3 class="bt-besoin">Piloter depuis Claude</h3>
+      <ul class="bt-cartes bt-cartes-claude">
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-chart-line-up"/></svg></span><span class="bt-offre" data-etiquette="base">Offre Free</span></div><h4>Votre boutique en un coup d’œil</h4><p>Les paniers de la semaine, ce qui est parti sur 30&nbsp;jours, vos messages livrés, lus ou en échec.</p><p class="bt-avec">Avec <code>get_shopify_state</code>, <code>get_message_stats</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg></span><span class="bt-offre" data-etiquette="base">Offre Free</span></div><h4>Vos messages, écrits pour vous</h4><p>Claude rédige vos modèles, les soumet à Meta et vous dit pourquoi l’un est refusé.</p><p class="bt-avec">Avec <code>create_template</code>, <code>get_template_status</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></span><span class="bt-offre" data-etiquette="base">Offre Free</span></div><h4>Vos contacts en ordre</h4><p>Claude retrouve un client, bloque un contact indésirable et supprime ceux dont vous n’avez plus besoin, conversations comprises, après votre confirmation.</p><p class="bt-avec">Avec <code>search_contacts</code>, <code>block_contact</code>, <code>delete_contacts</code></p></li>
+        <li class="bt-payante"><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-funnel"/></svg></span><span class="bt-offre" data-etiquette="pro">Offre Pro</span></div><h4>Vos campagnes et votre agent IA en chiffres</h4><p>Le coût et les clics de chaque campagne, ce que votre agent IA a coûté, écrit et passé à votre équipe.</p><p class="bt-avec">Avec <code>get_campaign_stats</code>, <code>get_ai_stats</code></p></li>
+      </ul>
+      <div class="bt-pro">
+        <h3>Ce que le Pro ajoute</h3>
+        <ul><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Vos promotions en campagne, à vos clients ciblés par étiquette</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>La console&nbsp;: l’Inbox de votre équipe et la carte de votre boutique</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Le coût et les clics de vos campagnes, le travail de votre agent IA en chiffres</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>La bulle WhatsApp sans la mention «&nbsp;Propulsé par Messaging Me&nbsp;»</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Un numéro fourni, inclus</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Envois illimités, 1&nbsp;000 contacts créés et les contacts entrants illimités, 3&nbsp;utilisateurs</li></ul>
+        <p class="bt-pro-prix">49&nbsp;€ HT par mois, 14&nbsp;jours d’essai la première fois, carte demandée.</p>
+        <a class="bouton bouton-plein" href="https://console.messagingme.app/signup?offre=pro">Essayer le Pro 14&nbsp;jours</a>
+      </div>
+      <p class="bt-note"><a href="#outils">Tous les outils de Claude, un par un</a> <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></p>
+    </div>
+  </section>
+
+  <section class="f-bloc" id="outils">
+    <div class="cadre">
+      <h2 class="f-titre">Les outils de Claude, <span class="sec-accent">un par un.</span></h2>
+      <p class="f-texte">Claude les choisit pour vous, selon ce que vous demandez. Un outil hors de votre offre vous le dit, avec le lien pour en changer.</p>
+      <div class="dev-faq bt-familles">
+        <details><summary>Mise en service et offre<span class="bt-nombre">7 outils</span></summary>
+          <ul>
+            <li><code>get_setup_state</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Où en est la mise en service de l’espace (numéro, agent IA, répondeur, bulle, crédit, offre), et l’étape suivante avec ses outils.</span></li>
+            <li><code>get_plan</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en Pro.</span></li>
+            <li><code>subscribe_pro</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Ouvrir le paiement du Pro, au mois ou à l’année, montant hors taxe.</span></li>
+            <li><code>get_credit</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Le solde du crédit IA et ses derniers mouvements.</span></li>
+            <li><code>buy_credit</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Ouvrir le paiement d’une recharge, montant hors taxe.</span></li>
+            <li><code>create_api_key</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Créer la clé d’API de votre application, montrée une seule fois&nbsp;: elle passe par la conversation, à ranger aussitôt dans le fichier .env.</span></li>
+            <li><code>list_members</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les membres de l’espace&nbsp;; avec le Pro, vous leur confiez des fils.</span></li>
+          </ul>
+        </details>
+        <details><summary>Numéro WhatsApp<span class="bt-nombre">6 outils</span></summary>
+          <ul>
+            <li><code>start_whatsapp_connection</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Donner le lien qui ouvre la connexion du numéro WhatsApp, sans passer par la console, valable une heure&nbsp;: numéro fourni ou apporté, ou celui de l’application WhatsApp Business, en gardant l’application (les messages qui partent par Messaging Me sont facturés par Meta).</span></li>
+            <li><code>watch_whatsapp_connection</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Suivre la connexion du numéro jusqu’au bout&nbsp;: numéro attribué, code de vérification à lire à la personne, numéro connecté, ou relié en gardant l’application WhatsApp Business.</span></li>
+            <li><code>get_number_subscription</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">L’abonnement du numéro fourni&nbsp;: son statut, la fin de la période payée et le numéro.</span></li>
+            <li><code>manage_number_subscription</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Ouvrir le portail de Stripe pour l’abonnement du numéro&nbsp;: carte, factures, résiliation.</span></li>
+            <li><code>resubscribe_number</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Renouveler l’abonnement du numéro quand il est impayé ou terminé&nbsp;: le portail de Stripe, ou un nouveau paiement qui rend le même numéro.</span></li>
+            <li><code>return_number_at_plan_end</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Choisir de rendre le numéro fourni à la fin du Pro, ou de le garder à 3,50 € HT par mois sur la même carte.</span></li>
+          </ul>
+        </details>
+        <details><summary>Agent IA<span class="bt-nombre">13 outils</span></summary>
+          <ul>
+            <li><code>list_agents</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les agents IA, leur statut, et ce qui manque encore avant de pouvoir les activer.</span></li>
+            <li><code>get_agent</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Un agent IA&nbsp;: sa fiche, son modèle, ses outils, sa connaissance, ce qui lui manque, et les modèles proposés avec leur prix.</span></li>
+            <li><code>create_agent</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Créer un agent IA en brouillon.</span></li>
+            <li><code>update_agent</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Modifier la fiche d’un agent IA (objectif, ton, transferts, règles d’arrêt) et son modèle, journalisé au nom de la personne.</span></li>
+            <li><code>set_agent_limits</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Régler les limites d’une conversation d’un agent IA (réponses, actions, crédit dépensé, sans limite de crédit par défaut), journalisé au nom de la personne.</span></li>
+            <li><code>set_agent_tools</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Ajouter et activer les quatre outils sûrs d’un agent IA (terminer, chercher, lire le contact, passer la main).</span></li>
+            <li><code>set_agent_action</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Créer ou modifier une action d’un agent IA&nbsp;: ce qu’il recueille et envoie à votre application (webhook agent.action) quand le client fait une demande, une fois par jour et par contact.</span></li>
+            <li><code>delete_agent_action</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Supprimer une action d’un agent IA.</span></li>
+            <li><code>test_agent</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Essayer un agent IA sur une conversation fictive.</span></li>
+            <li><code>activate_agent</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Activer un agent IA complet, ou le désactiver.</span></li>
+            <li><code>set_default_responder</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Choisir qui répond au client (un nouveau contact, et tout message que personne ne tient)&nbsp;: un agent IA actif, l’équipe ou votre application, et avec le Pro un scénario publié, avec le Business l’agent de Meta.</span></li>
+            <li><code>set_transfer_mode</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Régler ce que les agents IA promettent de la disponibilité de l’équipe quand ils passent la main.</span></li>
+            <li><code>set_business_hours</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Régler les heures d’ouverture de l’espace et son fuseau&nbsp;: celles que les agents IA annoncent hors des heures.</span></li>
+          </ul>
+        </details>
+        <details><summary>Connaissance de l’agent IA<span class="bt-nombre">6 outils</span></summary>
+          <ul>
+            <li><code>list_knowledge</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les fiches de connaissance d’un agent IA, avec leur provenance.</span></li>
+            <li><code>add_knowledge</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Ajouter des fiches de connaissance écrites, 50 au plus par appel.</span></li>
+            <li><code>delete_knowledge</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Supprimer des fiches de connaissance.</span></li>
+            <li><code>preview_site</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Lire un site depuis le serveur et voir ce qu’un import en ferait, sans rien écrire.</span></li>
+            <li><code>import_site</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Importer les pages d’un site en connaissance.</span></li>
+            <li><code>import_document_text</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Importer le texte d’un document sous son nom, rangé comme un document déposé.</span></li>
+          </ul>
+        </details>
+        <details><summary>Conversations<span class="bt-nombre">9 outils</span></summary>
+          <ul>
+            <li><code>list_conversations</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les conversations, la plus active en premier, sur une période si besoin, avec le contact de chacune.</span></li>
+            <li><code>get_conversation</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Le détail d’un fil, et surtout si la fenêtre de 24 h est ouverte.</span></li>
+            <li><code>get_messages</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les 50 derniers messages d’un fil, du plus ancien au plus récent, et before pour remonter plus loin.</span></li>
+            <li><code>reply_in_open_window</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Répondre, uniquement si la fenêtre de 24 h est ouverte.</span></li>
+            <li><code>send_message</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Envoyer dans la fenêtre de 24 h une image, un document, un lieu, des boutons, une liste ou un bouton lien, au format de Meta.</span></li>
+            <li><code>control_conversation</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Prendre la main sur un fil, ou la rendre au répondeur automatique, qui répondra au message suivant.</span></li>
+            <li><code>tag_conversation</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Poser des tags sur le contact d’un fil.</span></li>
+            <li><code>assign_conversation</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Confier un fil à un membre, ou le libérer.</span></li>
+            <li><code>get_conversation_insights</code><span class="bt-offre" data-etiquette="entreprise">Offre Entreprise</span><span class="bt-quoi">Ce que l’analyse a compris des conversations&nbsp;: sentiment, intentions, résolution, sujets, et la satisfaction et l’urgence par maille.</span></li>
+          </ul>
+        </details>
+        <details><summary>Modèles<span class="bt-nombre">7 outils</span></summary>
+          <ul>
+            <li><code>list_templates</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les modèles WhatsApp de l’espace, avec leur langue, leur catégorie et leur statut chez Meta.</span></li>
+            <li><code>get_template_status</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Le statut d’un modèle chez Meta, langue par langue, avec le motif d’un refus.</span></li>
+            <li><code>create_template</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Créer un modèle au format de Meta et le soumettre à sa validation.</span></li>
+            <li><code>update_template</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Corriger une langue d’un modèle, au format de Meta, qui repart en validation.</span></li>
+            <li><code>delete_template</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Supprimer un modèle, toutes ses langues.</span></li>
+            <li><code>send_template_to_contact</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Envoyer un modèle approuvé à un client, même hors de la fenêtre de 24&nbsp;h, dans les règles des envois (STOP, modèles du mois).</span></li>
+            <li><code>get_message_status</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Le statut de livraison d’un message envoyé&nbsp;: envoyé, distribué, lu ou en échec, avec le motif de Meta.</span></li>
+          </ul>
+        </details>
+        <details><summary>Contacts et campagnes<span class="bt-nombre">14 outils</span></summary>
+          <ul>
+            <li><code>search_contacts</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Chercher un contact par nom ou par numéro, et avec l’Entreprise, sa dernière analyse.</span></li>
+            <li><code>get_contact</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">La fiche d’un contact à partir de son numéro, et avec l’Entreprise, sa dernière analyse et son résumé.</span></li>
+            <li><code>block_contact</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Bloquer ou débloquer un contact&nbsp;: plus rien ne lui part, ses messages restent enregistrés.</span></li>
+            <li><code>prepare_contacts_deletion</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Préparer la suppression d’une sélection de contacts sans rien effacer (étiquettes, consentement, une liste, les N plus anciens, 1 000 au plus)&nbsp;: leur nombre, 10 fiches au plus et un code de confirmation.</span></li>
+            <li><code>delete_contacts</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Supprimer pour de bon les contacts d’une sélection préparée, avec son code&nbsp;: fiches, conversations et messages effacés.</span></li>
+            <li><code>find_contacts</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Les contacts d’une cible, comme les filtres de la liste des contacts&nbsp;: étiquettes, consentement et, en Entreprise, la dernière analyse.</span></li>
+            <li><code>tag_contacts</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Étiqueter les contacts d’une cible ou d’une liste de conversations&nbsp;: un segment est une étiquette.</span></li>
+            <li><code>list_fields</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les champs personnalisés des contacts&nbsp;: clé, libellé, type.</span></li>
+            <li><code>create_field</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Créer un champ personnalisé&nbsp;: sa clé vient du libellé.</span></li>
+            <li><code>set_contact_field</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Remplir un champ sur les contacts d’une cible ou d’une liste de conversations, comme l’action en masse de la console, sans déclencher d’automation.</span></li>
+            <li><code>prepare_campaign</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Préparer une campagne de modèle sans rien envoyer&nbsp;: un brouillon visible dans la console, un récapitulatif (ciblés, partants, écartés et pourquoi, cinq noms, le volume facturable) et un code de confirmation.</span></li>
+            <li><code>launch_campaign</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Lancer, ou programmer à sa date, une campagne préparée, avec le code de son récapitulatif, une fois que la personne a dit oui.</span></li>
+            <li><code>control_campaign</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Mettre en pause une campagne qui envoie, déprogrammer une campagne programmée, ou préparer la reprise d’une campagne en pause (un récapitulatif et un code).</span></li>
+            <li><code>list_scenarios</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les scénarios de l’espace, et lesquels sont publiés&nbsp;: ils se construisent dans la console, avec le Pro.</span></li>
+          </ul>
+        </details>
+        <details><summary>Bulle WhatsApp<span class="bt-nombre">3 outils</span></summary>
+          <ul>
+            <li><code>list_widgets</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les widgets WhatsApp de l’espace, avec la balise à coller sur le site.</span></li>
+            <li><code>create_widget</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Créer un widget WhatsApp, avec les contrôles de l’écran, et recevoir sa balise.</span></li>
+            <li><code>update_widget</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Modifier un widget.</span></li>
+          </ul>
+        </details>
+        <details><summary>Boutique Shopify<span class="bt-nombre">6 outils</span></summary>
+          <ul>
+            <li><code>connect_shopify</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Brancher votre boutique Shopify avec l’app que Claude a créée dans votre organisation Shopify.</span></li>
+            <li><code>set_shopify_message</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Envoyer un message quand une commande est payée ou expédiée, ou relancer une fois un panier abandonné&nbsp;: un modèle approuvé, avec les données Shopify, dans les règles des envois (STOP, modèles du mois, limite de contacts).</span></li>
+            <li><code>get_shopify_state</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">La boutique Shopify branchée&nbsp;: son état, ses messages, le dernier événement reçu, les issues des 30 derniers jours et les paniers des 7 derniers.</span></li>
+            <li><code>preview_shopify_customers</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Compter, sans rien écrire, vos clients Shopify abonnés à votre marketing (e-mail ou SMS) qui ont un téléphone&nbsp;: déjà dans l’espace, nouveaux, places restantes dans votre offre, importables.</span></li>
+            <li><code>import_shopify_customers</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Importer les clients Shopify abonnés que vous avez choisis, les plus récents d’abord&nbsp;: des fiches étiquetées Shopify, consentantes sur votre déclaration, dans la limite de votre offre.</span></li>
+            <li><code>disconnect_shopify</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Couper la boutique Shopify&nbsp;: plus aucun message ne part, les demandes RGPD de la boutique restent traitées.</span></li>
+          </ul>
+        </details>
+        <details><summary>Webhooks<span class="bt-nombre">7 outils</span></summary>
+          <ul>
+            <li><code>create_webhook_endpoint</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Inscrire l’adresse HTTPS de l’application qui recevra les événements choisis (webhook sortant, signé).</span></li>
+            <li><code>list_webhook_endpoints</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les adresses de webhooks sortants, leurs types d’événements et leur état, et la limite de l’offre.</span></li>
+            <li><code>update_webhook_endpoint</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Modifier une adresse&nbsp;: ses types d’événements, sa pause, ou un nouveau secret, montré une fois.</span></li>
+            <li><code>delete_webhook_endpoint</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Supprimer une adresse et son journal.</span></li>
+            <li><code>send_test_event</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Envoyer tout de suite un événement d’essai signé à une adresse, et lire ce que l’application a répondu.</span></li>
+            <li><code>get_webhook_deliveries</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Le journal d’une adresse&nbsp;: chaque envoi, son statut, la réponse de l’application et le corps envoyé.</span></li>
+            <li><code>replay_webhook_delivery</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Rejouer un envoi terminé&nbsp;: même corps, même identifiant d’événement.</span></li>
+          </ul>
+        </details>
+        <details><summary>Chiffres<span class="bt-nombre">3 outils</span></summary>
+          <ul>
+            <li><code>get_message_stats</code><span class="bt-offre" data-etiquette="base">Offre Free</span><span class="bt-quoi">Les chiffres des messages en séries pour un graphique&nbsp;: modèles envoyés, livrés, lus, en échec.</span></li>
+            <li><code>get_campaign_stats</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Les campagnes de la période avec leur coût estimé, leurs clics et les erreurs de Meta, ou l’entonnoir d’une campagne.</span></li>
+            <li><code>get_ai_stats</code><span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-quoi">Les chiffres des agents IA&nbsp;: coût des tours d’agent sur le crédit, messages écrits par l’IA, demandes ouvertes pour l’équipe et actions déclenchées.</span></li>
+          </ul>
+        </details>
+      </div>
+      <p class="bt-note"><a href="https://console.messagingme.app/developers/mcp" rel="noopener">La documentation complète du serveur MCP</a> <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></p>
     </div>
   </section>
 
@@ -577,6 +753,8 @@
         <details id="faq-prix"><summary>Combien coûte la relance des paniers abandonnés&nbsp;?</summary><p>0&nbsp;€ d’abonnement avec l’offre Free, en la branchant depuis Claude Code. Meta facture chaque message envoyé à votre boutique, sans supplément de notre part. Il vous faut un numéro relié par Meta (le vôtre, ou un numéro fourni à 3,50&nbsp;€ HT par mois), et votre agent IA consomme un crédit prépayé.</p></details>
         <details id="faq-app"><summary>Faut-il installer une app de l’App Store de Shopify&nbsp;?</summary><p>Non. Claude crée l’app dans votre propre organisation Shopify, sans validation de Shopify&nbsp;: vous n’avez qu’à cliquer «&nbsp;Installer&nbsp;».</p></details>
         <details id="faq-reponse"><summary>Qui répond quand le client répond à la relance&nbsp;?</summary><p>Celui que vous avez choisi&nbsp;: votre agent IA, avec ce qu’il sait de votre boutique, ou votre équipe. L’agent n’a pas accès à vos commandes&nbsp;: pour un colis précis, il passe la main.</p></details>
+        <details id="faq-promotion"><summary>Puis-je envoyer une promotion à mes clients&nbsp;?</summary><p>Oui, avec l’offre Pro&nbsp;: Claude prépare la campagne, vous montre qui la recevra, et ne la lance qu’avec votre oui. Elle ne part qu’à ceux qui ont accepté WhatsApp, depuis un numéro API, et un STOP est toujours respecté. Avec la Free, Claude envoie un message à un client à la fois.</p></details>
+        <details id="faq-repondre"><summary>Puis-je répondre moi-même à mes clients&nbsp;?</summary><p>Oui, en le demandant à Claude&nbsp;: il vous montre qui vous a écrit, vous répondez dans les 24&nbsp;heures qui suivent leur message, et vous reprenez la main sur votre agent IA quand vous le voulez. Avec le Pro, votre équipe répond aussi depuis l’Inbox de la console.</p></details>
         <details id="faq-numero"><summary>Quel numéro WhatsApp utiliser&nbsp;?</summary><p>Cela dépend de votre offre et de votre numéro&nbsp;: le guide ci-dessus vous donne votre chemin. Les messages de votre boutique partent d’un numéro API, relié par Meta&nbsp;: le vôtre s’il est libre, un numéro fourni à 3,50&nbsp;€ HT par mois (inclus dans le Pro), ou le numéro de votre application WhatsApp Business, que vous gardez. La fenêtre de Meta vous fait créer votre compte Meta Business en chemin s’il vous manque. Avec la Free et sans aucun compte, votre numéro WhatsApp Business, relié depuis l’application, sert à répondre&nbsp;: WhatsApp peut couper un numéro relié ainsi qui écrit en premier. Plus tard, vous pourrez le transformer en numéro API pour écrire en premier, en gardant ses conversations.</p></details>
         <details id="faq-stop"><summary>Que devient le client qui répond STOP&nbsp;?</summary><p>Il ne reçoit plus rien de votre boutique. La relance porte en bas la mention «&nbsp;Répondez STOP pour ne plus recevoir ces messages&nbsp;».</p></details>
       </div>

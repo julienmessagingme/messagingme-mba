@@ -135,8 +135,12 @@ dans le Pro. Shopify n'y apparaît qu'en compatibilité (Messaging Me n'est pas 
 les messages de commande sur WhatsApp, branchés en le demandant à Claude Code avec l'offre Free (0 € d'abonnement), ou
 depuis la console avec le Pro. Le scénario du panier abandonné en cinq temps, puis son film (depuis le 2026-10-28 : la
 boutique et le WhatsApp branchés en parlant à Claude Code, puis la relance, la question et la commande sur le téléphone ;
-en 9:16 au téléphone, et son affiche sert d'image de partage de la page), ce qui se branche, ce que la conversation
-rend possible (chaque carte étiquetée de son offre), puis le guide du numéro, en tunnel depuis le 2026-10-27 :
+en 9:16 au téléphone, et son affiche sert d'image de partage de la page), ce qui se branche, puis « Tout ce que
+Claude fait pour votre boutique » (2026-10-29) : trois besoins (répondre, vendre et faire revenir, piloter), chaque carte
+avec les outils MCP qui la font et l'étiquette de l'offre qui l'ouvre, calculée depuis le serveur MCP (« Offre Free »,
+« Offre Pro », « Offre Entreprise »), les cartes au-delà de la Free mises en avant, et sous les besoins « Ce que le Pro
+ajoute » et son bouton « Essayer le Pro 14 jours ». Viennent ensuite tous les outils de Claude, un volet replié par
+famille, chacun avec sa phrase et son offre, et le lien de la doc MCP. Puis le guide du numéro, en tunnel depuis le 2026-10-27 :
 « Votre branchement commence ici. », et une carte qui pose une question à la fois, en grand, sous l'étape (« Question 1
 sur 5 au plus ») et sa jauge. Une réponse donnée se replie en une ligne que « Modifier » rouvre. L'arbre de Julien du
 2026-10-27 part de l'offre : deux cartes, Free (0 €, depuis Claude Code, sans console) et Pro (49 € HT par mois, la

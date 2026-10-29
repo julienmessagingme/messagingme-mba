@@ -15,7 +15,8 @@
 // ⚠️ Marque Shopify : compatibilité seulement (`tests/vitrine-marque-shopify.test.ts`).
 // Les textes sont du HTML écrit par nous (`&nbsp;` compris) ; le français reçoit ses espaces insécables à l'assemblage.
 
-import { DROITS, ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES } from '../../src/offres/offres';
+import { DROITS, ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES, type Fonction } from '../../src/offres/offres';
+import type { NomOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 import type { Langue } from './cas-textes';
 
 /** Le numéro fourni, en centimes HT par mois : la valeur de `PRIX_NUMERO_HT_CENTIMES`, gardée égale par le test. */
@@ -27,7 +28,7 @@ const euros = (centimes: number, langue: Langue): string => {
   return langue === 'fr' ? `${n.replace('.', ',')}&nbsp;€` : `€${n}`;
 };
 /** Une limite chiffrée de l'offre ; une limite absente (illimitée) n'a rien à faire dans une phrase qui la chiffre. */
-const limite = (offre: 'base' | 'pro', nom: 'contacts' | 'envoisModelesMois'): number => {
+const limite = (offre: 'base' | 'pro', nom: 'contacts' | 'envoisModelesMois' | 'utilisateurs'): number => {
   const v = DROITS[offre].limites[nom];
   if (v === null) throw new Error(`boutique-textes : ${offre}.${nom} est illimité`);
   return v;
@@ -38,7 +39,17 @@ const milliers = (n: number, langue: Langue): string =>
   (langue === 'fr' ? n.toLocaleString('fr-FR').replace(/\s/g, '&nbsp;') : n.toLocaleString('en-US'));
 
 export interface BulleTel { readonly texte: string; readonly heure: string; readonly envoye?: boolean; readonly pied?: string }
-export interface Carte { readonly titre: string; readonly texte: string; readonly icone?: string; readonly offre?: string }
+export interface Carte { readonly titre: string; readonly texte: string; readonly icone?: string }
+/**
+ * Une carte de « Tout ce que Claude fait » : les outils qui la font, cités sous elle, et la fonction de la console qui la
+ * porte quand Claude ne la fait pas (l'Inbox, les publicités). Son étiquette d'offre se CALCULE (`offreDeLaCarte`,
+ * `scripts/vitrine/offres-outils.ts`), jamais écrite ici.
+ */
+export interface CarteClaude {
+  readonly titre: string; readonly texte: string; readonly icone: string;
+  readonly outils: readonly NomOutilMcp[]; readonly fonction?: Fonction;
+}
+export interface Besoin { readonly titre: string; readonly cartes: readonly CarteClaude[] }
 export interface Etape { readonly titre: string; readonly texte: string }
 /** Une réponse mène à une autre question ou à une issue (`vers`) ; sans `vers`, elle montre l'aide de sa question.
  * `note` : une phrase qui s'affiche sous la question quand on la choisit (le Pro dit que le compte Meta se crée en
@@ -77,7 +88,20 @@ export interface TexteBoutique {
     readonly aria: string; readonly duree: string; readonly publie: string;
   };
   readonly branchez: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly cartes: readonly Carte[] };
-  readonly ensuite: { readonly surtitre: string; readonly titre: readonly [string, string]; readonly cartes: readonly Carte[]; readonly offre: string };
+  /**
+   * Tout ce que Claude fait pour la boutique (décisions de Julien du 2026-10-28, `docs/BILAN-CAS-USAGE-MCP-2026-10-28.md`
+   * § 5) : des besoins, une étiquette d'offre sur CHAQUE carte (`etiquetteDOffre`), puis ce que le Pro
+   * ajoute, pour donner envie de monter, et la liste de tous les outils, repliée par famille (`{n}` : leur nombre).
+   * `lienUne` : le lien de la une vers la section ; `console` : la ligne d'une carte qu'aucun outil ne fait.
+   */
+  readonly claude: {
+    readonly surtitre: string; readonly titre: readonly [string, string]; readonly chapeau: string; readonly lienUne: string;
+    readonly avec: string; readonly console: string;
+    readonly besoins: readonly Besoin[];
+    readonly pro: { readonly titre: string; readonly liste: readonly string[]; readonly prix: string; readonly bouton: string };
+    readonly versOutils: string;
+    readonly outils: { readonly titre: readonly [string, string]; readonly texte: string; readonly nombre: string; readonly doc: string };
+  };
   readonly numero: {
     readonly surtitre: string; readonly titre: readonly [string, string]; readonly chapeau: string;
     /** Les mots que personne ne comprend (Julien, 2026-10-24), expliqués AVANT la première question. */
@@ -198,15 +222,61 @@ const fr = (): TexteBoutique => {
         { titre: 'Vos clients abonnés', texte: 'L’import de vos clients abonnés à votre marketing (e-mail ou SMS) qui ont un téléphone. Leur accord pour WhatsApp relève de vous, et un STOP est toujours respecté.', icone: 'i-user' },
       ],
     },
-    ensuite: {
-      surtitre: 'Et ensuite',
-      titre: ['Ce que la conversation', 'rend possible.'],
-      offre: 'Offre',
-      cartes: [
-        { titre: '« Où est ma commande ? »', texte: 'Votre agent IA répond sur la livraison d’après vos pages, et vous passe la main pour un colis précis.', icone: 'i-chat-circle-dots' },
-        { titre: 'Vos promotions', texte: 'Une campagne à vos clients, qui part à ceux qui ont accepté WhatsApp.', icone: 'i-send', offre: 'Pro' },
-        { titre: 'La publicité Click-to-WhatsApp', texte: 'Une publicité Facebook ou Instagram qui ouvre la conversation, et votre agent IA qui la reprend.', icone: 'i-megaphone', offre: 'Entreprise' },
+    claude: {
+      surtitre: 'Avec Claude Code',
+      titre: ['Tout ce que Claude fait', 'pour votre boutique.'],
+      chapeau: 'Votre boutique branchée, vous demandez, Claude le fait. Chaque carte dit l’offre qui l’ouvre : la Free couvre déjà l’essentiel, le Pro ajoute vos campagnes et leurs chiffres, votre équipe et le bilan de votre agent IA.',
+      lienUne: 'Tout ce que Claude fait',
+      avec: 'Avec', console: 'Dans la console',
+      besoins: [
+        {
+          titre: 'Répondre à vos clients',
+          cartes: [
+            { titre: 'Votre agent IA connaît votre boutique', texte: 'Claude lit vos pages de livraison, de retours et vos produits, et en nourrit votre agent IA, qui répond quand un client écrit, sur votre crédit IA prépayé.', icone: 'i-lightning', outils: ['import_site', 'create_agent', 'activate_agent', 'set_default_responder'] },
+            { titre: '« Où est ma commande ? »', texte: 'Le lien de suivi part dans l’avis d’expédition. Votre agent IA répond sur les délais d’après vos pages, et vous passe la main pour un colis précis, en annonçant vos heures d’ouverture.', icone: 'i-package', outils: ['set_shopify_message', 'set_business_hours'] },
+            { titre: 'Vous répondez depuis Claude', texte: '« Qui m’a écrit aujourd’hui ? », puis votre réponse dans les 24&nbsp;heures qui suivent le message du client, avec une photo de produit ou des boutons. Vous prenez la main sur votre agent IA, et vous la lui rendez.', icone: 'i-chat-circle-dots', outils: ['list_conversations', 'reply_in_open_window', 'send_message', 'control_conversation'] },
+            { titre: 'Votre équipe répond dans l’Inbox', texte: 'La console partage les conversations entre vous : chacun voit qui répond, les attribue, les étiquette et reprend la main à votre agent IA.', icone: 'i-user', outils: ['assign_conversation', 'tag_conversation'], fonction: 'inbox' },
+          ],
+        },
+        {
+          titre: 'Vendre et faire revenir',
+          cartes: [
+            { titre: 'La bulle WhatsApp sur votre boutique', texte: 'Claude crée la bulle et vous donne la balise à coller dans votre thème : vos visiteurs vous écrivent sur WhatsApp d’un clic, et votre agent IA répond.', icone: 'i-whatsapp', outils: ['create_widget', 'update_widget'] },
+            { titre: 'Un message à un client précis', texte: 'Un geste après un retard, un article revenu pour qui l’attendait : Claude écrit le message, le fait approuver par Meta et l’envoie depuis votre numéro API.', icone: 'i-send', outils: ['create_template', 'send_template_to_contact'] },
+            { titre: 'Vos promotions, à votre oui', texte: 'Claude prépare une campagne à vos clients qui ont accepté WhatsApp, vous montre qui la recevra, qui en est écarté et pourquoi, puis la lance ou la programme quand vous dites oui.', icone: 'i-broadcast', outils: ['find_contacts', 'prepare_campaign', 'launch_campaign'] },
+            { titre: 'La publicité Click-to-WhatsApp', texte: 'Une publicité Facebook ou Instagram qui ouvre la conversation, et votre agent IA qui la reprend.', icone: 'i-megaphone', outils: [], fonction: 'publicites' },
+          ],
+        },
+        {
+          titre: 'Piloter depuis Claude',
+          cartes: [
+            { titre: 'Votre boutique en un coup d’œil', texte: 'Les paniers de la semaine, ce qui est parti sur 30&nbsp;jours, vos messages livrés, lus ou en échec.', icone: 'i-chart-line-up', outils: ['get_shopify_state', 'get_message_stats'] },
+            { titre: 'Vos messages, écrits pour vous', texte: 'Claude rédige vos modèles, les soumet à Meta et vous dit pourquoi l’un est refusé.', icone: 'i-file-text', outils: ['create_template', 'get_template_status'] },
+            { titre: 'Vos contacts en ordre', texte: 'Claude retrouve un client, bloque un contact indésirable et supprime ceux dont vous n’avez plus besoin, conversations comprises, après votre confirmation.', icone: 'i-tag', outils: ['search_contacts', 'block_contact', 'delete_contacts'] },
+            { titre: 'Vos campagnes et votre agent IA en chiffres', texte: 'Le coût et les clics de chaque campagne, ce que votre agent IA a coûté, écrit et passé à votre équipe.', icone: 'i-funnel', outils: ['get_campaign_stats', 'get_ai_stats'] },
+          ],
+        },
       ],
+      pro: {
+        titre: 'Ce que le Pro ajoute',
+        liste: [
+          'Vos promotions en campagne, à vos clients ciblés par étiquette',
+          'La console : l’Inbox de votre équipe et la carte de votre boutique',
+          'Le coût et les clics de vos campagnes, le travail de votre agent IA en chiffres',
+          'La bulle WhatsApp sans la mention « Propulsé par Messaging Me »',
+          'Un numéro fourni, inclus',
+          `Envois illimités, ${milliers(limite('pro', 'contacts'), 'fr')} contacts créés et les contacts entrants illimités, ${limite('pro', 'utilisateurs')}&nbsp;utilisateurs`,
+        ],
+        prix: `${euros(PRIX_PRO_HT_CENTIMES.mois, 'fr')} HT par mois, ${ESSAI_PRO_JOURS}&nbsp;jours d’essai la première fois, carte demandée.`,
+        bouton: `Essayer le Pro ${ESSAI_PRO_JOURS}&nbsp;jours`,
+      },
+      versOutils: 'Tous les outils de Claude, un par un',
+      outils: {
+        titre: ['Les outils de Claude,', 'un par un.'],
+        texte: 'Claude les choisit pour vous, selon ce que vous demandez. Un outil hors de votre offre vous le dit, avec le lien pour en changer.',
+        nombre: '{n} outils',
+        doc: 'La documentation complète du serveur MCP',
+      },
     },
     numero: {
       surtitre: 'Votre numéro WhatsApp',
@@ -345,6 +415,8 @@ const fr = (): TexteBoutique => {
         { id: 'faq-prix', q: 'Combien coûte la relance des paniers abandonnés ?', r: `0&nbsp;€ d’abonnement avec l’offre Free, en la branchant depuis Claude Code. Meta facture chaque message envoyé à votre boutique, sans supplément de notre part. Il vous faut un numéro relié par Meta (le vôtre, ou un numéro fourni à ${numero} HT par mois), et votre agent IA consomme un crédit prépayé.` },
         { id: 'faq-app', q: 'Faut-il installer une app de l’App Store de Shopify ?', r: 'Non. Claude crée l’app dans votre propre organisation Shopify, sans validation de Shopify : vous n’avez qu’à cliquer « Installer ».' },
         { id: 'faq-reponse', q: 'Qui répond quand le client répond à la relance ?', r: 'Celui que vous avez choisi : votre agent IA, avec ce qu’il sait de votre boutique, ou votre équipe. L’agent n’a pas accès à vos commandes : pour un colis précis, il passe la main.' },
+        { id: 'faq-promotion', q: 'Puis-je envoyer une promotion à mes clients ?', r: 'Oui, avec l’offre Pro : Claude prépare la campagne, vous montre qui la recevra, et ne la lance qu’avec votre oui. Elle ne part qu’à ceux qui ont accepté WhatsApp, depuis un numéro API, et un STOP est toujours respecté. Avec la Free, Claude envoie un message à un client à la fois.' },
+        { id: 'faq-repondre', q: 'Puis-je répondre moi-même à mes clients ?', r: 'Oui, en le demandant à Claude : il vous montre qui vous a écrit, vous répondez dans les 24&nbsp;heures qui suivent leur message, et vous reprenez la main sur votre agent IA quand vous le voulez. Avec le Pro, votre équipe répond aussi depuis l’Inbox de la console.' },
         { id: 'faq-numero', q: 'Quel numéro WhatsApp utiliser ?', r: `Cela dépend de votre offre et de votre numéro : le guide ci-dessus vous donne votre chemin. Les messages de votre boutique partent d’un numéro API, relié par Meta : le vôtre s’il est libre, un numéro fourni à ${numero} HT par mois (inclus dans le Pro), ou le numéro de votre application WhatsApp Business, que vous gardez. La fenêtre de Meta vous fait créer votre compte Meta Business en chemin s’il vous manque. Avec la Free et sans aucun compte, votre numéro WhatsApp Business, relié depuis l’application, sert à répondre : WhatsApp peut couper un numéro relié ainsi qui écrit en premier. Plus tard, vous pourrez le transformer en numéro API pour écrire en premier, en gardant ses conversations.` },
         { id: 'faq-stop', q: 'Que devient le client qui répond STOP ?', r: 'Il ne reçoit plus rien de votre boutique. La relance porte en bas la mention « Répondez STOP pour ne plus recevoir ces messages ».' },
       ],
@@ -445,15 +517,61 @@ const en = (): TexteBoutique => {
         { titre: 'Your subscribed customers', texte: 'The import of your customers subscribed to your marketing (email or SMS) who have a phone number. Their agreement to WhatsApp is your responsibility, and a STOP is always respected.', icone: 'i-user' },
       ],
     },
-    ensuite: {
-      surtitre: 'And then',
-      titre: ['What the conversation', 'makes possible.'],
-      offre: 'Plan',
-      cartes: [
-        { titre: '“Where is my order?”', texte: 'Your AI agent answers about delivery from your pages, and hands over to you for a specific parcel.', icone: 'i-chat-circle-dots' },
-        { titre: 'Your promotions', texte: 'A campaign to your customers, sent to those who accepted WhatsApp.', icone: 'i-send', offre: 'Pro' },
-        { titre: 'Click-to-WhatsApp ads', texte: 'A Facebook or Instagram ad that opens the conversation, and your AI agent that takes it over.', icone: 'i-megaphone', offre: 'Enterprise' },
+    claude: {
+      surtitre: 'With Claude Code',
+      titre: ['Everything Claude does', 'for your store.'],
+      chapeau: 'Once your store is connected, you ask, Claude does it. Each card shows the plan that opens it: the Free plan already covers the essentials, Pro adds your campaigns and their figures, your team and your AI agent’s figures.',
+      lienUne: 'Everything Claude does',
+      avec: 'With', console: 'In the console',
+      besoins: [
+        {
+          titre: 'Answer your customers',
+          cartes: [
+            { titre: 'Your AI agent knows your store', texte: 'Claude reads your delivery and returns pages and your products, and feeds them to your AI agent, which answers when a customer writes, using your prepaid AI credit.', icone: 'i-lightning', outils: ['import_site', 'create_agent', 'activate_agent', 'set_default_responder'] },
+            { titre: '“Where is my order?”', texte: 'The tracking link goes out in the shipping notice. Your AI agent answers about delivery times from your pages, and hands over to you for a specific parcel, announcing your opening hours.', icone: 'i-package', outils: ['set_shopify_message', 'set_business_hours'] },
+            { titre: 'You reply from Claude', texte: '“Who wrote to me today?”, then your reply within 24 hours of the customer’s message, with a product photo or buttons. You take over from your AI agent, and hand it back.', icone: 'i-chat-circle-dots', outils: ['list_conversations', 'reply_in_open_window', 'send_message', 'control_conversation'] },
+            { titre: 'Your team answers in the Inbox', texte: 'The console shares conversations among you: everyone sees who is answering, assigns them, tags them and takes over from your AI agent.', icone: 'i-user', outils: ['assign_conversation', 'tag_conversation'], fonction: 'inbox' },
+          ],
+        },
+        {
+          titre: 'Sell and bring them back',
+          cartes: [
+            { titre: 'The WhatsApp bubble on your store', texte: 'Claude creates the bubble and gives you the tag to paste into your theme: your visitors write to you on WhatsApp in one click, and your AI agent answers.', icone: 'i-whatsapp', outils: ['create_widget', 'update_widget'] },
+            { titre: 'A message to one customer', texte: 'A gesture after a delay, an item back in stock for someone who was waiting: Claude writes the message, has Meta approve it and sends it from your API number.', icone: 'i-send', outils: ['create_template', 'send_template_to_contact'] },
+            { titre: 'Your promotions, once you say yes', texte: 'Claude prepares a campaign to your customers who accepted WhatsApp, shows you who will receive it, who is left out and why, then launches or schedules it when you say yes.', icone: 'i-broadcast', outils: ['find_contacts', 'prepare_campaign', 'launch_campaign'] },
+            { titre: 'Click-to-WhatsApp ads', texte: 'A Facebook or Instagram ad that opens the conversation, and your AI agent that takes it over.', icone: 'i-megaphone', outils: [], fonction: 'publicites' },
+          ],
+        },
+        {
+          titre: 'Run it from Claude',
+          cartes: [
+            { titre: 'Your store at a glance', texte: 'The week’s checkouts, what went out over 30 days, your messages delivered, read or failed.', icone: 'i-chart-line-up', outils: ['get_shopify_state', 'get_message_stats'] },
+            { titre: 'Your messages, written for you', texte: 'Claude writes your templates, submits them to Meta and tells you why one is rejected.', icone: 'i-file-text', outils: ['create_template', 'get_template_status'] },
+            { titre: 'Your contacts in order', texte: 'Claude finds a customer, blocks an unwanted contact and deletes those you no longer need, conversations included, after your confirmation.', icone: 'i-tag', outils: ['search_contacts', 'block_contact', 'delete_contacts'] },
+            { titre: 'Your campaigns and your AI agent in figures', texte: 'The cost and clicks of each campaign, what your AI agent cost, wrote and passed to your team.', icone: 'i-funnel', outils: ['get_campaign_stats', 'get_ai_stats'] },
+          ],
+        },
       ],
+      pro: {
+        titre: 'What Pro adds',
+        liste: [
+          'Your promotions as campaigns, to your customers targeted by tag',
+          'The console: your team’s Inbox and your store’s card',
+          'The cost and clicks of your campaigns, your AI agent’s work in figures',
+          'The WhatsApp bubble without the “Powered by Messaging Me” line',
+          'A provided number, included',
+          `Unlimited sends, ${milliers(limite('pro', 'contacts'), 'en')} contacts created and unlimited inbound contacts, ${limite('pro', 'utilisateurs')} users`,
+        ],
+        prix: `${euros(PRIX_PRO_HT_CENTIMES.mois, 'en')} excl. VAT a month, a ${ESSAI_PRO_JOURS}-day trial the first time, card required.`,
+        bouton: `Try Pro for ${ESSAI_PRO_JOURS} days`,
+      },
+      versOutils: 'All of Claude’s tools, one by one',
+      outils: {
+        titre: ['Claude’s tools,', 'one by one.'],
+        texte: 'Claude picks them for you, based on what you ask. A tool outside your plan tells you so, with the link to change it.',
+        nombre: '{n} tools',
+        doc: 'The full MCP server documentation',
+      },
     },
     numero: {
       surtitre: 'Your WhatsApp number',
@@ -590,6 +708,8 @@ const en = (): TexteBoutique => {
         { id: 'faq-prix', q: 'How much does the abandoned checkout reminder cost?', r: `€0 a month with the Free plan, by connecting it from Claude Code. Meta bills each message sent to your store, with no surcharge from us. You need a number connected through Meta (yours, or a provided number at ${numero} excl. VAT a month), and your AI agent uses prepaid credit.` },
         { id: 'faq-app', q: 'Do I need to install an app from the Shopify App Store?', r: 'No. Claude creates the app in your own Shopify organization, with no Shopify review: all you have to do is click “Install”.' },
         { id: 'faq-reponse', q: 'Who answers when the customer replies to the reminder?', r: 'The one you chose: your AI agent, with what it knows about your store, or your team. The agent has no access to your orders: for a specific parcel, it hands over.' },
+        { id: 'faq-promotion', q: 'Can I send a promotion to my customers?', r: 'Yes, with the Pro plan: Claude prepares the campaign, shows you who will receive it, and only launches it with your yes. It only goes to those who accepted WhatsApp, from an API number, and a STOP is always respected. With the Free plan, Claude sends a message to one customer at a time.' },
+        { id: 'faq-repondre', q: 'Can I reply to my customers myself?', r: 'Yes, by asking Claude: it shows you who wrote to you, you reply within 24 hours of their message, and you take over from your AI agent whenever you want. With Pro, your team also replies from the console’s Inbox.' },
         { id: 'faq-numero', q: 'Which WhatsApp number should I use?', r: `It depends on your plan and your number: the guide above gives you your path. Your store’s messages go out from an API number, connected through Meta: yours if it is available, a provided number at ${numero} excl. VAT a month (included in Pro), or the number of your WhatsApp Business app, which you keep. Meta’s window has you create your Meta Business account along the way if you lack one. With the Free plan and no account at all, your WhatsApp Business number, linked from the app, serves to answer: WhatsApp can cut a number linked this way that writes first. Later, you will be able to turn it into an API number to write first, keeping its conversations.` },
         { id: 'faq-stop', q: 'What happens to a customer who replies STOP?', r: 'They no longer receive anything from your store. The reminder carries at the bottom the line “Reply STOP to stop these messages”.' },
       ],
@@ -600,6 +720,63 @@ const en = (): TexteBoutique => {
       contact: 'Contact us',
     },
   };
+};
+
+/**
+ * La phrase d'un outil dans la liste repliée, quand celle de la doc MCP ne convient pas à la page (relecture du
+ * 2026-10-29) : écrite sans offre, elle nommait à côté d'une étiquette « Offre Free » l'agent de Meta, les scénarios,
+ * l'analyse ou l'attribution, qui ne le sont pas, et parlait « du marchand » à qui la lit. 🔴 Une ligne Free qui nomme
+ * une fonction payante dit son offre (`tests/vitrine-boutique.test.ts`). Les autres outils gardent la phrase de la doc.
+ */
+export const PHRASES_OUTILS: Readonly<Partial<Record<NomOutilMcp, Readonly<Record<Langue, string>>>>> = {
+  set_default_responder: {
+    fr: 'Choisir qui répond au client (un nouveau contact, et tout message que personne ne tient)&nbsp;: un agent IA actif, l’équipe ou votre application, et avec le Pro un scénario publié, avec le Business l’agent de Meta.',
+    en: 'Choose who answers the customer (a new contact, and every message nobody handles): an active AI agent, the team or your app, plus a published scenario with Pro and Meta’s agent with Business.',
+  },
+  list_scenarios: {
+    fr: 'Les scénarios de l’espace, et lesquels sont publiés&nbsp;: ils se construisent dans la console, avec le Pro.',
+    en: 'The workspace’s scenarios, and which are published: they are built in the console, with Pro.',
+  },
+  search_contacts: {
+    fr: 'Chercher un contact par nom ou par numéro, et avec l’Entreprise, sa dernière analyse.',
+    en: 'Find a contact by name or number, with their latest analysis on the Enterprise plan.',
+  },
+  get_contact: {
+    fr: 'La fiche d’un contact à partir de son numéro, et avec l’Entreprise, sa dernière analyse et son résumé.',
+    en: 'A contact record from its number, with their latest analysis and its summary on the Enterprise plan.',
+  },
+  list_members: {
+    fr: 'Les membres de l’espace&nbsp;; avec le Pro, vous leur confiez des fils.',
+    en: 'The workspace members; with Pro, you assign threads to them.',
+  },
+  create_field: {
+    fr: 'Créer un champ personnalisé&nbsp;: sa clé vient du libellé.',
+    en: 'Create a custom field: its key comes from the label.',
+  },
+  delete_contacts: {
+    fr: 'Supprimer pour de bon les contacts d’une sélection préparée, avec son code&nbsp;: fiches, conversations et messages effacés.',
+    en: 'Delete for good the contacts of a prepared selection, with its code: records, conversations and messages erased.',
+  },
+  send_template_to_contact: {
+    fr: 'Envoyer un modèle approuvé à un client, même hors de la fenêtre de 24&nbsp;h, dans les règles des envois (STOP, modèles du mois).',
+    en: 'Send an approved template to one customer, even outside the 24-hour window, within the sending rules (STOP, monthly templates).',
+  },
+  connect_shopify: {
+    fr: 'Brancher votre boutique Shopify avec l’app que Claude a créée dans votre organisation Shopify.',
+    en: 'Connect your Shopify store with the app Claude created in your Shopify organization.',
+  },
+  set_shopify_message: {
+    fr: 'Envoyer un message quand une commande est payée ou expédiée, ou relancer une fois un panier abandonné&nbsp;: un modèle approuvé, avec les données Shopify, dans les règles des envois (STOP, modèles du mois, limite de contacts).',
+    en: 'Send a message when an order is paid or shipped, or remind an abandoned checkout once: an approved template, with Shopify data, within the sending rules (STOP, monthly templates, contact limit).',
+  },
+  preview_shopify_customers: {
+    fr: 'Compter, sans rien écrire, vos clients Shopify abonnés à votre marketing (e-mail ou SMS) qui ont un téléphone&nbsp;: déjà dans l’espace, nouveaux, places restantes dans votre offre, importables.',
+    en: 'Count, without writing anything, your Shopify customers subscribed to your marketing (email or SMS) who have a phone: already in the workspace, new, room left in your plan, importable.',
+  },
+  import_shopify_customers: {
+    fr: 'Importer les clients Shopify abonnés que vous avez choisis, les plus récents d’abord&nbsp;: des fiches étiquetées Shopify, consentantes sur votre déclaration, dans la limite de votre offre.',
+    en: 'Import the subscribed Shopify customers you chose, newest first: records tagged Shopify, opted in on your declaration, within your plan’s limit.',
+  },
 };
 
 export const TEXTES_BOUTIQUES: Readonly<Record<string, Readonly<Record<Langue, TexteBoutique>>>> = {

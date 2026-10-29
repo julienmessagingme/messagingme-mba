@@ -4,12 +4,19 @@
 // `docs/superpowers/plans/2026-10-24-boutiques-shopify.md`. Une troisième nature de page : ni références clients ni cas
 // de terrain, mais deux portes (Claude Code, la console) et le guide du numéro, que `site.js` rend interactif et qui
 // reste lisible sans script (ses issues en liste). Son film (lot 3, 2026-10-28) suit le scénario et sert d'image de partage.
+// « Tout ce que Claude fait » et la liste repliée des outils (plan `2026-10-28-vitrine-cas-mcp.md`) remplacent « Et ensuite » :
+// leurs étiquettes d'offre se calculent depuis le serveur MCP (`offres-outils.ts`).
 import { DEPOT_PLUGIN } from '../../web/lib/demarrer';
+import { OUTILS_MCP } from '../../web/lib/mcp-outils';
 import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
+import { FAMILLES_OUTILS } from '../plugin/familles-outils';
 import { ACCUEIL, fichierDe, fil, page } from './cas';
 import type { Langue } from './cas-textes';
 import { insecables } from './guide-meta';
-import { TEXTES_BOUTIQUES, type Carte, type Etape, type Issue, type Question, type Reponse, type TexteBoutique, type Voie } from './boutique-textes';
+import { etiquetteDOffre, offreDeLaCarte, offreDeLOutil } from './offres-outils';
+import {
+  PHRASES_OUTILS, TEXTES_BOUTIQUES, type Carte, type CarteClaude, type Etape, type Issue, type Question, type Reponse, type TexteBoutique, type Voie,
+} from './boutique-textes';
 
 const ORIGINE = 'https://app.messagingme.fr';
 const CONSOLE = 'https://console.messagingme.app';
@@ -18,6 +25,8 @@ const PLUGIN: Readonly<Record<Langue, string>> = { fr: '/developpeurs/installer-
 const AIDE: Readonly<Record<Langue, string>> = { fr: '/aide/brancher-ma-boutique-shopify/', en: '/en/help/connect-my-shopify-store/' };
 const TARIFS: Readonly<Record<Langue, string>> = { fr: '/tarifs/', en: '/en/pricing/' };
 const CONTACT: Readonly<Record<Langue, string>> = { fr: '/contact/#formulaire', en: '/en/contact/#formulaire' };
+/** La documentation publique du serveur MCP, dans la console (publique depuis le 2026-09-25). */
+const DOC_MCP: Readonly<Record<Langue, string>> = { fr: `${CONSOLE}/developers/mcp`, en: `${CONSOLE}/developers/mcp?lang=en` };
 /**
  * L'inscription qui mène à la souscription du Pro (`?offre=pro`, `arriveeDUnNouvelEspace`, `web/lib/session.ts`), jamais
  * au tunnel de la Free, qui est le chemin d'une inscription sans ce drapeau : la console est celle du Pro, donc les
@@ -50,11 +59,55 @@ function telephone(t: TexteBoutique['telephone']): string[] {
   ];
 }
 
-const cartes = (liste: readonly Carte[], offre: string) => [
+const icone = (nom: string) => `<span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#${nom}"/></svg></span>`;
+
+const cartes = (liste: readonly Carte[]) => [
   '      <ul class="bt-cartes">',
-  ...liste.map((c) => `        <li>${c.icone ? `<span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#${c.icone}"/></svg></span>` : ''}<h3>${c.titre}${c.offre ? ` <span class="bt-offre">${offre} ${c.offre}</span>` : ''}</h3><p>${c.texte}</p></li>`),
+  ...liste.map((c) => `        <li>${c.icone ? icone(c.icone) : ''}<h3>${c.titre}</h3><p>${c.texte}</p></li>`),
   '      </ul>',
 ];
+
+/**
+ * Une carte de « Tout ce que Claude fait » : son icône et son étiquette, puis la ligne des outils qui la font (« Dans la
+ * console » quand aucun ne la fait). Une carte au-delà de la Free ressort (`bt-payante`) : c'est ce qui donne envie de
+ * monter (Julien, 2026-10-28).
+ */
+const carteClaude = (t: TexteBoutique, langue: Langue) => (c: CarteClaude) => {
+  const offre = offreDeLaCarte(c);
+  const avec = c.outils.length > 0 ? `${t.claude.avec} ${c.outils.map((o) => `<code>${o}</code>`).join(', ')}` : t.claude.console;
+  return `        <li${offre === 'base' ? '' : ' class="bt-payante"'}><div class="bt-carte-tete">${icone(c.icone)}${etiquetteDOffre(offre, langue)}</div><h4>${c.titre}</h4><p>${c.texte}</p><p class="bt-avec">${avec}</p></li>`;
+};
+
+/**
+ * La phrase d'un outil sur la page : celle de la vitrine (`PHRASES_OUTILS`), sinon la première de la doc MCP
+ * (`OUTILS_MCP`), coupée avant son premier « ; ». La liste se lit d'un coup d'œil, le détail reste à la doc ; et ce qui
+ * suit parle parfois du « QR code », mot que la page n'emploie plus (`tests/vitrine-boutique.test.ts`). Une phrase finit
+ * sur un point suivi d'une majuscule, jamais sur celui d'une abréviation (« €3.50 excl. VAT »).
+ */
+const phraseCourte = (quoi: string): string => {
+  const p = quoi.split(/\s?;\s/)[0]!.split(/(?<=[.!?])(?<!\b(?:excl|incl|approx|cf|etc)\.)\s+(?=[A-ZÀ-Ý«“])/)[0]!.trim();
+  return /[.!?]$/.test(p) ? p : `${p}.`;
+};
+
+/** Tous les outils de Claude, repliés par famille (`FAMILLES_OUTILS`, tenue exhaustive par `tests/plugin-readme.test.ts`). */
+function familles(t: TexteBoutique, langue: Langue): string[] {
+  const quoi = new Map(OUTILS_MCP.map((o) => [o.nom, o.quoi[langue === 'fr' ? 0 : 1]] as const));
+  return [
+    '      <div class="dev-faq bt-familles">',
+    ...FAMILLES_OUTILS.flatMap((f) => [
+      `        <details><summary>${langue === 'fr' ? f.titreFr : f.titre}<span class="bt-nombre">${t.claude.outils.nombre.replace('{n}', String(f.outils.length))}</span></summary>`,
+      '          <ul>',
+      ...f.outils.map((nom) => {
+        const doc = quoi.get(nom);
+        if (!doc) throw new Error(`boutique : ${nom} sans sa phrase dans web/lib/mcp-outils.ts`);
+        return `            <li><code>${nom}</code>${etiquetteDOffre(offreDeLOutil(nom), langue)}<span class="bt-quoi">${PHRASES_OUTILS[nom]?.[langue] ?? phraseCourte(doc)}</span></li>`;
+      }),
+      '          </ul>',
+      '        </details>',
+    ]),
+    '      </div>',
+  ];
+}
 
 const etapes = (liste: readonly Etape[]) => [
   '      <ol class="bt-etapes">',
@@ -171,6 +224,7 @@ function guide(t: TexteBoutique, langue: Langue): string[] {
 
 function mainBoutique(t: TexteBoutique, langue: Langue): string {
   const p = t.prix;
+  const c = t.claude;
   const f = `/films/${t.film.nom}${langue === 'fr' ? '' : '-en'}`;
   return [
     '<main>',
@@ -181,6 +235,7 @@ function mainBoutique(t: TexteBoutique, langue: Langue): string {
     '      <div class="appels">',
     `        <a class="bouton bouton-plein" href="#commencer">${t.boutonClaude}</a>`,
     `        <a class="bouton bouton-trait" href="${inscriptionPro(langue)}">${t.boutonConsole}</a>`,
+    `        <a class="bouton bouton-texte" href="#claude">${t.claude.lienUne} ${fleche}</a>`,
     '      </div>',
     // La phrase d'abord, le logo ensuite : « se branche à votre boutique [Shopify] », jamais un logo en sujet, qui ferait badge.
     `      <p class="bt-compat"><span>${t.compat}</span><span class="bt-compat-logo"><img class="logo-shopify" src="/img/logos/shopify-noir.svg" width="105" height="30" alt="Shopify"></span></p>`,
@@ -218,16 +273,39 @@ function mainBoutique(t: TexteBoutique, langue: Langue): string {
     '    <div class="cadre">',
     `      <p class="f-surtitre">${t.branchez.surtitre}</p>`,
     `      <h2 class="f-titre">${deux(t.branchez.titre)}</h2>`,
-    ...cartes(t.branchez.cartes, t.ensuite.offre),
+    ...cartes(t.branchez.cartes),
     `      <p class="bt-note"><a href="${AIDE[langue]}">${t.commencer.aide}</a> ${fleche}</p>`,
     '    </div>',
     '  </section>',
     '',
-    '  <section class="f-bloc">',
+    '  <section class="f-bloc bande-claire" id="claude">',
     '    <div class="cadre">',
-    `      <p class="f-surtitre">${t.ensuite.surtitre}</p>`,
-    `      <h2 class="f-titre">${deux(t.ensuite.titre)}</h2>`,
-    ...cartes(t.ensuite.cartes, t.ensuite.offre),
+    `      <p class="f-surtitre">${c.surtitre}</p>`,
+    `      <h2 class="f-titre">${deux(c.titre)}</h2>`,
+    `      <p class="f-texte">${c.chapeau}</p>`,
+    ...c.besoins.flatMap((b) => [
+      `      <h3 class="bt-besoin">${b.titre}</h3>`,
+      '      <ul class="bt-cartes bt-cartes-claude">',
+      ...b.cartes.map(carteClaude(t, langue)),
+      '      </ul>',
+    ]),
+    // Ce que le Pro ajoute, sous les besoins : de quoi monter (Julien, 2026-10-28), chiffres tirés de `DROITS`.
+    '      <div class="bt-pro">',
+    `        <h3>${c.pro.titre}</h3>`,
+    `        <ul>${c.pro.liste.map((x) => `<li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>${x}</li>`).join('')}</ul>`,
+    `        <p class="bt-pro-prix">${c.pro.prix}</p>`,
+    `        <a class="bouton bouton-plein" href="${inscriptionPro(langue)}">${c.pro.bouton}</a>`,
+    '      </div>',
+    `      <p class="bt-note"><a href="#outils">${c.versOutils}</a> ${fleche}</p>`,
+    '    </div>',
+    '  </section>',
+    '',
+    '  <section class="f-bloc" id="outils">',
+    '    <div class="cadre">',
+    `      <h2 class="f-titre">${deux(c.outils.titre)}</h2>`,
+    `      <p class="f-texte">${c.outils.texte}</p>`,
+    ...familles(t, langue),
+    `      <p class="bt-note"><a href="${DOC_MCP[langue]}" rel="noopener">${c.outils.doc}</a> ${fleche}</p>`,
     '    </div>',
     '  </section>',
     '',

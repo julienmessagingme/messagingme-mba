@@ -4,6 +4,31 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-29 : la vitrine dit tout ce que Claude fait, avec l'offre de chaque outil
+
+Plan `docs/superpowers/plans/2026-10-28-vitrine-cas-mcp.md`, bilan `docs/BILAN-CAS-USAGE-MCP-2026-10-28.md` (décisions de
+Julien, § 5) ; copie à part de l'arbre partagé, qui avait 107 commits de retard sur origin.
+- **Boutiques Shopify** : « Et ensuite » devient « Tout ce que Claude fait pour votre boutique », trois besoins de quatre
+  cartes, chacune avec ses outils et son étiquette d'offre ; dessous, « Ce que le Pro ajoute » (chiffres de `DROITS`,
+  bouton vers `/signup?offre=pro`) ; puis tous les outils, un volet replié par famille ; deux questions de FAQ de plus.
+  L'étiquette se CALCULE (`scripts/vitrine/offres-outils.ts`) : la plus petite offre de `DROITS` qui ouvre la `fonction`
+  de l'outil, et pour une carte la plus haute de ses outils. Son attribut est `data-etiquette`, pas `data-offre`, que trois
+  tests lisent comme un chiffre de la grille et que le guide du numéro emploie déjà.
+- **SaaS et app builders** : « Et depuis Claude, sans écrire de code », trois colonnes au style de « Ce que vous pouvez
+  construire », la même étiquette calculée.
+- **Pages développeurs et README du plugin** : trois lignes (la boutique Shopify, les modèles, les webhooks), plugin 0.3.16.
+- **Écarts au plan** : le « bientôt » était déjà corrigé sur origin (`5788c367`) ; le récapitulatif d'une campagne donne un
+  volume, jamais un montant (`outils-campagnes.ts`), donc aucune carte ne promet « ce qu'elle coûtera » ; la phrase d'un
+  outil sur la page est la première de la doc MCP, coupée avant son premier « ; », parce que la suite nomme parfois le
+  « QR code », que la page n'emploie plus. Six tests neufs, chacun vu rouge sur son défaut (étiquettes faussées, un outil
+  retiré de la liste, un chiffre du Pro, un « soon »), puis vert.
+- **Relecture indépendante, un rouge** : des lignes « Offre Free » de la liste repliée reprenaient la phrase de la doc MCP,
+  écrite sans offre, qui nommait l'agent de Meta (Business), les scénarios (Pro), l'analyse (Entreprise) ou l'attribution
+  d'un fil (Pro). Corrigé par des phrases propres à la vitrine (`PHRASES_OUTILS`, la famille Shopify comprise, qui disait
+  « le marchand »), et tenu par un test : une ligne Free qui nomme une fonction payante dit son offre (vu rouge sans les
+  phrases). Avec lui : la coupe ne tombe plus sur « excl. » (« €3.50 excl. VAT a month »), la carte de l'agent IA dit le
+  crédit prépayé, les étiquettes sont vérifiées en littéral. Deux jaunes au `todo.md`.
+
 ## 2026-10-28 (nuit) : le film de la page Boutiques Shopify, fabriqué puis posé (lot 3 de la conception vitrine)
 
 - **Fabriqué** dans `~/engageme-motion/engageme-cas-shopify/` (son `SCRIPT.md` porte les écarts au script) sur les choix

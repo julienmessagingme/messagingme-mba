@@ -766,9 +766,34 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .bt-cartes{list-style:none;margin:32px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px}
 .bt-cartes > li{padding:22px;border:1px solid var(--line);border-radius:18px;background:rgb(255 255 255 / .04)}
 .bt-ic{display:inline-grid;place-items:center;width:40px;height:40px;border-radius:12px;background:rgb(255 255 255 / .08);color:var(--action-ink);font-size:1.3rem}
-.bt-cartes h3{margin:14px 0 6px;font-size:1.08rem}
+.bt-cartes :is(h3,h4){margin:14px 0 6px;font-size:1.08rem}
 .bt-cartes p{margin:0;color:var(--muted)}
 .bt-offre{display:inline-block;margin-left:4px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);font-size:.72rem;font-weight:700;color:var(--muted);vertical-align:middle;white-space:nowrap}
+/* « Tout ce que Claude fait » : une étiquette d'offre sur chaque carte, et les cartes au-delà de la Free qui ressortent. */
+.bt-besoin{margin:44px 0 0;font-size:1.3rem;letter-spacing:-.01em}
+.bt-cartes-claude{margin-top:18px}
+.bt-carte-tete{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.bt-carte-tete .bt-offre{margin-left:0}
+.bt-offre[data-etiquette]:not([data-etiquette="base"]){color:var(--action-ink);border-color:currentColor;background:var(--action-wash)}
+.bt-cartes > li.bt-payante{border-color:rgb(37 211 102 / .55)}
+.bt-cartes .bt-avec{margin-top:12px;font-size:.85rem}
+.bt-avec code{font-family:var(--mono);font-size:.92em;color:var(--code-ink);background:rgb(255 255 255 / .08);padding:.1em .4em;border-radius:6px;overflow-wrap:anywhere}
+.bande-claire .bt-cartes > li{background:var(--surface);box-shadow:0 18px 40px -30px var(--ombre)}
+.bande-claire .bt-ic{background:var(--action-wash)}
+.bande-claire .bt-avec code{color:#0B0E24;background:#E7EAF3}
+.bt-pro{margin:44px 0 0;max-width:900px;padding:clamp(22px,4vw,32px);border:1px solid rgb(37 211 102 / .55);border-radius:20px;background:rgb(37 211 102 / .07)}
+.bt-pro h3{margin:0 0 16px;font-size:1.3rem}
+.bt-pro ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 28px}
+.bt-pro li{display:flex;gap:10px;align-items:flex-start;color:var(--muted)}
+.bt-pro li .ic{flex:none;margin-top:.3em;color:var(--action-ink)}
+.bt-pro-prix{margin:20px 0 16px;font-weight:700}
+@media (max-width:700px){.bt-pro ul{grid-template-columns:minmax(0,1fr)}}
+/* Les outils de Claude, un par un : une famille par volet replié, l'étiquette d'offre sur chaque outil. */
+.bt-familles summary .bt-nombre{margin-left:auto;font-weight:500;font-size:.9rem;color:var(--muted)}
+.bt-familles ul{list-style:none;margin:0 0 22px;padding:0;display:grid;gap:14px}
+.bt-familles li{color:var(--muted)}
+.bt-familles li .bt-offre{margin-left:8px}
+.bt-quoi{display:block;margin-top:4px;max-width:46em}
 /* Le guide du numéro en tunnel : une seule question en grand, les réponses données repliées au-dessus, une jauge. */
 .bt-guide{margin:32px 0 0;max-width:880px}
 .bt-tunnel{padding:clamp(22px,4.5vw,44px);border:1px solid rgb(111 194 254 / .38);border-radius:26px;background:radial-gradient(120% 90% at 0% 0%,rgb(16 30 138 / .95),var(--surface) 62%);box-shadow:0 0 0 6px rgb(51 171 254 / .07),0 34px 80px -34px var(--ombre)}
@@ -1374,6 +1399,10 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .dev-construire a{color:var(--muted);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px;line-height:1.5}
 .dev-construire a:hover{color:var(--ink);text-decoration-color:var(--action-ink)}
 @media (max-width:900px){.dev-construire{grid-template-columns:minmax(0,1fr)}}
+/* « Et depuis Claude » de la page SaaS : des lignes, pas des liens, chacune avec son étiquette d'offre et ses outils. */
+.hub-claude li{color:var(--muted);line-height:1.5}
+.hub-claude li .bt-offre{margin:0 8px 0 0}
+.hub-claude .bt-avec{display:block;margin-top:6px;font-size:.85rem}
 
 /* ============================================================================================================
    La page des tarifs (/tarifs/, offres v2) : les trois offres en trois cartes, le Pro mis en avant ; puis le crédit IA

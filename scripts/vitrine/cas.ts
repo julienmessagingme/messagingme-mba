@@ -13,7 +13,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { adresseDuScript, baliseDuScript } from '../../src/widgets/adresses';
 import { EXEMPLES_CAS, type ExempleCode } from '../../web/lib/exemples-code';
 import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
-import { TEXTES_CAS, TEXTES_CARREFOUR, type Langue, type TexteCas } from './cas-textes';
+import { TEXTES_CAS, TEXTES_CARREFOUR, type Langue, type TexteCas, type TexteChapeau } from './cas-textes';
+import { ICONES_FAMILLES } from '../plugin/construire';
+import { etiquetteDOffre, offreDeLaCarte } from './offres-outils';
 import { TEXTES_ATTENTE, TEXTES_SECTEURS, type LogoClient, type TexteSecteur, type UsageSecteur } from './secteurs-textes';
 import { pageAvecEntete } from './entete';
 import { LOGOS_ASSISTANTS, type LogoAssistant } from './logos-assistants';
@@ -323,6 +325,35 @@ function assistants(langue: Langue): string {
   ].join('\n');
 }
 
+/**
+ * « Et depuis Claude, sans écrire de code » (décision 5 de Julien, 2026-10-28) : les trois colonnes de « Ce que vous pouvez
+ * construire » (`.dev-construire`, leurs icônes), chaque ligne avec son étiquette d'offre, calculée depuis le serveur MCP,
+ * et ses outils.
+ */
+function depuisClaude(c: TexteChapeau, langue: Langue): string[] {
+  const doc = langue === 'fr' ? 'https://console.messagingme.app/developers/mcp' : 'https://console.messagingme.app/developers/mcp?lang=en';
+  return [
+    '  <section class="f-bloc" id="claude">',
+    '    <div class="cadre">',
+    `      <h2 class="f-titre">${c.claude.titre}</h2>`,
+    `      <p class="f-texte">${c.claude.texte}</p>`,
+    '      <div class="dev-construire hub-claude">',
+    ...c.claude.colonnes.flatMap((col) => [
+      '        <div>',
+      `          <span class="dev-ic dev-ic-${col.icone}" aria-hidden="true"><svg viewBox="0 0 256 256"><path class="dev-ic-fond" d="${ICONES_FAMILLES[col.icone].fond}"/><path d="${ICONES_FAMILLES[col.icone].trait}"/></svg></span>`,
+      `          <h3>${col.titre}</h3>`,
+      '          <ul>',
+      ...col.lignes.map((l) => `            <li>${etiquetteDOffre(offreDeLaCarte(l), langue)}${l.lien ? `<a href="${l.lien}">${l.texte}</a>` : l.texte}<span class="bt-avec">${c.claude.avec} ${l.outils.map((o) => `<code>${o}</code>`).join(', ')}</span></li>`),
+      '          </ul>',
+      '        </div>',
+    ]),
+    '      </div>',
+    `      <p class="cas-voisins"><a href="${doc}" rel="noopener">${c.claude.doc}</a></p>`,
+    '    </div>',
+    '  </section>',
+  ];
+}
+
 export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
   const enLigne = ENTREES.filter((e) => e.enLigne && e.nature === 'cas');
   return (['fr', 'en'] as const).map((langue) => {
@@ -366,6 +397,8 @@ export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
       '      </div>',
       '    </div>',
       '  </section>',
+      '',
+      ...depuisClaude(c, langue),
       '',
       '  <section class="f-bloc cas-pas bande-claire">',
       '    <div class="cadre">',

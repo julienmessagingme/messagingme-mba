@@ -91,6 +91,22 @@
     },
     {
      "@type": "Question",
+     "name": "Can I send a promotion to my customers?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes, with the Pro plan: Claude prepares the campaign, shows you who will receive it, and only launches it with your yes. It only goes to those who accepted WhatsApp, from an API number, and a STOP is always respected. With the Free plan, Claude sends a message to one customer at a time."
+     }
+    },
+    {
+     "@type": "Question",
+     "name": "Can I reply to my customers myself?",
+     "acceptedAnswer": {
+      "@type": "Answer",
+      "text": "Yes, by asking Claude: it shows you who wrote to you, you reply within 24 hours of their message, and you take over from your AI agent whenever you want. With Pro, your team also replies from the console’s Inbox."
+     }
+    },
+    {
+     "@type": "Question",
      "name": "Which WhatsApp number should I use?",
      "acceptedAnswer": {
       "@type": "Answer",
@@ -284,6 +300,7 @@
       <div class="appels">
         <a class="bouton bouton-plein" href="#commencer">Connect for free with Claude Code</a>
         <a class="bouton bouton-trait" href="https://console.messagingme.app/signup?offre=pro&amp;lang=en">Do it all from the console</a>
+        <a class="bouton bouton-texte" href="#claude">Everything Claude does <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></a>
       </div>
       <p class="bt-compat"><span>Connects to your store</span><span class="bt-compat-logo"><img class="logo-shopify" src="/img/logos/shopify-noir.svg" width="105" height="30" alt="Shopify"></span></p>
     </div>
@@ -353,15 +370,174 @@
     </div>
   </section>
 
-  <section class="f-bloc">
+  <section class="f-bloc bande-claire" id="claude">
     <div class="cadre">
-      <p class="f-surtitre">And then</p>
-      <h2 class="f-titre">What the conversation <span class="sec-accent">makes possible.</span></h2>
-      <ul class="bt-cartes">
-        <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><h3>“Where is my order?”</h3><p>Your AI agent answers about delivery from your pages, and hands over to you for a specific parcel.</p></li>
-        <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span><h3>Your promotions <span class="bt-offre">Plan Pro</span></h3><p>A campaign to your customers, sent to those who accepted WhatsApp.</p></li>
-        <li><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><h3>Click-to-WhatsApp ads <span class="bt-offre">Plan Enterprise</span></h3><p>A Facebook or Instagram ad that opens the conversation, and your AI agent that takes it over.</p></li>
+      <p class="f-surtitre">With Claude Code</p>
+      <h2 class="f-titre">Everything Claude does <span class="sec-accent">for your store.</span></h2>
+      <p class="f-texte">Once your store is connected, you ask, Claude does it. Each card shows the plan that opens it: the Free plan already covers the essentials, Pro adds your campaigns and their figures, your team and your AI agent’s figures.</p>
+      <h3 class="bt-besoin">Answer your customers</h3>
+      <ul class="bt-cartes bt-cartes-claude">
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-lightning"/></svg></span><span class="bt-offre" data-etiquette="base">Free plan</span></div><h4>Your AI agent knows your store</h4><p>Claude reads your delivery and returns pages and your products, and feeds them to your AI agent, which answers when a customer writes, using your prepaid AI credit.</p><p class="bt-avec">With <code>import_site</code>, <code>create_agent</code>, <code>activate_agent</code>, <code>set_default_responder</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-package"/></svg></span><span class="bt-offre" data-etiquette="base">Free plan</span></div><h4>“Where is my order?”</h4><p>The tracking link goes out in the shipping notice. Your AI agent answers about delivery times from your pages, and hands over to you for a specific parcel, announcing your opening hours.</p><p class="bt-avec">With <code>set_shopify_message</code>, <code>set_business_hours</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-chat-circle-dots"/></svg></span><span class="bt-offre" data-etiquette="base">Free plan</span></div><h4>You reply from Claude</h4><p>“Who wrote to me today?”, then your reply within 24 hours of the customer’s message, with a product photo or buttons. You take over from your AI agent, and hand it back.</p><p class="bt-avec">With <code>list_conversations</code>, <code>reply_in_open_window</code>, <code>send_message</code>, <code>control_conversation</code></p></li>
+        <li class="bt-payante"><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-user"/></svg></span><span class="bt-offre" data-etiquette="pro">Pro plan</span></div><h4>Your team answers in the Inbox</h4><p>The console shares conversations among you: everyone sees who is answering, assigns them, tags them and takes over from your AI agent.</p><p class="bt-avec">With <code>assign_conversation</code>, <code>tag_conversation</code></p></li>
       </ul>
+      <h3 class="bt-besoin">Sell and bring them back</h3>
+      <ul class="bt-cartes bt-cartes-claude">
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-whatsapp"/></svg></span><span class="bt-offre" data-etiquette="base">Free plan</span></div><h4>The WhatsApp bubble on your store</h4><p>Claude creates the bubble and gives you the tag to paste into your theme: your visitors write to you on WhatsApp in one click, and your AI agent answers.</p><p class="bt-avec">With <code>create_widget</code>, <code>update_widget</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg></span><span class="bt-offre" data-etiquette="base">Free plan</span></div><h4>A message to one customer</h4><p>A gesture after a delay, an item back in stock for someone who was waiting: Claude writes the message, has Meta approve it and sends it from your API number.</p><p class="bt-avec">With <code>create_template</code>, <code>send_template_to_contact</code></p></li>
+        <li class="bt-payante"><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-broadcast"/></svg></span><span class="bt-offre" data-etiquette="pro">Pro plan</span></div><h4>Your promotions, once you say yes</h4><p>Claude prepares a campaign to your customers who accepted WhatsApp, shows you who will receive it, who is left out and why, then launches or schedules it when you say yes.</p><p class="bt-avec">With <code>find_contacts</code>, <code>prepare_campaign</code>, <code>launch_campaign</code></p></li>
+        <li class="bt-payante"><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-megaphone"/></svg></span><span class="bt-offre" data-etiquette="entreprise">Enterprise plan</span></div><h4>Click-to-WhatsApp ads</h4><p>A Facebook or Instagram ad that opens the conversation, and your AI agent that takes it over.</p><p class="bt-avec">In the console</p></li>
+      </ul>
+      <h3 class="bt-besoin">Run it from Claude</h3>
+      <ul class="bt-cartes bt-cartes-claude">
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-chart-line-up"/></svg></span><span class="bt-offre" data-etiquette="base">Free plan</span></div><h4>Your store at a glance</h4><p>The week’s checkouts, what went out over 30 days, your messages delivered, read or failed.</p><p class="bt-avec">With <code>get_shopify_state</code>, <code>get_message_stats</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-file-text"/></svg></span><span class="bt-offre" data-etiquette="base">Free plan</span></div><h4>Your messages, written for you</h4><p>Claude writes your templates, submits them to Meta and tells you why one is rejected.</p><p class="bt-avec">With <code>create_template</code>, <code>get_template_status</code></p></li>
+        <li><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-tag"/></svg></span><span class="bt-offre" data-etiquette="base">Free plan</span></div><h4>Your contacts in order</h4><p>Claude finds a customer, blocks an unwanted contact and deletes those you no longer need, conversations included, after your confirmation.</p><p class="bt-avec">With <code>search_contacts</code>, <code>block_contact</code>, <code>delete_contacts</code></p></li>
+        <li class="bt-payante"><div class="bt-carte-tete"><span class="bt-ic"><svg class="ic" aria-hidden="true"><use href="#i-funnel"/></svg></span><span class="bt-offre" data-etiquette="pro">Pro plan</span></div><h4>Your campaigns and your AI agent in figures</h4><p>The cost and clicks of each campaign, what your AI agent cost, wrote and passed to your team.</p><p class="bt-avec">With <code>get_campaign_stats</code>, <code>get_ai_stats</code></p></li>
+      </ul>
+      <div class="bt-pro">
+        <h3>What Pro adds</h3>
+        <ul><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Your promotions as campaigns, to your customers targeted by tag</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>The console: your team’s Inbox and your store’s card</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>The cost and clicks of your campaigns, your AI agent’s work in figures</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>The WhatsApp bubble without the “Powered by Messaging Me” line</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>A provided number, included</li><li><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg>Unlimited sends, 1,000 contacts created and unlimited inbound contacts, 3 users</li></ul>
+        <p class="bt-pro-prix">€49 excl. VAT a month, a 14-day trial the first time, card required.</p>
+        <a class="bouton bouton-plein" href="https://console.messagingme.app/signup?offre=pro&amp;lang=en">Try Pro for 14 days</a>
+      </div>
+      <p class="bt-note"><a href="#outils">All of Claude’s tools, one by one</a> <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></p>
+    </div>
+  </section>
+
+  <section class="f-bloc" id="outils">
+    <div class="cadre">
+      <h2 class="f-titre">Claude’s tools, <span class="sec-accent">one by one.</span></h2>
+      <p class="f-texte">Claude picks them for you, based on what you ask. A tool outside your plan tells you so, with the link to change it.</p>
+      <div class="dev-faq bt-familles">
+        <details><summary>Setup and plan<span class="bt-nombre">7 tools</span></summary>
+          <ul>
+            <li><code>get_setup_state</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Where the workspace setup stands (number, AI agent, responder, bubble, credit, plan), and the next step with its tools.</span></li>
+            <li><code>get_plan</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The workspace plan, its limits and current usage, with the link to upgrade.</span></li>
+            <li><code>subscribe_pro</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Open the Pro plan payment, monthly or yearly, amount before tax.</span></li>
+            <li><code>get_credit</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The AI credit balance and its latest movements.</span></li>
+            <li><code>buy_credit</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Open a top-up payment, amount before tax.</span></li>
+            <li><code>create_api_key</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Create your application’s API key, shown only once: it passes through the conversation, to put at once in the .env file.</span></li>
+            <li><code>list_members</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The workspace members; with Pro, you assign threads to them.</span></li>
+          </ul>
+        </details>
+        <details><summary>WhatsApp number<span class="bt-nombre">6 tools</span></summary>
+          <ul>
+            <li><code>start_whatsapp_connection</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Give the link that opens the WhatsApp number connection, without the console, valid for one hour: provided or own number, or the WhatsApp Business app number, keeping the app (messages sent through Messaging Me are billed by Meta).</span></li>
+            <li><code>watch_whatsapp_connection</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Follow the number connection to the end: number assigned, verification code to read out, number connected, or linked while keeping the WhatsApp Business app.</span></li>
+            <li><code>get_number_subscription</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The provided number’s subscription: its status, the end of the paid period and the number.</span></li>
+            <li><code>manage_number_subscription</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Open the Stripe portal for the number subscription: card, invoices, cancellation.</span></li>
+            <li><code>resubscribe_number</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Renew the number subscription when it is overdue or ended: the Stripe portal, or a new payment that restores the same number.</span></li>
+            <li><code>return_number_at_plan_end</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Choose to give back the provided number when Pro ends, or keep it at €3.50 excl. VAT a month on the same card.</span></li>
+          </ul>
+        </details>
+        <details><summary>AI agent<span class="bt-nombre">13 tools</span></summary>
+          <ul>
+            <li><code>list_agents</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">AI agents, their status, and what is still missing before they can be activated.</span></li>
+            <li><code>get_agent</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">An AI agent: its profile, model, tools, knowledge, what it lacks, and the offered models with their price.</span></li>
+            <li><code>create_agent</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Create a draft AI agent.</span></li>
+            <li><code>update_agent</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Edit an AI agent’s profile (goal, tone, handovers, stop rules) and its model, logged under the person’s name.</span></li>
+            <li><code>set_agent_limits</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Set the limits of an AI agent’s conversation (answers, actions, credit spent, no credit limit by default), logged under the person’s name.</span></li>
+            <li><code>set_agent_tools</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Add and enable an AI agent’s four safe tools (finish, search, read the contact, hand over).</span></li>
+            <li><code>set_agent_action</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Create or edit an AI agent action: what it collects and sends to your app (agent.action webhook) when the customer makes a request, once a day per contact.</span></li>
+            <li><code>delete_agent_action</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Delete an AI agent action.</span></li>
+            <li><code>test_agent</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Try an AI agent on a mock conversation.</span></li>
+            <li><code>activate_agent</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Activate a complete AI agent, or deactivate it.</span></li>
+            <li><code>set_default_responder</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Choose who answers the customer (a new contact, and every message nobody handles): an active AI agent, the team or your app, plus a published scenario with Pro and Meta’s agent with Business.</span></li>
+            <li><code>set_transfer_mode</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Set what AI agents promise about team availability when they hand over.</span></li>
+            <li><code>set_business_hours</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Set the workspace’s opening hours and time zone: the ones AI agents announce outside hours.</span></li>
+          </ul>
+        </details>
+        <details><summary>Agent knowledge<span class="bt-nombre">6 tools</span></summary>
+          <ul>
+            <li><code>list_knowledge</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">An AI agent’s knowledge entries, with their source.</span></li>
+            <li><code>add_knowledge</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Add written knowledge entries, up to 50 per call.</span></li>
+            <li><code>delete_knowledge</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Delete knowledge entries.</span></li>
+            <li><code>preview_site</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Read a site from the server and see what an import would make of it, without writing anything.</span></li>
+            <li><code>import_site</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Import a site’s pages as knowledge.</span></li>
+            <li><code>import_document_text</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Import a document’s text under its name, filed like an uploaded document.</span></li>
+          </ul>
+        </details>
+        <details><summary>Conversations<span class="bt-nombre">9 tools</span></summary>
+          <ul>
+            <li><code>list_conversations</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Conversations, most recently active first, over a period if needed, with each one’s contact.</span></li>
+            <li><code>get_conversation</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Thread details, and whether the 24 h window is open.</span></li>
+            <li><code>get_messages</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The last 50 messages of a thread, oldest first, and before to go further back.</span></li>
+            <li><code>reply_in_open_window</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Reply, only while the 24 h window is open.</span></li>
+            <li><code>send_message</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Send within the 24-hour window an image, a document, a location, buttons, a list or a link button, in Meta’s format.</span></li>
+            <li><code>control_conversation</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Take over a thread, or hand it back to the automatic responder, which answers the next message.</span></li>
+            <li><code>tag_conversation</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">Add tags to a thread’s contact.</span></li>
+            <li><code>assign_conversation</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">Assign a thread to a member, or release it.</span></li>
+            <li><code>get_conversation_insights</code><span class="bt-offre" data-etiquette="entreprise">Enterprise plan</span><span class="bt-quoi">What the analysis understood of conversations: sentiment, intents, resolution, topics, and satisfaction and urgency over time.</span></li>
+          </ul>
+        </details>
+        <details><summary>Templates<span class="bt-nombre">7 tools</span></summary>
+          <ul>
+            <li><code>list_templates</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The workspace’s WhatsApp templates, with their language, category and status at Meta.</span></li>
+            <li><code>get_template_status</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">A template’s status at Meta, language by language, with the reason for a rejection.</span></li>
+            <li><code>create_template</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Create a template in Meta’s format and submit it for review.</span></li>
+            <li><code>update_template</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Edit one language of a template, in Meta’s format, which goes back to review.</span></li>
+            <li><code>delete_template</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Delete a template, all its languages.</span></li>
+            <li><code>send_template_to_contact</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Send an approved template to one customer, even outside the 24-hour window, within the sending rules (STOP, monthly templates).</span></li>
+            <li><code>get_message_status</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The delivery status of a sent message: sent, delivered, read or failed, with Meta’s reason.</span></li>
+          </ul>
+        </details>
+        <details><summary>Contacts and campaigns<span class="bt-nombre">14 tools</span></summary>
+          <ul>
+            <li><code>search_contacts</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Find a contact by name or number, with their latest analysis on the Enterprise plan.</span></li>
+            <li><code>get_contact</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">A contact record from its number, with their latest analysis and its summary on the Enterprise plan.</span></li>
+            <li><code>block_contact</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Block or unblock a contact: nothing is sent to them anymore, their messages are still recorded.</span></li>
+            <li><code>prepare_contacts_deletion</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Prepare the deletion of a selection of contacts without erasing anything (tags, consent, a list, the N oldest, 1,000 at most): their count, 10 records at most and a confirmation code.</span></li>
+            <li><code>delete_contacts</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Delete for good the contacts of a prepared selection, with its code: records, conversations and messages erased.</span></li>
+            <li><code>find_contacts</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">The contacts of a target, like the contact list filters: tags, consent and, on the Enterprise plan, the latest analysis.</span></li>
+            <li><code>tag_contacts</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">Tag the contacts of a target or of a list of conversations: a segment is a tag.</span></li>
+            <li><code>list_fields</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The custom contact fields: key, label, type.</span></li>
+            <li><code>create_field</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Create a custom field: its key comes from the label.</span></li>
+            <li><code>set_contact_field</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">Set a field on the contacts of a target or of a list of conversations, like the console’s bulk action, without starting any automation.</span></li>
+            <li><code>prepare_campaign</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">Prepare a template campaign without sending anything: a draft visible in the console, a summary (targeted, sent, left out and why, five names, the billable volume) and a confirmation code.</span></li>
+            <li><code>launch_campaign</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">Launch, or schedule for its date, a prepared campaign, with the code of its summary, once the person said yes.</span></li>
+            <li><code>control_campaign</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">Pause a sending campaign, unschedule a scheduled one, or prepare to resume a paused one (a summary and a code).</span></li>
+            <li><code>list_scenarios</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The workspace’s scenarios, and which are published: they are built in the console, with Pro.</span></li>
+          </ul>
+        </details>
+        <details><summary>Chat bubble<span class="bt-nombre">3 tools</span></summary>
+          <ul>
+            <li><code>list_widgets</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The workspace’s WhatsApp widgets, with the tag to paste on the site.</span></li>
+            <li><code>create_widget</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Create a WhatsApp widget, with the screen’s checks, and get its tag.</span></li>
+            <li><code>update_widget</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Edit a widget.</span></li>
+          </ul>
+        </details>
+        <details><summary>Shopify store<span class="bt-nombre">6 tools</span></summary>
+          <ul>
+            <li><code>connect_shopify</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Connect your Shopify store with the app Claude created in your Shopify organization.</span></li>
+            <li><code>set_shopify_message</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Send a message when an order is paid or shipped, or remind an abandoned checkout once: an approved template, with Shopify data, within the sending rules (STOP, monthly templates, contact limit).</span></li>
+            <li><code>get_shopify_state</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The connected Shopify store: its state, its messages, the last event received, the last 30 days of outcomes and the last 7 days of checkouts.</span></li>
+            <li><code>preview_shopify_customers</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Count, without writing anything, your Shopify customers subscribed to your marketing (email or SMS) who have a phone: already in the workspace, new, room left in your plan, importable.</span></li>
+            <li><code>import_shopify_customers</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Import the subscribed Shopify customers you chose, newest first: records tagged Shopify, opted in on your declaration, within your plan’s limit.</span></li>
+            <li><code>disconnect_shopify</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Cut the Shopify store: no message leaves anymore, the store’s privacy requests are still honored.</span></li>
+          </ul>
+        </details>
+        <details><summary>Webhooks<span class="bt-nombre">7 tools</span></summary>
+          <ul>
+            <li><code>create_webhook_endpoint</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Register the HTTPS address of the app that will receive the chosen events (signed outgoing webhook).</span></li>
+            <li><code>list_webhook_endpoints</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">The outgoing webhook endpoints, their event types and status, and the plan limit.</span></li>
+            <li><code>update_webhook_endpoint</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Edit an endpoint: its event types, a pause, or a new secret, shown once.</span></li>
+            <li><code>delete_webhook_endpoint</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Delete an endpoint and its log.</span></li>
+            <li><code>send_test_event</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Send a signed test event to an address right away, and read what the app answered.</span></li>
+            <li><code>get_webhook_deliveries</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">An endpoint’s log: each delivery, its status, the app’s answer and the body sent.</span></li>
+            <li><code>replay_webhook_delivery</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Replay a finished delivery: same body, same event id.</span></li>
+          </ul>
+        </details>
+        <details><summary>Statistics<span class="bt-nombre">3 tools</span></summary>
+          <ul>
+            <li><code>get_message_stats</code><span class="bt-offre" data-etiquette="base">Free plan</span><span class="bt-quoi">Message figures as chart-ready series: templates sent, delivered, read, failed.</span></li>
+            <li><code>get_campaign_stats</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">The period’s campaigns with their estimated cost, clicks and Meta errors, or one campaign’s funnel.</span></li>
+            <li><code>get_ai_stats</code><span class="bt-offre" data-etiquette="pro">Pro plan</span><span class="bt-quoi">AI agent figures: cost of agent turns on the credit, messages written by AI, requests opened for the team and actions triggered.</span></li>
+          </ul>
+        </details>
+      </div>
+      <p class="bt-note"><a href="https://console.messagingme.app/developers/mcp?lang=en" rel="noopener">The full MCP server documentation</a> <svg class="ic" aria-hidden="true"><use href="#i-fleche"/></svg></p>
     </div>
   </section>
 
@@ -577,6 +753,8 @@
         <details id="faq-prix"><summary>How much does the abandoned checkout reminder cost?</summary><p>€0 a month with the Free plan, by connecting it from Claude Code. Meta bills each message sent to your store, with no surcharge from us. You need a number connected through Meta (yours, or a provided number at €3.50 excl. VAT a month), and your AI agent uses prepaid credit.</p></details>
         <details id="faq-app"><summary>Do I need to install an app from the Shopify App Store?</summary><p>No. Claude creates the app in your own Shopify organization, with no Shopify review: all you have to do is click “Install”.</p></details>
         <details id="faq-reponse"><summary>Who answers when the customer replies to the reminder?</summary><p>The one you chose: your AI agent, with what it knows about your store, or your team. The agent has no access to your orders: for a specific parcel, it hands over.</p></details>
+        <details id="faq-promotion"><summary>Can I send a promotion to my customers?</summary><p>Yes, with the Pro plan: Claude prepares the campaign, shows you who will receive it, and only launches it with your yes. It only goes to those who accepted WhatsApp, from an API number, and a STOP is always respected. With the Free plan, Claude sends a message to one customer at a time.</p></details>
+        <details id="faq-repondre"><summary>Can I reply to my customers myself?</summary><p>Yes, by asking Claude: it shows you who wrote to you, you reply within 24 hours of their message, and you take over from your AI agent whenever you want. With Pro, your team also replies from the console’s Inbox.</p></details>
         <details id="faq-numero"><summary>Which WhatsApp number should I use?</summary><p>It depends on your plan and your number: the guide above gives you your path. Your store’s messages go out from an API number, connected through Meta: yours if it is available, a provided number at €3.50 excl. VAT a month (included in Pro), or the number of your WhatsApp Business app, which you keep. Meta’s window has you create your Meta Business account along the way if you lack one. With the Free plan and no account at all, your WhatsApp Business number, linked from the app, serves to answer: WhatsApp can cut a number linked this way that writes first. Later, you will be able to turn it into an API number to write first, keeping its conversations.</p></details>
         <details id="faq-stop"><summary>What happens to a customer who replies STOP?</summary><p>They no longer receive anything from your store. The reminder carries at the bottom the line “Reply STOP to stop these messages”.</p></details>
       </div>
