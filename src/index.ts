@@ -1917,6 +1917,10 @@ async function main(): Promise<void> {
         plafonds: plafondsDesWorkflows(compteurDebit, { parMinute: config.HUBSPOT_WORKFLOWS_PAR_MINUTE, parJour: config.HUBSPOT_WORKFLOWS_PAR_JOUR }),
         catalogue: listerModeles,
         nomEspace: (t: string) => opsStore.getTenantName(t),
+        // L'action « Lancer un scénario » (cadrage du 2026-10-29) : les scénarios en ligne, et la conversation tenue par
+        // un opérateur (décision 3), relue comme le fait la reprise `saufOperateur` (`src/inbox/fil.ts`).
+        scenariosPublies: (t: string) => workflowStore.listPublies(t),
+        conseillerEnMain: async (t: string, waId: string) => (await inboxStore.getControlOwner(t, waId)) === 'app_human',
       } satisfies HubspotWorkflowDeps,
     } : {}),
     /**

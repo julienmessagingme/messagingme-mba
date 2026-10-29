@@ -731,7 +731,7 @@ export interface TenantSettings {
   hubspotReponse?: boolean;
   /** Envoyer des modèles depuis HubSpot (sous-lot « relancer »). Absent d'une API antérieure : éteint. */
   hubspotModeles?: boolean;
-  /** Workflows HubSpot : envoyer des modèles WhatsApp (l'action de workflow, migration 0259). Absent : éteint. */
+  /** Workflows HubSpot : envoyer des modèles et lancer des scénarios (les actions de workflow, migration 0259). Absent : éteint. */
   hubspotWorkflows?: boolean;
   hubspotChoixValideLe?: string | null;
   /*

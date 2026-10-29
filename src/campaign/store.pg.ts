@@ -13,6 +13,7 @@ import type { CampagneAssignante } from '../inbox/assignation-campagne';
 import { RANG_INITIAL, normaliserChaine, type CanalEtage, type DevenirEtage, type Etage, type EtageEntrant } from './etages';
 import type { EntreeDeDecision } from './bascule';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
+import { lancementDeCampagne } from '../hubspot-workflow/ligne';
 
 export interface CreateCampaignInput {
   tenantId: string;
@@ -338,13 +339,14 @@ export class PgCampaignRepo {
       rcs_message: unknown;
       webhook_id: string | null;
       business_hours_only: boolean | null;
+      name: string | null;
     }>(
       // `channel`, `rcs_agent_id`, `rcs_message` et `webhook_id` sont relus : cette lecture alimente le job de
       // run. Sans eux, une campagne RCS repartirait sur le chemin WhatsApp avec un phone_number_id nul, et une
       // campagne au fil de l'eau se terminerait à la première file vide.
       `select id, tenant_id, phone_number_id, category, template_name, template_language,
               param_mapping, status, workflow_id, rate_per_minute, start_node_id,
-              channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only
+              channel, rcs_agent_id, rcs_message, webhook_id, business_hours_only, name
        from campaigns where id = $1`,
       [id],
     );
@@ -360,6 +362,7 @@ export class PgCampaignRepo {
       paramMapping: r.param_mapping,
       status: r.status,
       workflowId: r.workflow_id,
+      lancement: lancementDeCampagne(r.name),
       ratePerMinute: r.rate_per_minute,
       startNodeId: r.start_node_id,
       // Campagne ancienne : `channel` null en base -> WhatsApp.

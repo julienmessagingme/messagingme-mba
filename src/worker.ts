@@ -876,9 +876,11 @@ export async function demarrerWorker(): Promise<void> {
       // résolues (paramMapping). Un démarrage refusé (scénario supprimé, fil tenu, graphe non lançable) marque le
       // destinataire en échec au lieu de le compter envoyé. Le type `campagne_scenario` : envoi voulu par un
       // opérateur, il reprend la conduite du fil (l'opérateur est celui qui a la main), ne publie AUCUNE étiquette
-      // (chemin de masse) et garde la fenêtre (il écrit à froid).
-      startWorkflow: async (tenant, workflowId, waId, contactId, firstTemplateParams) =>
-        (await lancements.lancer({ type: 'campagne_scenario', tenantId: tenant, workflowId, waId, contactId, firstTemplateParams })) ?? false,
+      // (chemin de masse) et garde la fenêtre (il écrit à froid). La ligne d'un workflow HubSpot démarre en
+      // `workflow_hubspot` (le moteur passe le type que son nom donne, `lancementDeCampagne`) : jamais par-dessus un
+      // opérateur. Tenu par `tests/campagne-cablage.test.ts`.
+      startWorkflow: async (tenant, workflowId, waId, contactId, firstTemplateParams, lancement) =>
+        (await lancements.lancer({ type: lancement, tenantId: tenant, workflowId, waId, contactId, firstTemplateParams })) ?? false,
       // Campagne node (/v1/sends) : démarre au bloc ciblé, sans garde de fenêtre dans l'executor (`campagne_bloc`). La
       // fenêtre a été vérifiée destinataire par destinataire à la création de l'envoi quand le bloc ouvre par un
       // message de session (`ouvertureApi`).

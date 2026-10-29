@@ -13,6 +13,8 @@ import type { EtatLigneHubspot } from '../src/http/hubspot-conversation';
 import type { Fonction } from '../src/offres/offres';
 import type { Filiere } from '../src/application/comptes';
 import type { TemplateSummary } from '../src/meta/templates';
+import type { ScenarioPublie } from '../src/workflow/store.pg';
+import type { WorkflowGraph, WorkflowNode } from '../src/workflow/graph';
 
 /**
  * L'ACTION DE WORKFLOW HUBSPOT « ENVOYER UN MODÈLE WHATSAPP » (cadrage du 2026-10-27, lot 1). Une porte d'ENVOI ouverte à
@@ -51,7 +53,27 @@ interface Options {
   plafonds?: VerdictPlafonds;
   /** Le catalogue lève (Meta ne répond pas). */
   catalogueLeve?: boolean;
+  /** Un opérateur tient la conversation du contact (action scénario, décision 3). */
+  conseiller?: boolean;
 }
+
+const noeud = (id: string, type: WorkflowNode['type'], data: Record<string, unknown> = {}): WorkflowNode => ({ id, type, position: { x: 0, y: 0 }, data });
+const ouvrePar = (templateName: string, language = 'fr'): WorkflowGraph => ({ nodes: [noeud('t', 'template', { templateName, language })], edges: [] });
+const scn = (code: string | null, name: string, graph: WorkflowGraph): ScenarioPublie => ({ code, name, publishedAt: null, graph });
+/** Les scénarios en ligne : un seul est lançable (ouvert par un Service au catalogue), chacun des autres ne l'est pas pour une raison. */
+const SCENARIOS: ScenarioPublie[] = [
+  scn('scn_relance', 'Relance devis', ouvrePar('suivi_devis')),
+  scn('scn_promo', 'Promo rentrée', ouvrePar('offre_rentree')),
+  scn('scn_question', 'Qualification', { nodes: [noeud('q', 'quick_message', { body: 'Bonjour ?' })], edges: [] }),
+  scn('scn_rcs', 'Carte RCS', { nodes: [noeud('r', 'rcs_message', { text: 'Carte' })], edges: [] }),
+  scn('scn_absent', 'Modèle supprimé', ouvrePar('supprime')),
+  // Service à l'ouverture, Marketing ensuite (relecture du 2026-10-29) : refusé en entier.
+  scn('scn_puis_promo', 'Relance puis promo', {
+    nodes: [noeud('t', 'template', { templateName: 'suivi_devis', language: 'fr' }), noeud('p', 'template', { templateName: 'offre_rentree', language: 'fr' })],
+    edges: [{ id: 'e1', source: 't', target: 'p' }],
+  }),
+  scn(null, 'Ancien sans code', ouvrePar('suivi_devis')),
+];
 
 function app(o: Options = {}) {
   const lus: Array<[string, string]> = [];
@@ -72,6 +94,8 @@ function app(o: Options = {}) {
       return o.reponse ?? { statut: 201, corps: { sendId: 'envoi-1', recipientCount: 1, skipped: [] } };
     },
     plafonds: async (t) => { comptes.push(t); return o.plafonds ?? { accepte: true }; },
+    scenariosPublies: lire('scenarios', SCENARIOS),
+    conseillerEnMain: async (t, waId) => { lus.push(['conseiller', `${t}/${waId}`]); return o.conseiller ?? false; },
     now: () => NOW,
   };
   const server = buildServer({ queue: new FakeQueue(), hubspotWorkflow: deps });
@@ -79,7 +103,7 @@ function app(o: Options = {}) {
 }
 
 /** Signe un corps comme le connecteur (même format canonique, même chemin). */
-function appel(route: 'modeles' | 'modele', body: unknown, secret = SECRET) {
+function appel(route: 'modeles' | 'modele' | 'scenarios' | 'scenario', body: unknown, secret = SECRET) {
   const raw = JSON.stringify(body);
   const path = `/hubspot/workflow/${route}`;
   const sig = signRequest(secret, { ts: NOW, nonce: randomBytes(8).toString('hex'), method: 'POST', path, body: raw });
@@ -345,7 +369,11 @@ describe('les plafonds de l’action : minute et jour de Paris, comptés ensembl
 
 describe('les valeurs et la clé de l’action', () => {
   it('🔴 la clé : le numéro, le modèle, la langue (sa vie de 24 h borne la répétition), jamais le workflow', () => {
-    expect(cleDuWorkflow('+33612345678', 'suivi_devis', 'fr')).toBe('hubspot-workflow:33612345678:suivi_devis:fr');
+    expect(cleDuWorkflow('+33612345678', { modele: 'suivi_devis', langue: 'fr' })).toBe('hubspot-workflow:33612345678:suivi_devis:fr');
+  });
+
+  it('🔴 la clé d’un scénario : le numéro et le code du scénario, à part de celles des modèles', () => {
+    expect(cleDuWorkflow('+33612345678', { scenario: 'scn_ab12' })).toBe('hubspot-workflow-scenario:33612345678:scn_ab12');
   });
 
   it('🔴 la vie d’une clé tient au moins 24 h : la garde « pas deux fois en 24 h » et le `trop_tard` à 20 h du connecteur en dépendent', () => {
@@ -361,5 +389,123 @@ describe('les valeurs et la clé de l’action', () => {
     expect(valeursDuWorkflow(['a', '  ', 'b'])).toBeNull();
     expect(valeursDuWorkflow(['x'.repeat(1025)])).toBeNull();
     expect(valeursDuWorkflow(['x'.repeat(1024)])).toEqual(['x'.repeat(1024)]);
+  });
+});
+
+/**
+ * L'ACTION « LANCER UN SCÉNARIO MESSAGING ME » (cadrage du 2026-10-29) : les deux routes jumelles, sur les mêmes gardes.
+ * Ce qui se prouve ici : la liste et le lancement jugent un scénario de la même façon (décision 2), une conversation
+ * tenue par un opérateur n'est jamais lancée (décision 3), et chaque refus ne fait rien partir ni compter.
+ */
+const LANCEMENT = { tenantId: T1, telephone: '06 12 34 56 78', scenario: 'scn_relance', valeurs: ['Julien', 'D-1002'], workflowId: '1234567' };
+const AVEC_SCENARIOS: Fonction[] = ['crm', 'scenarios'];
+
+describe('l’action « Lancer un scénario » : les deux routes', () => {
+  it.each(['scenarios', 'scenario'] as const)('🔴 %s : signature absente ou d’un autre secret, 401, rien n’est lu ni lancé', async (route) => {
+    const { server, lus, envois } = app({ fonctions: AVEC_SCENARIOS });
+    const corps = route === 'scenario' ? LANCEMENT : { tenantId: T1 };
+    const sans = await server.inject({ method: 'POST', url: `/hubspot/workflow/${route}`, headers: { 'content-type': 'application/json' }, payload: JSON.stringify(corps) });
+    const autre = await server.inject(appel(route, corps, 'un-autre-secret-de-meme-longueur-000'));
+    expect([sans.statusCode, autre.statusCode]).toEqual([401, 401]);
+    expect([lus, envois]).toEqual([[], []]);
+    expect((await server.inject(appel(route, corps))).statusCode).toBe(200);
+    await server.close();
+  });
+
+  it('🔴 la liste : seuls les scénarios ouverts par un Service du catalogue, avec un code, et le nom de l’espace', async () => {
+    const { server } = app({ fonctions: AVEC_SCENARIOS });
+    const res = await server.inject(appel('scenarios', { tenantId: T1 }));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      espace: 'Mutuelle Exemple',
+      scenarios: [{ code: 'scn_relance', nom: 'Relance devis', modele: 'suivi_devis', langue: 'fr', texte: 'Bonjour {{1}}, votre devis {{2}} est prêt. {{1}}', variables: 2 }],
+    });
+    await server.close();
+  });
+
+  it('une offre sans scénarios : la liste est vide, l’espace reste nommé, les scénarios ne sont pas lus', async () => {
+    const { server, lus } = app({ fonctions: ['crm'] });
+    const res = await server.inject(appel('scenarios', { tenantId: T1 }));
+    expect(res.json()).toEqual({ espace: 'Mutuelle Exemple', scenarios: [] });
+    expect(lus.map(([q]) => q)).not.toContain('scenarios');
+    await server.close();
+  });
+
+  it.each(['scenarios', 'scenario'] as const)('🔴 %s : le réglage « Workflows HubSpot » éteint rend 403, rien ne part', async (route) => {
+    const { server, envois, comptes } = app({ fonctions: AVEC_SCENARIOS, branche: false });
+    const res = await server.inject(appel(route, route === 'scenario' ? LANCEMENT : { tenantId: T1 }));
+    expect(res.statusCode).toBe(403);
+    expect([envois, comptes]).toEqual([[], []]);
+    await server.close();
+  });
+
+  it('🔴 un scénario lançable part par l’adaptateur : cible scénario, valeurs en `literal`, ligne du workflow, Service seulement', async () => {
+    const { server, envois, comptes } = app({ fonctions: AVEC_SCENARIOS });
+    const res = await server.inject(appel('scenario', LANCEMENT));
+    expect(res.json()).toEqual({ issue: 'envoye', sendId: 'envoi-1' });
+    expect(envois).toEqual([{
+      t: T1,
+      corps: {
+        idempotencyKey: 'hubspot-workflow-scenario:33612345678:scn_relance', target: { scenario: 'scn_relance' }, category: 'utility',
+        params: [{ position: 1, source: { type: 'literal', value: 'Julien' } }, { position: 2, source: { type: 'literal', value: 'D-1002' } }],
+        recipients: [{ phone: '+33612345678' }],
+      },
+      options: { nom: 'HubSpot · workflow 1234567', sansCampagneVide: true, serviceSeulement: true },
+    }]);
+    expect(comptes).toEqual([T1]);
+    await server.close();
+  });
+
+  it('🔴 un opérateur tient la conversation : `conseiller_en_main`, rien ne part ni n’est compté', async () => {
+    const { server, envois, comptes, lus } = app({ fonctions: AVEC_SCENARIOS, conseiller: true });
+    expect((await server.inject(appel('scenario', LANCEMENT))).json()).toEqual({ issue: 'conseiller_en_main' });
+    expect([envois, comptes]).toEqual([[], []]);
+    expect(lus).toContainEqual(['conseiller', `${T1}/33612345678`]);
+    await server.close();
+  });
+
+  it('🔴 chaque scénario que la liste écarte est refusé au lancement, avec son issue, sans rien faire partir', async () => {
+    const { server, envois, comptes } = app({ fonctions: AVEC_SCENARIOS });
+    for (const [scenario, issue] of [
+      ['scn_promo', 'marketing_refuse'], ['scn_question', 'scenario_refuse'], ['scn_rcs', 'scenario_refuse'],
+      ['scn_absent', 'scenario_refuse'], ['scn_inconnu', 'scenario_refuse'], ['scn_puis_promo', 'marketing_refuse'],
+    ] as const) {
+      expect((await server.inject(appel('scenario', { ...LANCEMENT, scenario, valeurs: [] }))).json(), scenario).toEqual({ issue });
+    }
+    expect([envois, comptes]).toEqual([[], []]);
+    await server.close();
+  });
+
+  it('les refus du contact et de l’offre : leur issue, rien ne part', async () => {
+    const cas: Array<[Fonction[], Record<string, unknown>, string]> = [
+      [['crm'], LANCEMENT, 'hors_offre'],
+      [AVEC_SCENARIOS, { ...LANCEMENT, telephone: '' }, 'sans_numero'],
+      [AVEC_SCENARIOS, { ...LANCEMENT, telephone: '01 99 00 00 01' }, 'fixe'],
+      [AVEC_SCENARIOS, { ...LANCEMENT, valeurs: ['Julien'] }, 'valeur_invalide'],
+    ];
+    for (const [fonctions, corps, issue] of cas) {
+      const { server, envois, comptes } = app({ fonctions });
+      expect((await server.inject(appel('scenario', corps))).json(), issue).toEqual({ issue });
+      expect([envois, comptes], issue).toEqual([[], []]);
+      await server.close();
+    }
+  });
+
+  it('un corps hors contrat (un nom au lieu du code, un consentement) : 400, rien n’est lu', async () => {
+    const { server, lus } = app({ fonctions: AVEC_SCENARIOS });
+    for (const corps of [{ ...LANCEMENT, scenario: 'Relance devis' }, { ...LANCEMENT, consent: 'opted_in' }, { ...LANCEMENT, scenario: 'scn_' }]) {
+      expect((await server.inject(appel('scenario', corps))).statusCode, JSON.stringify(corps)).toBe(400);
+    }
+    expect(lus).toEqual([]);
+    await server.close();
+  });
+
+  it('Meta muet sur le catalogue : 503 avec `Retry-After`, rien ne part', async () => {
+    const { server, envois } = app({ fonctions: AVEC_SCENARIOS, catalogueLeve: true });
+    const res = await server.inject(appel('scenario', LANCEMENT));
+    expect(res.statusCode).toBe(503);
+    expect(res.headers['retry-after']).toBe(String(RELANCE_META_SEC));
+    expect(envois).toEqual([]);
+    await server.close();
   });
 });

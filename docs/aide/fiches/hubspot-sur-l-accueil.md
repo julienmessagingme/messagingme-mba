@@ -2,7 +2,7 @@
 description: Relier HubSpot à Messaging Me : le connecter dans Tools > Intégrations, choisir ce qui se synchronise, répondre depuis HubSpot, mettre en pause ou couper.
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 496dbc
+source_empreinte: 6ea70d
 publique: oui
 rubrique: demarrer
 rang: 6
@@ -44,16 +44,20 @@ vous les vérifiez, puis « Envoyer le modèle ». Un modèle Marketing ne part 
 les autres modèles partent à tout contact qui n'a pas dit STOP et n'est pas bloqué. Meta facture chaque modèle, et
 chaque personne en envoie au plus 5 par minute.
 
-**Workflows HubSpot : envoyer des modèles WhatsApp** est éteint au départ ; il suppose l'offre qui relie HubSpot, et
-ne dépend pas de la réponse. L'action « Envoyer un modèle WhatsApp (Messaging Me) » apparaît dans vos workflows HubSpot
-de contacts, mais elle n'envoie qu'une fois cette ligne allumée (éteinte, l'historique du workflow dit que les
-workflows ne sont pas branchés). Vous y choisissez l'espace, un modèle Service approuvé, la propriété qui porte le
+**Workflows HubSpot : envoyer des modèles et lancer des scénarios** est éteint au départ ; il suppose l'offre qui
+relie HubSpot, et ne dépend pas de la réponse. Les actions « Envoyer un modèle WhatsApp (Messaging Me) » et « Lancer un
+scénario Messaging Me » apparaissent dans vos workflows HubSpot de contacts, mais elles n'agissent qu'une fois cette
+ligne allumée (éteinte, l'historique du workflow dit que les workflows ne sont pas branchés). Vous y choisissez
+l'espace, un modèle Service approuvé ou un scénario publié qui commence par un tel modèle et n'en contient aucun
+Marketing, la propriété qui porte le
 numéro WhatsApp du contact et, pour chaque variable du modèle, la propriété qui la remplit (le texte fixe vit dans le
-modèle). Rien
-ne part à un contact qui a dit STOP ou qui est bloqué, ni à un numéro fixe, ni deux fois le même modèle au même
-contact en 24 heures ; les modèles Marketing ne sont pas proposés. L'historique du workflow dit, contact par contact,
-ce qui est parti ou pourquoi rien n'est parti, et chaque envoi apparaît dans Campagnes. Au plus 60 envois par minute
-et 2 000 par jour pour l'espace ; Meta facture chaque modèle.
+modèle). Un scénario qui commence par une question, un message rapide ou l'agent IA n'est pas proposé : WhatsApp
+exige que le contact ait écrit dans les 24 heures. Rien ne part à un contact qui a dit STOP ou qui est bloqué, ni à un
+numéro fixe, ni deux fois le même modèle ou le même scénario au même contact en 24 heures ; les modèles Marketing ne
+sont pas proposés. Un scénario ne part jamais vers une conversation qu'un conseiller a en main, et remplace un scénario
+automatique en cours. L'historique du workflow dit, contact par contact, ce qui est parti ou pourquoi rien n'est parti,
+et chaque envoi apparaît dans Campagnes. Au plus 60 envois par minute et 2 000 par jour pour l'espace, les deux actions
+comptées ensemble ; Meta facture chaque modèle.
 
 Sans portail relié, l'Accueil n'affiche qu'une ligne qui vous y renvoie. Pour délier HubSpot, faites la déconnexion complète depuis le bloc HubSpot (sans
 numéro, c'est un bouton du bloc, sans l'option de pause).

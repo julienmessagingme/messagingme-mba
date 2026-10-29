@@ -210,8 +210,8 @@ export function ReglageHubspot({ tenantId }: { tenantId: string }) {
     },
     {
       champ: 'workflows',
-      titre: t('Workflows HubSpot : envoyer des modèles WhatsApp', 'HubSpot workflows: send WhatsApp templates'),
-      detail: t('Vos workflows HubSpot envoient un modèle Service approuvé au contact inscrit, avec l’action « Envoyer un modèle WhatsApp (Messaging Me) ». Jamais à un contact qui a dit STOP, ni deux fois le même modèle au même contact en 24 heures. Au plus 60 envois par minute et 2 000 par jour. Meta facture chaque modèle.', 'Your HubSpot workflows send an approved Utility template to the enrolled contact, with the “Send a WhatsApp template (Messaging Me)” action. Never to a contact who said STOP, nor the same template to the same contact twice in 24 hours. At most 60 sends per minute and 2,000 per day. Meta charges for each template.'),
+      titre: t('Workflows HubSpot : envoyer des modèles et lancer des scénarios', 'HubSpot workflows: send templates and launch scenarios'),
+      detail: t('Vos workflows HubSpot envoient un modèle Service approuvé au contact inscrit, ou lui lancent un scénario qui commence par un tel modèle, avec les actions « Envoyer un modèle WhatsApp (Messaging Me) » et « Lancer un scénario Messaging Me ». Jamais à un contact qui a dit STOP, jamais par-dessus un conseiller qui a la main, ni deux fois le même modèle ou le même scénario au même contact en 24 heures. Au plus 60 envois par minute et 2 000 par jour. Meta facture chaque modèle, et les réponses de l’agent IA d’un scénario se paient sur le crédit IA.', 'Your HubSpot workflows send an approved Utility template to the enrolled contact, or launch a scenario that starts with such a template, with the “Send a WhatsApp template (Messaging Me)” and “Launch a Messaging Me scenario” actions. Never to a contact who said STOP, never over an agent who has taken over, nor the same template or scenario to the same contact twice in 24 hours. At most 60 sends per minute and 2,000 per day. Meta charges for each template, and the AI agent replies of a scenario are paid from the AI credit.'),
     },
     {
       champ: 'listes',

@@ -71,6 +71,14 @@ describe('câblage des capacités du moteur de campagne', () => {
       .toMatch(/\}\s*satisfies Partial<CapacitesMoteur>\)\),/);
   });
 
+  it('🔴 le démarrage d’un scénario de campagne prend le type que le moteur lui passe (le workflow HubSpot)', () => {
+    // Une flèche à cinq paramètres resterait assignable au contrat qui en déclare six : le type serait avalé en
+    // silence, et la ligne d'un workflow HubSpot reprendrait le fil à un opérateur (`campagne_scenario`).
+    expect(workerSansCommentaires).toMatch(
+      /startWorkflow: async \(tenant, workflowId, waId, contactId, firstTemplateParams, lancement\) =>\s*\(await lancements\.lancer\(\{ type: lancement,/,
+    );
+  });
+
   it('les deux capacités de la panne du 2026-09-02 sont bien DANS le bloc ainsi gardé', () => {
     // Le `satisfies` ne vaut que pour l'objet qu'il conclut : le poser sur un autre bloc laisserait
     // celles-ci sans garde tout en donnant l'apparence d'une.

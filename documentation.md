@@ -2827,9 +2827,23 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   numéro délié aussi), jamais un rejeu ni un `deja_envoye`. Le jour plein l'emporte sur la minute et rend
   `plafond_jour`. La route du choix écrit le réglage (champ `workflows` facultatif, fonction `crm`) et `GET /settings`
   le rend (`hubspotWorkflows`) ; la console l'affiche dans Tools > Intégrations > HubSpot (« Workflows HubSpot : envoyer
-  des modèles WhatsApp », fonction `crm`, indépendante de la réponse) et la fiche `hubspot-sur-l-accueil` l'explique.
-  L'action elle-même vit dans le connecteur (`~/mm-hubspot`, `src/workflow/action.ts`). Le câblage est tenu par
-  `tests/hubspot-workflow-cablage.test.ts`.
+  des modèles et lancer des scénarios », fonction `crm`, indépendante de la réponse) et la fiche `hubspot-sur-l-accueil`
+  l'explique. L'action elle-même vit dans le connecteur (`~/mm-hubspot`, `src/workflow/action.ts`). Le câblage est tenu
+  par `tests/hubspot-workflow-cablage.test.ts`.
+- **L'action « Lancer un scénario Messaging Me »** (cadrage `~/mm-hubspot/docs/2026-10-29-action-workflow-scenario-cadrage.md`,
+  décisions validées par Julien le 2026-10-29) : deux routes jumelles, `POST /hubspot/workflow/scenarios` (la liste) et
+  `POST /hubspot/workflow/scenario` (le lancement), sur les mêmes gardes, le même réglage et les mêmes plafonds. Un
+  scénario se juge par `jugerScenarioPourWorkflow` (liste ET lancement) : un code `scn_`, une ouverture
+  `whatsapp_template` (`ouvertureApi` ; ni message de session, ni RCS, dont la catégorie ne serait que déclarée), son
+  modèle d'ouverture au catalogue et accepté par `jugerPourWorkflow`, et 🔴 AUCUN autre bloc « Modèle » du graphe
+  Marketing ou absent du catalogue : le cœur et l'exécuteur ne jugent que l'ouverture, et un modèle sans bouton ne fait
+  pas attendre le parcours (relecture du 2026-10-29). L'offre sans `scenarios` rend une liste vide et
+  l'issue `hors_offre`. 🔴 Une conversation qu'un opérateur tient (`getControlOwner === 'app_human'`) rend
+  `conseiller_en_main` AVANT la clé ; le démarrage, dans le worker, se fait en `workflow_hubspot` (`reprise:
+  'sauf_operateur'`, aucune étiquette publiée, fenêtre gardée), le type que le moteur de campagne lit sur le nom de la
+  ligne (`lancementDeCampagne`, `src/hubspot-workflow/ligne.ts` : pas de colonne, que chaque envoi écrirait). Le même
+  adaptateur (`envoyerPourWorkflow`, cible scénario) : catégorie `utility` déclarée (le cœur retient la plus stricte, lue
+  chez Meta), valeurs en source `literal` (un appel, un destinataire), clé `hubspot-workflow-scenario:<numéro>:<code>`.
 - **Le visuel d'en-tête d'un modèle envoyé depuis l'Inbox part en `media id`** (`creerEnvoiModeleInbox`,
   `mediaDuModele`) : l'adresse que l'écran passe est celle du CDN de Meta, que l'invariant 9 dit refusée en 131053 ;
   le visuel du modèle se re-téléverse comme pour le bloc de scénario. Sans visuel au modèle, ou si la préparation

@@ -1,5 +1,6 @@
 import type { TemplateParam } from '../crm/template';
 import type { Etage } from './etages';
+import type { LancementDeCampagne } from '../hubspot-workflow/ligne';
 
 export type CampaignCategory = 'marketing' | 'utility';
 export type CampaignStatus = 'draft' | 'running' | 'paused' | 'completed' | 'failed' | 'scheduled';
@@ -18,6 +19,12 @@ export interface Campaign {
   status: CampaignStatus;
   /** Si présent : la campagne démarre ce workflow par destinataire (au lieu d'envoyer un template). */
   workflowId: string | null;
+  /**
+   * Le type de lancement de ce scénario, lu sur le nom de la campagne (`lancementDeCampagne`) : `workflow_hubspot` pour
+   * la ligne d'un workflow HubSpot, qui ne reprend jamais le fil à un opérateur. Absent (faux de test) :
+   * `campagne_scenario`.
+   */
+  lancement?: LancementDeCampagne;
   /**
    * Cible node (/v1/sends) : avec `workflowId`, le run démarre à ce bloc au lieu de l'entrée du scénario. La
    * fenêtre 24 h a été vérifiée par destinataire à la création de l'envoi. null = comportement classique.

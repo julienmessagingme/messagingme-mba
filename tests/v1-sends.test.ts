@@ -866,7 +866,7 @@ describe('l’action de workflow HubSpot, par le vrai cycle d’envoi public', (
   const branche = (sends: DepsEnvoiPublic) => (t: string, corps: unknown, compter: (n: number) => Promise<boolean>, options: OptionsEnvoiPublic) =>
     lancerEnvoiPublic(sends, t, corps, undefined, compter, options);
   const envoi = (over: Partial<EnvoiWorkflow> = {}): EnvoiWorkflow => ({
-    tenantId: 't1', telephone: PHONE(1), modele: 'confirmation', langue: 'fr', valeurs: [], workflowId: '1234567', ...over,
+    tenantId: 't1', telephone: PHONE(1), cible: { modele: 'confirmation', langue: 'fr' }, valeurs: [], workflowId: '1234567', ...over,
   });
   const libre = async () => null;
 
@@ -927,6 +927,67 @@ describe('l’action de workflow HubSpot, par le vrai cycle d’envoi public', (
     expect(await envoyerPourWorkflow(branche(sends), envoi(), async () => 'minute')).toEqual({ issue: 'plafond_minute' });
     expect([cap.sends, idem.size]).toEqual([[], 0]);
     expect((await envoyerPourWorkflow(branche(sends), envoi(), libre)).issue).toBe('envoye');
+  });
+});
+
+/**
+ * LE LANCEMENT D'UN SCÉNARIO PAR UN WORKFLOW HUBSPOT, par le vrai cycle (cadrage du 2026-10-29, décisions 2, 5 et 6) : la
+ * même porte que l'action modèle, la cible changée. Ce qui se prouve ici : la catégorie du modèle d'ouverture, lue chez
+ * Meta, décide (une ouverture Marketing ne part pas), les valeurs voyagent en `literal` vers le modèle d'ouverture, la clé
+ * borne la répétition à 24 h, et les refus du scénario rendent leur issue.
+ */
+describe('l’action « Lancer un scénario » d’un workflow HubSpot, par le vrai cycle d’envoi public', () => {
+  const branche = (sends: DepsEnvoiPublic) => (t: string, corps: unknown, compter: (n: number) => Promise<boolean>, options: OptionsEnvoiPublic) =>
+    lancerEnvoiPublic(sends, t, corps, undefined, compter, options);
+  const lancement = (over: Partial<EnvoiWorkflow> = {}): EnvoiWorkflow => ({
+    tenantId: 't1', telephone: PHONE(1), cible: { scenario: 'scn_template' }, valeurs: [], workflowId: '1234567', ...over,
+  });
+  const libre = async () => null;
+
+  it('🔴 un scénario qui ouvre par un Service : la campagne le démarre, nommée par le workflow, sans consentement écrit', async () => {
+    const { sends, cap } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 1 } });
+    const r = await envoyerPourWorkflow(branche(sends), lancement({ valeurs: ['Julien'] }), libre);
+    expect(r.issue).toBe('envoye');
+    expect(cap.sends[0]!.input).toMatchObject({
+      workflowId: 'wf-scn_template', category: 'utility', name: 'HubSpot · workflow 1234567',
+      paramMapping: [{ position: 1, source: { type: 'literal', value: 'Julien' } }],
+    });
+    expect([cap.consentements, cap.ecritures]).toEqual([[], []]);
+  });
+
+  it('🔴 un modèle d’ouverture que Meta dit Marketing : refusé, rien ne part, la clé est libérée', async () => {
+    const { sends, cap, idem } = app({}, { modele: { statut: 'approuve', categorie: 'marketing', variables: 0 } });
+    expect(await envoyerPourWorkflow(branche(sends), lancement(), libre)).toEqual({ issue: 'marketing_refuse' });
+    expect([cap.sends, idem.size]).toEqual([[], 0]);
+  });
+
+  it('🔴 introuvable, ambigu, ou qui ouvre par un message de session : `scenario_refuse`, rien ne part', async () => {
+    const { sends, cap } = app();
+    for (const scenario of ['scn_absent', 'Ambigu', 'scn_session', 'scn_vide']) {
+      expect(await envoyerPourWorkflow(branche(sends), lancement({ cible: { scenario } }), libre), scenario).toEqual({ issue: 'scenario_refuse' });
+    }
+    expect(cap.sends).toEqual([]);
+  });
+
+  it('🔴 une offre sans scénarios : `hors_offre`, rien ne part', async () => {
+    const base = { offreDe: async () => ({ offre: 'base' as const, droits: DROITS.base, retourEnBaseLe: null }) };
+    const { sends, cap } = app({ offres: base });
+    expect(await envoyerPourWorkflow(branche(sends), lancement(), libre)).toEqual({ issue: 'hors_offre' });
+    expect(cap.sends).toEqual([]);
+  });
+
+  it('🔴 24 h : le même scénario au même numéro avec d’autres valeurs rend `deja_envoye`, un modèle au même numéro reste libre', async () => {
+    const { sends, cap } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 1 } });
+    const r1 = await envoyerPourWorkflow(branche(sends), lancement({ valeurs: ['Julien'] }), libre);
+    const r2 = await envoyerPourWorkflow(branche(sends), lancement({ valeurs: ['Julien'], workflowId: '999' }), libre);
+    const r3 = await envoyerPourWorkflow(branche(sends), lancement({ valeurs: ['Marie'] }), libre);
+    expect(r1.issue).toBe('envoye');
+    expect(r2).toEqual(r1);
+    expect(r3).toEqual({ issue: 'deja_envoye' });
+    // La clé d'un modèle ne croise pas celle d'un scénario : le modèle d'ouverture envoyé seul part.
+    const seul = await envoyerPourWorkflow(branche(sends), lancement({ cible: { modele: 'promo', langue: 'fr' }, valeurs: ['Julien'] }), libre);
+    expect(seul.issue).toBe('envoye');
+    expect(cap.sends).toHaveLength(2);
   });
 });
 

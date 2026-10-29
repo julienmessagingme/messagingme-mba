@@ -270,6 +270,16 @@ describe('runCampaign', () => {
     expect(captured).toEqual([['X'], ['X']]);
   });
 
+  it('🔴 campagne WORKFLOW : passe le type de lancement de la campagne, `campagne_scenario` faute de mieux', async () => {
+    // La ligne d'un workflow HubSpot démarre en `workflow_hubspot` (jamais par-dessus un opérateur, cadrage du
+    // 2026-10-29) ; une campagne de la console, ou un faux sans le champ, reste en `campagne_scenario`.
+    const types: string[] = [];
+    const startWorkflow = async (_t: string, _w: string, _waId: string, _cid: string, _p: string[], lancement: string) => { types.push(lancement); };
+    await lancerCampagne({ ...campaign, workflowId: 'wf1', lancement: 'workflow_hubspot' }, deps({ recipients: new FakeRecipients([rec('r1', '+33611')]), startWorkflow }));
+    await lancerCampagne({ ...campaign, workflowId: 'wf1' }, deps({ recipients: new FakeRecipients([rec('r2', '+33622')]), startWorkflow }));
+    expect(types).toEqual(['workflow_hubspot', 'campagne_scenario']);
+  });
+
   /**
    * Un run de workflow qui NE DÉMARRE PAS ne doit JAMAIS être compté comme envoyé (revue Lot D).
    *

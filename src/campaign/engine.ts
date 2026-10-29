@@ -18,6 +18,7 @@ import type { CampaignSender } from './sender';
 import { waIdOfTarget } from '../crm/identity';
 import { RANG_INITIAL, etageAuRang, type CanalEtage } from './etages';
 import { messageDe, texteDe } from '../lib/erreur';
+import type { LancementDeCampagne } from '../hubspot-workflow/ligne';
 
 /**
  * Une tentative d'envoi, telle qu'on la journalise. `saute` n'est pas un échec : le destinataire a été écarté
@@ -162,7 +163,9 @@ export interface EngineDeps {
    * `false` (ou une raison en chaîne) = le parcours n'a pas démarré (scénario supprimé, fil détenu par un humain
    * ou MBA, ouverture hors fenêtre) : le destinataire est marqué en échec, jamais compté envoyé.
    */
-  startWorkflow?: (tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[]) => Promise<void | boolean | string>;
+  startWorkflow?: (
+    tenantId: string, workflowId: string, waId: string, contactId: string, firstTemplateParams: string[], lancement: LancementDeCampagne,
+  ) => Promise<void | boolean | string>;
   /**
    * Campagne node (/v1/sends) : démarre le parcours à un bloc précis. Pas de `firstTemplateParams` (un template y
    * résout ses variables par ses sources, et `/v1/sends` refuse `params` sur un bloc) ni de garde de fenêtre
@@ -756,6 +759,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
                 const heritees = etageDuTour.rang === RANG_INITIAL ? params : [];
                 const suite = await deps.startWorkflow(
                   campaign.tenantId, contenu.workflowId, waIdOfTarget(r.toE164), r.contactId, heritees,
+                  campaign.lancement ?? 'campagne_scenario',
                 );
                 if (typeof suite === 'string') scenarioNonDemarre = `Scénario non démarré : ${suite}`;
                 else if (suite === false) scenarioNonDemarre = 'Scénario non démarré (scénario supprimé).';
@@ -782,7 +786,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
         if (!deps.startWorkflow) throw new Error('startWorkflow non câblé');
         const waId = waIdOfTarget(r.toE164);
         // Variables du premier template, résolues à la construction : pas de re-résolution à l'envoi.
-        const started = await deps.startWorkflow(campaign.tenantId, contenu.workflowId, waId, r.contactId, params);
+        // Le type de lancement suit la ligne : celle d'un workflow HubSpot ne reprend jamais le fil à un opérateur.
+        const started = await deps.startWorkflow(campaign.tenantId, contenu.workflowId, waId, r.contactId, params, campaign.lancement ?? 'campagne_scenario');
         if (typeof started === 'string') notStarted = `Scénario non démarré : ${started}`;
         else if (started === false) notStarted = 'scénario non lançable (ouverture hors fenêtre 24 h, ou scénario supprimé)';
         res = { messageId: `wf-${contenu.workflowId}` };

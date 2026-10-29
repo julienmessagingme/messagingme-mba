@@ -47,6 +47,12 @@ export const TYPES_DE_LANCEMENT = [
   /** Une campagne qui démarre à un bloc (cible `node` de `/v1/sends`). */
   'campagne_bloc',
   /**
+   * L'action « Lancer un scénario Messaging Me » d'un workflow HubSpot (cadrage
+   * `~/mm-hubspot/docs/2026-10-29-action-workflow-scenario-cadrage.md`), destinataire par destinataire, par le moteur de
+   * campagne comme `campagne_scenario` : la ligne « HubSpot · workflow … » de Campagnes décide (`lancementDeCampagne`).
+   */
+  'workflow_hubspot',
+  /**
    * Le répondeur de l'espace : un agent IA désigné prend le message que personne ne tient
    * (`src/repondeur/demarrer.ts`), dans le scénario système caché de l'espace, sur un graphe construit au démarrage.
    */
@@ -177,6 +183,14 @@ export const POLITIQUE_DE_LANCEMENT = {
   lien_de_test: { reprise: 'oui', publieLesEtiquettes: true, graphe: 'brouillon_fige', fenetre: 'levee', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
   campagne_scenario: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'gardee', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
   campagne_bloc: { reprise: 'oui', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'levee', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
+  /**
+   * Un workflow HubSpot (décisions 3, 4 et 8 du cadrage du 2026-10-29) : une machine, pas un opérateur qui lance. Il
+   * reprend le fil à l'agent de Meta, JAMAIS à un opérateur qui le tient (le conseiller qui répond dans la fiche HubSpot
+   * ne voit pas un scénario lui écrire par-dessus) ; il remplace un parcours automatique en cours, comme une campagne
+   * (un parcours peut dormir sans fin) ; aucune étiquette ne publie (un workflow inscrit des milliers de contacts, c'est
+   * un chemin de masse) ; il écrit à froid, donc la fenêtre est gardée.
+   */
+  workflow_hubspot: { reprise: 'sauf_operateur', publieLesEtiquettes: false, graphe: 'publie', fenetre: 'gardee', sessionRemplacee: 'interrompue', horsOffre: 'gele' },
   /**
    * Le répondeur (lot 5, spec `docs/superpowers/specs/2026-10-04-repondeur-par-defaut-design.md`) : jamais à un
    * opérateur qui tient le fil (c'est le client qui écrit, comme un clic sur une publicité) ; ses étiquettes publient
@@ -309,7 +323,7 @@ export type DemandeDeLancement =
   /** `blocDuJeton` : le suffixe du jeton, tel que le testeur l'a écrit (casse tolérée par `blocDesigne`), ou `null`. */
   | (DemandeDeBase & { type: 'lien_de_test'; waId: string; blocDuJeton: string | null })
   /** La fiche est connue : la campagne l'a lue en construisant ses destinataires, on ne la recherche pas. */
-  | (DemandeDeBase & { type: 'campagne_scenario'; waId: string; contactId: string | null; firstTemplateParams?: string[] })
+  | (DemandeDeBase & { type: 'campagne_scenario' | 'workflow_hubspot'; waId: string; contactId: string | null; firstTemplateParams?: string[] })
   | (DemandeDeBase & { type: 'campagne_bloc'; waId: string; contactId: string | null; noeudId: string })
   | DemandeRepondeur;
 
@@ -367,6 +381,7 @@ function departDe(demande: Exclude<DemandeDeLancement, DemandeEnvoiDeBloc | Dema
         ? { depuis: 'entree' }
         : { depuis: 'bloc', noeudId: blocDesigne(graphe, demande.blocDuJeton) };
     case 'campagne_scenario':
+    case 'workflow_hubspot':
       return { depuis: 'entree', firstTemplateParams: demande.firstTemplateParams };
     case 'campagne_bloc':
       return { depuis: 'bloc', noeudId: demande.noeudId };
@@ -406,7 +421,7 @@ export function creerLancements(deps: DepsLancements): Lancements {
     const graphe = POLITIQUE_DE_LANCEMENT[demande.type].graphe === 'brouillon_fige' ? grapheEditable(wf) : wf.graph;
     // La campagne connaît la fiche ; ailleurs, le contact existe déjà (l'entrant l'a créé juste avant, ou
     // l'opérateur le regarde) et on relie le parcours à elle.
-    const contactId = demande.type === 'campagne_scenario' || demande.type === 'campagne_bloc'
+    const contactId = demande.type === 'campagne_scenario' || demande.type === 'workflow_hubspot' || demande.type === 'campagne_bloc'
       ? demande.contactId
       : await deps.contacts.findIdByWaId(demande.tenantId, demande.waId);
     return deps.executor.demarrer(demande.type, demande.tenantId, demande.workflowId, graphe,

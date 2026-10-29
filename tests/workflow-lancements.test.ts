@@ -71,6 +71,9 @@ const ATTENDU: Record<TypeDeLancement, { reprise: Reprise; publie: boolean; grap
   lien_de_test: { reprise: 'reprend', publie: true, graphe: 'brouillon_fige', fenetre: 'levee' },
   campagne_scenario: { reprise: 'reprend', publie: false, graphe: 'publie', fenetre: 'gardee' },
   campagne_bloc: { reprise: 'reprend', publie: false, graphe: 'publie', fenetre: 'levee' },
+  // L'action « Lancer un scénario » d'un workflow HubSpot (cadrage du 2026-10-29, décisions 3, 4 et 8) : une ligne
+  // neuve. Une campagne, SAUF qu'elle ne reprend jamais le fil à un opérateur : un workflow est une machine.
+  workflow_hubspot: { reprise: 'reprend_sauf_operateur', publie: false, graphe: 'publie', fenetre: 'gardee' },
   // Le lot 5 (spec du répondeur, § 4) : la seule ligne neuve, pas un comportement d'avant. Le client écrit, comme un
   // clic sur une publicité : jamais à un opérateur ; le graphe vient de l'appelant et SE FIGE (la ligne de scénario
   // n'est qu'une ancre) ; la fenêtre est prouvée par l'entrant.
@@ -112,6 +115,7 @@ function demandeDe(type: Exclude<TypeDeLancement, TypeDuSaut>, v: Variante): Dem
     case 'lien_de_test':
       return { ...base, type, waId: WA, blocDuJeton: v.auBloc === true ? bloc : null };
     case 'campagne_scenario':
+    case 'workflow_hubspot':
       return { ...base, type, waId: WA, contactId: 'c-campagne' };
     case 'campagne_bloc':
       return { ...base, type, waId: WA, contactId: 'c-campagne', noeudId: bloc };
@@ -358,6 +362,7 @@ describe('la garde de fenêtre de 24 h', () => {
     ],
     lien_de_test: [{ workflowId: 'wf-session' }, { workflowId: 'wf-session', auBloc: true }],
     campagne_scenario: [{ workflowId: 'wf-session' }],
+    workflow_hubspot: [{ workflowId: 'wf-session' }],
     campagne_bloc: [{ workflowId: 'wf-session', auBloc: true }],
     repondeur: [{ workflowId: 'wf-session', fenetreOuverte: true }],
     repondeur_scenario: [{ workflowId: 'wf-session', fenetreOuverte: true }],
@@ -390,11 +395,11 @@ describe('la garde de fenêtre de 24 h', () => {
 });
 
 describe('ce que l’entrée lit, et ce qu’elle transmet', () => {
-  it('🔴 la fiche : cherchée par le numéro, sauf pour la campagne (qui la connaît), l’envoi de bloc et le saut (qui la fournissent)', async () => {
+  it('🔴 la fiche : cherchée par le numéro, sauf pour la campagne et le workflow HubSpot (qui la connaissent), l’envoi de bloc et le saut (qui la fournissent)', async () => {
     for (const type of TYPES_DE_LANCEMENT) {
       const m = banc();
       await lancerLeType(m, type, { workflowId: 'wf-modele' });
-      const attendue = type === 'campagne_scenario' || type === 'campagne_bloc' ? 'c-campagne' : type === 'agent_meta_bloc' ? 'c-appelant' : estUnSaut(type) ? 'c-saut' : 'c-fiche';
+      const attendue = type === 'campagne_scenario' || type === 'workflow_hubspot' || type === 'campagne_bloc' ? 'c-campagne' : type === 'agent_meta_bloc' ? 'c-appelant' : estUnSaut(type) ? 'c-saut' : 'c-fiche';
       expect(m.crees.map((c) => c.contactId), type).toEqual([attendue]);
       expect(m.recherches, type).toEqual(attendue === 'c-fiche' ? [`${ESPACE}/${WA}`] : []);
     }
@@ -568,7 +573,7 @@ describe('buildWorkflowRuntime rend des lancements construits sur son propre ex�
 const GELE_EN_BASE: Record<Exclude<TypeDeLancement, TypeDuSaut>, boolean> = {
   inbox: true, agent_meta_scenario: true, agent_ia_scenario: true, agent_meta_bloc: true,
   automatisme_ordinaire: false, automatisme_chaine: false, automatisme_publicite_ou_widget: false,
-  lien_de_test: true, campagne_scenario: true, campagne_bloc: true,
+  lien_de_test: true, campagne_scenario: true, campagne_bloc: true, workflow_hubspot: true,
   repondeur: false, repondeur_scenario: true,
 };
 

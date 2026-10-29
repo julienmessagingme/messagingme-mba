@@ -306,6 +306,8 @@ const FAUSSES_AUTORITES: Readonly<Record<string, unknown>> = {
     plafonds: inconnu('hubspotWorkflow.plafonds'),
     catalogue: inconnu('hubspotWorkflow.catalogue'),
     nomEspace: inconnu('hubspotWorkflow.nomEspace'),
+    scenariosPublies: inconnu('hubspotWorkflow.scenariosPublies'),
+    conseillerEnMain: inconnu('hubspotWorkflow.conseillerEnMain'),
   } satisfies HubspotWorkflowDeps,
   // Le webhook de Stripe : un VRAI secret aussi, et un dépôt qui ne crédite personne. Une signature fausse ou absente
   // doit tomber avant le dépôt (sonde 12).
