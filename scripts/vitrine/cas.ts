@@ -15,7 +15,7 @@ import { EXEMPLES_CAS, type ExempleCode } from '../../web/lib/exemples-code';
 import { ENTREES, type EntreeVitrine } from '../../web/lib/registre-vitrine';
 import { TEXTES_CAS, TEXTES_CARREFOUR, type Langue, type TexteCas, type TexteChapeau } from './cas-textes';
 import { ICONES_FAMILLES } from '../plugin/construire';
-import { etiquetteDOffre, offreDeLaCarte } from './offres-outils';
+import { offreDeLaCarte } from './offres-outils';
 import { TEXTES_ATTENTE, TEXTES_SECTEURS, type LogoClient, type TexteSecteur, type UsageSecteur } from './secteurs-textes';
 import { pageAvecEntete } from './entete';
 import { LOGOS_ASSISTANTS, type LogoAssistant } from './logos-assistants';
@@ -327,11 +327,28 @@ function assistants(langue: Langue): string {
 
 /**
  * « Et depuis Claude, sans écrire de code » (décision 5 de Julien, 2026-10-28) : les trois colonnes de « Ce que vous pouvez
- * construire » (`.dev-construire`, leurs icônes), chaque ligne avec son étiquette d'offre, calculée depuis le serveur MCP,
- * et ses outils.
+ * construire » (`.dev-construire`, leurs icônes). Dans chaque colonne, deux volets repliés (Julien, 2026-10-29) : « Avec la
+ * Free », puis « Et en plus, avec le Pro ». Une ligne va dans le volet de son offre, CALCULÉE depuis le serveur MCP ; une
+ * ligne au-delà du Pro n'a pas de volet, elle est refusée.
  */
 function depuisClaude(c: TexteChapeau, langue: Langue): string[] {
   const doc = langue === 'fr' ? 'https://console.messagingme.app/developers/mcp' : 'https://console.messagingme.app/developers/mcp?lang=en';
+  type Ligne = TexteChapeau['claude']['colonnes'][number]['lignes'][number];
+  const ligne = (l: Ligne) =>
+    `                <li>${l.lien ? `<a href="${l.lien}">${l.texte}</a>` : l.texte}<span class="bt-avec">${c.claude.avec} ${l.outils.map((o) => `<code>${o}</code>`).join(', ')}</span></li>`;
+  const volet = (offre: 'base' | 'pro', titre: string, lignes: readonly Ligne[]) => (lignes.length === 0 ? [] : [
+    `          <details class="hub-offre" data-etiquette="${offre}">`,
+    `            <summary>${titre} <span class="bt-nombre">${lignes.length}</span></summary>`,
+    '            <ul>',
+    ...lignes.map(ligne),
+    '            </ul>',
+    '          </details>',
+  ]);
+  const offreDe = (l: Ligne): 'base' | 'pro' => {
+    const o = offreDeLaCarte(l);
+    if (o !== 'base' && o !== 'pro') throw new Error(`cas : « ${l.texte} » demande l'offre ${o}, sans volet sur la page SaaS`);
+    return o;
+  };
   return [
     '  <section class="f-bloc" id="claude">',
     '    <div class="cadre">',
@@ -342,9 +359,8 @@ function depuisClaude(c: TexteChapeau, langue: Langue): string[] {
       '        <div>',
       `          <span class="dev-ic dev-ic-${col.icone}" aria-hidden="true"><svg viewBox="0 0 256 256"><path class="dev-ic-fond" d="${ICONES_FAMILLES[col.icone].fond}"/><path d="${ICONES_FAMILLES[col.icone].trait}"/></svg></span>`,
       `          <h3>${col.titre}</h3>`,
-      '          <ul>',
-      ...col.lignes.map((l) => `            <li>${etiquetteDOffre(offreDeLaCarte(l), langue)}${l.lien ? `<a href="${l.lien}">${l.texte}</a>` : l.texte}<span class="bt-avec">${c.claude.avec} ${l.outils.map((o) => `<code>${o}</code>`).join(', ')}</span></li>`),
-      '          </ul>',
+      ...volet('base', c.claude.free, col.lignes.filter((l) => offreDe(l) === 'base')),
+      ...volet('pro', c.claude.pro, col.lignes.filter((l) => offreDe(l) === 'pro')),
       '        </div>',
     ]),
     '      </div>',

@@ -51,11 +51,14 @@ export interface TexteChapeau {
   readonly etapes: { readonly titre: string; readonly liste: ReadonlyArray<{ readonly titre: string; readonly texte: string }>; readonly lien: string };
   /**
    * « Et depuis Claude, sans écrire de code » (décision 5 de Julien, 2026-10-28) : trois colonnes au style de « Ce que vous
-   * pouvez construire ». Chaque ligne cite ses outils, et son étiquette d'offre se calcule (`offreDeLaCarte`) ; `lien`
-   * mène à une page de la vitrine.
+   * pouvez construire ». Chaque ligne cite ses outils ; son offre se CALCULE (`offreDeLaCarte`) et la range dans l'un des
+   * deux volets repliés de sa colonne, « Avec la Free » (`free`) puis « Et en plus, avec le Pro » (`pro`), qu'on déplie
+   * d'un clic (Julien, 2026-10-29 : trois colonnes de lignes étiquetées, « c'est un peu le bordel »). `lien` mène à une
+   * page de la vitrine.
    */
   readonly claude: {
     readonly titre: string; readonly texte: string; readonly avec: string; readonly doc: string;
+    readonly free: string; readonly pro: string;
     readonly colonnes: ReadonlyArray<{
       readonly titre: string; readonly icone: IconeFamille;
       readonly lignes: ReadonlyArray<{ readonly texte: string; readonly outils: readonly NomOutilMcp[]; readonly lien?: string }>;
@@ -89,15 +92,17 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
     },
     claude: {
       titre: 'Et depuis Claude, sans écrire de code.',
-      texte: 'Ce que vous demandez à Claude Code, ou à votre assistant IA, une fois votre espace relié. Chaque ligne dit l’offre qui l’ouvre.',
+      texte: 'Ce que vous demandez à Claude Code, ou à votre assistant IA, une fois votre espace relié&nbsp;: ce que la Free fait déjà, et ce que le Pro y ajoute.',
       avec: 'Avec', doc: 'Tous les outils du serveur MCP',
+      free: 'Avec la Free', pro: 'Et en plus, avec le Pro',
       colonnes: [
         {
           titre: 'Vos utilisateurs', icone: 'chats',
           lignes: [
             { texte: 'Les champs de vos fiches (offre, fin d’essai) créés par Claude, et un utilisateur retrouvé en une question.', outils: ['create_field', 'search_contacts'] },
-            { texte: 'Une annonce à vos utilisateurs, préparée par Claude et lancée à votre oui.', outils: ['find_contacts', 'prepare_campaign', 'launch_campaign'] },
             { texte: 'Le droit à l’effacement en une demande, conversations comprises.', outils: ['prepare_contacts_deletion', 'delete_contacts'] },
+            { texte: 'Une annonce à vos utilisateurs, préparée par Claude et lancée quand vous dites oui.', outils: ['find_contacts', 'prepare_campaign', 'launch_campaign'] },
+            { texte: 'Une étiquette ou un champ posé d’un coup sur tout un groupe d’utilisateurs.', outils: ['tag_contacts', 'set_contact_field'] },
           ],
         },
         {
@@ -106,6 +111,7 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
             { texte: 'Vos webhooks inscrits, testés et rejoués depuis Claude.', outils: ['create_webhook_endpoint', 'send_test_event', 'replay_webhook_delivery'] },
             { texte: 'Votre agent IA qui déclenche votre code quand un client demande une démo, une résiliation ou un rappel.', outils: ['set_agent_action'] },
             { texte: 'Vos modèles écrits par Claude et soumis à Meta, et le motif d’un refus.', outils: ['create_template', 'get_template_status'] },
+            { texte: 'Votre équipe répond dans l’Inbox de la console, et Claude lui confie et étiquette les conversations.', outils: ['assign_conversation', 'tag_conversation'] },
           ],
         },
         {
@@ -114,6 +120,8 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
             { texte: 'Les boutiques Shopify de vos clients, branchées en une demande.', outils: ['connect_shopify', 'set_shopify_message'], lien: '/solutions/shopify/' },
             { texte: 'Le numéro de leur application WhatsApp Business gardé, et votre app qui écrit dessus.', outils: ['start_whatsapp_connection'] },
             { texte: 'Demandez à Claude vos messages livrés, lus ou en échec.', outils: ['get_message_stats'] },
+            { texte: 'Le coût estimé et les clics de vos campagnes, et les erreurs de Meta.', outils: ['get_campaign_stats'] },
+            { texte: 'Le coût de votre agent IA, ses messages et les demandes ouvertes pour votre équipe.', outils: ['get_ai_stats'] },
           ],
         },
       ],
@@ -144,15 +152,17 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
     },
     claude: {
       titre: 'And from Claude, without writing code.',
-      texte: 'What you ask Claude Code, or your AI assistant, once your workspace is connected. Each line shows the plan that opens it.',
+      texte: 'What you ask Claude Code, or your AI assistant, once your workspace is connected: what the Free plan already does, and what Pro adds.',
       avec: 'With', doc: 'All the MCP server tools',
+      free: 'With the Free plan', pro: 'And on top, with the Pro plan',
       colonnes: [
         {
           titre: 'Your users', icone: 'chats',
           lignes: [
             { texte: 'Your records’ fields (plan, trial end) created by Claude, and a user found in one question.', outils: ['create_field', 'search_contacts'] },
-            { texte: 'An announcement to your users, prepared by Claude and launched once you say yes.', outils: ['find_contacts', 'prepare_campaign', 'launch_campaign'] },
             { texte: 'The right to erasure in one request, conversations included.', outils: ['prepare_contacts_deletion', 'delete_contacts'] },
+            { texte: 'An announcement to your users, prepared by Claude and launched once you say yes.', outils: ['find_contacts', 'prepare_campaign', 'launch_campaign'] },
+            { texte: 'A tag or a field set on a whole group of users at once.', outils: ['tag_contacts', 'set_contact_field'] },
           ],
         },
         {
@@ -161,6 +171,7 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
             { texte: 'Your webhooks registered, tested and replayed from Claude.', outils: ['create_webhook_endpoint', 'send_test_event', 'replay_webhook_delivery'] },
             { texte: 'Your AI agent triggering your code when a customer asks for a demo, a cancellation or a callback.', outils: ['set_agent_action'] },
             { texte: 'Your templates written by Claude and submitted to Meta, and the reason for a rejection.', outils: ['create_template', 'get_template_status'] },
+            { texte: 'Your team answers in the console’s Inbox, and Claude assigns and tags conversations for them.', outils: ['assign_conversation', 'tag_conversation'] },
           ],
         },
         {
@@ -169,6 +180,8 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
             { texte: 'Your clients’ Shopify stores, connected in one request.', outils: ['connect_shopify', 'set_shopify_message'], lien: '/en/solutions/shopify-stores/' },
             { texte: 'Their WhatsApp Business app number kept, with your app sending from it.', outils: ['start_whatsapp_connection'] },
             { texte: 'Ask Claude which of your messages were delivered, read or failed.', outils: ['get_message_stats'] },
+            { texte: 'The estimated cost and clicks of your campaigns, and Meta’s errors.', outils: ['get_campaign_stats'] },
+            { texte: 'Your AI agent’s cost, its messages and the requests opened for your team.', outils: ['get_ai_stats'] },
           ],
         },
       ],

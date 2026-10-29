@@ -40,6 +40,11 @@ Julien, § 5) ; copie à part de l'arbre partagé, qui avait 107 commits de reta
   « le marchand »), et tenu par un test : une ligne Free qui nomme une fonction payante dit son offre (vu rouge sans les
   phrases). Avec lui : la coupe ne tombe plus sur « excl. » (« €3.50 excl. VAT a month »), la carte de l'agent IA dit le
   crédit prépayé, les étiquettes sont vérifiées en littéral. Deux jaunes au `todo.md`.
+- **Le même jour, la page SaaS reprise** après la relecture de Julien en ligne (« c'est un peu le bordel ») : dans chaque
+  colonne, deux volets repliés, « Avec la Free » puis « Et en plus, avec le Pro », chacun avec son nombre de lignes ; une
+  ligne va dans le volet de son offre calculée, et une ligne au-delà du Pro est refusée à la génération. Quatre lignes Pro
+  de plus (étiquette ou champ sur une cible, l'Inbox de l'équipe, les chiffres de l'agent IA, ceux des campagnes), pour
+  que chaque colonne ait son volet Pro. Test vu rouge sur deux mutations (tout dans le volet Free, volets ouverts).
 
 ## 2026-10-28 (nuit) : le film de la page Boutiques Shopify, fabriqué puis posé (lot 3 de la conception vitrine)
 

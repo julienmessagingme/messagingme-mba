@@ -98,29 +98,38 @@ describe('les pages de cas d’usage', () => {
 
 describe('la page « SaaS et app builders » : ce que Claude fait sans code (plan `2026-10-28-vitrine-cas-mcp.md`)', () => {
   for (const langue of ['fr', 'en'] as const) {
-    it(`🔴 ${langue} : chaque outil cité existe, et chaque ligne porte la plus haute offre de ses outils`, () => {
+    it(`🔴 ${langue} : chaque colonne a son volet Free puis son volet Pro, repliés, et chaque ligne est dans le volet de son offre`, () => {
       const c = TEXTES_CARREFOUR[langue];
       const section = lire(fichierDe(c.adresse)).match(/<section class="f-bloc" id="claude">[\s\S]*?<\/section>/)?.[0] ?? '';
-      const lignes = section.split('<li>').slice(1);
-      const attendues = c.claude.colonnes.flatMap((col) => col.lignes);
-      expect(lignes.length).toBe(attendues.length);
+      const colonnes = section.split('<span class="dev-ic').slice(1);
+      expect(colonnes.length).toBe(c.claude.colonnes.length);
       // L'offre relue ici sans le module de la page : la plus petite qui ouvre la fonction de chaque outil (`null` = la Free).
       const rangs = ['base', 'pro', 'business', 'entreprise'] as const;
-      attendues.forEach((l, i) => {
-        const offres = l.outils.map((o) => {
-          expect(Object.keys(CATALOGUE_MCP), o).toContain(o);
-          expect(lignes[i], o).toContain(`<code>${o}</code>`);
-          const f = OUTILS.find((x) => x.nom === o)!.fonction;
-          return rangs.findIndex((r) => f === null || DROITS[r].fonctions.has(f));
-        });
-        // Le texte visible en littéral : un nom d'offre faussé dans le module se verrait aussi.
-        const offre = rangs[Math.max(...offres)]!;
-        const libelle = { fr: { base: 'Offre Free', pro: 'Offre Pro', business: 'Offre Business', entreprise: 'Offre Entreprise' }, en: { base: 'Free plan', pro: 'Pro plan', business: 'Business plan', entreprise: 'Enterprise plan' } }[langue][offre];
-        expect(lignes[i], l.texte).toContain(`data-etiquette="${offre}">${libelle}</span>`);
+      const offreDe = (outils: readonly string[]) => rangs[Math.max(...outils.map((o) => {
+        expect(Object.keys(CATALOGUE_MCP), o).toContain(o);
+        const f = OUTILS.find((x) => x.nom === o)!.fonction;
+        return rangs.findIndex((r) => f === null || DROITS[r].fonctions.has(f));
+      }))]!;
+      c.claude.colonnes.forEach((col, i) => {
+        // Les deux volets, dans cet ordre, fermés, avec leur titre littéral (Julien, 2026-10-29).
+        const volets = [...colonnes[i]!.matchAll(/<details class="hub-offre" data-etiquette="([a-z]+)">\s*<summary>([^<]*)<span class="bt-nombre">(\d+)<\/span><\/summary>([\s\S]*?)<\/details>/g)];
+        expect(volets.map((v) => [v[1], v[2]!.trim()]), col.titre).toEqual([['base', c.claude.free], ['pro', c.claude.pro]]);
+        expect(colonnes[i], col.titre).not.toMatch(/<details[^>]*\sopen/);
+        expect(c.claude.free).toBe(langue === 'fr' ? 'Avec la Free' : 'With the Free plan');
+        expect(c.claude.pro).toBe(langue === 'fr' ? 'Et en plus, avec le Pro' : 'And on top, with the Pro plan');
+        for (const [, offre, , nombre, corps] of volets) {
+          const attendues = col.lignes.filter((l) => offreDe(l.outils) === offre);
+          const lignes = corps!.split('<li>').slice(1);
+          expect(lignes.length, `${col.titre}, ${offre}`).toBe(attendues.length);
+          expect(Number(nombre), `${col.titre}, ${offre}`).toBe(attendues.length);
+          attendues.forEach((l, k) => {
+            expect(lignes[k], l.texte).toContain(l.texte);
+            for (const o of l.outils) expect(lignes[k], `${l.texte} : ${o}`).toContain(`<code>${o}</code>`);
+          });
+        }
+        // Aucune ligne au-delà du Pro : elle n'aurait pas de volet.
+        for (const l of col.lignes) expect(['base', 'pro'], l.texte).toContain(offreDe(l.outils));
       });
-      // Une étiquette qui ne varierait jamais ne prouverait rien.
-      expect(section).toContain('data-etiquette="base"');
-      expect(section).toContain('data-etiquette="pro"');
     });
   }
 });

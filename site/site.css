@@ -1399,9 +1399,18 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .dev-construire a{color:var(--muted);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px;line-height:1.5}
 .dev-construire a:hover{color:var(--ink);text-decoration-color:var(--action-ink)}
 @media (max-width:900px){.dev-construire{grid-template-columns:minmax(0,1fr)}}
-/* « Et depuis Claude » de la page SaaS : des lignes, pas des liens, chacune avec son étiquette d'offre et ses outils. */
+/* « Et depuis Claude » de la page SaaS : dans chaque colonne, « Avec la Free » puis « Et en plus, avec le Pro », repliés. */
+.hub-offre{border-top:1px solid var(--line)}
+.hub-offre summary{display:flex;align-items:center;gap:10px;padding:14px 0;cursor:pointer;list-style:none;font-weight:700}
+.hub-offre summary::-webkit-details-marker{display:none}
+.hub-offre summary::after{content:"+";color:var(--action-ink);font-size:1.3rem;font-weight:500;line-height:1;transition:transform .2s}
+.hub-offre[open] summary::after{transform:rotate(45deg)}
+.hub-offre summary:focus-visible{outline:2px solid var(--action);outline-offset:4px;border-radius:6px}
+.hub-offre .bt-nombre{margin-left:auto;min-width:1.6em;padding:1px 7px;border-radius:999px;border:1px solid var(--line);text-align:center;font-size:.78rem;font-weight:700;color:var(--muted)}
+.hub-offre[data-etiquette="pro"] summary{color:#25d366}
+.hub-offre[data-etiquette="pro"] .bt-nombre{border-color:rgb(37 211 102 / .55);color:#25d366}
+.hub-offre ul{margin:0 0 18px}
 .hub-claude li{color:var(--muted);line-height:1.5}
-.hub-claude li .bt-offre{margin:0 8px 0 0}
 .hub-claude .bt-avec{display:block;margin-top:6px;font-size:.85rem}
 
 /* ============================================================================================================
