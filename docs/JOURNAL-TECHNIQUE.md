@@ -4,6 +4,22 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-29 (soir) : l'action « Lancer un scénario » des workflows HubSpot en production
+
+`f47e512f` puis `be6e9e40`, run 40905140935, sans migration ; le déploiement emporte aussi `9bb2f43d` (journal) et
+`9191bc2c` (vitrine), poussés avant lui. Cadrage, dix décisions validées par Julien le même jour, et plan :
+`~/mm-hubspot/docs/2026-10-29-action-workflow-scenario-cadrage.md` et `-plan.md`. Le type de lancement
+`workflow_hubspot` (jamais par-dessus un opérateur) est lu par le moteur de campagne sur le nom de la ligne
+(`PREFIXE_LIGNE_HUBSPOT`), plutôt qu'une colonne écrite sur le chemin chaud. Une relecture indépendante : aucun rouge ;
+un jaune corrigé avant le push, le garde-fou Marketing qui ne jugeait que le modèle d'ouverture (un scénario « Service
+puis Marketing » passait) juge désormais chaque bloc modèle nommé, prouvé dans les deux sens (`scn_puis_promo`). Ce
+correctif est d'abord parti ROUGE en CI : `tsc` refusait `categorie` lu sur un verdict `absent`, et seul vitest avait
+tourné. La règle qui en reste : `npm run typecheck` après tout correctif, pas seulement les tests. Après le
+déploiement : `/hubspot/workflow/scenario` et `/scenarios` rendent 401 sans signature, fumée verte, fiches OAuth
+conformes. Puis le connecteur (`d86b044`, run 40918493202) et l'app HubSpot (build #19, l'action
+`mm_lancer_scenario_whatsapp` publiée sur le portail cobaye). Restent `aide:charger` sur la machine (la fiche
+`hubspot-sur-l-accueil` a changé) et l'essai réel.
+
 ## 2026-10-29 : la refonte de /ops, lot 3 (le coût Scaleway du mois)
 
 `4794782e`, run 40847495834, sans migration ; seul commit touchant le serveur depuis le déploiement précédent. La forme
