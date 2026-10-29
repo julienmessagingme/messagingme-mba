@@ -2257,8 +2257,13 @@ scénario, comment importer des contacts.
   l'offre doit inclure les scénarios), le numéro
   et chaque variable du modèle tirés d'une propriété du contact ; jamais à un contact STOP ou bloqué, ni à un fixe, ni
   deux fois le même modèle ou le même scénario au même contact en 24 heures ; un scénario ne part jamais vers une
-  conversation qu'un conseiller a en main, et remplace un scénario automatique en cours ; au plus 60 envois par minute
-  et 2 000 par jour, les deux actions comptées ensemble ; chaque envoi apparaît dans Campagnes, et l'historique du
+  conversation qu'un conseiller a en main, et remplace un scénario automatique en cours ; une troisième action,
+  « Lancer un scénario Messaging Me (transaction) », lance le même scénario depuis un workflow HubSpot de transactions
+  (par exemple au passage d'une étape), au seul contact associé à la transaction (plusieurs contacts : rien ne part),
+  et écrit sur sa fiche, avec la campagne et seulement pour un lancement neuf, le prénom HubSpot, le conseiller (le
+  propriétaire de la transaction) et son lien de réservation (`hubspot_prenom`, `hubspot_conseiller`,
+  `hubspot_lien_agenda`, déclarés quand on allume cette ligne), que lisent les blocs du scénario et les sources de son
+  modèle d'ouverture ; au plus 60 envois par minute et 2 000 par jour, les trois actions comptées ensemble ; chaque envoi apparaît dans Campagnes, et l'historique du
   workflow dit ce qui est parti ou pourquoi rien n'est parti), et vos listes HubSpot comme audience de campagne
   (décochée ; un bouton **« Autoriser l'accès aux listes HubSpot »** demande ce droit au portail s'il manque).
   Valider allume aussi la synchronisation du numéro principal : avant, une installation ne branchait rien. Ensuite,

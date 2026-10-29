@@ -48,4 +48,13 @@ describe('le câblage de l’action de workflow HubSpot', () => {
     expect(bloc).toContain('scenariosPublies: (t: string) => workflowStore.listPublies(t),');
     expect(bloc).toContain("conseillerEnMain: async (t: string, waId: string) => (await inboxStore.getControlOwner(t, waId)) === 'app_human',");
   });
+
+  it('🔴 l’action transaction : les sources du modèle et la fiche réelles, et les champs déclarés à l’allumage', () => {
+    // `sourcesDuModele: async () => []` compilerait, et tout lancement finirait en `valeur_invalide` ; une fiche jamais lue
+    // ferait oublier aux variables les champs que le client a déjà sur la fiche (cadrage du 2026-10-29, décision 8).
+    expect(bloc).toContain('sourcesDuModele: (t: string, name: string, language: string) => templateHintStore.get(t, name, language),');
+    expect(bloc).toContain('ficheParNumero: (t: string, waId: string) => contactStore.getResolvableByPhone(t, waId),');
+    // Décision 6 : sans déclaration, les sources du modèle d'ouverture ne pourraient pas viser les champs HubSpot.
+    expect(index).toContain('declarerChampsWorkflows: (t: string) => declarerChampsHubspot(fieldStore, t),');
+  });
 });

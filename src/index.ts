@@ -102,6 +102,7 @@ import type { HubspotChoixRouteDeps } from './http/hubspot-choix';
 import { etatLigneHubspot, type HubspotConversationDeps } from './http/hubspot-conversation';
 import type { HubspotWorkflowDeps } from './http/hubspot-workflow';
 import { plafondsDesWorkflows } from './hubspot-workflow/plafonds';
+import { declarerChampsHubspot } from './hubspot-workflow/champs';
 import { PgATraiterHubspot } from './inbox/a-traiter-hubspot.pg';
 import { PlafondPartage } from './auth/plafond-partage';
 import { getEtatPassage } from './analysis/enrichment';
@@ -1921,6 +1922,10 @@ async function main(): Promise<void> {
         // un opérateur (décision 3), relue comme le fait la reprise `saufOperateur` (`src/inbox/fil.ts`).
         scenariosPublies: (t: string) => workflowStore.listPublies(t),
         conseillerEnMain: async (t: string, waId: string) => (await inboxStore.getControlOwner(t, waId)) === 'app_human',
+        // L'action « Lancer un scénario (transaction) » (cadrage du 2026-10-29, décision 8) : le modèle d'ouverture rempli
+        // dans la route, par les sources posées sur le modèle, sur la fiche lue comme le fait le scénario (`varsDuContact`).
+        sourcesDuModele: (t: string, name: string, language: string) => templateHintStore.get(t, name, language),
+        ficheParNumero: (t: string, waId: string) => contactStore.getResolvableByPhone(t, waId),
       } satisfies HubspotWorkflowDeps,
     } : {}),
     /**
@@ -2094,6 +2099,7 @@ async function main(): Promise<void> {
             numeroPrincipal: (t: string) => phoneStatusStore.getPhoneNumber(t),
             allumerSynchro: async (phoneNumberId: string, t: string) => { await phoneStatusStore.setHubspotConnected(phoneNumberId, t, true); },
             poserModeTaches: (t: string, mode: ModeTaches) => poserModeTaches(hubspotSuppression, t, mode),
+            declarerChampsWorkflows: (t: string) => declarerChampsHubspot(fieldStore, t),
           } satisfies HubspotChoixRouteDeps,
         }
       : {}),

@@ -34,6 +34,15 @@ export interface BuiltRecipient {
   variables?: Readonly<Record<string, string>>;
 }
 
+/**
+ * Des champs libres à écrire sur la fiche d'un destinataire, avec la campagne qui la vise : posés (`poser`) ou retirés
+ * (`retirer`, la règle du dépôt pour vider un champ). L'option `champsFiche` de l'envoi public.
+ */
+export interface ChampsFiche {
+  poser: Readonly<Record<string, string>>;
+  retirer: readonly string[];
+}
+
 /** Destinataire écarté à la construction, avec son motif. */
 export interface SkippedRecipient {
   contactId: string;

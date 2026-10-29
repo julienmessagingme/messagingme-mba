@@ -2,7 +2,7 @@ import { setTimeout as dormir } from 'node:timers/promises';
 import { z } from 'zod';
 import type { PoolClient } from 'pg';
 import { waIdOf } from '../crm/identity';
-import type { BuiltRecipient, ContactEnvoi } from '../campaign/build';
+import type { BuiltRecipient, ChampsFiche, ContactEnvoi } from '../campaign/build';
 import type { CampaignCategory } from '../campaign/types';
 import type { EnvoiApiBrut } from '../campaign/store.pg';
 import { validateParamMapping, type TemplateParam } from '../crm/template';
@@ -66,6 +66,8 @@ export interface DepsEnvoiPublic {
       recipients: BuiltRecipient[],
       confirmer: (tx: PoolClient, campaignId: string) => Promise<boolean>,
     ): Promise<{ campaignId: string; recipientCount: number } | null>;
+    /** Pose et retire des champs sur UNE fiche, par le `tx` de la création (l'option `champsFiche`). */
+    ecrireChampsFiche(tx: PoolClient, tenantId: string, contactId: string, champs: ChampsFiche): Promise<void>;
     /** L'envoi tel que `GET /v1/sends/{sendId}` le décrit, avant mise en forme. */
     lireEnvoiApi(sendId: string, tenantId: string): Promise<EnvoiApiBrut | null>;
   };
@@ -372,6 +374,14 @@ export interface OptionsEnvoiPublic {
    * `template_rejected` avec sa `categorie`, la clé libérée, rien de créé.
    */
   serviceSeulement?: true;
+  /**
+   * Des champs à écrire sur la fiche de l'UNIQUE destinataire (l'action de workflow HubSpot depuis une transaction,
+   * cadrage `~/mm-hubspot/docs/2026-10-29-action-workflow-transaction-cadrage.md`, décision 7). 🔴 Écrits DANS la
+   * transaction qui crée la campagne et scelle la clé : seulement pour un envoi neuf qui garde son destinataire. Un rejeu,
+   * un tri vide ou un refus n'écrit rien, sinon la fiche d'un parcours en cours prendrait les valeurs d'un autre appel.
+   * Plus d'un destinataire avec cette option : refusé en 400.
+   */
+  champsFiche?: ChampsFiche;
 }
 
 /** La même enveloppe que `refuser` (`{ error, code }`), rendue au lieu d'être envoyée. */
@@ -397,6 +407,9 @@ export async function lancerEnvoiPublic(
   const lu = schemaCorps.safeParse(brut);
   if (!lu.success) return repondre(400, 'invalid_body', messageDeForme(lu.error, PRECISIONS));
   const corps = lu.data;
+  if (options.champsFiche && corps.recipients.length !== 1) {
+    return repondre(400, 'invalid_body', 'champsFiche : un seul destinataire attendu');
+  }
   // La clé se donne en en-tête ou dans le corps (`idempotencyKey`) : un outil qui appelle une adresse par
   // contact remplit son corps avec les données du contact, pas toujours ses en-têtes.
   const idem = cleIdempotence(cleEnTete, corps);
@@ -574,8 +587,11 @@ export async function lancerEnvoiPublic(
         ...(cible.rcs ? { channel: 'rcs' as const, rcsAgentId: cible.rcs.agentId, rcsMessage: cible.rcs.contenu } : {}),
       },
       recipients,
-      (tx, campaignId) => {
+      async (tx, campaignId) => {
         report.sendId = campaignId;
+        // Par le même `tx` : annulés avec la campagne si la clé n'est plus à nous (`complete` rend faux).
+        const seul = recipients.length === 1 ? recipients[0] : undefined;
+        if (options.champsFiche && seul) await deps.repo.ecrireChampsFiche(tx, tenantId, seul.contactId, options.champsFiche);
         return deps.idempotence.complete(tenantId, idem.cle, jeton, campaignId, report, tx);
       },
     );

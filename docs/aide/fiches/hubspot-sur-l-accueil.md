@@ -2,7 +2,7 @@
 description: Relier HubSpot à Messaging Me : le connecter dans Tools > Intégrations, choisir ce qui se synchronise, répondre depuis HubSpot, mettre en pause ou couper.
 ecran: accueil
 source_section: Accueil (1re entrée du menu)
-source_empreinte: 6ea70d
+source_empreinte: d1bfb9
 publique: oui
 rubrique: demarrer
 rang: 6
@@ -56,8 +56,17 @@ exige que le contact ait écrit dans les 24 heures. Rien ne part à un contact q
 numéro fixe, ni deux fois le même modèle ou le même scénario au même contact en 24 heures ; les modèles Marketing ne
 sont pas proposés. Un scénario ne part jamais vers une conversation qu'un conseiller a en main, et remplace un scénario
 automatique en cours. L'historique du workflow dit, contact par contact, ce qui est parti ou pourquoi rien n'est parti,
-et chaque envoi apparaît dans Campagnes. Au plus 60 envois par minute et 2 000 par jour pour l'espace, les deux actions
+et chaque envoi apparaît dans Campagnes. Au plus 60 envois par minute et 2 000 par jour pour l'espace, les trois actions
 comptées ensemble ; Meta facture chaque modèle.
+
+Depuis une **transaction**, l'action « Lancer un scénario Messaging Me (transaction) » lance le même genre de scénario
+quand votre workflow HubSpot de transactions le décide (par exemple au passage à une étape). Elle écrit au seul contact
+associé à la transaction : avec plusieurs contacts associés, rien ne part. Elle pose sur sa fiche Messaging Me trois
+champs, déclarés quand vous allumez la ligne : **Prénom (HubSpot)**, **Conseiller (HubSpot)** (le propriétaire de la
+transaction) et **Lien d'agenda (HubSpot)** (sa page de réservation, si vous avez autorisé leur lecture). Les variables
+de son modèle d'ouverture viennent des sources posées sur le modèle (par exemple « {{1}} » = Prénom (HubSpot)), et les
+messages du scénario peuvent écrire « {{hubspot_conseiller}} » ou « {{hubspot_lien_agenda}} ». Ne branchez pas en plus
+une automatisation de la console sur la même étape : le contact recevrait deux scénarios.
 
 Sans portail relié, l'Accueil n'affiche qu'une ligne qui vous y renvoie. Pour délier HubSpot, faites la déconnexion complète depuis le bloc HubSpot (sans
 numéro, c'est un bouton du bloc, sans l'option de pause).

@@ -2,6 +2,7 @@ import { compteurEnvoiRefuse, type RapportEnvoi } from '../api/envoi-public';
 import { VALEUR_ACCEPTEE } from '../api/modele-envoi';
 import { VALEUR_MAX_CARACTERES } from '../http/hubspot-modeles';
 import type { EnvoyerPublic } from '../shopify/envoi';
+import type { ChampsFiche } from '../campaign/build';
 
 import { PREFIXE_LIGNE_HUBSPOT } from './ligne';
 
@@ -55,6 +56,8 @@ export interface EnvoiWorkflow {
   valeurs: readonly string[];
   /** L'identifiant du workflow HubSpot : le nom de la ligne dans Campagnes (la requête de HubSpot ne porte pas son nom). */
   workflowId: string;
+  /** Les champs que l'action transaction écrit sur la fiche, avec la campagne et seulement pour un envoi neuf. */
+  champsFiche?: ChampsFiche;
 }
 
 /** Le plafond qui a refusé, rempli par le compteur de l'appelant. */
@@ -110,7 +113,10 @@ export async function envoyerPourWorkflow(
   const r = await envoyer(e.tenantId, corps, async (unites) => {
     plafond = await compter(unites);
     return plafond === null;
-  }, { nom: `${PREFIXE_LIGNE_HUBSPOT}${e.workflowId}`, sansCampagneVide: true, serviceSeulement: true });
+  }, {
+    nom: `${PREFIXE_LIGNE_HUBSPOT}${e.workflowId}`, sansCampagneVide: true, serviceSeulement: true,
+    ...(e.champsFiche ? { champsFiche: e.champsFiche } : {}),
+  });
   if (compteurEnvoiRefuse(r)) return { issue: plafond === 'jour' ? 'plafond_jour' : 'plafond_minute' };
   const c = r.corps as { code?: unknown; limite?: unknown; categorie?: unknown } | null;
   if (r.statut === 201 || r.statut === 200) return issueDuRapport(r.corps as RapportEnvoi);

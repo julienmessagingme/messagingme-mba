@@ -1,6 +1,6 @@
 ---
 slug: hubspot-on-the-home-screen
-traduit_de: 6385cd
+traduit_de: 5d2f32
 description: Connect HubSpot to Messaging Me: link it in Tools > Integrations, choose what syncs, reply from HubSpot, pause it or cut it off.
 ---
 # HubSpot on the Home screen: connect it, follow it, cut it off
@@ -49,7 +49,16 @@ question, a quick message or the AI agent is not offered: WhatsApp requires the 
 the same contact twice within 24 hours; Marketing templates are not offered. A scenario never goes to a conversation an
 agent has taken over, and it replaces an automatic scenario in progress. The workflow history says, contact by contact,
 what was sent or why nothing was sent, and each send shows up in Campaigns. At most 60 sends a minute and 2,000 a day
-for the workspace, both actions counted together; Meta charges for each template.
+for the workspace, all three actions counted together; Meta charges for each template.
+
+From a **deal**, the “Launch a Messaging Me scenario (deal)” action launches the same kind of scenario when your HubSpot
+deal workflow decides so (for instance when a deal reaches a stage). It writes only to the one contact associated with
+the deal: with several associated contacts, nothing is sent. It sets three fields on their Messaging Me record, declared
+when you turn the line on: **Prénom (HubSpot)** (first name), **Conseiller (HubSpot)** (the deal owner, their advisor)
+and **Lien d’agenda (HubSpot)** (the advisor's booking page, if you allowed reading it). The variables of its opening
+template come from the sources set on the template (for instance “{{1}}” = Prénom (HubSpot)), and the scenario's messages
+can write “{{hubspot_conseiller}}” or “{{hubspot_lien_agenda}}”. Do not also connect a console automation to the same
+stage: the contact would receive two scenarios.
 
 With no portal linked, the Home screen only shows a line that sends you there. To unlink HubSpot, do the full disconnection from the HubSpot block (with no number,
 it is a button of the block, without the pause option).

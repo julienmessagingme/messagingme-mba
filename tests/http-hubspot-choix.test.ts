@@ -33,6 +33,8 @@ interface Banc {
   ecrits: Array<{ t: string; c: ChoixHubspotEcrit }>;
   synchros: Array<{ numero: string; t: string }>;
   modes: Array<{ t: string; mode: ModeTaches }>;
+  /** Les espaces dont les champs de l'action transaction ont été déclarés. */
+  champs: string[];
 }
 
 function app(o: {
@@ -44,8 +46,9 @@ function app(o: {
   modeEchoue?: boolean;
   avant?: { analyse: boolean; reponse: boolean; listes: boolean; modeles?: boolean; workflows?: boolean };
   synchroEchoue?: boolean;
+  champsEchouent?: boolean;
 } = {}): { server: ReturnType<typeof buildServer>; b: Banc } {
-  const b: Banc = { ecrits: [], synchros: [], modes: [] };
+  const b: Banc = { ecrits: [], synchros: [], modes: [], champs: [] };
   const deps: HubspotChoixRouteDeps = {
     poserChoix: async (t, c) => {
       b.ecrits.push({ t, c });
@@ -64,6 +67,10 @@ function app(o: {
       if (o.modeEchoue) throw new Error('connecteur injoignable');
       b.modes.push({ t, mode });
       return mode;
+    },
+    declarerChampsWorkflows: async (t) => {
+      if (o.champsEchouent) throw new Error('base');
+      b.champs.push(t);
     },
   };
   return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, hubspotChoix: deps }), b };
@@ -228,6 +235,24 @@ describe('PUT .../hubspot/choix : « Workflows HubSpot : envoyer des modèles Wh
     expect(res.statusCode).toBe(200);
     expect(b.ecrits[0]?.c.workflows).toBe(true);
     expect(res.json()).toMatchObject({ hubspotReponse: false, hubspotWorkflows: true });
+    await server.close();
+  });
+
+  it('les champs de l’action transaction sont déclarés à chaque enregistrement où les workflows sont allumés, jamais sinon', async () => {
+    // Décision 6 du cadrage du 2026-10-29 : AVANT que le client crée le modèle qui les lit (ses sources ne proposent que
+    // des champs déclarés).
+    const { server, b } = app();
+    expect((await server.inject(put(adminTok, { ...TOUT, workflows: true }))).statusCode).toBe(200);
+    expect(b.champs).toEqual(['t1']);
+    expect((await server.inject(put(adminTok, { ...TOUT, workflows: false }))).statusCode).toBe(200);
+    expect(b.champs).toEqual(['t1']);
+    await server.close();
+  });
+
+  it('une déclaration des champs en échec ne fait pas échouer l’enregistrement du choix', async () => {
+    const { server, b } = app({ champsEchouent: true });
+    expect((await server.inject(put(adminTok, { ...TOUT, workflows: true }))).statusCode).toBe(200);
+    expect(b.ecrits[0]?.c.workflows).toBe(true);
     await server.close();
   });
 

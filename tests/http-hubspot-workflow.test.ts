@@ -15,6 +15,8 @@ import type { Filiere } from '../src/application/comptes';
 import type { TemplateSummary } from '../src/meta/templates';
 import type { ScenarioPublie } from '../src/workflow/store.pg';
 import type { WorkflowGraph, WorkflowNode } from '../src/workflow/graph';
+import type { ResolvableContact } from '../src/crm/template';
+import type { ParamHint } from '../src/crm/template-hints.pg';
 
 /**
  * L'ACTION DE WORKFLOW HUBSPOT « ENVOYER UN MODÈLE WHATSAPP » (cadrage du 2026-10-27, lot 1). Une porte d'ENVOI ouverte à
@@ -55,6 +57,10 @@ interface Options {
   catalogueLeve?: boolean;
   /** Un opérateur tient la conversation du contact (action scénario, décision 3). */
   conseiller?: boolean;
+  /** La fiche du numéro (action transaction) : `null` pour un lead que Messaging Me ne connaît pas encore. */
+  fiche?: ResolvableContact | null;
+  /** Les sources posées sur chaque modèle, par nom (action transaction, décision 8). */
+  sources?: Record<string, ParamHint[]>;
 }
 
 const noeud = (id: string, type: WorkflowNode['type'], data: Record<string, unknown> = {}): WorkflowNode => ({ id, type, position: { x: 0, y: 0 }, data });
@@ -96,6 +102,8 @@ function app(o: Options = {}) {
     plafonds: async (t) => { comptes.push(t); return o.plafonds ?? { accepte: true }; },
     scenariosPublies: lire('scenarios', SCENARIOS),
     conseillerEnMain: async (t, waId) => { lus.push(['conseiller', `${t}/${waId}`]); return o.conseiller ?? false; },
+    sourcesDuModele: async (t, name) => { lus.push(['sources', `${t}/${name}`]); return o.sources?.[name] ?? []; },
+    ficheParNumero: async (t, waId) => { lus.push(['fiche', `${t}/${waId}`]); return o.fiche ?? null; },
     now: () => NOW,
   };
   const server = buildServer({ queue: new FakeQueue(), hubspotWorkflow: deps });
@@ -103,7 +111,7 @@ function app(o: Options = {}) {
 }
 
 /** Signe un corps comme le connecteur (même format canonique, même chemin). */
-function appel(route: 'modeles' | 'modele' | 'scenarios' | 'scenario', body: unknown, secret = SECRET) {
+function appel(route: 'modeles' | 'modele' | 'scenarios' | 'scenario' | 'transaction', body: unknown, secret = SECRET) {
   const raw = JSON.stringify(body);
   const path = `/hubspot/workflow/${route}`;
   const sig = signRequest(secret, { ts: NOW, nonce: randomBytes(8).toString('hex'), method: 'POST', path, body: raw });
@@ -506,6 +514,97 @@ describe('l’action « Lancer un scénario » : les deux routes', () => {
     expect(res.statusCode).toBe(503);
     expect(res.headers['retry-after']).toBe(String(RELANCE_META_SEC));
     expect(envois).toEqual([]);
+    await server.close();
+  });
+});
+
+/**
+ * L'ACTION « LANCER UN SCÉNARIO (TRANSACTION) » (cadrage du 2026-10-29, décisions 1 à 13). Les gardes sont celles de
+ * l'action scénario (la même fonction) ; ce qui se prouve ici, c'est ce qu'elle ajoute :
+ *  - 🔴 décision 8 : le modèle d'ouverture rempli DANS la route, par les sources du modèle, sur la fiche vue avec les champs
+ *    reçus ; une valeur manquante rend `valeur_invalide` sans rien compter ni envoyer ;
+ *  - 🔴 décision 7 : les champs partent au cœur en `champsFiche` (posés ou retirés), qui les écrit avec la campagne.
+ */
+describe('l’action « Lancer un scénario (transaction) »', () => {
+  const SOURCES = { suivi_devis: [
+    { position: 1, source: { type: 'field' as const, key: 'hubspot_prenom' } },
+    { position: 2, source: { type: 'field' as const, key: 'hubspot_conseiller' } },
+  ] };
+  const LIEN = 'https://meetings-eu1.hubspot.com/cedric-weiss';
+  /** Un espace dont l'offre a les scénarios (sinon `hors_offre`, garde commune). */
+  const appT = (o: Options = {}) => app({ fonctions: ['crm', 'scenarios'], ...o });
+  const LANCEMENT = {
+    tenantId: T1, telephone: '06 12 34 56 78', scenario: 'scn_relance', workflowId: '1234567',
+    champs: { prenom: 'Claire', conseiller: 'Cédric Weiss', lienAgenda: LIEN },
+  };
+
+  it('🔴 un lead inconnu : le modèle d’ouverture est rempli par ses sources avec les champs reçus, qui partent au cœur', async () => {
+    const { server, envois, comptes } = appT({ fiche: null, sources: SOURCES });
+    const res = await server.inject(appel('transaction', LANCEMENT));
+    expect(res.json()).toEqual({ issue: 'envoye', sendId: 'envoi-1' });
+    expect(envois).toHaveLength(1);
+    expect(envois[0]!.corps).toMatchObject({
+      target: { scenario: 'scn_relance' }, category: 'utility', recipients: [{ phone: '+33612345678' }],
+      params: [{ position: 1, source: { type: 'literal', value: 'Claire' } }, { position: 2, source: { type: 'literal', value: 'Cédric Weiss' } }],
+    });
+    expect(envois[0]!.options).toMatchObject({
+      nom: 'HubSpot · workflow 1234567', sansCampagneVide: true, serviceSeulement: true,
+      champsFiche: { poser: { hubspot_prenom: 'Claire', hubspot_conseiller: 'Cédric Weiss', hubspot_lien_agenda: LIEN }, retirer: [] },
+    });
+    expect(comptes).toEqual([T1]);
+    await server.close();
+  });
+
+  it('🔴 une valeur manquante : `valeur_invalide`, rien n’est compté ni envoyé', async () => {
+    const { server, envois, comptes } = appT({ fiche: null, sources: SOURCES });
+    const sansPrenom = { ...LANCEMENT, champs: { conseiller: 'Cédric Weiss' } };
+    expect((await server.inject(appel('transaction', sansPrenom))).json()).toEqual({ issue: 'valeur_invalide' });
+    // Une variable sans source posée sur le modèle : manquante aussi.
+    const { server: s2, envois: e2 } = appT({ fiche: null, sources: { suivi_devis: [SOURCES.suivi_devis[0]!] } });
+    expect((await s2.inject(appel('transaction', LANCEMENT))).json()).toEqual({ issue: 'valeur_invalide' });
+    expect([envois, comptes, e2]).toEqual([[], [], []]);
+    await server.close();
+    await s2.close();
+  });
+
+  it('🔴 la fiche est vue APRÈS l’écriture : un champ reçu remplace l’ancien, un champ absent est retiré (jamais la valeur d’une autre transaction)', async () => {
+    const fiche: ResolvableContact = { phone_e164: '+33612345678', fields: { hubspot_prenom: 'Ancien', hubspot_conseiller: 'Carole Arnal', ville: 'Lyon' } };
+    const { server, envois } = appT({ fiche, sources: SOURCES });
+    // Le conseiller reçu remplace celui de la fiche.
+    const r1 = await server.inject(appel('transaction', { ...LANCEMENT, champs: { prenom: 'Claire', conseiller: 'Cédric Weiss' } }));
+    expect(r1.json().issue).toBe('envoye');
+    expect(envois[0]!.corps).toMatchObject({ params: [{ source: { value: 'Claire' } }, { source: { value: 'Cédric Weiss' } }] });
+    expect(envois[0]!.options.champsFiche).toEqual({ poser: { hubspot_prenom: 'Claire', hubspot_conseiller: 'Cédric Weiss' }, retirer: ['hubspot_lien_agenda'] });
+    // Le conseiller absent (transaction sans propriétaire) : retiré de la vue, donc manquant, même si la fiche en avait un.
+    const r2 = await server.inject(appel('transaction', { ...LANCEMENT, champs: { prenom: 'Claire', conseiller: '' } }));
+    expect(r2.json()).toEqual({ issue: 'valeur_invalide' });
+    expect(envois).toHaveLength(1);
+    await server.close();
+  });
+
+  it('🔴 les gardes de l’action scénario valent : conseiller en main, scénario Marketing, avant toute source ou fiche lue', async () => {
+    const { server, envois, lus } = appT({ conseiller: true, sources: SOURCES });
+    expect((await server.inject(appel('transaction', LANCEMENT))).json()).toEqual({ issue: 'conseiller_en_main' });
+    const { server: s2, envois: e2, lus: l2 } = appT({ sources: SOURCES });
+    expect((await s2.inject(appel('transaction', { ...LANCEMENT, scenario: 'scn_puis_promo' }))).json()).toEqual({ issue: 'marketing_refuse' });
+    expect([envois, e2]).toEqual([[], []]);
+    expect([...lus, ...l2].filter(([quoi]) => quoi === 'sources' || quoi === 'fiche')).toEqual([]);
+    await server.close();
+    await s2.close();
+  });
+
+  it('un corps hors contrat : 400 ; un lien qui n’est pas en https, une clé de trop, sans signature : 401', async () => {
+    const { server, lus } = appT({ sources: SOURCES });
+    for (const corps of [
+      { ...LANCEMENT, champs: { ...LANCEMENT.champs, lienAgenda: 'http://meetings.hubspot.com/x' } },
+      { ...LANCEMENT, champs: { ...LANCEMENT.champs, lienAgenda: 'javascript:alert(1)' } },
+      { ...LANCEMENT, champs: { ...LANCEMENT.champs, devis: 'x' } },
+      { ...LANCEMENT, valeurs: ['x'] },
+      { ...LANCEMENT, champs: undefined },
+    ]) expect((await server.inject(appel('transaction', corps))).statusCode, JSON.stringify(corps)).toBe(400);
+    expect(lus).toEqual([]);
+    const sans = await server.inject({ method: 'POST', url: '/hubspot/workflow/transaction', headers: { 'content-type': 'application/json' }, payload: JSON.stringify(LANCEMENT) });
+    expect(sans.statusCode).toBe(401);
     await server.close();
   });
 });

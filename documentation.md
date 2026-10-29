@@ -2844,6 +2844,21 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   ligne (`lancementDeCampagne`, `src/hubspot-workflow/ligne.ts` : pas de colonne, que chaque envoi écrirait). Le même
   adaptateur (`envoyerPourWorkflow`, cible scénario) : catégorie `utility` déclarée (le cœur retient la plus stricte, lue
   chez Meta), valeurs en source `literal` (un appel, un destinataire), clé `hubspot-workflow-scenario:<numéro>:<code>`.
+- **L'action « Lancer un scénario Messaging Me (transaction) »** (cadrage
+  `~/mm-hubspot/docs/2026-10-29-action-workflow-transaction-cadrage.md`, décisions validées par Julien le 2026-10-29) :
+  `POST /hubspot/workflow/transaction`, sur les gardes de l'action scénario (`garderLancement`, la même fonction, le
+  même ordre) et le même adaptateur, la même clé. Le connecteur a lu HubSpot (le contact unique de la transaction, le
+  propriétaire et son lien de réservation) et transmet `champs` (`prenom`, `conseiller`, `lienAgenda` en `https`).
+  🔴 Le modèle d'ouverture est rempli DANS la route, par les sources posées sur le modèle (`template_param_hints`,
+  `resolveHintParams`), sur la fiche vue avec ces champs (un champ absent est retiré de la vue) : le chemin d'une
+  campagne ne lit pas ces sources à l'envoi, il reçoit des valeurs fixes, et un tableau vide y compte comme « fourni ».
+  Une valeur manquante rend `valeur_invalide` avant la clé. 🔴 Les champs s'écrivent sur la fiche par l'option
+  `champsFiche` du cœur d'envoi : dans `confirmer`, par le `tx` qui crée la campagne et scelle la clé, sur l'unique
+  destinataire (`ecrireChampsFiche`), donc jamais sur un rejeu, un tri vide ou un refus ; aucun autre appelant ne la
+  passe. Les trois champs (`hubspot_prenom`, `hubspot_conseiller`, `hubspot_lien_agenda`, `src/hubspot-workflow/champs.ts`)
+  se déclarent à clé fixe (`ensureFieldByKey`) à chaque enregistrement du choix HubSpot où les workflows sont allumés,
+  donc avant que le client crée le modèle qui les lit. L'autorisation optionnelle `agenda` (lecture des pages de
+  réservation) est admise par `POST /tenants/:id/hubspot/install-link`.
 - **Le visuel d'en-tête d'un modèle envoyé depuis l'Inbox part en `media id`** (`creerEnvoiModeleInbox`,
   `mediaDuModele`) : l'adresse que l'écran passe est celle du CDN de Meta, que l'invariant 9 dit refusée en 131053 ;
   le visuel du modèle se re-téléverse comme pour le bloc de scénario. Sans visuel au modèle, ou si la préparation

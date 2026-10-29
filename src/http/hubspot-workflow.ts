@@ -13,8 +13,12 @@ import { corpsRefusFonction } from '../offres/refus';
 import type { Filiere } from '../application/comptes';
 import type { TemplateSummary } from '../meta/templates';
 import type { EnvoyerPublic } from '../shopify/envoi';
-import { envoyerPourWorkflow, valeursDuWorkflow, type IssueWorkflow, type PlafondRefuse } from '../hubspot-workflow/envoi';
+import { envoyerPourWorkflow, valeursDuWorkflow, type EnvoiWorkflow, type IssueWorkflow, type PlafondRefuse } from '../hubspot-workflow/envoi';
 import type { VerdictPlafonds } from '../hubspot-workflow/plafonds';
+import { champsDeFiche } from '../hubspot-workflow/champs';
+import { resolveHintParams, type ResolvableContact } from '../crm/template';
+import type { ParamHint } from '../crm/template-hints.pg';
+import { videEnAbsent } from '../api/fiche';
 import type { EtatLigneHubspot } from './hubspot-conversation';
 
 /**
@@ -57,6 +61,10 @@ export interface HubspotWorkflowDeps {
   scenariosPublies(tenantId: string): Promise<ScenarioPublie[]>;
   /** Un opérateur tient-il la conversation de ce contact (`getControlOwner(...) === 'app_human'`) ? Décision 3. */
   conseillerEnMain(tenantId: string, waId: string): Promise<boolean>;
+  /** Les sources des variables d'un modèle (`template_param_hints`), posées à sa création dans la console. */
+  sourcesDuModele(tenantId: string, name: string, language: string): Promise<ParamHint[]>;
+  /** La fiche d'un numéro telle que les variables d'un modèle la lisent (`getResolvableByPhone`), ou `null`. */
+  ficheParNumero(tenantId: string, waId: string): Promise<ResolvableContact | null>;
   now?: () => number;
   windowMs?: number;
 }
@@ -86,6 +94,21 @@ const corpsScenario = z.object({
   // Le code `scn_` que la liste a donné : un nom serait ambigu dès que deux scénarios le portent.
   scenario: z.string().regex(/^scn_[A-Za-z0-9_-]{1,64}$/),
   valeurs: z.array(z.string().max(65_536)).max(VARIABLES_WORKFLOW_MAX),
+  workflowId: z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/),
+}).strict();
+/** Un champ de fiche reçu : vide vaut absent (le champ est alors RETIRÉ de la fiche, décision 6). */
+const texteFiche = z.preprocess(videEnAbsent, z.string().trim().max(200).optional());
+const corpsTransaction = z.object({
+  tenantId: UUID,
+  telephone: z.string().trim().max(1024),
+  scenario: z.string().regex(/^scn_[A-Za-z0-9_-]{1,64}$/),
+  // Ce que le connecteur a lu dans HubSpot pour la fiche. Le lien de réservation en `https` seulement : il part tel quel
+  // dans un message au client.
+  champs: z.object({
+    prenom: texteFiche,
+    conseiller: texteFiche,
+    lienAgenda: z.preprocess(videEnAbsent, z.url({ protocol: /^https$/ }).max(2048).optional()),
+  }).strict(),
   workflowId: z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/),
 }).strict();
 
@@ -272,57 +295,125 @@ export function registerHubspotWorkflow(app: FastifyInstance, deps: HubspotWorkf
     return reply.code(200).send({ espace: await deps.nomEspace(tenantId), scenarios });
   });
 
-  app.post('/hubspot/workflow/scenario', async (req, reply) => {
-    if (!signee(req)) return reply.code(401).send({ error: 'invalid signature' });
-    const lu = corpsScenario.safeParse(req.body);
-    if (!lu.success) return reply.code(400).send({ error: 'payload invalide' });
-    const { tenantId, telephone, scenario, workflowId } = lu.data;
-
+  /**
+   * Les gardes d'un lancement de scénario, communes à l'action contact et à l'action transaction, dans cet ordre :
+   * l'espace, la ligne, la filière, le numéro, les valeurs reçues (l'action contact seule : `null` ailleurs), l'offre, le
+   * conseiller qui a la main, le scénario jugé. Tout ce qui précède la clé et les plafonds. `null` : la réponse est partie.
+   */
+  async function garderLancement(
+    reply: FastifyReply, tenantId: string, telephone: string, scenario: string, brutes: readonly string[] | null,
+  ): Promise<{ e164: string; waId: string | null; lancable: ScenarioLancable; valeurs: string[] } | null> {
     // Les mêmes gardes que l'envoi d'un modèle, dans le même ordre.
-    if (!(await gardesEspace(reply, tenantId))) return reply;
+    if (!(await gardesEspace(reply, tenantId))) return null;
     const ligne = await deps.ligneHubspot(tenantId);
-    if (ligne !== 'reliee') return reply.code(409).send({ error: 'Le numéro de cet espace n’est pas relié à HubSpot.', code: 'ligne_non_reliee', raison: ligne });
-    if ((await deps.filiere(tenantId)) === 'application') {
-      return reply.code(409).send({ error: 'Cet espace envoie par l’application WhatsApp Business, qui n’envoie pas de modèle.', code: 'whatsapp_app_no_template' });
+    if (ligne !== 'reliee') {
+      reply.code(409).send({ error: 'Le numéro de cet espace n’est pas relié à HubSpot.', code: 'ligne_non_reliee', raison: ligne });
+      return null;
     }
+    if ((await deps.filiere(tenantId)) === 'application') {
+      reply.code(409).send({ error: 'Cet espace envoie par l’application WhatsApp Business, qui n’envoie pas de modèle.', code: 'whatsapp_app_no_template' });
+      return null;
+    }
+    const issue = (i: IssueWorkflow) => {
+      reply.code(200).send({ issue: i });
+      return null;
+    };
     const e164 = e164DepuisSaisie(telephone, 'FR');
-    if (!e164) return reply.code(200).send({ issue: 'sans_numero' });
-    if (estUnFixe(e164)) return reply.code(200).send({ issue: 'fixe' });
-    const valeurs = valeursDuWorkflow(lu.data.valeurs);
-    if (valeurs === null) return reply.code(200).send({ issue: 'valeur_invalide' });
-    if (!(await deps.fonctions(tenantId)).has('scenarios')) return reply.code(200).send({ issue: 'hors_offre' });
+    if (!e164) return issue('sans_numero');
+    if (estUnFixe(e164)) return issue('fixe');
+    const valeurs = brutes === null ? [] : valeursDuWorkflow(brutes);
+    if (valeurs === null) return issue('valeur_invalide');
+    if (!(await deps.fonctions(tenantId)).has('scenarios')) return issue('hors_offre');
 
     // 🔴 Décision 3 : jamais vers une conversation qu'un opérateur tient, jugé AVANT la clé et les plafonds pour que
     // l'historique du workflow le dise. Le moteur le revérifie au démarrage (`workflow_hubspot`, `sauf_operateur`).
     const waId = waIdOf(e164, null);
-    if (waId !== null && (await deps.conseillerEnMain(tenantId, waId))) return reply.code(200).send({ issue: 'conseiller_en_main' });
+    if (waId !== null && (await deps.conseillerEnMain(tenantId, waId))) return issue('conseiller_en_main');
 
     // Le scénario jugé comme la liste le juge, avant la clé : un scénario dépublié, ou dont l'ouverture est devenue une
     // question, un RCS ou un Marketing, ne compte rien. Le cœur relit le modèle d'ouverture chez Meta et reste l'autorité.
     const publie = (await deps.scenariosPublies(tenantId)).find((s) => s.code === scenario);
-    if (!publie) return reply.code(200).send({ issue: 'scenario_refuse' });
+    if (!publie) return issue('scenario_refuse');
     const catalogue = await lireCatalogue(tenantId);
-    if (catalogue === null) return relancer(reply, 503, RELANCE_META_SEC, 'meta_indisponible', 'Le modèle d’ouverture n’a pas pu être lu chez Meta : réessayez dans un instant.');
+    if (catalogue === null) {
+      relancer(reply, 503, RELANCE_META_SEC, 'meta_indisponible', 'Le modèle d’ouverture n’a pas pu être lu chez Meta : réessayez dans un instant.');
+      return null;
+    }
     const juge = jugerScenarioPourWorkflow(publie, catalogue);
     if (!juge.ok) {
-      if (juge.issue === 'meta_indisponible') return relancer(reply, 503, RELANCE_META_SEC, 'meta_indisponible', 'Le modèle d’ouverture n’a pas pu être lu chez Meta : réessayez dans un instant.');
-      return reply.code(200).send({ issue: juge.issue });
+      if (juge.issue === 'meta_indisponible') {
+        relancer(reply, 503, RELANCE_META_SEC, 'meta_indisponible', 'Le modèle d’ouverture n’a pas pu être lu chez Meta : réessayez dans un instant.');
+        return null;
+      }
+      return issue(juge.issue);
     }
-    if (valeurs.length !== juge.scenario.variables) return reply.code(200).send({ issue: 'valeur_invalide' });
+    return { e164, waId, lancable: juge.scenario, valeurs };
+  }
 
+  /** Le lancement lui-même, après ses gardes : les plafonds comptés par le cœur, et la réponse dans les mots du contrat. */
+  async function lancer(reply: FastifyReply, e: EnvoiWorkflow) {
     let attenteMs = 0;
     const compter = async (): Promise<PlafondRefuse | null> => {
-      const v = await deps.plafonds(tenantId);
+      const v = await deps.plafonds(e.tenantId);
       if (v.accepte) return null;
       attenteMs = v.attenteMs;
       return v.fenetre;
     };
-    const r = await envoyerPourWorkflow(deps.envoyer, { tenantId, telephone: e164, cible: { scenario }, valeurs, workflowId }, compter);
+    const r = await envoyerPourWorkflow(deps.envoyer, e, compter);
     if (r.issue === 'plafond_minute') {
       return relancer(reply, 429, Math.max(1, Math.ceil(attenteMs / 1000)), 'rate_limited', 'Trop d’envois depuis les workflows HubSpot : réessayez plus tard.');
     }
     if (r.issue === 'en_cours') return relancer(reply, 429, RELANCE_EN_COURS_SEC, 'en_cours', 'Ce lancement est en cours : réessayez dans un instant.');
     if (r.issue === 'meta_indisponible') return relancer(reply, 503, RELANCE_META_SEC, 'meta_indisponible', 'Le modèle d’ouverture n’a pas pu être lu chez Meta : réessayez dans un instant.');
     return reply.code(200).send(r);
+  }
+
+  app.post('/hubspot/workflow/scenario', async (req, reply) => {
+    if (!signee(req)) return reply.code(401).send({ error: 'invalid signature' });
+    const lu = corpsScenario.safeParse(req.body);
+    if (!lu.success) return reply.code(400).send({ error: 'payload invalide' });
+    const { tenantId, telephone, scenario, workflowId } = lu.data;
+    const g = await garderLancement(reply, tenantId, telephone, scenario, lu.data.valeurs);
+    if (!g) return reply;
+    if (g.valeurs.length !== g.lancable.variables) return reply.code(200).send({ issue: 'valeur_invalide' });
+    return lancer(reply, { tenantId, telephone: g.e164, cible: { scenario }, valeurs: g.valeurs, workflowId });
+  });
+
+  /**
+   * L'ACTION « LANCER UN SCÉNARIO (TRANSACTION) » (cadrage `~/mm-hubspot/docs/2026-10-29-action-workflow-transaction-
+   * cadrage.md`, décisions 1 à 13 validées par Julien le 2026-10-29). Le connecteur a lu HubSpot (le contact unique de la
+   * transaction, son numéro, son prénom, le conseiller et son lien de réservation) ; ici, les mêmes gardes que l'action
+   * scénario, puis deux choses de plus :
+   *   - 🔴 décision 8 : le modèle d'ouverture est rempli ICI, par les sources posées sur le modèle, sur la fiche vue avec
+   *     les champs reçus, AVANT la clé et les plafonds. Une valeur manquante rend `valeur_invalide`, que HubSpot montre.
+   *     Le chemin d'une campagne ne lit pas ces sources à l'envoi : il reçoit des valeurs fixes, comme pour l'action
+   *     scénario ;
+   *   - 🔴 décision 7 : les champs s'écrivent sur la fiche DANS la transaction qui crée la campagne (`champsFiche`),
+   *     donc jamais sur un rejeu, un `deja_envoye` ou un refus.
+   */
+  app.post('/hubspot/workflow/transaction', async (req, reply) => {
+    if (!signee(req)) return reply.code(401).send({ error: 'invalid signature' });
+    const lu = corpsTransaction.safeParse(req.body);
+    if (!lu.success) return reply.code(400).send({ error: 'payload invalide' });
+    const { tenantId, telephone, scenario, workflowId, champs } = lu.data;
+    const g = await garderLancement(reply, tenantId, telephone, scenario, null);
+    if (!g) return reply;
+
+    const champsFiche = champsDeFiche(champs);
+    // La fiche telle qu'elle sera après l'écriture : ses champs, moins ceux qu'on retire, plus ceux qu'on pose. Un lead
+    // inconnu n'a pas encore de fiche (le cœur la crée) : sa vue n'a que son numéro et les champs reçus.
+    const fiche = g.waId !== null ? await deps.ficheParNumero(tenantId, g.waId) : null;
+    const gardes = Object.entries(fiche?.fields ?? {}).filter(([cle]) => !champsFiche.retirer.includes(cle));
+    const vue: ResolvableContact = {
+      ...(fiche ?? {}),
+      phone_e164: fiche?.phone_e164 ?? g.e164,
+      fields: { ...Object.fromEntries(gardes), ...champsFiche.poser },
+    };
+    const sources = await deps.sourcesDuModele(tenantId, g.lancable.modele.name, g.lancable.modele.language);
+    const remplies = resolveHintParams(sources, g.lancable.variables, vue, { now: new Date(now()) });
+    if (remplies.missing.length > 0) return reply.code(200).send({ issue: 'valeur_invalide' });
+    const valeurs = valeursDuWorkflow(remplies.values);
+    if (valeurs === null || valeurs.length !== g.lancable.variables) return reply.code(200).send({ issue: 'valeur_invalide' });
+    return lancer(reply, { tenantId, telephone: g.e164, cible: { scenario }, valeurs, workflowId, champsFiche });
   });
 }

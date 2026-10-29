@@ -3,7 +3,7 @@ import { enTransaction } from '../db/transaction';
 import { MOTIFS_DE_PAUSE, type MotifDePause } from './pause';
 import type { Campaign, CampaignStatus, CampaignCategory, Recipient, QualityRating } from './types';
 import type { CampaignStore, RecipientStore, QualityProvider, EcartALEnvoi } from './engine';
-import type { BuildContact, BuiltRecipient, ContactEnvoi } from './build';
+import type { BuildContact, BuiltRecipient, ChampsFiche, ContactEnvoi } from './build';
 import type { WorkflowGraph } from '../workflow/graph';
 import { resolveTemplateParams, type TemplateParam } from '../crm/template';
 import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
@@ -1440,6 +1440,19 @@ export class PgCampaignRepo {
       if (err instanceof CreationNonConfirmee) return null;
       throw err;
     }
+  }
+
+  /**
+   * Pose et retire des champs libres sur UNE fiche, par le client de la transaction qui crée la campagne (l'option
+   * `champsFiche` de l'envoi public) : annulés avec elle. Le retrait d'abord, la pose ensuite : une clé à la fois posée et
+   * retirée garde sa valeur. Une fiche purgée entre-temps n'est pas touchée.
+   */
+  async ecrireChampsFiche(tx: PoolClient, tenantId: string, contactId: string, champs: ChampsFiche): Promise<void> {
+    await tx.query(
+      `update contacts set fields = (fields - $4::text[]) || $3::jsonb, updated_at = now()
+       where tenant_id = $1 and id = $2 and deleted_at is null`,
+      [tenantId, contactId, JSON.stringify(champs.poser), [...champs.retirer]],
+    );
   }
 
   /** Insère les destinataires (idempotent par (campaign_id, contact_id)). Retourne le nb inséré. */

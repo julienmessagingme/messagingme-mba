@@ -20,7 +20,7 @@ import {
 } from '../src/api/envoi-public';
 import { envoyerShopify, type EnvoiShopify } from '../src/shopify/envoi';
 import { envoyerPourWorkflow, type EnvoiWorkflow } from '../src/hubspot-workflow/envoi';
-import type { BuiltRecipient, ContactEnvoi } from '../src/campaign/build';
+import type { BuiltRecipient, ChampsFiche, ContactEnvoi } from '../src/campaign/build';
 import type { EnvoiApiBrut } from '../src/campaign/store.pg';
 import type { ClesFiche, ModeCreation } from '../src/api/fiche';
 import { modeleLuDe, verdictModele, type LectureModele } from '../src/api/modele-envoi';
@@ -140,6 +140,7 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
     audits: [] as Array<{ action: string; contactId: string }>,
     lectures: 0,
     fenetresDemandees: [] as string[][],
+    champsFiche: [] as Array<{ tx: unknown; tenant: string; contactId: string; champs: ChampsFiche }>,
   };
   const idem = new Map<string, { hash: string; jeton?: string; sendId?: string; response?: unknown }>();
   const keys = new FakeApiKeys()
@@ -188,6 +189,8 @@ function app(over: Surcharges = {}, monde: Partial<Monde> = {}) {
         return { campaignId: 'camp1', recipientCount: recipients.length };
       },
       lireEnvoiApi: async () => null,
+      // Ce que l'option `champsFiche` écrit, et sous quelle transaction (le faux `tx` de la création).
+      ecrireChampsFiche: async (tx, tenant, contactId, champs) => { cap.champsFiche.push({ tx, tenant, contactId, champs }); },
       ...surRepo,
     },
     numerosDelies: {
@@ -988,6 +991,75 @@ describe('l’action « Lancer un scénario » d’un workflow HubSpot, par le v
     const seul = await envoyerPourWorkflow(branche(sends), lancement({ cible: { modele: 'promo', langue: 'fr' }, valeurs: ['Julien'] }), libre);
     expect(seul.issue).toBe('envoye');
     expect(cap.sends).toHaveLength(2);
+  });
+});
+
+/**
+ * L'ACTION « LANCER UN SCÉNARIO (TRANSACTION) » : les champs de fiche (`champsFiche`, cadrage du 2026-10-29, décision 7),
+ * par le vrai cycle d'envoi public. 🔴 Ce qui se prouve : ils ne s'écrivent que DANS la confirmation de la création (le
+ * `tx` de la campagne et de sa clé), donc pour un envoi neuf qui garde son destinataire, jamais sur un rejeu, un tri vide
+ * ou un refus. Sinon la fiche d'un parcours en cours prendrait le conseiller ou le devis d'une autre transaction.
+ */
+describe('les champs de fiche de l’action transaction, par le vrai cycle d’envoi public', () => {
+  const branche = (sends: DepsEnvoiPublic) => (t: string, corps: unknown, compter: (n: number) => Promise<boolean>, options: OptionsEnvoiPublic) =>
+    lancerEnvoiPublic(sends, t, corps, undefined, compter, options);
+  const CHAMPS: ChampsFiche = { poser: { hubspot_conseiller: 'Carole Arnal' }, retirer: ['hubspot_lien_agenda'] };
+  const lancement = (over: Partial<EnvoiWorkflow> = {}): EnvoiWorkflow => ({
+    tenantId: 't1', telephone: PHONE(1), cible: { scenario: 'scn_template' }, valeurs: [], workflowId: '1234567', champsFiche: CHAMPS, ...over,
+  });
+  const libre = async () => null;
+
+  it('🔴 un lancement neuf : les champs sont écrits une fois, sur la fiche du destinataire, par le `tx` de la création', async () => {
+    const { sends, cap } = app();
+    expect((await envoyerPourWorkflow(branche(sends), lancement(), libre)).issue).toBe('envoye');
+    expect(cap.champsFiche).toEqual([{ tx: TX_FACTICE, tenant: 't1', contactId: C1, champs: CHAMPS }]);
+  });
+
+  it('🔴 un rejeu (même corps) ou une autre transaction du même contact dans les 24 h : rien n’est réécrit', async () => {
+    const { sends, cap } = app();
+    await envoyerPourWorkflow(branche(sends), lancement(), libre);
+    const autre: ChampsFiche = { poser: { hubspot_conseiller: 'Cédric Weiss' }, retirer: [] };
+    const rejeu = await envoyerPourWorkflow(branche(sends), lancement({ champsFiche: autre, workflowId: '999' }), libre);
+    expect(rejeu.issue).toBe('envoye');
+    expect(cap.champsFiche).toHaveLength(1);
+    expect(cap.champsFiche[0]?.champs).toEqual(CHAMPS);
+  });
+
+  it('🔴 un destinataire écarté (STOP) : aucune campagne, aucun champ écrit', async () => {
+    const { sends, cap } = app({}, { fiches: new Map([[C1, fiche(C1, 1, { optInStatus: 'opted_out' })]]) });
+    expect(await envoyerPourWorkflow(branche(sends), lancement(), libre)).toEqual({ issue: 'stop' });
+    expect([cap.sends, cap.champsFiche]).toEqual([[], []]);
+  });
+
+  it('🔴 une clé reprise entre-temps (la confirmation refusée) : les champs partent avec la transaction annulée', async () => {
+    // La vraie création annule tout ce qui s'est écrit par son `tx` quand la confirmation rend faux : ce double ne garde
+    // que ce que la confirmation a laissé passer.
+    const gardes: unknown[] = [];
+    const { sends } = app({
+      idempotence: { complete: async () => false },
+      repo: {
+        createWithRecipientsSiConfirme: async (_i, _r, confirmer) => {
+          const ecrits: unknown[] = [];
+          const tx = { query: async (_sql: string, params: unknown[]) => { ecrits.push(params); } } as unknown as PoolClient;
+          if (!(await confirmer(tx, 'camp1'))) return null;
+          gardes.push(...ecrits);
+          return { campaignId: 'camp1', recipientCount: 1 };
+        },
+        ecrireChampsFiche: async (tx, t, id, c) => { await tx.query('update', [t, id, c]); },
+      },
+    });
+    await envoyerPourWorkflow(branche(sends), lancement(), libre);
+    expect(gardes).toEqual([]);
+  });
+
+  it('sans l’option, aucun appelant n’écrit de champ ; avec plus d’un destinataire, elle est refusée en 400', async () => {
+    const { sends, cap } = app();
+    expect((await envoyerPourWorkflow(branche(sends), lancement({ champsFiche: undefined }), libre)).issue).toBe('envoye');
+    expect(cap.champsFiche).toEqual([]);
+    const deux = { idempotencyKey: 'k2', target: { scenario: 'scn_template' }, category: 'utility', recipients: [{ phone: PHONE(1) }, { phone: PHONE(2) }] };
+    const r = await lancerEnvoiPublic(sends, 't1', deux, undefined, async () => true, { champsFiche: CHAMPS });
+    expect('statut' in r && r.statut).toBe(400);
+    expect(cap.champsFiche).toEqual([]);
   });
 });
 

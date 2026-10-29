@@ -55,6 +55,7 @@ const sendsMuets: Omit<V1SendsRouteDeps, 'usage'> = {
     // Comme la transaction : rien n'est créé si la confirmation (le scellement de la clé) refuse.
     createWithRecipientsSiConfirme: async (_i, _r, confirmer) => (await confirmer({} as PoolClient, 'camp1') ? { campaignId: 'camp1', recipientCount: 0 } : null),
     lireEnvoiApi: async () => null,
+    ecrireChampsFiche: async () => { /* rien */ },
   },
   numerosDelies: {
     estDelie: async () => false,
