@@ -184,6 +184,9 @@ question, la réponse de l'agent IA, la commande, la confirmation, puis l'avis d
 Shopify. Il s'ajoute à la page (section 3, `VideoObject`) et sert d'image de partage.
 ⚠️ Les films des cas d'usage montrent une fenêtre Claude Code (règle mémorisée le 2026-10-15) : celui-ci s'en écarte
 **par décision de Julien du 2026-10-23**, parce que la page vise les marchands.
+**Fait le 2026-10-28, autrement** : sur les choix de Julien du jour, le film suit finalement la règle des films de cas,
+la session Claude Code puis le téléphone du client (`~/engageme-motion/engageme-cas-shopify/SCRIPT.md`). Il est posé
+après le scénario, avec son `VideoObject` et son affiche en image de partage (`3226f26f`).
 
 ### Au todo (Julien, 2026-10-23)
 

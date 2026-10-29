@@ -499,14 +499,6 @@ Conceptions : `docs/superpowers/specs/2026-10-23-shopify-numero-qr-design.md` (l
   vraiment.
 - **L'essai de la bulle WhatsApp sur un thème Shopify** (la balise collée dans le thème de la boutique de test, visible et
   cliquable sur un téléphone) : la carte « bulle » de la page Boutiques Shopify n'apparaît qu'après.
-- **Le film de la page « Boutiques Shopify »** (lot 3 de la conception vitrine) : FABRIQUÉ le 2026-10-28 dans
-  `~/engageme-motion/engageme-cas-shopify/` (son `SCRIPT.md`), sur le scénario validé par Julien : les paniers abandonnés,
-  le carton « Gratuit », la session Claude Code qui relie le numéro par Meta, crée l'app de la boutique par la Shopify
-  CLI, règle la relance et la confirmation de commande et monte l'agent IA, puis la conversation sur le téléphone ; 16:9
-  et 9:16, français et anglais, sans ouverture sur le logo (le 9:16 sert aussi en pub). Reste, après l'accord de Julien
-  sur la planche : l'encoder dans `site/films/` avec ses affiches et le poser dans la section du scénario (`VideoObject`,
-  lot 3 de `docs/superpowers/specs/2026-10-23-vitrine-shopify-design.md`). La page est en ligne depuis le 2026-10-24
-  (plan `2026-10-24-boutiques-shopify.md`).
 - **Retirer « bientôt » de la page « Boutiques Shopify »** (`scripts/vitrine/boutique-textes.ts` : le mot « Garder
   votre application (bientôt) » du lexique, l'issue `garder-application`, la réponse `faq-numero`, puis `npm run
   vitrine:cas`) : le README, la FAQ et la skill `mise-en-service` du plugin ne le disent plus depuis `862f0294`

@@ -4,6 +4,23 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-28 (nuit) : le film de la page Boutiques Shopify, fabriqué puis posé (lot 3 de la conception vitrine)
+
+- **Fabriqué** dans `~/engageme-motion/engageme-cas-shopify/` (son `SCRIPT.md` porte les écarts au script) sur les choix
+  de Julien du jour, qui priment sur la conception du 2026-10-23 (le parcours du client seul) : la session Claude Code puis
+  le téléphone, comme les films de cas. Le problème (7 paniers sur 10, l'e-mail qui se perd), le carton « Gratuit » sur
+  un « 0 € », le numéro relié par Meta (approbation en accéléré, sans chiffre), l'app de la boutique créée par la Shopify
+  CLI et installée d'un clic, la relance et la confirmation de commande, l'agent IA qui lit le site, puis la conversation
+  jusqu'à la commande ; « Parlez à Claude. / C'est branché. / Vos paniers reviennent ! ». 41 s, 16:9 et 9:16, français
+  et anglais, accroche en première image (le 9:16 sert aussi en pub, une version Meta dédiée n'est pas faite). Réponses
+  des outils relevées dans `src/mcp/`, messages de la Shopify CLI 4.9.4 lus dans son code, jamais lancée.
+- **Posé** après l'accord de Julien sur les planches (`3226f26f`) : les quatre films dans `site/films/cas-shopify*`
+  (1280x720 et 720x1280, 3,4 Mo), une section « Le film » après le scénario, son `VideoObject`, son affiche en image de
+  partage. Fait dans une copie d'`origin` : l'arbre partagé avait des dizaines de commits de retard sur les deux fichiers
+  du générateur, et le patch ne s'y appliquait plus. Suite vitrine verte (449 tests), CI verte job par job, les deux
+  pages et les films servis en production.
+- ⚠️ La musique (« Tech House », Pixabay) est enregistrée dans Content ID : une pub peut être réclamée (`CREDITS` du film).
+
 ## 2026-10-28 (nuit) : le chiffre d'affaires attribué, la mesure du lot 0 et la preuve par UTM (tâche 6)
 
 Plan `docs/superpowers/plans/2026-10-28-revenus-attribues-lots-0-1.md`, tâches 0 et 6 ; copie à part de l'arbre partagé.
