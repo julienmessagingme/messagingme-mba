@@ -4,6 +4,18 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-29 : la refonte de /ops, lot 3 (le coût Scaleway du mois)
+
+`4794782e`, run 40847495834, sans migration ; seul commit touchant le serveur depuis le déploiement précédent. La forme
+de l'API de facturation (`v2beta1/consumptions`) a été mesurée par la CLI avant d'être écrite (103,28 € HT au 29, 38
+lignes en une page, une remise annoncée de 100 €). Une relecture indépendante : aucun rouge, les jaunes utiles corrigés
+dans le même commit (pagination finie sur une page incomplète et rien plutôt qu'un total tronqué, prouvé dans les deux
+sens ; le mois demandé et le cache qui tombe à son changement ; la projection sur l'âge des données). La CI console a
+rougi une fois sur `agents-connaissance.spec.ts:127` (la suggestion d'adresse collée à la saisie, une course sur la
+page des agents, hors du lot), verte à la relance du seul job : intermittent, à reprendre à part. Relu après : l'API
+sert l'image `4794782e`, `/ops/cout` rend 401 sans session, taille inchangée. La clé `SCW_FACTURATION_CLE` n'est pas
+encore posée : la carte dit « non configurée » jusqu'à elle (essai réel 184).
+
 ## 2026-10-29 : la vitrine dit tout ce que Claude fait, avec l'offre de chaque outil
 
 Plan `docs/superpowers/plans/2026-10-28-vitrine-cas-mcp.md`, bilan `docs/BILAN-CAS-USAGE-MCP-2026-10-28.md` (décisions de
