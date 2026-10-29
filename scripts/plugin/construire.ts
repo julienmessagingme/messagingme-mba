@@ -97,6 +97,13 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
       },
       {
         texte: {
+          fr: 'Votre boutique Shopify branchée par Claude : confirmation de commande, avis d’expédition, relance de panier.',
+          en: 'Your Shopify store connected by Claude: order confirmation, shipping notice, checkout reminder.',
+        },
+        lien: { page: { fr: '/solutions/shopify/', en: '/en/solutions/shopify-stores/' } },
+      },
+      {
+        texte: {
           fr: 'Le rappel la veille du rendez-vous : le client confirme ou décale d’un bouton.',
           en: 'The reminder the day before the appointment: the customer confirms or reschedules with one button.',
         },
@@ -123,6 +130,13 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
         },
         lien: { page: { fr: '/developpeurs/preparer-une-campagne/', en: '/en/developers/prepare-a-campaign/' } },
       },
+      {
+        texte: {
+          fr: 'Vos modèles écrits par Claude et soumis à Meta, et le motif d’un refus.',
+          en: 'Your templates written by Claude and submitted to Meta, and the reason for a rejection.',
+        },
+        lien: { doc: 'templates' },
+      },
     ],
   },
   {
@@ -135,6 +149,13 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           en: 'Every message received, delivered, read or failed, pushed to your app by a signed webhook.',
         },
         lien: { doc: 'webhooks' },
+      },
+      {
+        texte: {
+          fr: 'Vos webhooks créés, testés et rejoués depuis Claude.',
+          en: 'Your webhooks created, tested and replayed from Claude.',
+        },
+        lien: { doc: 'webhook-endpoints' },
       },
       {
         texte: {
