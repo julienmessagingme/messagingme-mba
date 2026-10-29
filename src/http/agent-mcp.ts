@@ -6,7 +6,7 @@ import type { RisqueOutil } from '../agent/catalog';
 import type { SourceParam } from '../agent/llm/tool-schema';
 import type { RafraichissementMcp } from '../agent/mcp/rafraichissement';
 import { CHAMPS_CONTACT_AUTORISES, estChampContact } from '../agent/champs-contact';
-import { adresseAcceptable, authCoherente, hoteDe } from './agent-sources';
+import { preparerCreationSource } from '../agent/source-configuration';
 import { espaceVerifie, estUuid } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
@@ -151,11 +151,8 @@ export function registerAgentMcp(
     const parse = creationSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'libellé, adresse et mode d’authentification requis' });
     const { label, baseUrl, authKind, authHeaderName, authSecret } = parse.data;
-    if (!adresseAcceptable(baseUrl)) {
-      return reply.code(400).send({ error: 'adresse refusée : elle doit être publique et en HTTPS' });
-    }
-    const pb = authCoherente(authKind, authSecret, authHeaderName);
-    if (pb) return reply.code(400).send({ error: pb });
+    const preparation = preparerCreationSource({ baseUrl, authKind, authHeaderName, authSecret });
+    if (!preparation.ok) return reply.code(400).send({ error: preparation.erreur });
     /**
      * Un libellé déjà pris rend 409, pas 500 : l'index unique `(tenant_id, lower(label))` porte sur tous les
      * `kind`, connecteurs API compris.
@@ -174,7 +171,7 @@ export function registerAgentMcp(
       throw err;
     }
     await journal(tenant, req, 'connecteur.cree', { kind: 'connecteur', id: serveur.id }, {
-      mcp: true, authKind: parse.data.authKind, hote: hoteDe(parse.data.baseUrl),
+      mcp: true, authKind: parse.data.authKind, hote: preparation.hote,
     });
     return reply.code(201).send({ serveur });
   });

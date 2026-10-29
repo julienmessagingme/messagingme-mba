@@ -2,7 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Guard } from '../auth/middleware';
 import { LabelSourceDejaPris, type SourceVue } from '../agent/sources';
-import { construireCible } from '../agent/http-cible';
+import {
+  preparerCreationSource,
+  preparerPatchSource,
+  verifierAdresseSource,
+} from '../agent/source-configuration';
 import { espaceVerifie, estUuid } from './scope';
 import { makeJournal, type AuditSink } from '../audit/journal';
 
@@ -59,31 +63,6 @@ const patchSchema = z.object({
 });
 const epreuveSchema = z.object({ chemin: z.string().trim().min(1).max(500).default('/') });
 
-/**
- * L'adresse est-elle acceptable ? Même fonction que le résolveur, exportée pour les connecteurs MCP : une seconde
- * définition accepterait à l'écriture ce que l'appel refuse, et promettrait un connecteur qui ne marchera jamais.
- */
-export function adresseAcceptable(baseUrl: string): boolean {
-  return construireCible({ baseUrl, binding: { methode: 'GET', chemin: '/' }, args: {} }).ok;
-}
-
-/** L'authentification déclarée tient-elle debout ? Rejoué ici parce que la contrainte de la 0088 refuserait
- *  de toute façon, mais en 500, dont Cloudflare remplace le corps. */
-export function authCoherente(authKind: string, secret: string | undefined, entete: string | null | undefined): string | null {
-  if (authKind === 'none') return null;
-  if (!secret) return 'un secret est requis pour ce mode d’authentification';
-  if (authKind === 'header' && !entete) return 'le nom de l’en-tête est requis';
-  return null;
-}
-
-/**
- * L'hôte d'une adresse, ou `null` si elle est illisible. Ne lève jamais : il sert un journal, et une adresse mal
- * formée ne doit pas faire échouer l'action observée.
- */
-export function hoteDe(url: string): string | null {
-  try { return new URL(url).host; } catch { return null; }
-}
-
 export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRouteDeps, garde: Guard): void {
   const opts = { preHandler: garde };
   const journal = makeJournal(deps.audit);
@@ -116,11 +95,8 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     const parse = creationSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'libellé, adresse et mode d’authentification requis' });
     const { label, baseUrl, authKind, authHeaderName, authSecret } = parse.data;
-    if (!adresseAcceptable(baseUrl)) {
-      return reply.code(400).send({ error: 'adresse refusée : elle doit être publique et en HTTPS' });
-    }
-    const pb = authCoherente(authKind, authSecret, authHeaderName);
-    if (pb) return reply.code(400).send({ error: pb });
+    const preparation = preparerCreationSource({ baseUrl, authKind, authHeaderName, authSecret });
+    if (!preparation.ok) return reply.code(400).send({ error: preparation.erreur });
     try {
       const source = await deps.sources.creer(tenant, {
         kind: 'http', label, baseUrl, authKind,
@@ -128,7 +104,9 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
         ...(authSecret ? { authSecret } : {}),
       });
       // L'hôte, pas l'adresse complète : il répond à « où partent les données » sans graver le chemin.
-      await journal(tenant, req, 'connecteur.cree', { kind: 'connecteur', id: source.id }, { authKind, hote: hoteDe(baseUrl) });
+      await journal(tenant, req, 'connecteur.cree', { kind: 'connecteur', id: source.id }, {
+        authKind, hote: preparation.hote,
+      });
       return reply.code(201).send({ source });
     } catch (err) {
       if (err instanceof LabelSourceDejaPris) return reply.code(409).send({ error: err.message });
@@ -143,25 +121,23 @@ export function registerAgentSources(app: FastifyInstance, deps: AgentSourcesRou
     const parse = patchSchema.safeParse(req.body ?? {});
     if (!parse.success) return reply.code(400).send({ error: 'corps invalide' });
     const p = parse.data;
-    if (p.baseUrl !== undefined && !adresseAcceptable(p.baseUrl)) {
-      return reply.code(400).send({ error: 'adresse refusée : elle doit être publique et en HTTPS' });
+    if (p.baseUrl !== undefined) {
+      const adresse = verifierAdresseSource(p.baseUrl);
+      if (!adresse.ok) return reply.code(400).send({ error: adresse.erreur });
     }
     // L'état effectif après écriture, jamais le seul corps : sans ça, passer en `bearer` sans renvoyer le
     // secret (qui existe déjà) serait refusé à tort, et le refus ne fermerait le trou que dans un sens.
     const actuelle = await connecteurHttp(tenant, id);
     if (!actuelle) return reply.code(404).send({ error: 'source introuvable' });
-    const authKind = p.authKind ?? actuelle.authKind;
-    const entete = p.authHeaderName !== undefined ? p.authHeaderName : actuelle.authHeaderName;
-    const aSecret = p.authSecret !== undefined ? p.authSecret : (actuelle.aAuthentification ? 'inchange' : undefined);
-    const pb = authCoherente(authKind, aSecret, entete);
-    if (pb) return reply.code(400).send({ error: pb });
+    const preparation = preparerPatchSource(actuelle, p);
+    if (!preparation.ok) return reply.code(400).send({ error: preparation.erreur });
     try {
       const source = await deps.sources.patch(tenant, id, p);
       if (!source) return reply.code(404).send({ error: 'source introuvable' });
       // `adresseChangee` est le fait qui compte : c'est le seul geste qui redirige tout ce qui part.
       await journal(tenant, req, 'connecteur.modifie', { kind: 'connecteur', id }, {
-        authKind, adresseChangee: p.baseUrl !== undefined && p.baseUrl !== actuelle.baseUrl,
-        ...(p.baseUrl !== undefined ? { hote: hoteDe(p.baseUrl) } : {}),
+        authKind: preparation.authKind, adresseChangee: preparation.adresseChangee,
+        ...(preparation.hote !== undefined ? { hote: preparation.hote } : {}),
       });
       return reply.code(200).send({ source });
     } catch (err) {
