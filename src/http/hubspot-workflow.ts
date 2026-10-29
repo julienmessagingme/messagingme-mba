@@ -133,6 +133,8 @@ export function jugerScenarioPourWorkflow(
     if (!autre) return { ok: false, issue: 'scenario_refuse' };
     const v = verdictModele(modeleLuDe(autre), autre.language);
     if (v.statut === 'illisible') return { ok: false, issue: 'meta_indisponible' };
+    // Plus approuvé, ou d'une catégorie que l'envoi n'admet pas : le parcours casserait à ce bloc.
+    if (v.statut !== 'approuve') return { ok: false, issue: 'scenario_refuse' };
     if (v.categorie !== 'utility') return { ok: false, issue: 'marketing_refuse' };
   }
   return { ok: true, scenario: { code: s.code, nom: s.name, modele: t, variables: j.variables } };
