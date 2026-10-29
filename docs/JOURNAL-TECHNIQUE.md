@@ -59,6 +59,7 @@ Demandé par Julien après l'essai réel de la version française : la page angl
   la page du formulaire et sur la page Écoles. `tests/livre-blanc-page.test.ts` exige le PDF de chaque langue et son
   en-tête `%PDF-`, vérifié dans les deux sens (la page anglaise remise sur le PDF français : rouge).
 - Reste : la séquence HubSpot relance en français un visiteur venu de la page anglaise.
+- Décidé le même soir par Julien : pas de séquence anglaise, la relance française suffit.
 
 ## 2026-10-28 (soir) : les téléphones de l'accueil vides deux jours, une propriété CSS enregistrée pour toute la vitrine
 

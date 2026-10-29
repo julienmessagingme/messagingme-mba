@@ -98,8 +98,9 @@ ouvre WhatsApp avec un premier message en anglais. Le visiteur laisse prénom, n
 professionnel, établissement, fonction et téléphone portable, et peut cocher « J’accepte que Messaging Me me recontacte
 sur WhatsApp ». Il arrive sur la page de téléchargement du PDF dans tous les cas. Son contact entre dans HubSpot (le
 formulaire « Livre blanc éducation »), puis dans l'une des deux listes « WhatsApp OK » ou « e-mail seulement » selon la
-case ; deux jours plus tard, la séquence « Livre blanc éducation » le relance par e-mail depuis la boîte de Julien (une
-seconde relance trois jours ouvrables après, arrêtée par une réponse ou un rendez-vous). Case cochée, il entre aussi dans
+case ; deux jours plus tard, la séquence « Livre blanc éducation » le relance par e-mail depuis la boîte de Julien, en
+français, y compris s'il vient de la page anglaise (choix de Julien, 2026-10-28) (une seconde relance trois jours
+ouvrables après, arrêtée par une réponse ou un rendez-vous). Case cochée, il entre aussi dans
 l'espace SANDBOX avec le tag `livre-blanc-education`, consentement noté, sans qu'aucun message ne parte tout seul.
 
 ✅ **La troisième page de secteur, Assurance** (2026-10-21, trois maquettes de Julien) : `app.messagingme.fr/solutions/assurance/`,
