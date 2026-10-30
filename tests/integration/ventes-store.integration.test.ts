@@ -139,6 +139,30 @@ describe.skipIf(!url)('le store des ventes', () => {
     expect(await store.derniereToucheDuModele(T, contact, 'autre', maintenant, false)).toBeNull();
   });
 
+  it('🔴 sans contact, la dernière CAMPAGNE de l’espace qui a envoyé le modèle, avant le paiement, hors lignes Shopify, [API] et HubSpot (2026-10-30)', async () => {
+    await vider();
+    await campagne('Ancienne', { modele: 'soldes', envoye: ilYA(24 * 30) });
+    const recente = await campagne('Récente', { modele: 'soldes', envoye: ilYA(5) });
+    await campagne('Après le paiement', { modele: 'soldes', envoye: new Date(maintenant.getTime() + 60_000) });
+    await campagne('Échouée', { modele: 'soldes', envoye: ilYA(1), delivery: 'failed' });
+    await campagne(LIGNE_RELANCE_PANIER, { modele: 'soldes', envoye: ilYA(1) });
+    await campagne('[API] essai', { modele: 'soldes', envoye: ilYA(1) });
+    await campagne(`${PREFIXE_LIGNE_HUBSPOT}workflow 1`, { modele: 'soldes', envoye: ilYA(1) });
+    await campagne('Autre modèle', { modele: 'autre', envoye: ilYA(1) });
+    expect(await store.derniereCampagneDuModele(T, 'soldes', maintenant, false)).toMatchObject({ source: 'campagne', campaignId: recente, modele: 'soldes' });
+    expect(await store.derniereCampagneDuModele(T, 'inconnu', maintenant, false)).toBeNull();
+  });
+
+  it('🔴 appliquerPreuveUtm insère une vente prouvée SANS contact (commande sans téléphone ni fiche)', async () => {
+    await vider();
+    await brancher(ilYA(48));
+    const k = await campagne('Soldes', { modele: 'soldes_hiver' });
+    const vente = { contactId: null, montant: '32.95', devise: 'USD', payeeLe: maintenant, test: true, source: 'campagne' as const, campaignId: k, preuve: 'utm' as const, relanceLe: null };
+    expect(await store.appliquerPreuveUtm(T, { ...vente, commandeId: 's1' })).toBe('appliquee');
+    const r = (await pool.query(`select commande_id, contact_id, source, campaign_id, preuve from ventes_attribuees where tenant_id = $1`, [T])).rows;
+    expect(r).toEqual([{ commande_id: 's1', contact_id: null, source: 'campagne', campaign_id: k, preuve: 'utm' }]);
+  });
+
   it('🔴 enregistrer deux fois la même commande rend deja et laisse une ligne', async () => {
     await vider();
     const vente = {

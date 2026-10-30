@@ -5,7 +5,7 @@ import type { BoutiqueRecue, DepsTraitementShopify } from './traitement';
 /**
  * LE CHIFFRE D'AFFAIRES ATTRIBUÉ (spec docs/superpowers/specs/2026-10-28-revenus-attribues-design.md) : une commande
  * payée d'un contact connu revient à UNE source, et cette attribution est figée à la réception (`ventes_attribuees`,
- * migration 0261).
+ * migration 0261). Sans contact, seule la preuve par UTM peut l'attribuer, après coup (`src/shopify/preuve-utm.ts`).
  *
  * Shopify dit qu'un client a acheté ; il ne dit pas qu'il est passé par une conversation. Le lien, c'est nous qui le
  * faisons, par le numéro de la commande : une concordance dans le temps, sauf deux preuves (le panier relancé payé, la
@@ -79,38 +79,40 @@ export function choisirSource(e: {
 }
 
 /**
- * Attribue une commande payée et la fige (`orders/paid`, plan 2026-10-28, tâche 4). Rien ne s'écrit pour une commande
- * sans téléphone, d'un numéro sans fiche (aucune fiche n'est créée : elle compterait dans la limite de l'offre), au
- * montant illisible, ou sans source. Le paiement se date par Shopify (`processed_at`), sinon par la réception.
+ * Attribue une commande payée et la fige (`orders/paid`, plan 2026-10-28, tâche 4). Rien ne s'écrit à la réception pour
+ * une commande au montant illisible, sans source, sans téléphone ou d'un numéro sans fiche (aucune fiche n'est créée : elle
+ * compterait dans la limite de l'offre). Le paiement se date par Shopify (`processed_at`), sinon par la réception.
  * La preuve par UTM n'est pas dans le webhook (mesuré le 2026-10-28) : sauf panier relancé payé, la réception PROGRAMME sa
  * relecture 30 minutes plus tard (`src/shopify/preuve-utm.ts`), après avoir figé la vente, qu'il y en ait une ou non.
+ * Sans contact, elle la programme aussi, `contactId` nul : un clic sur notre lien suffit à prouver une vente même sans
+ * numéro (décision de Julien du 2026-10-30, plan `2026-10-30-attribution-sans-telephone.md`).
  */
 export async function attribuerCommande(
   deps: Pick<DepsTraitementShopify, 'ventes' | 'ficheParTelephone' | 'filiere' | 'maintenant' | 'programmerPreuve'>,
   b: Pick<BoutiqueRecue, 'tenantId' | 'pays' | 'devise'>,
   c: CommandeShopify,
 ): Promise<void> {
-  const telephone = telephoneDeCommande(c, b.pays);
-  if (telephone === null) return;
-  const contactId = await deps.ficheParTelephone(b.tenantId, telephone);
-  if (contactId === null) return;
   const montant = montantBoutique(c, b.devise);
   if (montant === null) return;
+  const telephone = telephoneDeCommande(c, b.pays);
+  const contactId = telephone === null ? null : await deps.ficheParTelephone(b.tenantId, telephone);
   const traitee = c.processed_at ? Date.parse(c.processed_at) : NaN;
   const payeeLe = new Date(Number.isNaN(traitee) ? (deps.maintenant ?? Date.now)() : traitee);
+  const commandeId = String(c.id);
+  const test = c.test === true;
+  const programmer = () => deps.programmerPreuve(
+    { tenantId: b.tenantId, commandeId, contactId, ...montant, payeeLe: payeeLe.toISOString(), test, essai: 0 },
+    new Date((deps.maintenant ?? Date.now)() + DELAI_PREUVE_MS),
+  );
+  if (contactId === null) return programmer();
   const filiereApplication = (await deps.filiere(b.tenantId)) === 'application';
   const panierRelance = c.checkout_token ? await deps.ventes.panierRelance(b.tenantId, c.checkout_token) : null;
   const touches = panierRelance
     ? []
     : await deps.ventes.touches(b.tenantId, contactId, new Date(payeeLe.getTime() - FENETRE_MS), payeeLe, filiereApplication);
   const vente = choisirSource({ payeeLe, touches, panierRelance, toucheUtm: null });
-  const commandeId = String(c.id);
-  const test = c.test === true;
   if (vente !== null) await deps.ventes.enregistrer(b.tenantId, { commandeId, contactId, ...montant, payeeLe, test, ...vente });
   // La preuve `panier` ne se remplace jamais : rien à relire.
   if (panierRelance) return;
-  await deps.programmerPreuve(
-    { tenantId: b.tenantId, commandeId, contactId, ...montant, payeeLe: payeeLe.toISOString(), test, essai: 0 },
-    new Date((deps.maintenant ?? Date.now)() + DELAI_PREUVE_MS),
-  );
+  await programmer();
 }

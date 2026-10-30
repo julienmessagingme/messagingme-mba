@@ -15,7 +15,8 @@ import type { PgVentesStore } from './ventes.pg';
  * Mesuré sur la commande #1003 de la boutique de dev : le corps d'`orders/paid` ne porte que la page d'arrivée de la
  * PREMIÈRE visite, et le parcours client n'y est pas encore calculé. Shopify le calcule en un quart d'heure environ, et sa
  * DERNIÈRE visite porte nos UTM. La réception programme donc cette relecture 30 minutes plus tard ; si la visite vient de
- * nos liens, la vente devient prouvée et revient à la dernière touche du modèle que nomment les UTM (règle 2).
+ * nos liens, la vente devient prouvée et revient à la dernière touche du modèle que nomment les UTM (règle 2). Une
+ * commande sans contact (ni téléphone ni fiche) revient à la dernière CAMPAGNE de l'espace qui a envoyé ce modèle.
  */
 
 export const FILE_PREUVE_UTM = 'shopify-preuve-utm';
@@ -32,7 +33,8 @@ const DELAI_MS = 15_000;
 const schemaJob = z.object({
   tenantId: z.string().min(1),
   commandeId: z.string().min(1).max(40),
-  contactId: z.string().min(1),
+  /** `null` : la commande n'a ni téléphone ni fiche ; seule une campagne de l'espace peut alors la prouver. */
+  contactId: z.string().min(1).nullable(),
   montant: z.string().regex(/^\d+(\.\d+)?$/),
   devise: z.string().regex(/^[A-Z]{3}$/),
   payeeLe: z.string().refine((s) => !Number.isNaN(Date.parse(s))),
@@ -91,7 +93,7 @@ export async function lireParcours(
 
 export interface DepsPreuveUtm {
   store: Pick<PgShopifyStore, 'acces'>;
-  ventes: Pick<PgVentesStore, 'derniereToucheDuModele' | 'appliquerPreuveUtm'>;
+  ventes: Pick<PgVentesStore, 'derniereToucheDuModele' | 'derniereCampagneDuModele' | 'appliquerPreuveUtm'>;
   filiere(tenantId: string): Promise<Filiere | null>;
   programmer: ProgrammerPreuve;
   /** Injectables pour éprouver la relecture ; les vrais par défaut. */
@@ -130,7 +132,9 @@ export async function traiterPreuveUtm(deps: DepsPreuveUtm, donnees: unknown): P
 
   const payeeLe = new Date(job.payeeLe);
   const filiereApplication = (await deps.filiere(job.tenantId)) === 'application';
-  const touche = await deps.ventes.derniereToucheDuModele(job.tenantId, job.contactId, parcours.modele, payeeLe, filiereApplication);
+  const touche = job.contactId === null
+    ? await deps.ventes.derniereCampagneDuModele(job.tenantId, parcours.modele, payeeLe, filiereApplication)
+    : await deps.ventes.derniereToucheDuModele(job.tenantId, job.contactId, parcours.modele, payeeLe, filiereApplication);
   if (touche === null) return 'sans_preuve';
   const vente = choisirSource({ payeeLe, touches: [], panierRelance: null, toucheUtm: touche });
   if (vente === null) return 'sans_preuve';

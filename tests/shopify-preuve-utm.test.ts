@@ -22,10 +22,16 @@ const TOUCHE: Touche = { source: 'campagne', le: new Date('2026-10-20T10:00:00Z'
 class FauxVentes {
   appliquees: VenteAEnregistrer[] = [];
   modelesLus: string[] = [];
-  constructor(private readonly o: { touche?: Touche | null; issue?: 'appliquee' | 'ignoree' } = {}) {}
+  /** Les modèles cherchés parmi les campagnes de l'espace, sans contact. */
+  campagnesLues: string[] = [];
+  constructor(private readonly o: { touche?: Touche | null; campagne?: Touche | null; issue?: 'appliquee' | 'ignoree' } = {}) {}
   async derniereToucheDuModele(_t: string, _c: string, modele: string): Promise<Touche | null> {
     this.modelesLus.push(modele);
     return this.o.touche === undefined ? TOUCHE : this.o.touche;
+  }
+  async derniereCampagneDuModele(_t: string, modele: string): Promise<Touche | null> {
+    this.campagnesLues.push(modele);
+    return this.o.campagne === undefined ? { ...TOUCHE, campaignId: 'k-espace' } : this.o.campagne;
   }
   async appliquerPreuveUtm(_t: string, v: VenteAEnregistrer): Promise<'appliquee' | 'ignoree'> {
     this.appliquees.push(v);
@@ -101,8 +107,26 @@ describe('la relecture de la preuve par UTM', () => {
     expect(await traiterPreuveUtm(deps, JOB)).toBe('ignoree');
   });
 
+  it('🔴 sans contact (commande sans téléphone ni fiche), nos UTM prouvent la vente à la dernière campagne du modèle', async () => {
+    const { deps, ventes } = monter();
+    expect(await traiterPreuveUtm(deps, { ...JOB, contactId: null })).toBe('prouvee');
+    expect([ventes.modelesLus, ventes.campagnesLues]).toEqual([[], ['soldes_hiver']]);
+    expect(ventes.appliquees).toEqual([{
+      commandeId: '6800936566843', contactId: null, montant: '39.95', devise: 'USD', payeeLe: new Date('2026-10-28T19:58:19.000Z'),
+      test: true, source: 'campagne', campaignId: 'k-espace', preuve: 'utm', relanceLe: null,
+    }]);
+  });
+
+  it('sans contact : des UTM étrangers, ou aucune campagne du modèle, et rien n’est écrit', async () => {
+    const etrangers = monter({ parcours: { ok: true, pret: true, modele: null } });
+    expect(await traiterPreuveUtm(etrangers.deps, { ...JOB, contactId: null })).toBe('sans_preuve');
+    const aucune = monter({ ventes: new FauxVentes({ campagne: null }) });
+    expect(await traiterPreuveUtm(aucune.deps, { ...JOB, contactId: null })).toBe('sans_preuve');
+    expect([etrangers.ventes.appliquees, aucune.ventes.appliquees]).toEqual([[], []]);
+  });
+
   it('un job illisible : abandon, sans lever', async () => {
-    for (const j of [null, {}, { ...JOB, montant: '12,00' }, { ...JOB, payeeLe: 'hier' }]) {
+    for (const j of [null, {}, { ...JOB, montant: '12,00' }, { ...JOB, payeeLe: 'hier' }, { ...JOB, contactId: '' }]) {
       expect(await traiterPreuveUtm(monter().deps, j)).toBe('abandon');
     }
   });

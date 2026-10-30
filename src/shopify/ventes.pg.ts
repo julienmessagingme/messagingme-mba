@@ -7,7 +7,8 @@ import { LIGNE_RELANCE_PANIER, PREFIXE_LIGNE_SHOPIFY, type SourceVente, type Tou
 /** Une vente à figer : la commande, son montant dans la devise de la boutique, et son attribution. */
 export type VenteAEnregistrer = {
   commandeId: string;
-  contactId: string;
+  /** `null` : une vente prouvée par les seuls UTM, d'une commande sans téléphone ni fiche. */
+  contactId: string | null;
   /** Décimal en texte (`49.90`) : jamais un flottant entre Shopify et la base. */
   montant: string;
   devise: string;
@@ -60,6 +61,26 @@ const TOUCHES = `
      and (m.statut in ('delivered', 'read') or ($5 and m.statut is distinct from 'failed'))
   order by le desc`;
 
+/**
+ * LA DERNIÈRE CAMPAGNE DE L'ESPACE QUI A ENVOYÉ UN MODÈLE, sans contact (plan 2026-10-30, attribution sans téléphone) :
+ * la preuve par UTM d'une commande sans téléphone ni fiche. La même règle de « livré » que `TOUCHES`, et ses exclusions
+ * étendues à TOUTES les lignes Shopify, relance comprise (la relance ne se prouve que par son panier). Les messages d'un
+ * scénario ou d'un agent n'y sont pas : ils supposent un contact, et les retrouver sans lui balaierait tous les fils de
+ * l'espace. Le chemin : les campagnes de l'espace qui portent ce modèle, puis leurs destinataires par la clé de
+ * `campaign_recipients`. ⚠️ Sans contact, rien ne dit que ce client a reçu CETTE campagne : deux campagnes du même modèle
+ * se départagent par leur dernier envoi avant le paiement.
+ */
+const CAMPAGNE_DU_MODELE = `
+  select k.id as campaign_id, max(r.sent_at) as le, (k.workflow_id is not null) as lance_scenario
+    from campaigns k join campaign_recipients r on r.campaign_id = k.id
+   where k.tenant_id = $1 and k.template_name = $2 and r.status = 'sent' and r.sent_at <= $3
+     and not (starts_with(k.name, $5) or starts_with(k.name, $6) or starts_with(k.name, $7))
+     and (r.delivery_status in ('delivered', 'read')
+          or (r.delivery_status is distinct from 'failed' and ($4 or k.workflow_id is not null)))
+   group by k.id
+   order by le desc
+   limit 1`;
+
 export class PgVentesStore {
   constructor(private readonly pool: Pool) {}
 
@@ -71,6 +92,15 @@ export class PgVentesStore {
   /** La dernière touche qui a envoyé ce modèle au contact, sans limite de date (la preuve par UTM). */
   async derniereToucheDuModele(tenantId: string, contactId: string, modele: string, jusqua: Date, filiereApplication: boolean): Promise<Touche | null> {
     return (await this.lire(tenantId, contactId, null, jusqua, filiereApplication, modele))[0] ?? null;
+  }
+
+  /** La dernière campagne de l'espace qui a envoyé ce modèle avant `jusqua`, sans contact (`CAMPAGNE_DU_MODELE`). */
+  async derniereCampagneDuModele(tenantId: string, modele: string, jusqua: Date, filiereApplication: boolean): Promise<Touche | null> {
+    const res = await this.pool.query<{ campaign_id: string; le: Date; lance_scenario: boolean }>(CAMPAGNE_DU_MODELE, [
+      tenantId, modele, jusqua, filiereApplication, PREFIXE_LIGNE_SHOPIFY, PREFIXE_ENVOI_API, PREFIXE_LIGNE_HUBSPOT,
+    ]);
+    const r = res.rows[0];
+    return r ? { source: 'campagne', le: r.le, campaignId: r.campaign_id, modele, lanceScenario: r.lance_scenario } : null;
   }
 
   /** La relance PARTIE d'un panier (`issue = 'envoye'`), ou `null` : pas relancé, relance refusée, panier inconnu ou purgé. */
@@ -100,7 +130,8 @@ export class PgVentesStore {
    * fenêtre à la réception), elle se crée, mais seulement pour une fiche encore VIVANTE (une demande d'effacement arrivée
    * entre-temps ne doit pas recréer de lien vers la personne) et une boutique branchée AVANT le paiement (un rebranchement
    * suit un effacement qui a pu anonymiser la vente : la recréer la doublerait). Une seule instruction : l'instantané commun des CTE fait
-   * que l'insertion ne voit pas la mise à jour, et n'insère que s'il n'existait aucune vente.
+   * que l'insertion ne voit pas la mise à jour, et n'insère que s'il n'existait aucune vente. Sans contact (aucune fiche
+   * derrière la commande), il n'y a pas de fiche vivante à exiger : la garde de la boutique, elle, reste.
    */
   async appliquerPreuveUtm(tenantId: string, v: VenteAEnregistrer): Promise<'appliquee' | 'ignoree'> {
     const res = await this.pool.query<{ n: number }>(
@@ -113,7 +144,7 @@ export class PgVentesStore {
            (tenant_id, commande_id, contact_id, montant, devise, payee_le, source, campaign_id, preuve, relance_le, test)
          select $1, $2, $3, $4::numeric, $5, $6, $7, $8, $9, $10, $11
           where not exists (select 1 from ventes_attribuees where tenant_id = $1 and commande_id = $2)
-            and exists (select 1 from contacts c where c.tenant_id = $1 and c.id = $3 and ${ficheActive('c')})
+            and ($3::uuid is null or exists (select 1 from contacts c where c.tenant_id = $1 and c.id = $3 and ${ficheActive('c')}))
             -- Une boutique (re)branchée APRÈS le paiement : l'effacement d'avant a peut-être anonymisé la vente de cette
             -- commande, introuvable par son numéro ; la recréer la compterait deux fois (relecture du lot 6).
             and exists (select 1 from shopify_boutiques b where b.tenant_id = $1 and b.connectee_le <= $6)

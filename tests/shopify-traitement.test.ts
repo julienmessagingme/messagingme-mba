@@ -580,6 +580,17 @@ describe('l’attribution d’une commande payée', () => {
     expect(ventes.enregistrees).toEqual([]);
   });
 
+  it('🔴 sans téléphone ou d’un numéro inconnu, la relecture de la preuve est programmée SANS contact (Julien, 2026-10-30)', async () => {
+    for (const adresse of [null, { first_name: 'X', phone: '+33611110000', country_code: 'FR' }]) {
+      const { deps, journal } = monter();
+      await traiterWebhookShopify(deps, BOUTIQUE, 'orders/paid', commande({ ...payee, shipping_address: adresse }));
+      expect(journal.preuves).toEqual([{
+        job: { tenantId: T, commandeId: '1002', contactId: null, montant: '49.90', devise: 'EUR', payeeLe: '2026-10-21T07:30:00.000Z', test: false, essai: 0 },
+        quand: new Date(Date.parse('2026-10-21T10:00:00Z') + DELAI_PREUVE_MS),
+      }]);
+    }
+  });
+
   it('🔴 l’attribution se fait même quand la confirmation est éteinte', async () => {
     const ventes = new FauxVentes({ touches: [{ source: 'campagne', le: new Date('2026-10-20T08:00:00Z'), campaignId: 'k1', modele: 'soldes', lanceScenario: false }] });
     const { deps, journal } = monter({ ventes, messages: [] });
@@ -623,13 +634,10 @@ describe('l’attribution d’une commande payée', () => {
     }
   });
 
-  it('le panier relancé payé, un numéro inconnu ou un montant illisible ne programment rien', async () => {
+  it('le panier relancé payé ou un montant illisible ne programment rien', async () => {
     const panier = monter({ ventes: new FauxVentes({ panier: { relanceLe: new Date('2026-10-21T06:00:00Z') } }) });
     await traiterWebhookShopify(panier.deps, BOUTIQUE, 'orders/paid', commande(payee));
     expect(panier.journal.preuves).toEqual([]);
-    const inconnu = monter();
-    await traiterWebhookShopify(inconnu.deps, BOUTIQUE, 'orders/paid', commande({ ...payee, shipping_address: { first_name: 'X', phone: '+33611110000', country_code: 'FR' } }));
-    expect(inconnu.journal.preuves).toEqual([]);
     const illisible = monter();
     await traiterWebhookShopify(illisible.deps, { ...BOUTIQUE, devise: null }, 'orders/paid', commande({ processed_at: payee.processed_at, total_price: '12.00' }));
     expect(illisible.journal.preuves).toEqual([]);
