@@ -3,7 +3,7 @@ import { sha256Hex, timingSafeEqualStr } from '../lib/signature';
 import { normalizePhone } from '../crm/phone';
 import { waIdOf } from '../crm/identity';
 import { extraireDuPayload } from '../webhook-entrant/mapping';
-import type { WebhookPublic } from '../webhook-entrant/store.pg';
+import type { WebhookPublic } from '../webhook-entrant/modele';
 import { ClesResolues, RateLimiter, avertissementBorne, consommerEnSilence } from '../auth/rate-limit';
 import { messageDe } from '../lib/erreur';
 

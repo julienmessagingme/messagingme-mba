@@ -3,7 +3,8 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Pool } from 'pg';
 import { pgSsl } from '../../src/db/ssl';
 import { PgAutomationStore, type AutomationInput } from '../../src/automation/store.pg';
-import { PgWebhookStore, type WebhookInput } from '../../src/webhook-entrant/store.pg';
+import { PgWebhookStore } from '../../src/webhook-entrant/store.pg';
+import type { WebhookInput } from '../../src/webhook-entrant/modele';
 import { LimiteOffreError } from '../../src/offres/refus';
 
 /**

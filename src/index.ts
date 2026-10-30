@@ -1783,8 +1783,6 @@ async function main(): Promise<void> {
     webhooksAdmin: {
       audit: auditSink,
       webhooks: webhookStore,
-      workflowBelongsToTenant: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant)) !== null,
-      repo,
       baseUrl: adressesApi.avecPrefixe,
     },
     templates: depsModeles,

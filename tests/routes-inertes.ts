@@ -330,9 +330,6 @@ export const inboxDepInerte: Pick<InboxDep,
   detailConversation: async () => null,
 };
 
-/** `campagneVivante` absente : aucune garde, donc aucune campagne au fil de l'eau n'était vue. */
-export const aucuneCampagneVivante = async (): Promise<string | null> => null;
-
 export const liensInertes: Pick<LiensDep, 'resoudreJeton'> = {
   // Aucun contact : clic anonyme et champs d'une destination retirés.
   resoudreJeton: async () => null,

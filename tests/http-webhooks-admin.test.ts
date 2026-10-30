@@ -7,8 +7,9 @@ import type { UserAuthStore, EmailIdentity } from '../src/auth/store';
 import type { WebhooksAdminRouteDeps, WebhooksDep } from '../src/http/webhooks-admin';
 import { sha256Hex } from '../src/lib/signature';
 import { toRow } from '../src/webhook-entrant/store.pg';
-import type { WebhookRow, WebhookInput, RawAdmin } from '../src/webhook-entrant/store.pg';
-import { aucuneCampagneVivante, journalMuet } from './routes-inertes';
+import type { RawAdmin } from '../src/webhook-entrant/store.pg';
+import type { WebhookRow, WebhookInput } from '../src/webhook-entrant/modele';
+import { journalMuet } from './routes-inertes';
 
 const SECRET = 'test-secret';
 let adminTok = '';
@@ -39,32 +40,73 @@ const EXISTANT: WebhookRow = {
 
 interface Cap { crees: WebhookInput[]; majs: Array<{ id: string; input: WebhookInput }>; supprimes: string[]; secretPose: boolean }
 
-function app(over: Partial<WebhooksDep> = {}, campagneVivante = aucuneCampagneVivante) {
-  const cap: Cap = { crees: [], majs: [], supprimes: [], secretPose: false };
-  // ⚠️ Le faux store porte un ÉTAT pour le secret. Avec une fixture figée, l'assertion « le clair n'apparaît
-  // pas à la relecture » ne pourrait jamais échouer : la fixture n'en porte pas, quoi que fasse le vrai code.
-  const courant = (): WebhookRow => ({ ...EXISTANT, hasSecret: cap.secretPose });
+class FauxWebhooks implements WebhooksDep {
+  readonly cap: Cap = { crees: [], majs: [], supprimes: [], secretPose: false };
+
+  constructor(private readonly over: Partial<WebhooksDep> = {}) {}
+
+  private courant(): WebhookRow {
+    return { ...EXISTANT, hasSecret: this.cap.secretPose };
+  }
+
+  async list(tenant: string): Promise<WebhookRow[]> {
+    return this.over.list ? this.over.list(tenant) : [this.courant()];
+  }
+
+  async get(tenant: string, id: string): Promise<WebhookRow | null> {
+    return this.over.get ? this.over.get(tenant, id) : id === 'wh1' ? this.courant() : null;
+  }
+
+  async create(tenant: string, input: WebhookInput) {
+    if (this.over.create) return this.over.create(tenant, input);
+    this.cap.crees.push(input);
+    return { kind: 'cree' as const, id: 'wh2', code: 'zz12cd34ef56gh78jk90mn12pq' };
+  }
+
+  async update(tenant: string, id: string, input: WebhookInput) {
+    if (this.over.update) return this.over.update(tenant, id, input);
+    this.cap.majs.push({ id, input });
+    return id === 'wh1' ? { kind: 'modifie' as const } : { kind: 'introuvable' as const };
+  }
+
+  async remove(tenant: string, id: string) {
+    if (this.over.remove) return this.over.remove(tenant, id);
+    this.cap.supprimes.push(id);
+    return id === 'wh1' ? { kind: 'supprime' as const } : { kind: 'introuvable' as const };
+  }
+
+  async rotateSecret(tenant: string, id: string): Promise<string | null> {
+    if (this.over.rotateSecret) return this.over.rotateSecret(tenant, id);
+    if (id !== 'wh1') return null;
+    this.cap.secretPose = true;
+    return 'whk_le_clair';
+  }
+
+  async clearSecret(tenant: string, id: string): Promise<boolean> {
+    if (this.over.clearSecret) return this.over.clearSecret(tenant, id);
+    if (id !== 'wh1') return false;
+    this.cap.secretPose = false;
+    return true;
+  }
+
+  async forgetPayload(tenant: string, id: string): Promise<boolean> {
+    return this.over.forgetPayload ? this.over.forgetPayload(tenant, id) : id === 'wh1';
+  }
+}
+
+function app(over: Partial<WebhooksDep> = {}) {
+  // ⚠️ Le faux est une CLASSE dont chaque méthode lit `this`, comme `PgWebhookStore`. Le détacher du store ferait
+  // échouer ces tests, contrairement à un objet de fonctions qui masquerait la régression vécue sur l'entrée Google.
+  const webhooks = new FauxWebhooks(over);
   const deps: WebhooksAdminRouteDeps = {
     audit: journalMuet,
-    repo: { webhookFeedsLiveCampaign: campagneVivante },
-    webhooks: {
-      list: async () => [courant()],
-      get: async (_t, id) => (id === 'wh1' ? courant() : null),
-      create: async (_t, input) => { cap.crees.push(input); return { id: 'wh2', code: 'zz12cd34ef56gh78jk90mn12pq' }; },
-      update: async (_t, id, input) => { cap.majs.push({ id, input }); return id === 'wh1'; },
-      remove: async (_t, id) => { cap.supprimes.push(id); return id === 'wh1'; },
-      rotateSecret: async (_t, id) => { if (id !== 'wh1') return null; cap.secretPose = true; return 'whk_le_clair'; },
-      clearSecret: async (_t, id) => { if (id !== 'wh1') return false; cap.secretPose = false; return true; },
-      forgetPayload: async (_t, id) => id === 'wh1',
-      ...over,
-    },
-    workflowBelongsToTenant: async (wfId) => wfId === 'wf-du-tenant',
+    webhooks,
     // La base COMPLÈTE, résolue par le même module que la production : le préfixe `/api/backend` appartient
     // au proxy Next, pas à cette route. Écrire la chaîne en dur ici ferait un test qui continue de passer le
     // jour où la production, elle, change de forme.
     baseUrl: adressesPubliques('https://mba.messagingme.app', '').avecPrefixe,
   };
-  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, webhooksAdmin: deps }), cap };
+  return { server: buildServer({ queue: new FakeQueue(), auth: { users: noUsers, secret: SECRET }, webhooksAdmin: deps }), cap: webhooks.cap };
 }
 
 describe('webhooks : la garde', () => {
@@ -150,7 +192,11 @@ describe('webhooks : création', () => {
   });
 
   it('🔴 un scénario d’un AUTRE espace est refusé', async () => {
-    const { server, cap } = app();
+    const { server, cap } = app({
+      create: async (_tenant, input) => input.workflowId === 'wf-ailleurs'
+        ? { kind: 'scenario_inconnu' }
+        : { kind: 'cree', id: 'wh2', code: 'zz12cd34ef56gh78jk90mn12pq' },
+    });
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/webhooks', ...h(adminTok), payload: { name: 'x', workflowId: 'wf-ailleurs' } });
     expect(res.statusCode).toBe(400);
     expect(cap.crees).toEqual([]);
@@ -314,7 +360,7 @@ describe('webhooks : modification partielle', () => {
  */
 describe('webhooks : suppression bloquée par une campagne vivante', () => {
   it("🔴 refuse en 409, NOMME la campagne, et ne supprime rien", async () => {
-    const { server, cap } = app({}, async () => 'Leads du site');
+    const { server, cap } = app({ remove: async () => ({ kind: 'campagne_vivante', campagne: 'Leads du site' }) });
     const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/webhooks/wh1', ...h(adminTok) });
     expect(res.statusCode).toBe(409);
     // 409 et pas 5xx : Cloudflare remplace le corps de toute réponse 5xx, le message n'arriverait pas à l'écran.
@@ -324,18 +370,11 @@ describe('webhooks : suppression bloquée par une campagne vivante', () => {
   });
 
   it('aucune campagne vivante -> la suppression passe comme avant', async () => {
-    const { server, cap } = app({}, async () => null);
-    const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/webhooks/wh1', ...h(adminTok) });
-    expect(res.statusCode).toBe(204);
-    expect(cap.supprimes).toEqual(['wh1']);
-    await server.close();
-  });
-
-  it("dépendance non câblée -> comportement d'avant, la suppression passe", async () => {
     const { server, cap } = app();
     const res = await server.inject({ method: 'DELETE', url: '/tenants/t1/webhooks/wh1', ...h(adminTok) });
     expect(res.statusCode).toBe(204);
     expect(cap.supprimes).toEqual(['wh1']);
     await server.close();
   });
+
 });

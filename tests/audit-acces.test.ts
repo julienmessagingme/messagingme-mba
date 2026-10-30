@@ -186,12 +186,11 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
       baseUrl: 'https://api.exemple.test',
       webhooks: {
         list: async () => [], get: async () => null,
-        create: async () => ({ id: 'w1', code: 'code-tres-secret' }),
-        update: async () => true, remove: async () => true,
+        create: async () => ({ kind: 'cree', id: 'w1', code: 'code-tres-secret' }),
+        update: async () => ({ kind: 'modifie' }), remove: async () => ({ kind: 'supprime' }),
         rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
         forgetPayload: async () => true,
       },
-      workflowBelongsToTenant: async () => true,
     } as never, gardeQuiPose));
     await app.ready();
     const r = await app.inject({ method: 'POST', url: '/tenants/t1/webhooks', payload: { name: 'Zapier' } });
@@ -208,11 +207,11 @@ describe('les PORTES vers l’extérieur laissent une trace (lot 2)', () => {
       audit: h.audit, baseUrl: 'https://api.exemple.test',
       webhooks: {
         list: async () => [], get: async () => null,
-        create: async () => ({ id: 'w1', code: 'c' }), update: async () => true, remove: async () => true,
+        create: async () => ({ kind: 'cree', id: 'w1', code: 'c' }),
+        update: async () => ({ kind: 'modifie' }), remove: async () => ({ kind: 'supprime' }),
         rotateSecret: async () => 'sec-en-clair', clearSecret: async () => true,
         forgetPayload: async () => true,
       },
-      workflowBelongsToTenant: async () => true,
     } as never, gardeQuiPose));
     await app.ready();
     await app.inject({ method: 'POST', url: '/tenants/t1/webhooks/w1/secret' });

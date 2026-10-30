@@ -4,7 +4,7 @@ import { FakeQueue } from './fake-queue';
 import { RateLimiter } from '../src/auth/rate-limit';
 import { sha256Hex } from '../src/lib/signature';
 import type { WebhookEntrantRouteDeps, WebhooksEntrantsDep } from '../src/http/webhook-entrant';
-import type { WebhookPublic } from '../src/webhook-entrant/store.pg';
+import type { WebhookPublic } from '../src/webhook-entrant/modele';
 
 const CODE = 'ab12cd34ef56gh78jk90mn12pq';
 const SECRET = 'whk_secret_du_client';

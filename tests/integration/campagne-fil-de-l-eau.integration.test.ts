@@ -44,6 +44,7 @@ describe.skipIf(!url)('campagne alimentée par un webhook', () => {
       name: 'Leads itest', enabled: true, mapping: [{ chemin: 'tel', cible: 'sys:phone' }],
       createContact: true, optIn: true, workflowId: null, startNodeId: null, cooldownSeconds: null,
     });
+    if (cree.kind !== 'cree') throw new Error(`création du webhook témoin refusée : ${cree.kind}`);
     webhookId = cree.id;
     code = cree.code;
     contactId = (await pool.query<{ id: string }>(
@@ -68,10 +69,68 @@ describe.skipIf(!url)('campagne alimentée par un webhook', () => {
     return campaignId;
   }
 
+  async function creerWebhook(nom: string, workflowId: string | null = null): Promise<{ id: string; code: string }> {
+    const issue = await webhooks.create(tenantId, {
+      name: nom, enabled: true, mapping: [], createContact: true, optIn: true,
+      workflowId, startNodeId: null, cooldownSeconds: null,
+    });
+    if (issue.kind !== 'cree') throw new Error(`création du webhook « ${nom} » refusée : ${issue.kind}`);
+    return { id: issue.id, code: issue.code };
+  }
+
   it('la colonne existe et fait l’aller-retour par le chemin de création réel', async () => {
     const id = await campagne('draft');
     const relue = await repo.getCampaign(id);
     expect(relue?.webhookId).toBe(webhookId);
+  });
+
+  it("🔴 le store refuse lui-même le scénario d'un autre espace", async () => {
+    const workflowAutre = (await pool.query<{ id: string }>(
+      `insert into workflows (tenant_id, name, graph) values ($1, 'itest autre', '{"nodes":[],"edges":[]}'::jsonb) returning id`,
+      [autreTenant],
+    )).rows[0]!.id;
+    const issue = await webhooks.create(tenantId, {
+      name: 'Ne doit pas naître', enabled: true, mapping: [], createContact: true, optIn: true,
+      workflowId: workflowAutre, startNodeId: null, cooldownSeconds: null,
+    });
+    expect(issue).toEqual({ kind: 'scenario_inconnu' });
+    const absente = await pool.query(`select 1 from webhooks where tenant_id = $1 and name = 'Ne doit pas naître'`, [tenantId]);
+    expect(absente.rowCount).toBe(0);
+  });
+
+  it("🔴 le store refuse aussi de modifier un webhook avec le scénario d'un autre espace, sans écriture partielle", async () => {
+    const workflowLocal = (await pool.query<{ id: string }>(
+      `insert into workflows (tenant_id, name, graph) values ($1, 'itest local', '{"nodes":[],"edges":[]}'::jsonb) returning id`,
+      [tenantId],
+    )).rows[0]!.id;
+    const workflowAutre = (await pool.query<{ id: string }>(
+      `insert into workflows (tenant_id, name, graph) values ($1, 'itest autre update', '{"nodes":[],"edges":[]}'::jsonb) returning id`,
+      [autreTenant],
+    )).rows[0]!.id;
+    const hook = await creerWebhook('Webhook à préserver', workflowLocal);
+    const avant = await pool.query<{ automation_id: string; workflow_id: string }>(
+      `select w.automation_id, a.workflow_id
+         from webhooks w join automations a on a.id = w.automation_id
+        where w.tenant_id = $1 and w.id = $2`,
+      [tenantId, hook.id],
+    );
+
+    const issue = await webhooks.update(tenantId, hook.id, {
+      name: 'Ne doit pas être écrit', enabled: false, mapping: [], createContact: false, optIn: false,
+      workflowId: workflowAutre, startNodeId: null, cooldownSeconds: 12,
+    });
+
+    expect(issue).toEqual({ kind: 'scenario_inconnu' });
+    expect(await webhooks.get(tenantId, hook.id)).toMatchObject({
+      name: 'Webhook à préserver', enabled: true, createContact: true, optIn: true, workflowId: workflowLocal,
+    });
+    const apres = await pool.query<{ automation_id: string; workflow_id: string }>(
+      `select w.automation_id, a.workflow_id
+         from webhooks w join automations a on a.id = w.automation_id
+        where w.tenant_id = $1 and w.id = $2`,
+      [tenantId, hook.id],
+    );
+    expect(apres.rows).toEqual(avant.rows);
   });
 
   it('🔴 listRunningByWebhook : seulement `running`, seulement CE webhook, seulement CE tenant', async () => {
@@ -174,13 +233,60 @@ describe.skipIf(!url)('campagne alimentée par un webhook', () => {
     expect(await repo.stopWebhookCampaign(ordinaire, tenantId)).toBe(false);
   });
 
-  it('🔴 webhookFeedsLiveCampaign : nomme la campagne qui interdit la suppression de l’adresse', async () => {
-    const id = await campagne('running');
-    expect(await repo.webhookFeedsLiveCampaign(tenantId, webhookId)).toContain('itest');
+  it('🔴 le store nomme la campagne vivante et refuse de supprimer son adresse', async () => {
+    const hook = await creerWebhook('Webhook protégé');
+    const id = await campagne('running', tenantId, hook.id);
+    expect(await webhooks.remove(tenantId, hook.id)).toEqual({ kind: 'campagne_vivante', campagne: 'itest running' });
+    expect(await webhooks.get(tenantId, hook.id)).not.toBeNull();
     await repo.stopWebhookCampaign(id, tenantId);
-    // Toutes les campagnes de cet espace sur ce webhook doivent être closes pour libérer l'adresse.
-    await pool.query(`update campaigns set status = 'completed' where tenant_id = $1 and webhook_id = $2`, [tenantId, webhookId]);
-    expect(await repo.webhookFeedsLiveCampaign(tenantId, webhookId)).toBeNull();
+    expect(await webhooks.remove(tenantId, hook.id)).toEqual({ kind: 'supprime' });
+  });
+
+  it('🔴 une campagne attachée en concurrence est vue avant toute suppression', async () => {
+    const hook = await creerWebhook('Webhook concurrent');
+    const tientInsertion = await pool.connect();
+    let transactionOuverte = false;
+    let suppression: Promise<Awaited<ReturnType<PgWebhookStore['remove']>>> | null = null;
+    try {
+      await tientInsertion.query('begin');
+      transactionOuverte = true;
+      const pidInsertion = (await tientInsertion.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      await tientInsertion.query(
+        `insert into campaigns
+           (tenant_id, phone_number_id, name, category, template_name, template_language, param_mapping,
+            webhook_id, status, channel)
+         values ($1, 'pn-itest', 'itest concurrente', 'utility', 'promo', 'fr', '[]'::jsonb,
+                 $2, 'draft', 'whatsapp')`,
+        [tenantId, hook.id],
+      );
+
+      suppression = webhooks.remove(tenantId, hook.id);
+      let suppressionBloquee = false;
+      for (let i = 0; i < 100 && !suppressionBloquee; i += 1) {
+        const attente = await pool.query<{ bloquee: boolean }>(
+          `select exists (
+             select 1 from pg_stat_activity a
+              where $1 = any(pg_blocking_pids(a.pid))
+                and a.query like '%select automation_id from webhooks%'
+           ) as bloquee`,
+          [pidInsertion],
+        );
+        suppressionBloquee = attente.rows[0]?.bloquee === true;
+        if (!suppressionBloquee) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(suppressionBloquee).toBe(true);
+
+      await tientInsertion.query('commit');
+      transactionOuverte = false;
+      expect(await suppression).toEqual({ kind: 'campagne_vivante', campagne: 'itest concurrente' });
+      expect(await webhooks.get(tenantId, hook.id)).not.toBeNull();
+      await pool.query(`update campaigns set status = 'completed' where tenant_id = $1 and webhook_id = $2`, [tenantId, hook.id]);
+      expect(await webhooks.remove(tenantId, hook.id)).toEqual({ kind: 'supprime' });
+    } finally {
+      if (transactionOuverte) await tientInsertion.query('rollback');
+      tientInsertion.release();
+      if (suppression) await suppression.catch(() => {});
+    }
   });
 
   it('🔴 getByCode.alimenteCampagne suit l’état réel des campagnes', async () => {
@@ -196,7 +302,7 @@ describe.skipIf(!url)('campagne alimentée par un webhook', () => {
 
   it('supprimer le webhook laisse l’historique des campagnes terminées (webhook_id à null)', async () => {
     const id = await campagne('completed');
-    await webhooks.remove(tenantId, webhookId);
+    expect(await webhooks.remove(tenantId, webhookId)).toEqual({ kind: 'supprime' });
     const r = await pool.query<{ webhook_id: string | null }>(`select webhook_id from campaigns where id = $1`, [id]);
     expect(r.rows[0]?.webhook_id).toBeNull();
   });

@@ -1,10 +1,12 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { enTransaction } from '../db/transaction';
 import { sha256Hex } from '../lib/signature';
 import { newWebhookCode } from '../ids/code';
 import { coerceMapping } from './mapping';
-import type { RegleMapping } from './mapping';
 import { verifierPlaceAutomation } from '../offres/automations';
+import type {
+  IssueCreationWebhook, IssueModificationWebhook, IssueSuppressionWebhook, WebhookInput, WebhookPublic, WebhookRow,
+} from './modele';
 
 /**
  * Webhooks entrants. 🔴 `tenant_id` sur chaque requête, sauf `getByCode` : là, le code est la preuve
@@ -14,63 +16,6 @@ import { verifierPlaceAutomation } from '../offres/automations';
  * <-> automation est un invariant, et le rompre laisserait un webhook qui ne déclenche rien ou une automation
  * orpheline.
  */
-
-/** Ce dont la route publique a besoin pour traiter un appel. */
-export interface WebhookPublic {
-  id: string;
-  tenantId: string;
-  enabled: boolean;
-  /** Empreinte du secret d'en-tête, ou null si ce webhook n'en exige pas. */
-  secretHash: string | null;
-  mapping: RegleMapping[];
-  createContact: boolean;
-  /**
-   * Les contacts nés de ce webhook sont-ils consentants ? L'opérateur l'affirme, nous ne le déduisons jamais (comme
-   * l'import CSV et l'API). Faux : consentement « inconnu », ce qui ferme le marketing pour ce contact.
-   */
-  optIn: boolean;
-  /** Nom du webhook, tracé dans `contacts.opt_in_source` : il dit par où un consentement est entré. */
-  name: string;
-  /** null = ce webhook n'écrit que des champs, aucun scénario à déclencher. */
-  automationId: string | null;
-  /**
-   * Une campagne au fil de l'eau en cours attend-elle les arrivants de cette adresse ? Décide seulement de publier
-   * l'événement. Absent (faux store de test) : publie seulement s'il y a un scénario.
-   */
-  alimenteCampagne?: boolean;
-}
-
-/** Ce que l'écran d'administration affiche. Ne contient jamais le hash du secret, ni son clair (qu'on n'a pas). */
-export interface WebhookRow {
-  id: string;
-  name: string;
-  enabled: boolean;
-  code: string;
-  hasSecret: boolean;
-  mapping: RegleMapping[];
-  createContact: boolean;
-  optIn: boolean;
-  workflowId: string | null;
-  startNodeId: string | null;
-  cooldownSeconds: number | null;
-  lastPayload: unknown;
-  lastReceivedAt: string | null;
-  contactsCreated: number;
-  createdAt: string;
-}
-
-/** Ce qu'une route peut écrire. Le code et le secret ne sont jamais fournis par l'appelant. */
-export interface WebhookInput {
-  name: string;
-  enabled: boolean;
-  mapping: RegleMapping[];
-  createContact: boolean;
-  optIn: boolean;
-  /** null = aucun scénario : la ligne compagnon est supprimée. */
-  workflowId: string | null;
-  startNodeId: string | null;
-  cooldownSeconds: number | null;
-}
 
 export interface RawAdmin {
   id: string; name: string; enabled: boolean; code: string; secret_hash: string | null;
@@ -200,8 +145,15 @@ export class PgWebhookStore {
   }
 
   /** Crée un webhook et, s'il porte un scénario, sa ligne compagnon. Renvoie le code public à coller chez le tiers. */
-  async create(tenantId: string, input: WebhookInput): Promise<{ id: string; code: string }> {
+  async create(tenantId: string, input: WebhookInput): Promise<IssueCreationWebhook> {
     return enTransaction(this.pool, async (client) => {
+      if (input.workflowId !== null) {
+        const scenario = await client.query(
+          `select 1 from workflows where id = $1 and tenant_id = $2 for key share`,
+          [input.workflowId, tenantId],
+        );
+        if ((scenario.rowCount ?? 0) === 0) return { kind: 'scenario_inconnu' };
+      }
       const code = newWebhookCode();
       const res = await client.query<{ id: string }>(
         `insert into webhooks (tenant_id, name, enabled, code, mapping, create_contact, opt_in)
@@ -210,27 +162,73 @@ export class PgWebhookStore {
       );
       const id = res.rows[0]!.id;
       await this.syncAutomation(client, tenantId, id, null, input);
-      return { id, code };
+      return { kind: 'cree', id, code };
     });
   }
 
-  /** Met à jour un webhook et réaligne sa ligne compagnon. false = webhook inconnu dans cet espace. */
-  async update(tenantId: string, id: string, input: WebhookInput): Promise<boolean> {
+  /** Met à jour un webhook et réaligne sa ligne compagnon dans la même transaction. */
+  async update(tenantId: string, id: string, input: WebhookInput): Promise<IssueModificationWebhook> {
     return enTransaction(this.pool, async (client) => {
-      const actuel = await client.query<{ automation_id: string | null }>(
-        `select automation_id from webhooks where tenant_id = $1 and id = $2 for update`,
-        [tenantId, id],
-      );
-      const ligne = actuel.rows[0];
-      if (!ligne) return false;
+      const verrou = await this.verrouillerConfiguration(client, tenantId, id, input.workflowId);
+      if (verrou.kind !== 'verrouille') return verrou;
       await client.query(
         `update webhooks set name = $3, enabled = $4, mapping = $5::jsonb, create_contact = $6, opt_in = $7, updated_at = now()
           where tenant_id = $1 and id = $2`,
         [tenantId, id, input.name, input.enabled, JSON.stringify(input.mapping), input.createContact, input.optIn],
       );
-      await this.syncAutomation(client, tenantId, id, ligne.automation_id, input);
-      return true;
+      await this.syncAutomation(client, tenantId, id, verrou.automationId, input);
+      return { kind: 'modifie' };
     });
+  }
+
+  /**
+   * Prend les verrous dans un ordre unique : scénarios, puis webhook. Une suppression de scénario suit elle aussi
+   * cet ordre via sa cascade (`workflows` → `automations` → `webhooks`) ; l'inverser créerait un deadlock. Le verrou
+   * consultatif sérialise deux configurations du même webhook avant la lecture de son scénario courant.
+   */
+  private async verrouillerConfiguration(
+    client: PoolClient,
+    tenantId: string,
+    webhookId: string,
+    workflowVise: string | null,
+  ): Promise<
+    | { kind: 'verrouille'; automationId: string | null }
+    | { kind: 'introuvable' }
+    | { kind: 'scenario_inconnu' }
+  > {
+    await client.query(`select pg_advisory_xact_lock(hashtext('webhook-config:' || $1::text))`, [webhookId]);
+
+    const lecture = await client.query<{ automation_id: string | null; workflow_id: string | null }>(
+      `select w.automation_id, a.workflow_id
+         from webhooks w
+         left join automations a on a.id = w.automation_id and a.tenant_id = w.tenant_id
+        where w.tenant_id = $1 and w.id = $2`,
+      [tenantId, webhookId],
+    );
+    const avantVerrou = lecture.rows[0];
+    if (!avantVerrou) return { kind: 'introuvable' };
+
+    const scenarios = [...new Set([avantVerrou.workflow_id, workflowVise].filter((v): v is string => v !== null))].sort();
+    if (scenarios.length > 0) {
+      const verrouilles = await client.query<{ id: string }>(
+        `select id from workflows
+          where tenant_id = $1 and id = any($2::uuid[])
+          order by id
+          for key share`,
+        [tenantId, scenarios],
+      );
+      if (workflowVise !== null && !verrouilles.rows.some((r) => r.id === workflowVise)) {
+        return { kind: 'scenario_inconnu' };
+      }
+    }
+
+    // La cascade d'un scénario a pu détacher l'automation pendant l'attente du verrou : seule cette relecture fait foi.
+    const actuel = await client.query<{ automation_id: string | null }>(
+      `select automation_id from webhooks where tenant_id = $1 and id = $2 for update`,
+      [tenantId, webhookId],
+    );
+    const ligne = actuel.rows[0];
+    return ligne ? { kind: 'verrouille', automationId: ligne.automation_id } : { kind: 'introuvable' };
   }
 
   /**
@@ -280,19 +278,31 @@ export class PgWebhookStore {
     await client.query(`update webhooks set automation_id = $3 where id = $1 and tenant_id = $2`, [webhookId, tenantId, ins.rows[0]!.id]);
   }
 
-  /** Supprime le webhook. La ligne compagnon part avec lui : sans son webhook, elle ne peut plus se déclencher. */
-  async remove(tenantId: string, id: string): Promise<boolean> {
+  /**
+   * Supprime le webhook et sa ligne compagnon. Le verrou du webhook sérialise une campagne qui chercherait à s'y
+   * rattacher : la vérification et la suppression forment une seule décision, jamais un check-then-act de route.
+   */
+  async remove(tenantId: string, id: string): Promise<IssueSuppressionWebhook> {
     return enTransaction(this.pool, async (client) => {
-      const res = await client.query<{ automation_id: string | null }>(
-        `delete from webhooks where tenant_id = $1 and id = $2 returning automation_id`,
+      const verrou = await this.verrouillerConfiguration(client, tenantId, id, null);
+      if (verrou.kind === 'introuvable') return verrou;
+      // Aucun scénario n'est visé par une suppression : cette branche est impossible par construction.
+      if (verrou.kind === 'scenario_inconnu') throw new Error('suppression webhook : scénario visé inattendu');
+
+      const campagne = await client.query<{ name: string }>(
+        `select name from campaigns
+          where tenant_id = $1 and webhook_id = $2 and status in ('draft', 'scheduled', 'running', 'paused')
+          limit 1`,
         [tenantId, id],
       );
-      const ligne = res.rows[0];
-      if (!ligne) return false;
-      if (ligne.automation_id !== null) {
-        await client.query(`delete from automations where id = $1 and tenant_id = $2`, [ligne.automation_id, tenantId]);
+      const nomCampagne = campagne.rows[0]?.name;
+      if (nomCampagne !== undefined) return { kind: 'campagne_vivante', campagne: nomCampagne };
+
+      await client.query(`delete from webhooks where tenant_id = $1 and id = $2`, [tenantId, id]);
+      if (verrou.automationId !== null) {
+        await client.query(`delete from automations where id = $1 and tenant_id = $2`, [verrou.automationId, tenantId]);
       }
-      return true;
+      return { kind: 'supprime' };
     });
   }
 

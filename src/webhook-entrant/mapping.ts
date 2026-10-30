@@ -1,4 +1,4 @@
-import { cheminValide, litChemin, valeurTexte } from './chemin';
+import { cheminValide, estScalaire, litChemin, valeurTexte } from './chemin';
 
 /**
  * Ce qu'une règle de mapping peut viser, et comment on l'applique à un payload reçu. Module pur.
@@ -36,6 +36,43 @@ export function cibleValide(cible: unknown): boolean {
   if (cible === CIBLE_TELEPHONE || cible === CIBLE_NOM) return true;
   const ref = refDeChamp(cible);
   return ref !== null && ref.length <= 100;
+}
+
+export type ValidationMapping = { ok: true; mapping: RegleMapping[] } | { ok: false; error: string };
+
+/**
+ * Valide un mapping au moment de sa configuration. Le dernier payload n'est qu'un échantillon : un chemin absent
+ * reste accepté, mais un chemin qui désigne un objet ou un tableau est refusé, car les champs ne stockent que des
+ * valeurs scalaires. La route d'administration ne redérive pas ces règles du module qui applique le mapping.
+ */
+export function validerMapping(brut: unknown, payload: unknown): ValidationMapping {
+  if (brut === undefined) return { ok: true, mapping: [] };
+  if (!Array.isArray(brut)) return { ok: false, error: 'mapping invalide (tableau)' };
+  if (brut.length > MAX_REGLES) return { ok: false, error: `mapping trop long (${MAX_REGLES} règles au maximum)` };
+
+  const mapping: RegleMapping[] = [];
+  for (const item of brut) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return { ok: false, error: 'chaque règle est un objet { chemin, cible }' };
+    }
+    const r = item as { chemin?: unknown; cible?: unknown };
+    if (typeof r.chemin !== 'string' || !cheminValide(r.chemin)) {
+      return { ok: false, error: `chemin invalide : ${typeof r.chemin === 'string' ? r.chemin.slice(0, 80) : 'absent'}` };
+    }
+    if (!cibleValide(r.cible)) return { ok: false, error: `destination invalide pour « ${r.chemin.slice(0, 80)} »` };
+    const chemin = r.chemin.trim();
+    if (payload !== null && payload !== undefined) {
+      const valeur = litChemin(payload, chemin);
+      if (valeur !== undefined && !estScalaire(valeur)) {
+        return {
+          ok: false,
+          error: `« ${chemin.slice(0, 80)} » désigne un ensemble, pas une valeur : pointez un élément précis (par exemple ${chemin.slice(0, 60)}[0])`,
+        };
+      }
+    }
+    mapping.push({ chemin, cible: (r.cible as string).trim() });
+  }
+  return { ok: true, mapping };
 }
 
 /**

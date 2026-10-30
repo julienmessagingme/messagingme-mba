@@ -1387,20 +1387,6 @@ export class PgCampaignRepo {
   }
 
   /**
-   * Une campagne encore vivante se nourrit-elle de ce webhook ? Interroge la suppression d'un webhook : la
-   * laisser passer ferait une campagne « en cours » qui ne recevrait plus jamais rien.
-   */
-  async webhookFeedsLiveCampaign(tenantId: string, webhookId: string): Promise<string | null> {
-    const res = await this.pool.query<{ name: string }>(
-      `select name from campaigns
-       where tenant_id = $1 and webhook_id = $2 and status in ('draft', 'scheduled', 'running', 'paused')
-       limit 1`,
-      [tenantId, webhookId],
-    );
-    return res.rows[0]?.name ?? null;
-  }
-
-  /**
    * Crée la campagne et ses destinataires dans une transaction : un échec en cours de route
    * ne laisse pas de campagne draft orpheline avec des destinataires partiels.
    */
