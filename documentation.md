@@ -4652,14 +4652,14 @@ vides déclenchent une alerte Telegram. Le SLO vit dans [docs/SLO-2026-09-01.md]
 
 **L'écran `/ops` a quatre onglets** (refonte, [spec](docs/superpowers/specs/2026-10-27-ops-refonte-design.md)) : Santé
 (par défaut, lisible au téléphone), Capacité, Clients (la table des espaces et ses fenêtres : observation, offre, quotas,
-suppression) et Réglages (grille de prix, numéros fournis, adresses d'exploitation). L'onglet vit dans l'adresse
+suppression) et Réglages (seuils de capacité, grille de prix, numéros fournis, adresses d'exploitation). L'onglet vit dans l'adresse
 (`/ops?tab=capacite`). Santé et Capacité lisent leurs propres routes et disent « au prochain déploiement de l'API » sur
 un 404, parce que la console part au push et l'API plus tard. Santé ne charge PAS la vue d'ensemble (`/ops/overview`,
 la lecture la plus lourde de la table des jobs) : c'est l'onglet qu'on ouvre pendant un incident ; elle se lit en
 arrivant sur un autre onglet, et Santé rend elle-même la révision affichée sous le titre.
 - `GET /ops/sante` : une pastille par brique (API, workers, base, entrants, accusés), une jauge de marge, les derniers
-  signaux de Meta et les incidents. Le SERVEUR juge (`evaluerSante`, `src/ops/sante.ts`) et rend ses seuils
-  (`SEUILS_SANTE`) : l'écran ne fait que mettre en mots.
+  signaux de Meta et les incidents. Le SERVEUR juge (`evaluerSante`, `src/ops/sante.ts`) et rend les seuils en
+  vigueur (réglables dans Réglages) : l'écran ne fait que mettre en mots.
   - 🔴 « Pas de trafic » et « lecture impossible » ne se confondent pas : une brique sans trafic est verte, une brique
     dont la lecture a échoué est ORANGE et marquée `indisponible`, et la jauge se dit `partielle`. Sous saturation, ce
     sont justement ces lectures qui tombent. Jamais de 500 pour autant.
@@ -4741,9 +4741,9 @@ arrivant sur un autre onglet, et Santé rend elle-même la révision affichée s
   ne se note pas : le passage suivant réessaie. La veille de charge du worker garde ses propres alertes : une file en
   retard ou une base saturée peut donc envoyer DEUX messages, chacun avec son délai. Le battement et la 2e copie d'API
   ne jouent que sur l'écran.
-- Les briques de Santé du lot 2, et leurs seuils (`SEUILS_SANTE`, ceux de la spec) : mémoire des workers (le plus
-  chargé, 70 et 85 % de sa limite), machine des workers (processeur sur 15 min, 60 et 80 %), processeur de la base
-  (60 et 80 %, rouge : DB-DEV-L), porte HubSpot (éveillée ou endormie, jamais une panne). La jauge compte aussi le
+- Les briques de Santé du lot 2, et leurs seuils par défaut (`SEUILS_DEFAUT`, ceux de la spec, réglables) : mémoire
+  des workers (le plus chargé, 70 et 85 % de sa limite), machine des workers (processeur sur 15 min, 60 et 80 %),
+  processeur de la base (60 et 80 %, rouge : DB-DEV-L), porte HubSpot (éveillée ou endormie, jamais une panne). La jauge compte aussi le
   processeur de la base, celui de la machine et la mémoire des workers. Dans Capacité, chaque courbe commence à son
   premier jour mesuré : avant, un jour sans mesure se dessinerait à zéro.
 

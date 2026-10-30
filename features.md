@@ -3367,6 +3367,18 @@ boîte par sous-menu.
 
 ## Exploitation `/ops` (interne, hors console client)
 
+- ✅ **Quatre onglets, Santé d'abord** (refonte, du 2026-10-27 au 2026-10-30). **Santé** s'ouvre en premier et se lit au
+  téléphone : une pastille par brique (API, workers et leur mémoire, machine des workers, base et son processeur,
+  messages entrants, accusés de Meta, porte HubSpot), une jauge de marge, les derniers signaux de Meta et les incidents
+  des 24 heures, dont les alertes Telegram envoyées. **Capacité** : trente jours de courbes (copies de l'API, retard des
+  files, mesures Scaleway de la base et de la machine des workers, mémoire des workers), leurs seuils en pointillés, et
+  le coût Scaleway du mois avec sa projection. **Clients** : la table des espaces et ses fenêtres. **Réglages** : les
+  seuils, la grille de prix, les numéros fournis, les adresses d'exploitation.
+- ✅ **Des seuils réglables, et une alerte Telegram quand un signal change d'état** (2026-10-30). L'orange et le rouge de
+  chaque signal se règlent dans Réglages, tous d'un coup, avec une note obligatoire ; une valeur hors bornes est
+  refusée et son champ passe en rouge. Une aggravation est annoncée tout de suite, une baisse ou un retour au vert au
+  plus une fois par demi-heure ; le retard des files se tait le quart d'heure qui suit le redémarrage d'un worker.
+
 - ✅ **La section « E-mails »** (lot 7, 2026-10-14) : chaque e-mail que le produit envoie aux espaces, avec ses
   chiffres du mois (envoyés, échecs, ouverts, cliqués), un interrupteur, et ses textes français et anglais à modifier
   (sujet, texte, bouton, avec les variables proposées), un aperçu et un essai envoyé à sa propre adresse. Une note dit
