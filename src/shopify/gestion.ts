@@ -14,6 +14,8 @@ import {
   type DonneeShopify, type EvenementShopify,
 } from './donnees';
 import type { AttenteMessage, MessageBranche, OrigineBoutique, PgShopifyStore, VueBoutique } from './store.pg';
+import type { ChiffreVentes, Montant } from './chiffre';
+import { addDays, todayParis, type DateRange } from '../stats/range';
 
 /**
  * LA GESTION DU CONNECTEUR SHOPIFY, porte unique des outils MCP et de la console (plan 2026-10-21, lot 1) : connecter
@@ -44,6 +46,8 @@ export interface DepsGestionShopify {
   programmerOubli: ProgrammerOubli;
   /** La filière de l'espace (`filiereDe`) : un modèle sur l'API, un texte sur un numéro relié par QR code. */
   filiere(tenantId: string): Promise<Filiere | null>;
+  /** La lecture du chiffre d'affaires attribué (`chiffreVentes`, plan 2026-10-30) : l'état en tire les récupérés. */
+  chiffreVentes(tenantId: string, range: DateRange): Promise<ChiffreVentes>;
 }
 
 /**
@@ -70,8 +74,14 @@ export interface EtatShopify {
   boutique: VueBoutique | null;
   messages: MessageBranche[];
   compteurs: Record<string, number>;
-  /** Les paniers des 7 derniers jours : relancés (par issue), fermés à temps (une commande en est née), en attente. */
-  paniers: { relances: Record<string, number>; fermesATemps: number; enAttente: number };
+  /**
+   * Les paniers des 7 derniers jours : relancés (par issue), fermés à temps (une commande en est née), en attente ; et les
+   * RÉCUPÉRÉS (plan 2026-10-30) : relancés puis payés, par date de relance, leur montant par devise, les tests à part.
+   */
+  paniers: {
+    relances: Record<string, number>; fermesATemps: number; enAttente: number;
+    recuperes: number; montantsRecuperes: Montant[]; recuperesTest: number;
+  };
   /** La page des apps de la boutique, d'où le marchand désinstalle l'app (aucune API ne le fait). */
   pageApps: string | null;
   /** Les messages préparés par la console dont le modèle attend l'approbation de Meta. */
@@ -80,13 +90,24 @@ export interface EtatShopify {
 
 export async function etatShopify(deps: DepsGestionShopify, tenantId: string): Promise<EtatShopify> {
   const boutique = await deps.store.lire(tenantId);
-  if (boutique === null) return { boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null, attentes: [] };
+  if (boutique === null) {
+    return {
+      boutique: null, messages: [], compteurs: {}, pageApps: null, attentes: [],
+      paniers: { relances: {}, fermesATemps: 0, enAttente: 0, recuperes: 0, montantsRecuperes: [], recuperesTest: 0 },
+    };
+  }
+  // Les 7 mêmes jours, en dates de Paris (aujourd'hui compris) : la lecture du chiffre compte par jour civil.
+  const aujourdhui = todayParis();
+  const { paniers: recuperes } = await deps.chiffreVentes(tenantId, { from: addDays(aujourdhui, -(JOURS_PANIERS - 1)), to: aujourdhui });
   return {
     boutique,
     messages: await deps.store.messages(tenantId),
     compteurs: await deps.store.compteurs(tenantId, JOURS_COMPTES),
     // Sept jours : un panier ne vit pas plus (purge), compter au-delà ne compterait rien de plus.
-    paniers: await deps.store.compteursPaniers(tenantId, JOURS_PANIERS),
+    paniers: {
+      ...await deps.store.compteursPaniers(tenantId, JOURS_PANIERS),
+      recuperes: recuperes.recuperes, montantsRecuperes: recuperes.montants, recuperesTest: recuperes.recuperesTest,
+    },
     pageApps: pageApps(boutique.domaine),
     attentes: await deps.store.attentes(tenantId),
   };

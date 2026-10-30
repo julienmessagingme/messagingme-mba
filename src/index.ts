@@ -85,6 +85,8 @@ import { depotSandbox, soumissionHubspot } from './http/livre-blanc-vitrine';
 import type { ShopifyWebhooksRouteDeps } from './http/shopify-webhooks';
 import { PgShopifyStore } from './shopify/store.pg';
 import { PgVentesStore } from './shopify/ventes.pg';
+import { chiffreVentes } from './shopify/chiffre';
+import type { DateRange } from './stats/range';
 import { FILE_PREUVE_UTM } from './shopify/preuve-utm';
 import { demanderJeton, verifierBoutique } from './shopify/connexion';
 import { lireClientsAbonnes } from './shopify/clients';
@@ -1342,6 +1344,13 @@ async function main(): Promise<void> {
    * worker serait une liste tenue à la main. Shopify réessaie ce qui n'a pas reçu de 2xx, il tient lieu de file.
    */
   const shopifyStore = new PgShopifyStore(pool, config.ENCRYPTION_KEY);
+  /**
+   * Le chiffre d'affaires attribué (plans 2026-10-28 et 2026-10-30) : UN store, que la réception écrit, et UNE lecture
+   * (`chiffreVentes`) que la route de Quantitatif, l'état de la boutique et l'outil MCP partagent. Le store entier : ses
+   * méthodes lisent `this.pool`.
+   */
+  const ventesStore = new PgVentesStore(pool);
+  const lireChiffreVentes = (tenant: string, range: DateRange) => chiffreVentes(ventesStore, tenant, range);
   // Le ménage des modèles de l'assistant que remplace un nouveau message (2026-10-23) : l'API ne fait que PROGRAMMER
   // l'oubli ; le worker le traite un quart d'heure plus tard (`traiterOubli`, la suppression de l'écran Modèles).
   const programmerOubliShopify: ProgrammerOubli = (job, quand) => queue.enqueue(FILE_OUBLI_MODELE, job, { groupId: job.tenantId, startAfter: quand });
@@ -1362,6 +1371,7 @@ async function main(): Promise<void> {
     abonner: (acces) => abonnerWebhooks(acces),
     // Un modèle sur l'API, un texte sur un numéro relié par QR code (plan 2026-10-23, tâche 5).
     filiere: (tenant) => comptesApplication.filiereDe(tenant),
+    chiffreVentes: lireChiffreVentes,
   };
   const traitementShopify: DepsTraitementShopify = {
     store: shopifyStore,
@@ -1370,8 +1380,8 @@ async function main(): Promise<void> {
     filiere: (tenant) => comptesApplication.filiereDe(tenant),
     ecrirePremier: (demande) => enfilerPremierMessage(depsPremier, demande),
     ficheParTelephone: async (tenant, e164) => (await contactStore.findByPhone(tenant, e164))?.id ?? null,
-    // Le chiffre d'affaires attribué (plan 2026-10-28) : le store entier, ses méthodes lisent `this.pool`.
-    ventes: new PgVentesStore(pool),
+    // Le chiffre d'affaires attribué (plan 2026-10-28) : le store partagé avec sa lecture.
+    ventes: ventesStore,
     // Sa preuve par UTM, relue par le worker 30 minutes après la commande (tâche 6b).
     programmerPreuve: (job, quand) => queue.enqueue(FILE_PREUVE_UTM, job, { groupId: job.tenantId, startAfter: quand }),
     /**
@@ -2027,6 +2037,8 @@ async function main(): Promise<void> {
         { demandes: (t, r) => performanceStore.lire(t, r), reglages: (t) => settingsStore.horairesEffectifs(t) },
         tenant, range,
       ),
+      // Quantitatif > Shopify : la lecture partagée avec l'outil MCP et la page Shopify (plan 2026-10-30).
+      getVentes: lireChiffreVentes,
       // Le même journal que l'écran d'exploitation (`/parametres`), avec le code et la plage en filtre : deux
       // requêtes sur des populations voisines feraient se contredire deux écrans de même titre.
       getErrorContacts: (tenant, range, code, filter) => erreursLivraison.lister(tenant, {

@@ -319,6 +319,26 @@ describe('stats route', () => {
     await a.close();
   });
 
+  it('GET /stats/ventes : le chiffre d’affaires attribué de la période, tel que la lecture le rend (plan 2026-10-30)', async () => {
+    const vus: Array<[string, unknown]> = [];
+    const chiffre = {
+      periode: { from: '2026-10-01', to: '2026-10-30' },
+      reel: { totaux: [], sources: [] },
+      test: { totaux: [{ devise: 'USD', brut: '2148.85', prouve: '1548.85', commandes: 4 }], sources: [] },
+      paniers: { relances: 1, recuperes: 0, montants: [], recuperesTest: 1 },
+    };
+    const a = app({ stats: { getVentes: async (t, r) => { vus.push([t, r]); return chiffre; } } });
+    const ok = await a.inject({ method: 'GET', url: '/tenants/t1/stats/ventes?from=2026-10-01&to=2026-10-30', ...h(adminTok) });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual(chiffre);
+    expect(vus).toEqual([['t1', { from: '2026-10-01', to: '2026-10-30' }]]);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/ventes?days=30', ...h(agentTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats/ventes?days=30', ...h(adminTok) })).statusCode).toBe(403);
+    expect((await a.inject({ method: 'GET', url: '/tenants/t1/stats/ventes?from=2026-01-10&to=2026-01-01', ...h(adminTok) })).statusCode).toBe(400);
+    expect(vus).toHaveLength(1);
+    await a.close();
+  });
+
   it('tenant != token -> 403', async () => {
     const a = app();
     const res = await a.inject({ method: 'GET', url: '/tenants/AUTRE/stats', ...h(adminTok) });

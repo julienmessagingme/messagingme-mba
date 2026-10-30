@@ -13,6 +13,16 @@ import { OUTILS, type DepsMcp } from '../src/mcp/outils';
 import type { Filiere } from '../src/application/comptes';
 import { TEXTE_SHOPIFY_MAX, validerTexteShopify } from '../src/shopify/preparation';
 import { MESSAGE_OPERATIONS_LOURDES } from '../src/auth/plafond-partage';
+import { addDays, todayParis, type DateRange } from '../src/stats/range';
+import type { ChiffreVentes } from '../src/shopify/chiffre';
+
+/** Le chiffre que rend la lecture des ventes (plan 2026-10-30, lot 2) : seuls ses paniers entrent dans l'état. */
+const CHIFFRE: ChiffreVentes = {
+  periode: { from: '2026-10-24', to: '2026-10-30' },
+  reel: { totaux: [{ devise: 'EUR', brut: '99.9', prouve: '59.9', commandes: 2 }], sources: [] },
+  test: { totaux: [], sources: [] },
+  paniers: { relances: 4, recuperes: 2, montants: [{ devise: 'EUR', montant: '59.9' }], recuperesTest: 1 },
+};
 
 /**
  * LA GESTION DU CONNECTEUR SHOPIFY (plan 2026-10-21, lot 1), porte unique des outils MCP et de la console. Chaque refus
@@ -32,7 +42,7 @@ function monter(o: {
   actifs?: MessageBranche[]; attenteRetiree?: AttenteMessage; filiere?: Filiere | null;
 } = {}) {
   let boutique: VueBoutique | null = o.boutique === undefined ? VUE : o.boutique;
-  const journal = { connexions: [] as unknown[], branches: [] as unknown[], coupes: 0, verifs: 0, delais: [] as number[], attentesRetirees: [] as unknown[], abonnements: [] as unknown[], lecturesModele: 0 };
+  const journal = { connexions: [] as unknown[], branches: [] as unknown[], coupes: 0, verifs: 0, delais: [] as number[], attentesRetirees: [] as unknown[], abonnements: [] as unknown[], lecturesModele: 0, chiffres: [] as DateRange[] };
   const messages: MessageBranche[] = [...(o.actifs ?? [])];
   let attenteRetiree = o.attenteRetiree ?? null;
   const programmes: string[] = [];
@@ -67,6 +77,7 @@ function monter(o: {
     programmerOubli: async (job) => { programmes.push(job.modele); },
     // La filière API par défaut : tous les tests d'avant le texte simple (plan 2026-10-23) restent ceux de l'API.
     filiere: async () => (o.filiere === undefined ? 'api' : o.filiere),
+    chiffreVentes: async (_t, range) => { journal.chiffres.push(range); return CHIFFRE; },
   };
   return { deps, journal, programmes };
 }
@@ -325,7 +336,32 @@ describe('l’état et la coupure', () => {
     const e = await etatShopify(monter().deps, T);
     expect(e.compteurs).toEqual({ envoye: 3 });
     expect(e.pageApps).toBe('https://admin.shopify.com/store/b/settings/apps');
-    expect(await etatShopify(monter({ boutique: null }).deps, T)).toEqual({ boutique: null, messages: [], compteurs: {}, paniers: { relances: {}, fermesATemps: 0, enAttente: 0 }, pageApps: null, attentes: [] });
+    expect(await etatShopify(monter({ boutique: null }).deps, T)).toEqual({
+      boutique: null, messages: [], compteurs: {}, pageApps: null, attentes: [],
+      paniers: { relances: {}, fermesATemps: 0, enAttente: 0, recuperes: 0, montantsRecuperes: [], recuperesTest: 0 },
+    });
+  });
+
+  it('les paniers portent les récupérés des 7 derniers jours de Paris, par la lecture du chiffre (plan 2026-10-30)', async () => {
+    const { deps, journal } = monter();
+    const e = await etatShopify(deps, T);
+    expect(journal.chiffres).toEqual([{ from: addDays(todayParis(), -6), to: todayParis() }]);
+    expect(e.paniers).toEqual({
+      relances: { envoye: 1 }, fermesATemps: 2, enAttente: 3, recuperes: 2, montantsRecuperes: [{ devise: 'EUR', montant: '59.9' }], recuperesTest: 1,
+    });
+    // Sans boutique, rien n'est lu.
+    const sans = monter({ boutique: null });
+    await etatShopify(sans.deps, T);
+    expect(sans.journal.chiffres).toEqual([]);
+  });
+
+  it('get_shopify_state rend les paniers récupérés des 7 jours et leur montant, par devise', async () => {
+    const { deps } = monter();
+    const mcp = { shopify: deps } as unknown as DepsMcp;
+    const etat = await OUTILS.find((x) => x.nom === 'get_shopify_state')!.executer(mcp, T, {}, { userId: 'u1' } as never);
+    expect(etat).toMatchObject({
+      checkouts: { recovered_last_7_days: 2, recovered_amount_last_7_days: [{ currency: 'EUR', amount: '59.9' }] },
+    });
   });
 
   it('couper est idempotent et rend la page d’où désinstaller l’app', async () => {

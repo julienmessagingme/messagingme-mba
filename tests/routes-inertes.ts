@@ -432,7 +432,8 @@ export const reglagesDepInertes: Pick<ReglagesDep,
 
 export const statsInertes: Pick<StatsRouteDeps,
   'getErrorContacts' | 'getCoutParCampagne' | 'getCoutParPub' | 'getCoutMessages' | 'getCoutIa' | 'getDetailCoutCampagne'
-  | 'getWorkflowNodeCounts' | 'getPerformance'> = {
+  | 'getWorkflowNodeCounts' | 'getPerformance' | 'getVentes'> = {
+  getVentes: neDevraitPasEtreAppelee('getVentes'),
   getErrorContacts: async () => [],
   getCoutParCampagne: neDevraitPasEtreAppelee('getCoutParCampagne'),
   getCoutParPub: neDevraitPasEtreAppelee('getCoutParPub'),
@@ -847,6 +848,8 @@ export const mcpShopifyInerte: Pick<DepsMcp, 'shopify'> = {
     abonner: neDevraitPasEtreAppelee('shopify.abonner'),
     programmerOubli: neDevraitPasEtreAppelee('shopify.programmerOubli'),
     filiere: async () => null,
+    // Aucune boutique (`lire` rend null) : l'état ne lit jamais le chiffre.
+    chiffreVentes: neDevraitPasEtreAppelee('shopify.chiffreVentes'),
   },
 };
 

@@ -9,6 +9,7 @@ import type { CoutMessages } from '../stats/cout-messages';
 import type { CoutIa } from '../stats/cout-ia';
 import type { CoutParPub } from '../pubs/publicites.pg';
 import type { Performance } from '../stats/performance';
+import type { ChiffreVentes } from '../shopify/chiffre';
 import type { PricingSummary } from '../meta/pricing';
 import { parseRange } from '../stats/range';
 import type { DateRange } from '../stats/range';
@@ -84,6 +85,11 @@ export interface StatsRouteDeps {
    * (`src/stats/performance.ts`), qui dit ce qu'est une demande et comment ses durées se comptent.
    */
   getPerformance(tenantId: string, range: DateRange): Promise<Performance>;
+  /**
+   * Le chiffre d'affaires attribué (Quantitatif > Shopify, plan 2026-10-30) : `chiffreVentes` (`src/shopify/chiffre.ts`),
+   * la MÊME lecture que l'outil MCP `get_revenue_stats` et les récupérés de la page Shopify.
+   */
+  getVentes(tenantId: string, range: DateRange): Promise<ChiffreVentes>;
 }
 
 /** Ce que les routes lisent du dépôt des statistiques d'envoi. */
@@ -325,6 +331,17 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
     const r = parseRange(req.query as Record<string, unknown>);
     if ('error' in r) return reply.code(400).send({ error: r.error });
     return reply.code(200).send(await deps.getPerformance(tenant, r.range));
+  });
+
+  /**
+   * Quantitatif > Shopify : le chiffre d'affaires attribué de la période, par devise, les commandes de test à part
+   * (`src/shopify/chiffre.ts`). Le Pro, comme ses voisines (`fonctionDesStatistiques`) ; la Free le lit par l'outil MCP.
+   */
+  app.get('/tenants/:tenantId/stats/ventes', opts, async (req, reply) => {
+    const tenant = espaceVerifie(req);
+    const r = parseRange(req.query as Record<string, unknown>);
+    if ('error' in r) return reply.code(400).send({ error: r.error });
+    return reply.code(200).send(await deps.getVentes(tenant, r.range));
   });
 
   /**

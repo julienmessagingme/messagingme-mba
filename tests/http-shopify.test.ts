@@ -55,6 +55,10 @@ function monter() {
       abonner: async (a) => { trace.abonnements.push(a); return { ok: true, abonnes: ['ORDERS_PAID'], deja: [] }; },
       programmerOubli: async () => undefined,
       filiere: async () => 'api',
+      chiffreVentes: async (_t, periode) => ({
+        periode, reel: { totaux: [], sources: [] }, test: { totaux: [], sources: [] },
+        paniers: { relances: 0, recuperes: 0, montants: [], recuperesTest: 0 },
+      }),
     },
     preparation: {
       store,
