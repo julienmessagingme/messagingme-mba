@@ -5,7 +5,7 @@ import { ContactFilterPanel } from '@/components/ContactFilterPanel';
 import { contactIdentity, queryContacts, countContacts, type Contact, type ContactFilters, type UserFieldDef } from '@/lib/api';
 import { filtersActive } from '@/lib/contact-filters';
 import { useT } from '@/lib/i18n';
-import { basculerContact, estRetenu, nbRetenus, selectionTout, selectionVide, type SelectionContacts } from '@/lib/selection-contacts';
+import { basculerContact, basculerLignesAffichees, estRetenu, nbRetenus, selectionTout, selectionVide, type SelectionContacts } from '@/lib/selection-contacts';
 import { Bouton } from '@/components/Bouton';
 
 /**
@@ -183,6 +183,7 @@ export function ListeDestinataires({
   const filtresPoses = filtersActive(filtres);
 
   const basculer = (id: string): void => onSelection(basculerContact(selection, id));
+  const toutesCochees = selection.toutFiltre || (contacts.length > 0 && contacts.every((c) => estRetenu(selection, c.id)));
 
   return (
     <div className="w-full">
@@ -238,26 +239,45 @@ export function ListeDestinataires({
         </div>
       )}
 
-      {/* Liste des contacts correspondants : cocher/décocher affine la sélection. */}
-      <div className="max-h-[22rem] divide-y divide-ink-100 overflow-y-auto rounded-controle border border-ink-200" data-testid="destinataires-liste">
-        {contacts.map((c) => (
-          <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
-            <input type="checkbox" checked={estRetenu(selection, c.id)} onChange={() => basculer(c.id)} className="accent-brand-500" />
-            <span className="truncate text-sm">{c.profileName ?? contactIdentity(c)}</span>
-            {(c.tags ?? []).slice(0, 3).map((tag) => (
-              <span key={tag} className="shrink-0 rounded-controle bg-brand-50 px-1 text-xs text-brand-700">{tag}</span>
-            ))}
-            <span className="ml-auto shrink-0 font-mono text-xs text-ink-500">{c.phoneE164 ?? <span title={t('Compte WhatsApp (sans numéro)', 'WhatsApp account (no number)')}>{c.bsuid}</span>}</span>
-            {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded-controle bg-danger-50 px-1 text-xs text-danger-700">opt-out</span>}
+      {/*
+        Liste des contacts correspondants : cocher/décocher affine la sélection.
+        ⚠️ LA CASE D'EN-TÊTE EST HORS DE `destinataires-liste`, et c'est voulu : les e2e y désignent les lignes par leur
+        rang (`getByRole('checkbox').first()`), une case de plus en tête les décalerait toutes. Même règle que l'en-tête
+        du mini-CRM (`basculerLignesAffichees`) : cochée, elle vide la sélection ; décochée, elle coche les lignes
+        affichées, « Tout sélectionner (N) » restant le seul chemin vers le total serveur.
+      */}
+      <div className="rounded-controle border border-ink-200">
+        {contacts.length > 0 && (
+          <label className="flex cursor-pointer items-center gap-2 border-b border-ink-200 bg-ink-50 px-2.5 py-1.5" data-testid="destinataires-tout">
+            <input
+              type="checkbox"
+              checked={toutesCochees}
+              onChange={() => onSelection(basculerLignesAffichees(selection, contacts.map((c) => c.id)))}
+              className="accent-brand-500"
+            />
+            <span className="text-xs font-medium text-ink-700">{toutesCochees ? t('Tout décocher', 'Untick all') : t('Tout cocher', 'Tick all')}</span>
           </label>
-        ))}
-        {contacts.length === 0 && (
-          <p className="px-2.5 py-3 text-xs text-ink-500">
-            {enCours ? t('Chargement…', 'Loading…')
-              : filtresPoses ? t('Aucun contact ne correspond aux filtres.', 'No contact matches the filters.')
-              : t('Aucun contact joignable. Importez des contacts dans l’onglet Contacts.', 'No reachable contact. Import contacts in the Contacts tab.')}
-          </p>
         )}
+        <div className="max-h-[22rem] divide-y divide-ink-100 overflow-y-auto" data-testid="destinataires-liste">
+          {contacts.map((c) => (
+            <label key={c.id} className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 hover:bg-ink-50">
+              <input type="checkbox" checked={estRetenu(selection, c.id)} onChange={() => basculer(c.id)} className="accent-brand-500" />
+              <span className="truncate text-sm">{c.profileName ?? contactIdentity(c)}</span>
+              {(c.tags ?? []).slice(0, 3).map((tag) => (
+                <span key={tag} className="shrink-0 rounded-controle bg-brand-50 px-1 text-xs text-brand-700">{tag}</span>
+              ))}
+              <span className="ml-auto shrink-0 font-mono text-xs text-ink-500">{c.phoneE164 ?? <span title={t('Compte WhatsApp (sans numéro)', 'WhatsApp account (no number)')}>{c.bsuid}</span>}</span>
+              {c.optInStatus === 'opted_out' && <span className="shrink-0 rounded-controle bg-danger-50 px-1 text-xs text-danger-700">opt-out</span>}
+            </label>
+          ))}
+          {contacts.length === 0 && (
+            <p className="px-2.5 py-3 text-xs text-ink-500">
+              {enCours ? t('Chargement…', 'Loading…')
+                : filtresPoses ? t('Aucun contact ne correspond aux filtres.', 'No contact matches the filters.')
+                : t('Aucun contact joignable. Importez des contacts dans l’onglet Contacts.', 'No reachable contact. Import contacts in the Contacts tab.')}
+            </p>
+          )}
+        </div>
       </div>
       <p className="mt-1 text-xs text-ink-500">{t('Les contacts opt-out sont ignorés automatiquement pour le marketing.', 'Opted-out contacts are automatically skipped for marketing.')}</p>
     </div>

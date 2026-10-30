@@ -113,6 +113,19 @@ test('vider bascule sur une selection ligne a ligne', async ({ page }) => {
   await expect(page.getByTestId('audience-compte')).toHaveText(/1 contacts retenus/);
 });
 
+/** La case d'en-tête décoche tout d'un coup, puis recoche les lignes affichées (demande de Julien, 2026-10-30). */
+test('la case d en-tete decoche puis recoche toutes les lignes', async ({ page }) => {
+  await monter(page);
+  await expect(page.getByTestId('audience-compte')).toHaveText(/3 contacts retenus/);
+  const entete = page.getByTestId('destinataires-tout').getByRole('checkbox');
+  await expect(entete).toBeChecked();
+  await entete.uncheck();
+  await expect(page.getByTestId('audience-compte')).toHaveText(/0 contacts retenus/);
+  for (const ligne of await page.getByTestId('destinataires-liste').getByRole('checkbox').all()) await expect(ligne).not.toBeChecked();
+  await entete.check();
+  await expect(page.getByTestId('audience-compte')).toHaveText(/3 contacts retenus/);
+});
+
 /**
  * ⚠️ « TOUT SÉLECTIONNER » N'APPARAÎT QUE QUAND LE TOTAL DÉPASSE L'AFFICHAGE, et c'est là qu'il compte :
  * il retient une INTENTION plutôt que de rapatrier jusqu'à 100 000 identifiants dans le navigateur.
