@@ -73,8 +73,8 @@ export function OpsCapacite({ jeton, onPerdue }: { jeton: string; onPerdue: () =
         />
         <p className={note}>
           {t(
-            `Sur 7 jours : ${montees} montée(s) à 2 copies ou plus, ${heures} h en tout. Orange à 3 montées, rouge à 1 h : la copie de base est devenue trop petite. Moins de ${MINUTES_MONTEE_MIN} minutes à deux copies (un déploiement) ne compte pas.`,
-            `Over 7 days: ${montees} rise(s) to 2 copies or more, ${heures} h in total. Orange at 3 rises, red at 1 h: the base copy has become too small. Under ${MINUTES_MONTEE_MIN} minutes at two copies (a deployment) does not count.`,
+            `Sur 7 jours : ${montees} montée(s) à 2 copies ou plus, ${heures} h en tout. Orange à ${s.secondeCopie?.orange ?? 3} montées, rouge à ${s.secondeCopie?.rouge ?? 60} minutes : la copie de base est devenue trop petite. Moins de ${MINUTES_MONTEE_MIN} minutes à deux copies (un déploiement) ne compte pas.`,
+            `Over 7 days: ${montees} rise(s) to 2 copies or more, ${heures} h in total. Orange at ${s.secondeCopie?.orange ?? 3} rises, red at ${s.secondeCopie?.rouge ?? 60} minutes: the base copy has become too small. Under ${MINUTES_MONTEE_MIN} minutes at two copies (a deployment) does not count.`,
           )}
         </p>
       </section>
@@ -89,6 +89,10 @@ export function OpsCapacite({ jeton, onPerdue }: { jeton: string; onPerdue: () =
           series={[
             { label: t('Accusés de Meta', 'Meta receipts'), color: alerte[500], points: retardParJour(capacite.files, 'webhook-status') },
             { label: t('Messages entrants', 'Inbound messages'), color: brand[400], points: retardParJour(capacite.files, 'webhook') },
+          ]}
+          seuils={[
+            { valeur: s.accuses.rouge, couleur: danger[500], libelle: t(`rouge accusés ${s.accuses.rouge} s`, `receipts red ${s.accuses.rouge} s`) },
+            { valeur: s.entrants.rouge, couleur: danger[400], libelle: t(`rouge entrants ${s.entrants.rouge} s`, `inbound red ${s.entrants.rouge} s`) },
           ]}
         />
         <p className={note}>
@@ -156,6 +160,10 @@ function CourbesCockpit({ capacite, from, to }: { capacite: CapaciteOps; from: s
               { label: t('Base', 'Database'), color: brand[400], points: cockpitParJour(series.baseProcesseur) },
               { label: t('Machine des workers', 'Workers machine'), color: alerte[500], points: cockpitParJour(series.machineProcesseur) },
             ]}
+            seuils={[
+              { valeur: s.processeurBase?.orange ?? 60, couleur: alerte[600], libelle: t(`orange ${s.processeurBase?.orange ?? 60} %`, `orange ${s.processeurBase?.orange ?? 60}%`) },
+              { valeur: s.processeurBase?.rouge ?? 80, couleur: danger[500], libelle: t(`rouge ${s.processeurBase?.rouge ?? 80} %`, `red ${s.processeurBase?.rouge ?? 80}%`) },
+            ]}
           />
           <p className={note}>
             {t(
@@ -203,6 +211,10 @@ function CourbesCockpit({ capacite, from, to }: { capacite: CapaciteOps; from: s
               color: COULEURS_WORKERS[i % COULEURS_WORKERS.length]!,
               points: memoireWorkerParJour(memoires ?? [], role),
             }))}
+            seuils={[
+              { valeur: s.memoireWorker?.orange ?? 70, couleur: alerte[600], libelle: t(`orange ${s.memoireWorker?.orange ?? 70} %`, `orange ${s.memoireWorker?.orange ?? 70}%`) },
+              { valeur: s.memoireWorker?.rouge ?? 85, couleur: danger[500], libelle: t(`rouge ${s.memoireWorker?.rouge ?? 85} %`, `red ${s.memoireWorker?.rouge ?? 85}%`) },
+            ]}
           />
           <p className={note}>
             {t(
@@ -224,6 +236,10 @@ function CourbesCockpit({ capacite, from, to }: { capacite: CapaciteOps; from: s
             series={[
               { label: t('Connexions', 'Connections'), color: brand[400], points: cockpitParJour(series.baseConnexions) },
               { label: t('Disque', 'Disk'), color: navy[400], points: cockpitParJour(series.baseDisque) },
+            ]}
+            seuils={[
+              { valeur: s.connexions.orange, couleur: alerte[600], libelle: t(`connexions orange ${s.connexions.orange} %`, `connections orange ${s.connexions.orange}%`) },
+              { valeur: s.connexions.rouge, couleur: danger[500], libelle: t(`connexions rouge ${s.connexions.rouge} %`, `connections red ${s.connexions.rouge}%`) },
             ]}
           />
           <p className={note}>

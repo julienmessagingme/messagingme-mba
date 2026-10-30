@@ -315,8 +315,9 @@ export class PgOpsStore {
    * Une fenêtre qui contient un redémarrage de worker le mesure : les jobs qui l'ont traversé portent une
    * attente énorme et normale.
    */
-  async getQueueLatence(fenetreHeures = 24): Promise<QueueLatenceRow[]> {
-    // En minutes : l'onglet Santé juge le dernier quart d'heure (0,25), la carte de latence la journée.
+  async getQueueLatence(fenetreHeures = 24, files: readonly string[] = ALL_QUEUES): Promise<QueueLatenceRow[]> {
+    // En minutes : l'onglet Santé juge le dernier quart d'heure (0,25), la carte de latence la journée. Santé ne lit que
+    // ses deux files (`FILES_JUGEES_SANTE`) : sa veille relit toutes les cinq minutes, sans index sur `completed_on`.
     const minutes = Math.min(30 * 24 * 60, Math.max(15, Math.round(fenetreHeures * 60)));
     try {
       const res = await this.pool.query<{
@@ -336,7 +337,7 @@ export class PgOpsStore {
             and started_on is not null and completed_on is not null
             and completed_on > now() - make_interval(mins => $2::int)
           group by name`,
-        [ALL_QUEUES, minutes],
+        [files, minutes],
       );
       const nombre = (v: string | null): number => (v === null ? 0 : Math.max(0, Math.round(Number(v) * 1000) / 1000));
       return res.rows.map((r) => ({

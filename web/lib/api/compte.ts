@@ -407,7 +407,11 @@ export interface SeuilOps { orange: number; rouge: number }
 export interface SeuilsSanteOps {
   accuses: SeuilOps; entrants: SeuilOps; connexions: SeuilOps; erreurs: SeuilOps; battement: SeuilOps;
   processeurBase?: SeuilOps; processeurMachine?: SeuilOps; memoireWorker?: SeuilOps;
+  /** Lot 4 : la 2e copie d'API sur 7 jours, orange en montées, rouge en minutes cumulées. */
+  secondeCopie?: SeuilOps;
 }
+/** Une alerte de Santé envoyée sur Telegram (lot 4). */
+export interface AlerteSanteOps { signal: string; etat: 'vert' | 'orange' | 'rouge'; mesure: number | null; envoyeLe: string }
 export type CleBriqueOps = 'api' | 'workers' | 'memoire-workers' | 'machine' | 'base' | 'processeur-base' | 'entrants' | 'accuses' | 'hubspot';
 export type SignalJaugeOps = 'base' | 'entrants' | 'accuses' | 'processeur-base' | 'machine' | 'memoire-workers';
 /** Une pastille de l'onglet Santé, jugée par le serveur (`src/ops/sante.ts`) ; l'écran ne fait que la mettre en mots. */
@@ -428,7 +432,8 @@ export interface SanteOps {
   revision?: string;
   connexions: { utilisees: number; max: number } | null;
   meta: { dernierMessage: string | null; dernierAccuse: string | null };
-  incidents: { erreurs5xx: number; tachesEnEchec: number; fileEchec: number; demarrages: Array<{ role: string; demarreLe: string }> };
+  /** `alertes` : absente d'une API d'avant le lot 4 ; `null` quand leur lecture a échoué (pas « aucune »). */
+  incidents: { erreurs5xx: number; tachesEnEchec: number; fileEchec: number; demarrages: Array<{ role: string; demarreLe: string }>; alertes?: AlerteSanteOps[] | null };
   seuils: SeuilsSanteOps;
 }
 
@@ -488,6 +493,27 @@ export type CoutOps = { configure: false } | { configure: true; cout: CoutScalew
 
 export function getOpsCout(sessionOps: string): Promise<CoutOps> {
   return appelOps(sessionOps, '/ops/cout');
+}
+
+/** Les seuils de capacité réglables (lot 4) : tous les signaux, chacun avec son orange et son rouge. */
+export type SeuilsCapaciteOps = Record<string, SeuilOps>;
+export interface SeuilsLusOps {
+  seuils: SeuilsCapaciteOps;
+  defauts: SeuilsCapaciteOps;
+  bornes: Record<string, { min: number; max: number }>;
+  modifieLe: string | null;
+  modifiePar: string | null;
+}
+
+export function lireSeuilsOps(sessionOps: string): Promise<SeuilsLusOps> {
+  return appelOps(sessionOps, '/ops/seuils');
+}
+
+/** Changer les seuils : `note` OBLIGATOIRE (elle dit pourquoi), signée de son auteur par le serveur. */
+export function ecrireSeuilsOps(
+  sessionOps: string, seuils: SeuilsCapaciteOps, note: string,
+): Promise<{ seuils: SeuilsCapaciteOps; modifieLe?: string; modifiePar?: string }> {
+  return appelOps(sessionOps, '/ops/seuils', { method: 'PATCH', corps: { seuils, note } });
 }
 
 /**

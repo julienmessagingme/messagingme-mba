@@ -34,6 +34,7 @@ import { OpsEmailsCard } from '@/components/OpsEmailsCard';
 import { MbaTabs } from '@/components/MbaTabs';
 import { OpsSante } from '@/components/OpsSante';
 import { OpsCapacite } from '@/components/OpsCapacite';
+import { OpsSeuils } from '@/components/OpsSeuils';
 
 /**
  * Les quatre onglets (refonte, `docs/superpowers/specs/2026-10-27-ops-refonte-design.md`). Santé d'abord : c'est
@@ -250,6 +251,7 @@ export default function OpsPage() {
 
             {onglet === 'reglages' && (
               <>
+                <OpsSeuils token={session.token} />
                 <GrillePrixCard token={session.token} />
                 <NumerosFournisCard token={session.token} />
                 <OpsEmailsCard token={session.token} />

@@ -11,6 +11,7 @@ import { RETENTION_REFUS_ANS } from './crm/refus-effaces';
 import { MesureTaches, RETENTION_TACHES_JOURS } from './ops/mesure-taches';
 import { RETENTION_FILES_HEURES_JOURS } from './ops/mesures-files.pg';
 import { RETENTION_MEMOIRE_WORKERS_JOURS } from './ops/memoire-workers.pg';
+import { RETENTION_ALERTES_JOURS } from './ops/seuils.pg';
 import { lireMemoireConteneur } from './ops/memoire-worker';
 import { viderMesuresTachesVersLaBase } from './ops/mesure-taches.pg';
 import { PgConversationStatsStore } from './stats/conversation-stats.pg';
@@ -226,7 +227,7 @@ export async function demarrerWorker(): Promise<void> {
     dryRun, transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore,
     adressesEvenements, envoisEvenements,
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
-    poolAttentesStore, httpLatencesStore, mesuresTachesStore, mesuresFilesStore, memoireWorkersStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
+    poolAttentesStore, httpLatencesStore, mesuresTachesStore, mesuresFilesStore, memoireWorkersStore, seuilsStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
     publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
@@ -1721,6 +1722,8 @@ export async function demarrerWorker(): Promise<void> {
       () => mesuresFilesStore.purgeOlderThan(RETENTION_FILES_HEURES_JOURS));
     await etape('memoire', `heure(s) de mémoire des workers effacée(s) (au-delà de ${RETENTION_MEMOIRE_WORKERS_JOURS} j)`,
       () => memoireWorkersStore.purgeOlderThan(RETENTION_MEMOIRE_WORKERS_JOURS));
+    await etape('alertes-capacite', `alerte(s) de Santé effacée(s) (au-delà de ${RETENTION_ALERTES_JOURS} j)`,
+      () => seuilsStore.purgeAlertes(RETENTION_ALERTES_JOURS));
     // Les essais du bac à sable : rétention courte et en dur (14 j), ce ne sont pas des conversations de
     // clients (ni contact ni `wa_id`, seulement ce que l'administrateur a tapé).
     await etape('essais', `essai(s) d’agent effacé(s) (au-delà de ${RETENTION_ESSAIS_JOURS} j)`,

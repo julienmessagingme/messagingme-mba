@@ -17,6 +17,16 @@ fois pour toutes l'option QR code », Julien, 2026-10-30).
 - La fiche d'aide `garder-mon-application-whatsapp-business` et le centre d'aide ne parlent pas encore de la voie
   « télécharger l'application » : y ajouter le cas du numéro neuf.
 
+## 🟡 Les alertes de Santé : ce que le lot 4 de la refonte de /ops laisse (relecture du 2026-10-30)
+
+- **La veille est aveugle quand elle serait la plus utile** : un signal illisible ne s'alerte pas (Cockpit muet n'est
+  pas une panne), mais sous saturation du pool ce sont justement les lectures de la base qui tombent ; et un passage en
+  échec ne laisse qu'une ligne de journal. À faire : après quelques passages illisibles de suite (le compte en base,
+  puisque la copie qui juge change), un message « Santé : lecture impossible de X depuis 15 minutes ».
+- **Deux veilles peuvent annoncer le même incident** : la veille de charge du worker (file en retard, base saturée) et
+  la veille de Santé de l'API, chacune avec son délai. Décider, à l'usage, si l'une des deux doit se taire sur ces
+  signaux.
+
 ## 🟡 Le chiffre d'affaires attribué : ce que la v1 laisse (spec du 2026-10-28)
 
 Spec `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`, section « Hors du chantier ».

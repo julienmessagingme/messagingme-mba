@@ -13,7 +13,10 @@ import type { LatenceHttpRow } from '../ops/latence-http';
 import type { BilanRisque } from '../engagement/balayage';
 import { dlqName, seuilLatenceSecondes } from '../queue/names';
 import { z } from 'zod';
-import { evaluerSante, SEUILS_SANTE } from '../ops/sante';
+import { evaluerSante } from '../ops/sante';
+import { lireEntreesSante, sourcesSante } from '../ops/sante-lecture';
+import { BORNES_SEUILS, SEUILS_DEFAUT, valideSeuils, type SeuilsCapacite } from '../ops/seuils';
+import type { AlerteCapacite, SeuilsLus } from '../ops/seuils.pg';
 import type { PointCapaciteHeure } from '../ops/pool-attentes.pg';
 import type { PointFileHeure } from '../ops/mesures-files.pg';
 import type { MemoireWorker, PointMemoireHeure } from '../ops/memoire-workers.pg';
@@ -71,7 +74,7 @@ export interface ExploitationOps {
    * La latence réelle par file sur une fenêtre (le p95 que la jauge d'âge ne donne pas). Au mieux : elle sert à
    * voir, et l'écran ne tombe pas si elle échoue.
    */
-  getQueueLatence(fenetreHeures: number): Promise<QueueLatenceRow[]>;
+  getQueueLatence(fenetreHeures: number, files?: readonly string[]): Promise<QueueLatenceRow[]>;
   /**
    * Les jobs morts (file d'échec), les plus anciens d'abord. Lecture pure. 🔴 Pour un `webhook`, un job mort est
    * un message de client jamais traité, en silence.
@@ -160,6 +163,13 @@ export interface OpsRouteDeps {
   cockpit: LecteurCockpit | null;
   /** Le coût Scaleway du mois (lot 3) : `null` tant que `SCW_FACTURATION_CLE` n'est pas posée. */
   facture: LecteurFacture | null;
+  /** Les seuils de capacité réglables et l'historique des alertes de Santé (lot 4, migration 0262). */
+  seuils: {
+    lire(): Promise<SeuilsLus>;
+    /** `par` = la note signée (`noteSignee`), comme la grille de prix ; rend ce qui a été enregistré. */
+    ecrire(seuils: SeuilsCapacite, par: string): Promise<{ modifieLe: string; modifiePar: string }>;
+    alertesDepuis(heures: number): Promise<AlerteCapacite[]>;
+  };
   /**
    * Les octets en base, fichiers compris. Coûteux (le catalogue entier) : servi par sa propre route, jamais par
    * la vue d'ensemble, que l'écran recharge à chaque ouverture et sur demande.
@@ -284,23 +294,28 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
    * les derniers signaux de Meta et les incidents des 24 h. Chaque lecture est au mieux : une mesure en échec laisse
    * sa brique sans valeur, jamais l'écran vide. Les seuils partent avec la réponse : l'écran n'en tient aucun.
    */
+  /** Les seuils réglés ; à défaut de les lire, ceux de la spec (l'écran et les alertes ont toujours des seuils). */
+  const seuilsDuMoment = (): Promise<SeuilsCapacite> => deps.seuils.lire().then((l) => l.seuils, () => SEUILS_DEFAUT);
+
   app.get('/ops/sante', opts, async (_req, reply) => {
-    // Une lecture en échec rend `null`, jamais une liste vide : sous saturation, « illisible » n'est pas « aucun trafic ».
-    const auMieux = <T>(lecture: Promise<T>): Promise<T | null> => lecture.catch(() => null);
-    const [workers, latencesFiles, chargeFiles, latencesHeure, latences24h, connexions, meta, memoires, mesuresCockpit] = await Promise.all([
-      auMieux(deps.heartbeat.lister()),
-      // Le dernier quart d'heure : un pic résolu ne garde pas la pastille rouge une heure.
-      auMieux(deps.exploitation.getQueueLatence(0.25)),
-      auMieux(deps.exploitation.getQueueLoad()),
-      auMieux(deps.latencesHttp.lire(1)),
+    // Les mêmes lectures que la veille qui alerte sur Telegram (`lireEntreesSante`) : l'écran et l'alerte jugent pareil.
+    const [entrees, latences24h, meta, seuils, alertes] = await Promise.all([
+      lireEntreesSante(sourcesSante({
+        heartbeat: deps.heartbeat,
+        files: deps.exploitation,
+        latencesHttp: deps.latencesHttp,
+        connexions: () => deps.sante.connexionsBase(),
+        memoires: () => deps.sante.memoires(),
+        cockpit: deps.cockpit,
+      })),
       deps.latencesHttp.lire(24).catch(() => []),
-      auMieux(deps.sante.connexionsBase()),
       deps.sante.signauxMeta().catch(() => ({ dernierMessage: null, dernierAccuse: null })),
-      auMieux(deps.sante.memoires()),
-      deps.cockpit ? deps.cockpit.mesures().catch(() => null) : Promise.resolve(null),
+      seuilsDuMoment(),
+      // `null`, pas une liste vide : « illisible » n'est pas « aucune alerte envoyée ».
+      deps.seuils.alertesDepuis(24).catch(() => null),
     ]);
-    const cockpit = deps.cockpit ? { configure: true as const, mesures: mesuresCockpit } : { configure: false as const };
-    const bilan = evaluerSante({ workers, latencesFiles, chargeFiles, latencesHttp: latencesHeure, connexions, memoires, cockpit });
+    const { workers, chargeFiles, connexions } = entrees;
+    const bilan = evaluerSante(entrees, Date.now(), seuils);
     const ilYa24h = Date.now() - 24 * 3600 * 1000;
     const charge = chargeFiles ?? [];
     const estDlq = (q: string): boolean => charge.some((c) => dlqName(c.queue) === q);
@@ -320,8 +335,10 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
         demarrages: (workers ?? [])
           .filter((w) => w.bootedAt !== null && Date.parse(w.bootedAt) > ilYa24h)
           .map((w) => ({ role: w.role, demarreLe: w.bootedAt })),
+        // Les alertes de Santé envoyées sur Telegram ces 24 h (lot 4), les plus récentes d'abord.
+        alertes,
       },
-      seuils: SEUILS_SANTE,
+      seuils,
     });
   });
 
@@ -331,15 +348,47 @@ export function registerOps(app: FastifyInstance, deps: OpsRouteDeps, garde: Pre
     const lu = requeteCapacite.safeParse(req.query ?? {});
     if (!lu.success) return reply.code(400).send({ error: 'jours : un entier de 1 à 30' });
     const { jours } = lu.data;
-    const [heures, files, memoires, series] = await Promise.all([
+    const [heures, files, memoires, series, seuils] = await Promise.all([
       deps.capacite.parHeure(jours).catch(() => []),
       deps.capacite.files(jours).catch(() => []),
       deps.capacite.memoires(jours).catch(() => []),
       deps.cockpit ? deps.cockpit.historique(jours).catch(() => null) : Promise.resolve(null),
+      seuilsDuMoment(),
     ]);
     // Cockpit : `series` vaut `null` quand il n'a rien rendu ; l'écran le dit (« mesure indisponible »).
     const cockpit = deps.cockpit ? { configure: true, series } : { configure: false };
-    return reply.code(200).send({ jours, heures, files, memoires, cockpit, seuils: SEUILS_SANTE });
+    return reply.code(200).send({ jours, heures, files, memoires, cockpit, seuils });
+  });
+
+  /**
+   * Les seuils de capacité (lot 4) : ceux en vigueur, les défauts de la spec, les bornes, et qui les a changés.
+   */
+  app.get('/ops/seuils', opts, async (_req, reply) => {
+    const lus = await deps.seuils.lire().catch(() => null);
+    return reply.code(200).send({
+      seuils: lus?.seuils ?? SEUILS_DEFAUT,
+      defauts: SEUILS_DEFAUT,
+      bornes: BORNES_SEUILS,
+      modifieLe: lus?.modifieLe ?? null,
+      modifiePar: lus?.modifiePar ?? null,
+    });
+  });
+
+  /**
+   * Changer les seuils : TOUS les signaux d'un coup, et la validation refuse au lieu de corriger (un seuil ramené dans
+   * ses bornes serait un seuil que personne n'a choisi) ; la réponse nomme le champ fautif. 🔴 Note obligatoire, signée
+   * de son auteur dans `seuils_capacite.modifie_par`, comme la grille de prix.
+   */
+  app.patch('/ops/seuils', opts, async (req, reply) => {
+    const corps = (req.body ?? {}) as { seuils?: unknown; note?: unknown };
+    const note = typeof corps.note === 'string' ? corps.note.trim().slice(0, 500) : '';
+    if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi ce changement de seuils' });
+    const v = valideSeuils(corps.seuils);
+    if (!v.ok) return reply.code(400).send({ error: `champ invalide : ${v.champ}`, champ: v.champ, bornes: BORNES_SEUILS });
+    const par = auteurOps(req);
+    const ecrit = await deps.seuils.ecrire(v.seuils, noteSignee(par, note));
+    journaliser('warn', 'ops_seuils_capacite', { seuils: v.seuils, par, note, at: new Date().toISOString() });
+    return reply.code(200).send({ seuils: v.seuils, modifieLe: ecrit.modifieLe, modifiePar: ecrit.modifiePar });
   });
 
   /**

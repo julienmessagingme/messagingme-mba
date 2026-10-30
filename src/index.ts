@@ -156,6 +156,9 @@ import { fetchGet } from './lib/http-get';
 import { lireConsommationEquipe } from './agent/llm/consommation-equipe';
 import { creerLecteurCockpit } from './ops/cockpit';
 import { creerLecteurFacture } from './ops/facture-scaleway';
+import { creerVeilleSante, INTERVALLE_VEILLE_SANTE_MS } from './ops/veille-sante';
+import { lireEntreesSante, sourcesSante } from './ops/sante-lecture';
+import { evaluerSante } from './ops/sante';
 import { lireCatalogueGateway } from './agent/llm/modeles-gateway';
 import { modelesProposables, type ModeleGateway } from './agent/modeles';
 import { contactVars } from './crm/render';
@@ -293,7 +296,7 @@ async function main(): Promise<void> {
     transport, repo, recipientStore, integrationBatch, espacesBatch, emetteur, contactStore, fieldStore, inboxStore,
     adressesEvenements, envoisEvenements, espacesEvenements,
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
-    httpLatencesStore, mesuresTachesStore, mesuresFilesStore, santeStore, memoireWorkersStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
+    httpLatencesStore, mesuresTachesStore, mesuresFilesStore, santeStore, memoireWorkersStore, seuilsStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
     automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
     agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
@@ -1587,6 +1590,18 @@ async function main(): Promise<void> {
       });
     },
   };
+
+  // Cockpit (lot 2) : UN lecteur, partagé par l'écran et la veille de Santé (lot 4), donc un seul cache. Sans jeton,
+  // ses mesures sont absentes de `/ops`. Le jeton sans espace autour : un retour à la ligne collé avec lui dans la
+  // console rendrait l'en-tête invalide. Un refus se journalise par son statut seul.
+  const lecteurCockpit = config.COCKPIT_URL !== '' && config.COCKPIT_TOKEN.trim() !== ''
+    ? creerLecteurCockpit({
+      url: config.COCKPIT_URL,
+      jeton: config.COCKPIT_TOKEN.trim(),
+      http: fetchGet,
+      signaler: (detail) => { journaliser('warn', 'cockpit_illisible', detail); },
+    })
+    : null;
 
   const app = buildServer({
     /**
@@ -2940,16 +2955,13 @@ async function main(): Promise<void> {
         files: (jours) => mesuresFilesStore.lire(jours),
         memoires: (jours) => memoireWorkersStore.parHeure(jours),
       },
-      // Cockpit (lot 2) : sans jeton, ses mesures sont absentes de `/ops`. Un refus se journalise par son statut seul.
-      // Le jeton sans espace autour : un retour à la ligne collé avec lui dans la console rendrait l'en-tête invalide.
-      cockpit: config.COCKPIT_URL !== '' && config.COCKPIT_TOKEN.trim() !== ''
-        ? creerLecteurCockpit({
-          url: config.COCKPIT_URL,
-          jeton: config.COCKPIT_TOKEN.trim(),
-          http: fetchGet,
-          signaler: (detail) => { journaliser('warn', 'cockpit_illisible', detail); },
-        })
-        : null,
+      cockpit: lecteurCockpit,
+      // Les seuils réglables et l'historique des alertes de Santé (lot 4) : chaque méthode appelée sur son store.
+      seuils: {
+        lire: () => seuilsStore.lire(),
+        ecrire: (seuils, par) => seuilsStore.ecrire(seuils, par),
+        alertesDepuis: (heures) => seuilsStore.alertesDepuis(heures),
+      },
       // Le coût Scaleway (lot 3) : la clé dédiée, sans espace autour ; un échec se journalise par son statut seul.
       facture: config.SCW_FACTURATION_CLE.trim() !== ''
         ? creerLecteurFacture({
@@ -3454,6 +3466,40 @@ async function main(): Promise<void> {
     verrous: verrousCourts,
     envoyer: (texte) => sendTelegram(`[mba-${NOM_API}] ${texte}`),
   });
+  /**
+   * La veille de Santé (lot 4, `src/ops/veille-sante.ts`) : toutes les cinq minutes, une seule copie de l'API (un
+   * verrou court en base) juge les signaux avec les MÊMES lectures que l'écran et les seuils réglés, et alerte sur
+   * Telegram à chaque changement d'état, au plus une fois par signal et par demi-heure. Dans l'API, parce que le
+   * processeur de la base et de la machine viennent de Cockpit, dont le jeton n'est qu'ici.
+   */
+  const sourcesVeilleSante = sourcesSante({
+    heartbeat: heartbeatStore,
+    files: opsStore,
+    latencesHttp: httpLatencesStore,
+    connexions: () => santeStore.connexionsBase(),
+    memoires: () => memoireWorkersStore.actuelles(),
+    cockpit: lecteurCockpit,
+  });
+  const veilleSante = creerVeilleSante({
+    evaluer: async () => {
+      // Pas de repli sur les défauts : des seuils illisibles font sauter le passage, au lieu d'alerter sur d'autres.
+      const [entrees, lus] = await Promise.all([lireEntreesSante(sourcesVeilleSante), seuilsStore.lire()]);
+      return { bilan: evaluerSante(entrees, Date.now(), lus.seuils), seuils: lus.seuils, workers: entrees.workers };
+    },
+    alertes: {
+      dernieres: () => seuilsStore.dernieresAlertes(),
+      noter: (signal, etat, mesure) => seuilsStore.noterAlerte(signal, etat, mesure),
+    },
+    verrous: verrousCourts,
+    envoyer: (texte) => sendTelegram(`[mba-${NOM_API}] ${texte}`),
+  });
+  const minuterieVeilleSante = setInterval(() => {
+    void veilleSante().catch((err: unknown) => {
+      // eslint-disable-next-line no-console
+      console.error('veille-sante: passage en échec:', messageDe(err));
+    });
+  }, INTERVALLE_VEILLE_SANTE_MS);
+  minuterieVeilleSante.unref?.();
   const minuteriePoolAttentes = setInterval(() => {
     void viderVersLaBase(poolAttentesStore, mesureAttentePool, NOM_API, new Date(), (err) => {
       // eslint-disable-next-line no-console
@@ -3496,6 +3542,7 @@ async function main(): Promise<void> {
 
   installGracefulShutdown(async () => {
     clearInterval(minuteriePoolAttentes);
+    clearInterval(minuterieVeilleSante);
     await arreterApi({
       // Le réveil des pauses en secondes (un scénario lancé depuis l'Inbox s'endort ici) s'arrête une fois le serveur
       // fermé, avant la file et le pool dont ses reprises ont besoin.

@@ -3,6 +3,7 @@ import type { LatenceHttpRow } from './latence-http';
 import type { QueueLatenceRow, QueueLoadRow } from './store.pg';
 import type { MesuresCockpit } from './cockpit';
 import type { MemoireWorker } from './memoire-workers.pg';
+import { SEUILS_DEFAUT, type SeuilsCapacite } from './seuils';
 
 /**
  * L'ONGLET SANTÉ DE /OPS (refonte, lot 1 : `docs/superpowers/specs/2026-10-27-ops-refonte-design.md`). Une pastille
@@ -13,25 +14,11 @@ import type { MemoireWorker } from './memoire-workers.pg';
 
 export type EtatBrique = 'vert' | 'orange' | 'rouge';
 
-/** Les seuils par défaut, tirés des bancs du 2026-10-27 ; réglables dans `/ops` au lot 4. */
-export const SEUILS_SANTE = {
-  /** Retard des accusés de Meta, p95 de la dernière heure ou âge du plus vieux en attente, en secondes. */
-  accuses: { orange: 60, rouge: 120 },
-  /** Retard des messages entrants, mêmes mesures. */
-  entrants: { orange: 5, rouge: 30 },
-  /** Connexions de la base, en pourcentage de ce qu'elle accepte. */
-  connexions: { orange: 70, rouge: 85 },
-  /** Part des réponses 5xx de l'API sur la dernière heure, en pourcentage, jugée à partir de `EFFECTIF_MIN_API` requêtes. */
-  erreurs: { orange: 1, rouge: 5 },
-  /** Âge du dernier battement d'un worker, en secondes. */
-  battement: { orange: 120, rouge: 300 },
-  /** Processeur de la base, moyenne sur 15 minutes, en pourcentage (Cockpit). Rouge : passer en DB-DEV-L. */
-  processeurBase: { orange: 60, rouge: 80 },
-  /** Processeur de la machine des workers, moyenne sur 15 minutes, en pourcentage (Cockpit). Rouge : machine plus grosse. */
-  processeurMachine: { orange: 60, rouge: 80 },
-  /** Mémoire d'un worker, en pourcentage de la limite de son conteneur. Rouge : limite ou machine plus grosse. */
-  memoireWorker: { orange: 70, rouge: 85 },
-} as const;
+/**
+ * Les seuils par défaut (la spec, bancs du 2026-10-27). Réglables dans `/ops` depuis le lot 4 (`src/ops/seuils.ts`) :
+ * la route lit ceux de la base et les passe à `evaluerSante` ; ceux-ci ne servent qu'à défaut.
+ */
+export const SEUILS_SANTE: SeuilsCapacite = SEUILS_DEFAUT;
 
 type Seuil = { orange: number; rouge: number };
 
@@ -63,6 +50,8 @@ export interface Brique {
   indisponible?: true;
   /** Pour les workers : le rôle le plus en retard ; pour leur mémoire : le plus chargé. */
   detail?: string;
+  /** Pour l'API : les requêtes de l'heure, dont l'alerte exige davantage que l'écran (`veille-sante.ts`). */
+  effectif?: number;
 }
 
 /** Chaque entrée vaut `null` quand sa lecture a échoué. */
@@ -100,6 +89,8 @@ export interface BilanSante {
 
 const FILE_ENTRANTS = 'webhook';
 const FILE_ACCUSES = 'webhook-status';
+/** Les seules files dont Santé juge le retard : leur latence ne se lit que pour elles (`sourcesSante`). */
+export const FILES_JUGEES_SANTE: readonly string[] = [FILE_ENTRANTS, FILE_ACCUSES];
 
 function etat(mesure: number | null, seuil: Seuil): EtatBrique {
   if (mesure === null) return 'vert';
@@ -121,12 +112,12 @@ function retardFile(latences: QueueLatenceRow[], charge: QueueLoadRow[], file: s
   return valeurs.length === 0 ? null : Math.max(...valeurs);
 }
 
-function partErreurs(lignes: LatenceHttpRow[]): number | null {
+function partErreurs(lignes: LatenceHttpRow[]): { part: number | null; effectif: number } {
   const service = lignes.filter((l) => routeDuService(l.route));
   const total = service.reduce((s, l) => s + l.requetes, 0);
-  if (total < EFFECTIF_MIN_API) return null;
+  if (total < EFFECTIF_MIN_API) return { part: null, effectif: total };
   const erreurs = service.filter((l) => l.code >= 500).reduce((s, l) => s + l.requetes, 0);
-  return (100 * erreurs) / total;
+  return { part: (100 * erreurs) / total, effectif: total };
 }
 
 /** La part de sa limite qu'occupe le worker le plus chargé ; `null` sans aucun relevé qui porte une limite. */
@@ -146,13 +137,14 @@ function memoireLaPlusHaute(memoires: MemoireWorker[]): { pourcent: number; role
  */
 export const DELAI_PREMIER_RELEVE_MEMOIRE_MS = 3 * 60_000;
 
-export function evaluerSante(e: EntreesSante, maintenant = Date.now()): BilanSante {
+export function evaluerSante(e: EntreesSante, maintenant = Date.now(), seuils: SeuilsCapacite = SEUILS_DEFAUT): BilanSante {
   const juger = (cle: CleBrique, mesure: number | null, seuil: Seuil): Brique => ({ cle, mesure, etat: etat(mesure, seuil) });
   const files = e.latencesFiles !== null && e.chargeFiles !== null ? { latences: e.latencesFiles, charge: e.chargeFiles } : null;
   const retard = (file: string): number | null => (files ? retardFile(files.latences, files.charge, file) : null);
   const connexionsPourcent = e.connexions && e.connexions.max > 0 ? (100 * e.connexions.utilisees) / e.connexions.max : null;
   const memoire = e.memoires ? memoireLaPlusHaute(e.memoires) : null;
   const cockpit = e.cockpit.configure ? e.cockpit.mesures : null;
+  const erreursApi = e.latencesHttp === null ? null : partErreurs(e.latencesHttp);
   // Un signal de Cockpit : illisible si Cockpit entier ou ce signal seul n'a rien rendu.
   const deCockpit = (cle: CleBrique, valeur: number | null | undefined, seuil: Seuil): Brique =>
     (valeur === null || valeur === undefined ? { cle, ...INDISPONIBLE } : juger(cle, valeur, seuil));
@@ -162,12 +154,12 @@ export function evaluerSante(e: EntreesSante, maintenant = Date.now()): BilanSan
   const workers: Brique = e.workers === null
     ? { cle: 'workers', ...INDISPONIBLE }
     : plusVieux
-      ? { ...juger('workers', plusVieux.ageSeconds, SEUILS_SANTE.battement), detail: plusVieux.role }
+      ? { ...juger('workers', plusVieux.ageSeconds, seuils.battement), detail: plusVieux.role }
       // Aucun worker n'a jamais battu : rien ne traite les files.
       : { cle: 'workers', mesure: null, etat: 'rouge' };
   // Un worker vivant, démarré depuis plus de trois minutes, sans relevé frais : son relevé échoue (sous saturation, c'est
   // justement l'écriture qui tombe). Orange, pas le vert d'un « rien à juger ».
-  const muet = e.memoires === null ? undefined : (e.workers ?? []).find((w) => w.ageSeconds < SEUILS_SANTE.battement.orange
+  const muet = e.memoires === null ? undefined : (e.workers ?? []).find((w) => w.ageSeconds < seuils.battement.orange
     && w.bootedAt !== null && maintenant - Date.parse(w.bootedAt) > DELAI_PREMIER_RELEVE_MEMOIRE_MS
     && !e.memoires!.some((m) => m.role === w.role));
   const memoireWorkers: Brique = e.memoires === null
@@ -175,19 +167,21 @@ export function evaluerSante(e: EntreesSante, maintenant = Date.now()): BilanSan
     : muet
       ? { cle: 'memoire-workers', ...INDISPONIBLE, detail: muet.role }
       : memoire
-      ? { ...juger('memoire-workers', memoire.pourcent, SEUILS_SANTE.memoireWorker), detail: memoire.role }
+      ? { ...juger('memoire-workers', memoire.pourcent, seuils.memoireWorker), detail: memoire.role }
       // Aucun relevé frais (juste après un déploiement, ou hors d'un conteneur) : rien à juger, les battements disent la vie.
-      : juger('memoire-workers', null, SEUILS_SANTE.memoireWorker);
+      : juger('memoire-workers', null, seuils.memoireWorker);
 
   const briques: Brique[] = [
-    e.latencesHttp === null ? { cle: 'api', ...INDISPONIBLE } : juger('api', partErreurs(e.latencesHttp), SEUILS_SANTE.erreurs),
+    erreursApi === null
+      ? { cle: 'api', ...INDISPONIBLE }
+      : { ...juger('api', erreursApi.part, seuils.erreurs), effectif: erreursApi.effectif },
     workers,
     memoireWorkers,
-    ...(e.cockpit.configure ? [deCockpit('machine', cockpit?.machineProcesseur, SEUILS_SANTE.processeurMachine)] : []),
-    e.connexions === null ? { cle: 'base', ...INDISPONIBLE } : juger('base', connexionsPourcent, SEUILS_SANTE.connexions),
-    ...(e.cockpit.configure ? [deCockpit('processeur-base', cockpit?.baseProcesseur, SEUILS_SANTE.processeurBase)] : []),
-    files ? juger('entrants', retard(FILE_ENTRANTS), SEUILS_SANTE.entrants) : { cle: 'entrants', ...INDISPONIBLE },
-    files ? juger('accuses', retard(FILE_ACCUSES), SEUILS_SANTE.accuses) : { cle: 'accuses', ...INDISPONIBLE },
+    ...(e.cockpit.configure ? [deCockpit('machine', cockpit?.machineProcesseur, seuils.processeurMachine)] : []),
+    e.connexions === null ? { cle: 'base', ...INDISPONIBLE } : juger('base', connexionsPourcent, seuils.connexions),
+    ...(e.cockpit.configure ? [deCockpit('processeur-base', cockpit?.baseProcesseur, seuils.processeurBase)] : []),
+    files ? juger('entrants', retard(FILE_ENTRANTS), seuils.entrants) : { cle: 'entrants', ...INDISPONIBLE },
+    files ? juger('accuses', retard(FILE_ACCUSES), seuils.accuses) : { cle: 'accuses', ...INDISPONIBLE },
     // La porte HubSpot : éveillée ou endormie, jamais une panne (elle s'endort à dessein). Le nombre de copies.
     ...(e.cockpit.configure
       ? [cockpit?.hubspotCopies === null || cockpit?.hubspotCopies === undefined
@@ -199,12 +193,12 @@ export function evaluerSante(e: EntreesSante, maintenant = Date.now()): BilanSan
   // La jauge : chaque signal de capacité rapporté à son seuil rouge ; le plus haut décide. Un signal illisible ne
   // compte pas, et la jauge le dit (`partielle`) au lieu d'afficher une marge pleine sans prévenir.
   const ratios: Array<[Jauge['signal'], number]> = [
-    ['accuses', (retard(FILE_ACCUSES) ?? 0) / SEUILS_SANTE.accuses.rouge],
-    ['entrants', (retard(FILE_ENTRANTS) ?? 0) / SEUILS_SANTE.entrants.rouge],
-    ['base', (connexionsPourcent ?? 0) / SEUILS_SANTE.connexions.rouge],
-    ['processeur-base', (cockpit?.baseProcesseur ?? 0) / SEUILS_SANTE.processeurBase.rouge],
-    ['machine', (cockpit?.machineProcesseur ?? 0) / SEUILS_SANTE.processeurMachine.rouge],
-    ['memoire-workers', (memoire?.pourcent ?? 0) / SEUILS_SANTE.memoireWorker.rouge],
+    ['accuses', (retard(FILE_ACCUSES) ?? 0) / seuils.accuses.rouge],
+    ['entrants', (retard(FILE_ENTRANTS) ?? 0) / seuils.entrants.rouge],
+    ['base', (connexionsPourcent ?? 0) / seuils.connexions.rouge],
+    ['processeur-base', (cockpit?.baseProcesseur ?? 0) / seuils.processeurBase.rouge],
+    ['machine', (cockpit?.machineProcesseur ?? 0) / seuils.processeurMachine.rouge],
+    ['memoire-workers', (memoire?.pourcent ?? 0) / seuils.memoireWorker.rouge],
   ];
   const [signal, ratio] = ratios.reduce((pire, r) => (r[1] > pire[1] ? r : pire));
   const cockpitIllisible = e.cockpit.configure

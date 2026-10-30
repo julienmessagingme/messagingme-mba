@@ -1,4 +1,5 @@
 import type { AuditSink } from '../src/audit/journal';
+import { SEUILS_DEFAUT } from '../src/ops/seuils';
 import type { AccountRouteDeps } from '../src/http/account';
 import type { AgentKnowledgeRouteDeps } from '../src/http/agent-knowledge';
 import type { AgentRequetesRouteDeps } from '../src/http/agent-requetes';
@@ -354,7 +355,7 @@ export const mbaInerte: Pick<MbaRouteDeps, 'journaliserSuppression' | 'reglages'
 export const opsInerte: Pick<OpsRouteDeps,
   'deposerJetonPub' | 'lireGrillePrix' | 'reglages' | 'verrouillerEspace' | 'observerTenant'
   | 'file' | 'heartbeat' | 'soldeAgent' | 'rechargerAgent' | 'etatPoolInstantane' | 'attentesPool' | 'latencesHttp'
-  | 'mesuresTaches' | 'sante' | 'capacite' | 'cockpit' | 'facture' | 'stockage' | 'vercel'
+  | 'mesuresTaches' | 'sante' | 'capacite' | 'cockpit' | 'facture' | 'seuils' | 'stockage' | 'vercel'
   | 'balayerRisque' | 'reinitialiserMfa' | 'audit'> = {
   audit: journalMuet,
   deposerJetonPub: neDevraitPasEtreAppelee('deposerJetonPub'),
@@ -383,6 +384,12 @@ export const opsInerte: Pick<OpsRouteDeps,
   cockpit: null,
   // Aucune clé de facturation : la carte du coût dit « non configurée ».
   facture: null,
+  // Jamais réglés : les seuils de la spec ; aucune alerte envoyée.
+  seuils: {
+    lire: async () => ({ seuils: SEUILS_DEFAUT, modifieLe: null, modifiePar: null }),
+    ecrire: neDevraitPasEtreAppelee('seuils.ecrire'),
+    alertesDepuis: async () => [],
+  },
   // Une base vide : aucune famille, aucune table.
   stockage: { mesurer: async () => ({ baseOctets: 0, familles: [], tables: [], mesureLe: '1970-01-01T00:00:00.000Z' }) },
   // Aucun jeton de compte Vercel : la carte dit « non configurée ».

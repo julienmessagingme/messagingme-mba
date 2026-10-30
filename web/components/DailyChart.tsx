@@ -75,6 +75,7 @@ export function DailyChart({
   summary = 'sum',
   zonePdf,
   actions,
+  seuils = [],
 }: {
   title: string;
   series: ChartSeries[];
@@ -99,6 +100,11 @@ export function DailyChart({
    * ⚠️ Elles portent `sans-impression` d'elles-mêmes, comme le bouton PDF : un export figé n'a pas de bouton.
    */
   actions?: React.ReactNode;
+  /**
+   * Des seuils tracés en pointillés, avec leur libellé (l'onglet Capacité de `/ops`, lot 4). Ils entrent dans l'échelle :
+   * une courbe loin de son seuil se lit loin de lui, au lieu de remplir la hauteur et de sembler au bord.
+   */
+  seuils?: ReadonlyArray<{ valeur: number; couleur: string; libelle: string }>;
 }) {
   const t = useT();
   const { locale } = useLocale();
@@ -126,7 +132,7 @@ export function DailyChart({
   const peak = primary.length ? Math.max(...primary) : 0;
   const avg = primary.length ? Math.round(primary.reduce((a, b) => a + b, 0) / primary.length) : 0;
 
-  const max = Math.max(1, ...data.flatMap((s) => s.values));
+  const max = Math.max(1, ...data.flatMap((s) => s.values), ...seuils.map((s) => s.valeur));
   const innerW = W - PAD.left - PAD.right;
   const innerH = H - PAD.top - PAD.bottom;
   const n = dates.length;
@@ -213,6 +219,13 @@ export function DailyChart({
               strokeWidth="1"
               strokeDasharray={f === 0 ? '0' : '2 5'}
             />
+          ))}
+
+          {seuils.map((s) => (
+            <g key={`seuil-${s.libelle}`} data-seuil={s.libelle}>
+              <line x1={PAD.left} x2={W - PAD.right} y1={y(s.valeur)} y2={y(s.valeur)} stroke={s.couleur} strokeWidth="1.25" strokeDasharray="5 4" />
+              <text x={W - PAD.right} y={y(s.valeur) - 4} textAnchor="end" className="text-[10px]" fill={s.couleur}>{s.libelle}</text>
+            </g>
           ))}
 
           {data.map((s, si) => {

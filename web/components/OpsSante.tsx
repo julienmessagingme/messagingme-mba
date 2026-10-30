@@ -27,6 +27,17 @@ function duree(secondes: number): string {
   return `${Math.round(secondes / 3600)} h`;
 }
 
+/** Le nom d'un signal dans une alerte (lot 4), les clés des briques ; une autre garde sa clé. */
+const NOMS_ALERTES: Record<string, [string, string]> = {
+  api: ['Erreurs 5xx de l’API', 'API 5xx errors'],
+  'memoire-workers': ['Mémoire des workers', 'Workers memory'],
+  machine: ['Processeur de la machine', 'Machine CPU'],
+  base: ['Connexions de la base', 'Database connections'],
+  'processeur-base': ['Processeur de la base', 'Database CPU'],
+  entrants: ['Retard des entrants', 'Inbound delay'],
+  accuses: ['Retard des accusés', 'Receipts delay'],
+};
+
 /** Les briques que cet écran sait mettre en mots ; une autre (ajoutée par une API plus récente) est ignorée. */
 const BRIQUES_CONNUES: ReadonlySet<string> = new Set([
   'api', 'workers', 'memoire-workers', 'machine', 'base', 'processeur-base', 'entrants', 'accuses', 'hubspot',
@@ -170,6 +181,17 @@ export function OpsSante({ jeton, onPerdue, onRevision }: { jeton: string; onPer
           <li>{t(`Erreurs 5xx de l’API (24 h) : ${inc.erreurs5xx}`, `API 5xx errors (24 h): ${inc.erreurs5xx}`)}</li>
           <li>{t(`Jobs en échec gardés par pg-boss (7 jours) : ${inc.tachesEnEchec}`, `Failed jobs kept by pg-boss (7 days): ${inc.tachesEnEchec}`)}</li>
           <li>{t(`En attente dans les files d’échec (à rejouer) : ${inc.fileEchec}`, `Waiting in dead letter queues (to replay): ${inc.fileEchec}`)}</li>
+          {inc.alertes === null && (
+            <li data-testid="ops-alertes-illisibles">{t('Alertes Telegram illisibles pour l’instant', 'Telegram alerts unreadable for now')}</li>
+          )}
+          {inc.alertes !== undefined && inc.alertes !== null && (inc.alertes.length === 0
+            ? <li data-testid="ops-alertes-aucune">{t('Aucune alerte Telegram envoyée (24 h)', 'No Telegram alert sent (24 h)')}</li>
+            : inc.alertes.map((a, i) => (
+              <li key={`${a.signal}-${a.envoyeLe}-${i}`} data-testid="ops-alerte">
+                {t('Alerte', 'Alert')} {formatDate(a.envoyeLe, locale, { hour: '2-digit', minute: '2-digit' })} : {(NOMS_ALERTES[a.signal] ?? [a.signal, a.signal])[locale === 'en' ? 1 : 0]}{' '}
+                <span className={TEINTE[a.etat]?.texte ?? ''}>{a.etat === 'vert' ? t('revenu au vert', 'back to green') : a.etat === 'orange' ? t('orange', 'orange') : t('rouge', 'red')}</span>
+              </li>
+            )))}
           {inc.demarrages.length === 0
             ? <li>{t('Aucun démarrage de worker (24 h)', 'No worker start (24 h)')}</li>
             : inc.demarrages.map((d) => (

@@ -4719,6 +4719,28 @@ arrivant sur un autre onglet, et Santé rend elle-même la révision affichée s
   été MESURÉE avant d'être écrite ; une autre forme, une autre devise, un refus ou un délai rendent « indisponible »,
   signalés par leur statut seul (`facture_scaleway_illisible`). Trois heures de cache (Scaleway met la consommation à
   jour quelques fois par jour), cinq minutes après un échec.
+- **Les seuils réglables** (lot 4, `src/ops/seuils.ts`, migration 0262, `GET` et `PATCH /ops/seuils`, carte en tête de
+  Réglages) : l'orange et le rouge de chaque signal, TOUS d'un coup, bornés (`BORNES_SEUILS`), l'orange sous le rouge
+  (sauf la 2e copie d'API : des montées, puis des minutes), une note obligatoire signée de son auteur comme la grille de
+  prix. La validation refuse et nomme le champ, elle ne corrige pas. Une seule ligne en base (`seuils_capacite`), relue
+  signal par signal : un signal absent ou abîmé reprend son défaut (`SEUILS_DEFAUT`, ceux de la spec), et une lecture
+  en échec rend les défauts : l'écran et les alertes ont toujours des seuils. Santé, Capacité (les seuils en pointillés
+  sur les courbes) et les alertes lisent les mêmes.
+- **Les alertes de Santé sur Telegram** (lot 4, `src/ops/veille-sante.ts`) : à chaque changement d'état d'un signal
+  (orange, rouge, retour au vert), un message avec la mesure, les deux seuils et le geste du rouge. Une aggravation
+  part aussitôt ; une baisse ou un retour au vert, au plus une fois par signal et par demi-heure depuis la dernière
+  alerte. 🔴 Dans l'API, pas dans la veille de charge du worker (écart au plan) : le processeur de la
+  base et de la machine viennent de Cockpit, dont le jeton n'est que dans le conteneur de l'API. Toutes les cinq
+  minutes, une seule copie juge (un verrou court en base, `veille-sante`), avec EXACTEMENT les lectures de l'écran
+  (`sourcesSante` puis `lireEntreesSante`, `src/ops/sante-lecture.ts`, où s'écrivent les fenêtres et les deux files
+  jugées), et sans repli sur les défauts : des seuils illisibles font sauter le passage. Deux bruits se taisent : le
+  retard des files dans le quart d'heure qui suit le démarrage d'un worker (son p95 contient le redémarrage), et la
+  part d'erreurs de l'API sous 200 requêtes dans l'heure (une 500 isolée la nuit). L'état connu de Telegram est la dernière ligne de `alertes_capacite`
+  (purgée à 30 jours par le worker), qui fait aussi l'historique des incidents de Santé. Un signal illisible ne se juge
+  pas ; les workers (leur silence a déjà son alerte) et la porte HubSpot non plus. Un message que Telegram ne prend pas
+  ne se note pas : le passage suivant réessaie. La veille de charge du worker garde ses propres alertes : une file en
+  retard ou une base saturée peut donc envoyer DEUX messages, chacun avec son délai. Le battement et la 2e copie d'API
+  ne jouent que sur l'écran.
 - Les briques de Santé du lot 2, et leurs seuils (`SEUILS_SANTE`, ceux de la spec) : mémoire des workers (le plus
   chargé, 70 et 85 % de sa limite), machine des workers (processeur sur 15 min, 60 et 80 %), processeur de la base
   (60 et 80 %, rouge : DB-DEV-L), porte HubSpot (éveillée ou endormie, jamais une panne). La jauge compte aussi le

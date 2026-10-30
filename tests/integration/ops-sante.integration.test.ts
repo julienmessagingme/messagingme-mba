@@ -7,6 +7,8 @@ import { PgSanteStore } from '../../src/ops/sante.pg';
 import { PgMesuresFilesStore } from '../../src/ops/mesures-files.pg';
 import { PgBossQueue } from '../../src/queue/pgboss';
 import { PgMemoireWorkersStore } from '../../src/ops/memoire-workers.pg';
+import { PgSeuilsStore } from '../../src/ops/seuils.pg';
+import { SEUILS_DEFAUT } from '../../src/ops/seuils';
 
 const url = process.env.DATABASE_URL ?? '';
 
@@ -27,6 +29,8 @@ describe.skipIf(!url)('onglets Santé et Capacité de /ops (Postgres)', () => {
     await pool.query(`delete from webhook_events where meta_message_id like '%itest-ops%'`).catch(() => {});
     await pool.query(`delete from mesures_files_heures where file = 'webhook' or file like 'itest-mf-%'`).catch(() => {});
     await pool.query(`delete from memoire_workers where role like 'itest-mem-%'`).catch(() => {});
+    await pool.query(`delete from alertes_capacite where signal like 'itest-%'`).catch(() => {});
+    await pool.query(`delete from seuils_capacite`).catch(() => {});
     await pool.end().catch(() => {});
   });
 
@@ -134,5 +138,36 @@ describe.skipIf(!url)('onglets Santé et Capacité de /ops (Postgres)', () => {
     await store.purgeOlderThan(30);
     const reste = await pool.query<{ n: number }>(`select count(*)::int as n from memoire_workers where role = 'itest-mem-b'`);
     expect(reste.rows[0]!.n).toBe(1);
+  });
+
+  it('🔴 les seuils : jamais réglés, les défauts ; écrits puis relus signés ; une ligne abîmée retombe signal par signal', async () => {
+    const store = new PgSeuilsStore(pool);
+    await pool.query(`delete from seuils_capacite`);
+    expect(await store.lire()).toEqual({ seuils: SEUILS_DEFAUT, modifieLe: null, modifiePar: null });
+    const regles = { ...SEUILS_DEFAUT, processeurBase: { orange: 50, rouge: 75 } };
+    await store.ecrire(regles, 'exploitant@test : après le banc');
+    const ecrit = await store.ecrire(regles, 'exploitant@test : une seconde fois, la même ligne');
+    expect(ecrit.modifiePar).toBe('exploitant@test : une seconde fois, la même ligne');
+    expect(Date.parse(ecrit.modifieLe)).toBeGreaterThan(Date.now() - 60_000);
+    const lus = await store.lire();
+    expect(lus.seuils).toEqual(regles);
+    expect(lus.modifiePar).toBe('exploitant@test : une seconde fois, la même ligne');
+    expect((await pool.query<{ n: number }>(`select count(*)::int as n from seuils_capacite`)).rows[0]!.n).toBe(1);
+    await pool.query(`update seuils_capacite set valeurs = '{"processeurBase": {"orange": 90, "rouge": 10}, "accuses": {"orange": 30, "rouge": 90}}'::jsonb`);
+    const abimes = (await store.lire()).seuils;
+    expect(abimes.processeurBase).toEqual(SEUILS_DEFAUT.processeurBase);
+    expect(abimes.accuses).toEqual({ orange: 30, rouge: 90 });
+  });
+
+  it('🔴 les alertes : la dernière de chaque signal, celles des 24 h, la purge à 30 jours', async () => {
+    const store = new PgSeuilsStore(pool);
+    await store.noterAlerte('itest-a', 'orange', 65);
+    await pool.query(`insert into alertes_capacite (signal, etat, mesure, envoye_le) values ('itest-a', 'rouge', 90, now() + interval '1 minute'), ('itest-b', 'vert', null, now() - interval '40 days')`);
+    const dernieres = await store.dernieresAlertes();
+    expect(dernieres.get('itest-a')).toMatchObject({ etat: 'rouge', mesure: 90 });
+    const recentes = (await store.alertesDepuis(24)).filter((a) => a.signal.startsWith('itest-'));
+    expect(recentes.map((a) => a.etat)).toEqual(['rouge', 'orange']);
+    await store.purgeAlertes(30);
+    expect((await pool.query<{ n: number }>(`select count(*)::int as n from alertes_capacite where signal = 'itest-b'`)).rows[0]!.n).toBe(0);
   });
 });
