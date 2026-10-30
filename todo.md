@@ -31,6 +31,11 @@ voie par QR code (plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-
   application WhatsApp Business », qui n'apparaît plus qu'après les questions. Qui répond « Non » puis « Non » sans avoir
   de numéro ne voit que « Téléchargez l'application ». À trancher avec Julien : retirer ces phrases, ou offrir le numéro
   fourni aussi sous « Non ».
+- **La forme des questions de la console ne suit plus celle de la vitrine.** Depuis les retouches de Julien du
+  2026-10-30 au soir (`2c087abe`), la vitrine garde la question répondue affichée, la carte choisie encadrée et la
+  suivante dessous, sans « Modifier » ; la page « Connecter WhatsApp » (`ParcoursNumero`) pose les mêmes questions mais
+  replie la réponse sur une ligne avec « Modifier ». À trancher avec Julien : l'aligner, ou garder la forme compacte de
+  la console.
 
 ## 🟡 Les alertes de Santé : ce que le lot 4 de la refonte de /ops laisse (relecture du 2026-10-30)
 
