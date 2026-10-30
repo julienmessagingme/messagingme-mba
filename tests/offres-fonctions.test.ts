@@ -209,8 +209,8 @@ const PARTAGE_DES_STATISTIQUES: Record<string, Fonction | null> = {
   // Le Pro, le quantitatif : l'entonnoir, la page Performance (temps de réponse de l'équipe), les coûts détaillés.
   '/stats/campaign-funnel': 'statistiques',
   '/stats/performance': 'statistiques',
-  // Quantitatif > Shopify, le chiffre d'affaires attribué (plan 2026-10-30) : le Pro, comme ses voisines. La Free le lit
-  // par l'outil MCP `get_revenue_stats`, ouvert à toutes les offres.
+  // Quantitatif > Shopify, le chiffre d'affaires attribué (plan 2026-10-30) : formule Pro, comme ses voisines. En Free,
+  // l'outil MCP `get_revenue_stats`, ouvert à toutes les offres, le lit.
   '/stats/ventes': 'statistiques',
   '/stats/cost/pubs': 'statistiques',
   '/stats/cost/messages': 'statistiques',

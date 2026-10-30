@@ -455,7 +455,7 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
   },
   {
     ...ficheOutilMcp('get_revenue_stats'),
-    // Toutes les offres, Free comprise (décision de Julien du 2026-10-28) : la Free n'a pas de console, elle l'a ici.
+    // Toutes les offres, Free comprise (décision de Julien du 2026-10-28) : Free n'a pas de console, le chiffre est ici.
     fonction: null,
     description:
       'The revenue that WhatsApp sends brought in over the period (default: the last 30 days), from the connected Shopify '

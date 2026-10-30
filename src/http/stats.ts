@@ -335,7 +335,7 @@ export function registerStats(app: FastifyInstance, deps: StatsRouteDeps, garde:
 
   /**
    * Quantitatif > Shopify : le chiffre d'affaires attribué de la période, par devise, les commandes de test à part
-   * (`src/shopify/chiffre.ts`). Le Pro, comme ses voisines (`fonctionDesStatistiques`) ; la Free le lit par l'outil MCP.
+   * (`src/shopify/chiffre.ts`). Formule Pro, comme ses voisines (`fonctionDesStatistiques`) ; en Free, l'outil MCP le lit.
    */
   app.get('/tenants/:tenantId/stats/ventes', opts, async (req, reply) => {
     const tenant = espaceVerifie(req);
