@@ -412,6 +412,17 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .pied-definition{margin:12px 0 0;max-width:26em;color:#C9CEEA;font-size:.85rem;line-height:1.55}
 .pied h3{margin:0 0 18px;color:#fff;font-size:1rem;font-weight:700}
 .pied ul{list-style:none;margin:0;padding:0;display:grid;gap:12px;font-size:.93rem}
+/* « Gérer les cookies » : un bouton qui a l'air d'un lien du pied. Caché sans script (rien à gérer sans le pixel). */
+.pied-cookies{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;transition:color .15s}
+.pied-cookies:hover{color:#fff}
+.pied-cookies:focus-visible{outline:2px solid var(--action);outline-offset:3px;border-radius:10px}
+/* La bannière du pixel de Meta : en bas de l'écran, au-dessus du contenu sans le bloquer. « Refuser » et « Accepter »
+   ont exactement le même poids (même classe, même taille), comme la CNIL le demande. */
+.consentement{position:fixed;left:16px;right:16px;bottom:16px;z-index:30;max-width:720px;margin:0 auto;padding:18px 20px;display:grid;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 50px var(--ombre);color:var(--ink);font-size:.9rem;line-height:1.55}
+.consentement p{margin:0;color:var(--muted)}
+.consentement p a{color:var(--action-ink)}
+.consentement-choix{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end}
+.consentement .bouton{justify-content:center;min-width:8em;color:var(--ink);font-family:inherit;font-weight:600;cursor:pointer}
 .pied address{font-style:normal;font-size:.93rem;display:grid;gap:12px}
 .pied address strong{color:#fff;font-weight:600}
 .pied-bas{position:relative;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px;padding-top:24px;padding-bottom:32px;font-size:.88rem;color:#fff}

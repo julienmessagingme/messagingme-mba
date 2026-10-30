@@ -470,3 +470,126 @@
     if (choisie) repondre(choisie, premiere, false);
   });
 })();
+
+// Le pixel de Meta, seulement avec l'accord du visiteur (spec docs/superpowers/specs/2026-10-30-pixel-meta-design.md).
+// Avant « Accepter », rien ne part chez Meta : ni son script, ni un cookie. Le choix est retenu six mois, puis redemandé ;
+// le bouton « Gérer les cookies » du pied rouvre la bannière. Le pixel n'envoie que `PageView` : les segments se font
+// chez Meta, par l'adresse de la page, et les conversions partent de notre serveur. Après accord, un clic vers la console
+// lui passe `fbc` et `fbp` dans l'adresse, pour que Meta relie une inscription au clic sur sa publicité. Rien du
+// `fbclid` n'est gardé avant l'accord : un visiteur qui accepte sur sa deuxième page perd l'attribution de son clic. Le
+// stockage peut être refusé (navigation privée) : tout est dans des try, et la bannière revient alors à chaque page.
+(function () {
+  // L'identifiant du pixel de Messaging Me, public par nature (la vitrine n'a aucune variable). Vide : rien ne s'affiche.
+  var PIXEL = '';
+  if (!PIXEL) return;
+  var pied = document.querySelector('[data-cookies]');
+  var CLE = 'mm-consentement', DUREE = 183 * 864e5, CONSOLE = 'console.messagingme.app';
+  var EN = document.documentElement.lang === 'en' || location.pathname.indexOf('/en/') === 0;
+  var T = EN ? {
+    texte: 'With your consent, we use the Meta (Facebook) pixel: it sets cookies and tells Meta which pages you visit here, to measure our ads, show them to you and to people with a similar profile. You can change your mind at any time with “Manage cookies” at the bottom of every page.',
+    politique: 'Cookie policy', lien: 'https://www.messagingme.fr/en/politique-de-cookies-ue-messaging-me/',
+    refuser: 'Decline', accepter: 'Accept'
+  } : {
+    texte: 'Avec votre accord, nous utilisons le pixel de Meta (Facebook) : il dépose des cookies et transmet à Meta les pages que vous visitez ici, pour mesurer nos publicités, vous les montrer et les montrer à des personnes au profil proche. Vous pouvez changer d’avis à tout moment par « Gérer les cookies », en bas de chaque page.',
+    politique: 'Politique de cookies', lien: 'https://www.messagingme.fr/politique-de-cookies-ue-messaging-me/',
+    refuser: 'Refuser', accepter: 'Accepter'
+  };
+  var lire = function () {
+    try {
+      var c = JSON.parse(localStorage.getItem(CLE) || 'null');
+      if (c && (c.choix === 'accepte' || c.choix === 'refuse') && Date.now() - Date.parse(c.le) < DUREE) return c.choix;
+    } catch (e) {}
+    return null;
+  };
+  var ecrire = function (choix) {
+    try { localStorage.setItem(CLE, JSON.stringify({ choix: choix, le: new Date().toISOString() })); } catch (e) {}
+  };
+  var cookie = function (nom) {
+    var m = document.cookie.match(new RegExp('(?:^|; )' + nom + '=([^;]*)'));
+    return m ? decodeURIComponent(m[1]) : '';
+  };
+  // Le code de base de Meta, réécrit lisiblement : `fbq` met les appels en file, que le script vide en arrivant.
+  var charge = false, accorde = false;
+  var charger = function () {
+    accorde = true;
+    if (charge) { window.fbq('consent', 'grant'); return; }
+    charge = true;
+    var f = window.fbq = function () { if (f.callMethod) f.callMethod.apply(f, arguments); else f.queue.push(arguments); };
+    if (!window._fbq) window._fbq = f;
+    f.push = f; f.loaded = true; f.version = '2.0'; f.queue = [];
+    var s = document.createElement('script');
+    s.async = true;
+    s.src = 'https://connect.facebook.net/en_US/fbevents.js';
+    document.head.appendChild(s);
+    f('init', PIXEL);
+    f('track', 'PageView');
+  };
+  // Le retrait : plus rien ne part de cette page (le script chargé ne se décharge pas), les cookies de Meta s'effacent,
+  // et les liens déjà décorés redeviennent nus. Les pages suivantes ne chargent plus rien.
+  var retirer = function () {
+    accorde = false;
+    if (charge) window.fbq('consent', 'revoke');
+    var domaine = location.hostname.split('.').slice(-2).join('.');
+    ['_fbp', '_fbc'].forEach(function (n) {
+      document.cookie = n + '=; Max-Age=0; path=/';
+      document.cookie = n + '=; Max-Age=0; path=/; domain=.' + domaine;
+    });
+    [].slice.call(document.querySelectorAll('a[href^="https://' + CONSOLE + '/"]')).forEach(function (a) {
+      var u = new URL(a.href);
+      if (!u.searchParams.has('fbc') && !u.searchParams.has('fbp')) return;
+      u.searchParams.delete('fbc'); u.searchParams.delete('fbp');
+      a.href = u.toString();
+    });
+  };
+  // Au moment du clic, pas au chargement : les cookies de Meta n'existent qu'une fois son script arrivé.
+  var decorer = function (e) {
+    var a = e.target.closest && e.target.closest('a[href]');
+    if (!accorde || !a || a.hostname !== CONSOLE) return;
+    var fbc = cookie('_fbc'), fbp = cookie('_fbp');
+    if (!fbc && !fbp) return;
+    var u = new URL(a.href);
+    if (fbc) u.searchParams.set('fbc', fbc);
+    if (fbp) u.searchParams.set('fbp', fbp);
+    a.href = u.toString();
+  };
+  ['mousedown', 'keydown', 'touchstart', 'click'].forEach(function (t) { document.addEventListener(t, decorer, true); });
+
+  var banniere = null;
+  var fermer = function () { if (banniere) { banniere.remove(); banniere = null; } };
+  var ouvrir = function () {
+    if (banniere) return;
+    banniere = document.createElement('section');
+    banniere.className = 'consentement';
+    banniere.setAttribute('aria-label', 'Cookies');
+    var p = document.createElement('p');
+    p.textContent = T.texte + ' ';
+    var a = document.createElement('a');
+    a.href = T.lien; a.textContent = T.politique;
+    p.appendChild(a);
+    var choix = document.createElement('div');
+    choix.className = 'consentement-choix';
+    // « Refuser » et « Accepter » ont exactement le même poids : même classe, même taille, côte à côte.
+    [['refuse', T.refuser], ['accepte', T.accepter]].forEach(function (c) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'bouton bouton-trait'; b.textContent = c[1];
+      b.setAttribute('data-choix', c[0]);
+      b.addEventListener('click', function () {
+        ecrire(c[0]);
+        if (c[0] === 'accepte') charger(); else retirer();
+        fermer();
+      });
+      choix.appendChild(b);
+    });
+    banniere.appendChild(p);
+    banniere.appendChild(choix);
+    document.body.appendChild(banniere);
+  };
+  if (pied) {
+    pied.hidden = false;
+    var bouton = pied.querySelector('button');
+    if (bouton) bouton.addEventListener('click', ouvrir);
+  }
+  var choix = lire();
+  if (choix === 'accepte') charger();
+  else if (choix === null) ouvrir();
+})();
