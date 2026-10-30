@@ -52,6 +52,8 @@ test.describe('Quantitatif > Shopify', () => {
     await expect(page.getByTestId('ventes-total-USD')).toContainText(/30,00\s\$US|\$30\.00/);
     await expect(page.getByTestId('ventes-total-EUR')).toContainText(/100,50\s€|€100\.50/);
     await expect(page.getByTestId('ventes-regle')).toContainText(/5 jours|5 days/);
+    // Le reste n'est qu'une concordance dans le temps, et l'écran le dit (anti-but de la spec ; relecture du lot B).
+    await expect(page.getByTestId('ventes-regle')).toContainText(/concordance dans le temps|match in time/);
     await expect(page.getByTestId('ventes-sources')).toContainText(/Campagne « Soldes »|Campaign “Soldes”/);
     await expect(page.getByTestId('ventes-sources')).toContainText(/Campagne supprimée|Deleted campaign/);
     await expect(page.getByTestId('ventes-relances')).toHaveText('7');
@@ -60,6 +62,9 @@ test.describe('Quantitatif > Shopify', () => {
     // Les tests s'annoncent, sans entrer dans le chiffre : aucun total de 2 148,85 ailleurs que sur leur ligne.
     await expect(page.getByTestId('ventes-tests')).toContainText(/4 commandes de test|4 test orders/);
     await expect(page.getByTestId('ventes-tests')).toContainText(/2\s148,85|2,148\.85/);
+    // Leur part prouvée et le panier récupéré en test se lisent aussi : l'essai réel n'a que des commandes de test.
+    await expect(page.getByTestId('ventes-tests')).toContainText(/dont 1\s548,85\s\$US prouvés|of which \$1,548\.85 proven/);
+    await expect(page.getByTestId('ventes-tests')).toContainText(/1 panier relancé récupéré|1 reminded checkout recovered/);
     await expect(page.getByTestId('ventes-total-USD')).not.toContainText(/2\s148|2,148/);
   });
 
@@ -71,7 +76,11 @@ test.describe('Quantitatif > Shopify', () => {
 
   test('🔴 sans boutique, pas d’entrée Shopify dans Quantitatif', async ({ page }) => {
     await mock(page, { boutique: null });
+    // La lecture de la boutique doit avoir RÉPONDU avant l'assertion : sinon l'entrée, encore cachée faute de réponse,
+    // ferait passer le test sur une lecture fautive (relecture du lot B).
+    const lue = page.waitForResponse((r) => r.url().includes('/integrations/shopify'));
     await page.goto('/dashboard/performance');
+    await lue;
     await expect(page.locator('nav a[href="/dashboard/performance"]').first()).toBeVisible();
     await expect(page.locator('nav a[href="/dashboard/shopify"]')).toHaveCount(0);
   });
@@ -81,6 +90,13 @@ test.describe('Quantitatif > Shopify', () => {
     await page.goto('/dashboard/shopify');
     await expect(page.getByTestId('ventes-vide')).toBeVisible();
     await expect(page.getByTestId('ventes-tests')).toHaveCount(0);
+  });
+
+  test('un panier récupéré en test sans commande de test sur la période : la ligne le dit, sans « 0 commandes »', async ({ page }) => {
+    await mock(page, { ventes: { reel: { totaux: [], sources: [] }, test: { totaux: [], sources: [] }, paniers: { relances: 1, recuperes: 0, montants: [], recuperesTest: 1 } } });
+    await page.goto('/dashboard/shopify');
+    await expect(page.getByTestId('ventes-tests')).toContainText(/1 panier relancé récupéré|1 reminded checkout recovered/);
+    await expect(page.getByTestId('ventes-tests')).not.toContainText(/0 commandes|0 test orders/);
   });
 
   test('la console publiée avant l’API : « pas encore disponible »', async ({ page }) => {

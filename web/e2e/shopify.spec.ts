@@ -190,7 +190,7 @@ test.describe('Tools > Intégrations > Shopify : la carte de la console', () => 
     const ligne = page.getByTestId('integration-shopify-paniers');
     await expect(ligne).toContainText('4 relances parties, 2 récupérés');
     await expect(ligne).toContainText(/59,90\s€/);
-    await expect(ligne).toContainText('dont 1 de test, non comptés');
+    await expect(ligne).toContainText('et 1 de test, non comptés');
   });
 
   test('une API plus ancienne, sans récupérés : la ligne garde ses chiffres d’avant, sans montant', async ({ page }) => {

@@ -2573,8 +2573,8 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
   Julien du 2026-10-25) ; depuis la carte de la console, elles arrivent sans consentement WhatsApp. Un STOP reste un
   STOP, une fiche déjà présente n'est pas touchée.
 - **Le chiffre d'affaires attribué aux envois WhatsApp** (2026-10-28 et 2026-10-30) : ce que les envois WhatsApp ont
-  rapporté sur la boutique branchée, lu de trois façons : dans la console, **Analytics > Quantitatif > Shopify** (formule
-  Pro et au-delà, entrée présente seulement pour un espace qui a une boutique) ; par Claude Code, l'outil
+  rapporté sur la boutique branchée, lu de trois façons : dans la console, **Performance Lab > Quantitatif > Shopify**
+  (formule Pro et au-delà, entrée présente seulement pour un espace qui a une boutique) ; par Claude Code, l'outil
   **`get_revenue_stats`** (toutes les offres, Free comprise : Free n'a pas de console) ; et sur la carte Shopify, les
   paniers **récupérés** des 7 derniers jours.
   - **La règle** : une commande payée dans les **5 jours** après un message WhatsApp reçu est attribuée au **dernier

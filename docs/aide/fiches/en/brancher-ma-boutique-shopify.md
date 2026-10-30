@@ -1,7 +1,7 @@
 ---
 description: Connect a Shopify store to WhatsApp: order confirmation, shipping notice with tracking, abandoned checkout reminders. The simplest way: Claude Code.
 slug: connect-my-shopify-store
-traduit_de: 58701c
+traduit_de: 497597
 bouton_claude: Connect Shopify from Claude Code, for free
 bouton_console: Connect Shopify in the console
 ---
@@ -93,7 +93,7 @@ can still tie it to your messages.
 
 ## What your sends brought in
 
-In the console (Analytics > Quantitative > Shopify, Pro plan) or by asking Claude Code (every plan): the revenue of the
+In the console (Performance Lab > Quantitative > Shopify, Pro plan) or by asking Claude Code (every plan): the revenue of the
 orders paid within 5 days after a WhatsApp message was received, credited to the last send (a campaign, the checkout
 reminder, a scenario, an AI agent or Meta’s agent). The figure is gross, refunds not deducted, and counted per currency.
 Part of it is **proven**: the reminded checkout itself paid, or a visit that came through your WhatsApp links. The rest

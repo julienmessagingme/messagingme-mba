@@ -103,6 +103,9 @@ function Tableau({ ventes, locale, t }: { ventes: ChiffreVentesVue; locale: Loca
   const { reel, test, paniers } = ventes;
   const montant = (m: string, devise: string) => fmtMontant(m, devise, locale);
   const commandesTest = test.totaux.reduce((n, x) => n + x.commandes, 0);
+  const brutsTest = test.totaux.map((x) => montant(x.brut, x.devise)).join(' · ');
+  // Les seules parts prouvées non nulles, par devise : « dont 0 prouvés » ne dirait rien.
+  const prouvesTest = test.totaux.filter((x) => Number(x.prouve) > 0).map((x) => montant(x.prouve, x.devise)).join(' · ');
   return (
     <>
       {reel.totaux.length === 0 ? (
@@ -127,8 +130,8 @@ function Tableau({ ventes, locale, t }: { ventes: ChiffreVentesVue; locale: Loca
       {/* Comment on compte : dit SOUS le chiffre, pas dans une infobulle. */}
       <p data-testid="ventes-regle" className="text-xs text-ink-500">
         {t(
-          'Commandes payées dans les 5 jours après un message WhatsApp reçu, attribuées au dernier envoi. Prouvé : panier relancé payé, ou visite venue de vos liens WhatsApp. Remboursements non déduits.',
-          'Orders paid within 5 days after a WhatsApp message was received, credited to the last send. Proven: a reminded checkout paid, or a visit that came through your WhatsApp links. Refunds not deducted.',
+          'Commandes payées dans les 5 jours après un message WhatsApp reçu, attribuées au dernier envoi. Prouvé : panier relancé payé, ou visite venue de vos liens WhatsApp. Le reste est une concordance dans le temps, pas une preuve. Remboursements non déduits.',
+          'Orders paid within 5 days after a WhatsApp message was received, credited to the last send. Proven: a reminded checkout paid, or a visit that came through your WhatsApp links. The rest is a match in time, not a proof. Refunds not deducted.',
         )}
       </p>
 
@@ -181,10 +184,18 @@ function Tableau({ ventes, locale, t }: { ventes: ChiffreVentesVue; locale: Loca
 
       {(commandesTest > 0 || paniers.recuperesTest > 0) && (
         <p data-testid="ventes-tests" className="text-xs text-ink-500">
-          {t(
-            `${fmtNum(commandesTest, locale)} commandes de test, non comptées : ${test.totaux.map((x) => montant(x.brut, x.devise)).join(' · ') || fmtNum(0, locale)}.`,
-            `${fmtNum(commandesTest, locale)} test orders, not counted: ${test.totaux.map((x) => montant(x.brut, x.devise)).join(' · ') || fmtNum(0, locale)}.`,
-          )}
+          {/* Une boutique de développement n'a QUE des commandes de test : leur part prouvée et leurs paniers récupérés se
+              lisent ici, chaque morceau seulement s'il existe (relecture du lot B). */}
+          {[
+            commandesTest > 0 && t(
+              `${fmtNum(commandesTest, locale)} commandes de test, non comptées : ${brutsTest}${prouvesTest ? ` (dont ${prouvesTest} prouvés)` : ''}`,
+              `${fmtNum(commandesTest, locale)} test orders, not counted: ${brutsTest}${prouvesTest ? ` (of which ${prouvesTest} proven)` : ''}`,
+            ),
+            paniers.recuperesTest > 0 && t(
+              paniers.recuperesTest === 1 ? '1 panier relancé récupéré en test' : `${fmtNum(paniers.recuperesTest, locale)} paniers relancés récupérés en test`,
+              paniers.recuperesTest === 1 ? '1 reminded checkout recovered in test' : `${fmtNum(paniers.recuperesTest, locale)} reminded checkouts recovered in test`,
+            ),
+          ].filter(Boolean).join(' ; ')}.
         </p>
       )}
     </>

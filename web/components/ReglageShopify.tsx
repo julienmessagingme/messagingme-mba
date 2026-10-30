@@ -201,8 +201,8 @@ export function ReglageShopify({ tenantId }: { tenantId: string }) {
                   celle de la relance, pour qu'ils se comparent ; les commandes de test ne comptent pas. */}
               {' '}
               {t(
-                `Selon la date de la relance : ${vue!.paniers.relancesParties} relances parties, ${vue!.paniers.recuperes} récupérés${montantsRecuperes(vue!, 'fr', ' pour ')}${vue!.paniers.recuperesTest > 0 ? `, dont ${vue!.paniers.recuperesTest} de test, non comptés` : ''}.`,
-                `By reminder date: ${vue!.paniers.relancesParties} reminders sent, ${vue!.paniers.recuperes} recovered${montantsRecuperes(vue!, 'en', ' for ')}${vue!.paniers.recuperesTest > 0 ? `, plus ${vue!.paniers.recuperesTest} test orders, not counted` : ''}.`,
+                `Selon la date de la relance : ${vue!.paniers.relancesParties} relances parties, ${vue!.paniers.recuperes} récupérés${montantsRecuperes(vue!, 'fr', ' pour ')}${vue!.paniers.recuperesTest > 0 ? `, et ${vue!.paniers.recuperesTest} de test, non comptés` : ''}.`,
+                `By reminder date: ${vue!.paniers.relancesParties} reminders sent, ${vue!.paniers.recuperes} recovered${montantsRecuperes(vue!, 'en', ' for ')}${vue!.paniers.recuperesTest > 0 ? `, plus ${vue!.paniers.recuperesTest} recovered in test, not counted` : ''}.`,
               )}
             </p>
           )}
