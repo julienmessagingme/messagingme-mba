@@ -24,6 +24,12 @@ fois pour toutes l'option QR code », Julien, 2026-10-30).
 - La fiche publique « Choisir mon offre » a changé : `aide:charger` au prochain déploiement de l'API, pour que le bot
   d'aide de la console dise aussi « formule Pro ».
 
+## La fiche publique HubSpot renommée (2026-10-30)
+
+- `aide:charger` au prochain déploiement de l'API : jusque-là, le bot d'aide de la console garde l'ancienne fiche
+  `hubspot-sur-l-accueil`, et la nouvelle (`integrer-whatsapp-a-hubspot`, ce que fait l'app et l'argument « sans Sales
+  Hub ») n'y est pas.
+
 ## 🟡 Les alertes de Santé : ce que le lot 4 de la refonte de /ops laisse (relecture du 2026-10-30)
 
 - **La veille est aveugle quand elle serait la plus utile** : un signal illisible ne s'alerte pas (Cockpit muet n'est

@@ -36,8 +36,10 @@ l'action webhook (vérifié dans l'aide de HubSpot ce jour-là).
 - La carte HubSpot de la page Intégrations mène au guide (et plus à « Analyse de conversations ») ; la question HubSpot
   de la FAQ d'accueil dit la réponse depuis HubSpot et les workflows ; `/tuto-hubspot` (console) se branche dans Tools >
   Intégrations, dit que la carte montre la conversation, et renvoie au guide public.
-- Reste : `aide:charger` après le prochain déploiement de l'API (la clé de la fiche change), et `curl -I` des deux
-  anciennes adresses après la publication.
+- Poussé en `b8f0a062` (plomberie sur `d507f5b7`), CI verte : `unit`, `integration`, `securite`, la console dans ses
+  deux topologies (e2e compris) et CodeQL. En ligne le jour même : les deux nouvelles pages en 200, les deux anciennes
+  adresses en 308 vers elles, la carte Intégrations, la FAQ d'accueil et `/tuto-hubspot` à jour.
+- Reste : `aide:charger` après le prochain déploiement de l'API (la clé de la fiche change, `todo.md`).
 
 ## 2026-10-30 (soir) : l'essai réel du chiffre d'affaires attribué (essai 182, lots 0 et 1)
 
