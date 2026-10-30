@@ -17,8 +17,10 @@ import { ChampCompte } from '@/components/ChampCompte';
 import { EditeurFamilles } from '@/components/ConditionBuilder';
 import { PanneauAllerA } from '@/components/PanneauAllerA';
 import { sortiesDuBloc, type EmailRecipientData, type RFNode } from '@/lib/workflow-canevas';
-import { essayerFonctionJs, type EssaiJs } from '@/lib/api';
-import { useState } from 'react';
+import { essayerFonctionJs, getTemplateHints, type EssaiJs, type TemplateParamHint } from '@/lib/api';
+import { labelForSource } from '@/components/TemplateBodyField';
+import { variablesDuBloc } from '@/lib/variables-bloc-template';
+import { useEffect, useState } from 'react';
 import { Bouton } from '@/components/Bouton';
 import { Icone } from '@/components/Icone';
 import { CHAMP_MAINTENANT, nomDeParametreSur } from '@/lib/partage/fonction-js';
@@ -392,6 +394,13 @@ export function ConfigPanel({
           ) : Array.isArray(d.templateButtons) && (d.templateButtons as unknown[]).length > 0 ? (
             <p className="mt-1 text-xs text-ink-500">{t('Chaque bouton de réponse rapide devient une ', 'Each quick-reply button becomes an ')}<b>{t('sortie', 'output')}</b>{t(' à relier (point à droite du bloc). Les boutons lien/formulaire ne se relient pas.', ' to connect (dot on the right of the block). Link/form buttons cannot be connected.')}</p>
           ) : null}
+          {typeof d.templateName === 'string' && d.templateName !== '' && (
+            <VariablesDuTemplate
+              tenantId={tenantId}
+              template={templates.find((x) => x.name === d.templateName && x.language === d.language) ?? templates.find((x) => x.name === d.templateName)}
+              fields={fields}
+            />
+          )}
         </div>
       )}
       {wfType === 'question' && (() => {
@@ -1064,6 +1073,61 @@ export function ConfigPanel({
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+/**
+ * Les variables du template choisi et le champ du contact qui remplit chacune. Composant à part pour la même
+ * raison que `FonctionJs` (il porte un état). Indices illisibles : rien n'est affiché plutôt qu'une alerte fausse.
+ */
+function VariablesDuTemplate({ tenantId, template, fields }: {
+  tenantId: string;
+  template: TemplateSummary | undefined;
+  fields: UserFieldDef[];
+}) {
+  const t = useT();
+  const [hints, setHints] = useState<TemplateParamHint[] | null>(null);
+  const name = template?.name;
+  const language = template?.language;
+  useEffect(() => {
+    if (!name || !language) return;
+    let alive = true;
+    setHints(null);
+    getTemplateHints(tenantId, name, language)
+      .then((r) => { if (alive) setHints(r.hints); })
+      .catch(() => { /* illisible : on n'affirme rien */ });
+    return () => { alive = false; };
+  }, [tenantId, name, language]);
+  if (!template || template.isCarousel || hints === null) return null;
+  const lignes = variablesDuBloc(template.body, hints);
+  if (lignes.length === 0) return null;
+  const orphelines = lignes.filter((l) => l.source === null);
+  return (
+    <div className="mt-2 space-y-1" data-testid="template-node-variables">
+      <p className="text-xs font-medium text-ink-500">{t('Variables du template', 'Template variables')}</p>
+      <ul className="space-y-0.5 text-xs text-ink-700">
+        {lignes.map((l) => (
+          <li key={l.position}>
+            <code>{`{{${l.position}}}`}</code>{' = '}
+            {l.source
+              ? <b>{labelForSource(l.source, fields, t)}</b>
+              : <span className="text-danger">{t('aucun champ', 'no field')}</span>}
+          </li>
+        ))}
+      </ul>
+      {orphelines.length > 0 ? (
+        <p className="text-xs text-danger">
+          {t(
+            'Ce bloc ne partira pas : une variable n’est reliée à aucun champ du contact. Seule exception, le premier template d’un scénario lancé en campagne, dont les variables se choisissent à l’étape Contenu. Pour la relier, modifiez le template et insérez-la avec « Variable » (le template repasse alors en validation chez Meta).',
+            'This block will not be sent: a variable is not linked to any contact field. The only exception is the first template of a scenario launched as a campaign, whose variables are picked at the Content step. To link it, edit the template and insert it with “Variable” (the template then goes back to Meta for review).',
+          )}
+        </p>
+      ) : (
+        <p className="text-xs text-ink-500">
+          {t('Un contact sans valeur pour l’un de ces champs ne recevra pas ce message.', 'A contact with no value for one of these fields will not receive this message.')}
+        </p>
+      )}
     </div>
   );
 }
