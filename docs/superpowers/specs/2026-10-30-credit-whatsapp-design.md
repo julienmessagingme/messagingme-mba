@@ -6,7 +6,8 @@
 > rondes de questions, puis relue à froid par un constructeur qui n'avait que ce document (ses cinq questions sont
 > tranchées ici). La
 > mécanique Meta vient de la doc lue le 2026-10-29 (Multi-Partner Solutions, partage de ligne de crédit, analytics,
-> tarification) : **lue, pas éprouvée**, c'est le lot 0 qui l'éprouve, avant toute ligne de code.
+> tarification) : **lue, pas éprouvée**. Le lot 0 l'éprouve avec le partenaire ; notre côté se câble sans l'attendre
+> (décision du 2026-10-30).
 >
 > **Le partenaire n'est nommé ni ici ni sur aucune surface du produit** (décision : jamais nommé chez nous ; le dépôt est
 > public). Son nom, ce qu'on sait de lui et les questions à lui poser : `docs/prive/PARTENAIRE-LIGNE-DE-CREDIT.md`, non
@@ -100,11 +101,17 @@ qui nous facture.
   par tous ses numéros sur la ligne (choix de Claude). Le crédit IA, son plafond chez Vercel et sa commission ne bougent
   pas.
 - **Achats** : 50, 100, 250 ou 500 € HT (choix de Claude) par Stripe Checkout, en euros, TVA ajoutée, facture émise par
-  Stripe, crédit plein, crédité par le seul webhook signé, une fois par paiement, comme le crédit IA.
+  Stripe, crédit plein, crédité par le seul webhook signé, une fois par paiement, comme le crédit IA. Choix de Claude :
+  codes promo fermés sur ce produit et sur l'option (un code à 100 % y offrirait de vrais messages, payés au partenaire),
+  et un achat n'est permis qu'à un espace qui a au moins un numéro sur la ligne.
 - **Jamais remboursé, n'expire pas, gardé quand l'option s'arrête**, et il resservira si elle revient (décision).
 - **Aucun crédit exigé pour se connecter** (décision : la connexion d'abord, les envois attendent le premier achat).
 - **Recharge automatique dès la v1** (décision), **sans plafond** (décision). Choix de Claude sur la forme : un
-  administrateur l'active avec un seuil et un montant (parmi les quatre) ; elle débite la carte que Stripe garde pour
+  administrateur l'active avec un seuil et un montant qu'il choisit librement (décision du 2026-10-30 : « quand ça
+  descend à moins de 10 €, recharger de 20 € ») : un seuil d'au moins 5 €, un montant de 20 à 1 000 € HT (bornes, choix de
+  Claude : sous 20 €, les frais de Stripe mangent l'essentiel de la commission ; au-dessus de 1 000 €, c'est plus souvent
+  une faute de frappe qu'un besoin). Stripe n'a besoin d'aucun prix par montant : une facture du montant choisi, réglée
+  hors session. Elle débite la carte que Stripe garde pour
   l'abonnement de l'option, par une facture Stripe (même trace qu'un achat) ; un paiement refusé ou qui demande une
   authentification l'éteint et prévient par e-mail avec le lien de la facture. Garde technique, qui n'est pas un plafond :
   **une seule recharge en vol par espace**, pour qu'une rafale d'envois ne débite pas la carte plusieurs fois pour le même
@@ -151,9 +158,12 @@ détecté est signalé dans `/ops` et facturé avec le reste.
    réponses comprises, humains et agent IA). Un envoi ne part que si le solde couvre sa **provision** : le prix de la grille pour
    le pays et la catégorie, au premier palier, commission comprise ; zéro pour un message de service encore dans la
    franchise du numéro selon notre propre compte du mois (choix de Claude). La provision se prend atomiquement : deux
-   envois simultanés ne passent pas sur le même centime. La garde est une **dépendance requise** de chaque interface
-   d'envoi, et un inventaire dérivé du code (comme `tests/optout-chemins.test.ts`) refuse un chemin d'envoi qui ne la
-   déclare pas : campagnes, scénarios, automations, agent IA, Inbox, API publique, MCP, Shopify. Un envoi refusé dit
+   envois simultanés ne passent pas sur le même centime. La garde vit **dans la fabrique d'envoi**
+   (`MetaClientFactory.clientForTenant`, le point de passage unique de tous les envois Meta), dépendance requise de la
+   fabrique comme les gardes du numéro délié et suspendu (choix de Claude, après la cartographie du code) ; un inventaire
+   dérivé du code (comme `tests/optout-chemins.test.ts`) refuse un client Meta construit ailleurs et un chemin qui attrape
+   `NumeroBloqueError` sans traiter le refus de crédit : campagnes, scénarios, automations, agent IA, Inbox, API
+   publique, MCP, Shopify, HubSpot. Un envoi refusé dit
    pourquoi ; dans l'Inbox, avec le lien de recharge pour un administrateur.
    - **Campagne** (décisions) : au lancement, l'estimation (destinataires × provision) ; si elle dépasse le solde, refus
      avec « il vous manque X € », ou, recharge automatique active, recharge avant le départ (voir le solde). En route, un
@@ -254,8 +264,13 @@ notre DPA. À trancher par Julien quand le partenaire aura répondu.
    141006 qui disparaît, un modèle envoyé et délivré, accusés avec `pricing`, `pricing_analytics` en `VOLUME` (`COST`
    absent, fraîcheur mesurée), MM API `ONBOARDED` ou non, `messaging_account_id`, l'agent de Meta sur un compte de la
    ligne (carte exigée ou non, ses réponses dans les volumes ou non), le repérage d'un compte sur la ligne, une
-   révocation essayée sur un compte jetable. Et les réponses du partenaire aux questions de la note privée. Rien ne se
-   code avant.
+   révocation essayée sur un compte jetable. Et les réponses du partenaire aux questions de la note privée. **Il ne
+   bloque pas notre côté** (décision du 2026-10-30 : « on avance sur le câblage de notre côté, et dès que j'ai le
+   partenaire on avance avec eux sur l'Embedded Signup »). N'attendent que lui : la fenêtre avec l'identifiant de la
+   solution, l'attache de la ligne, « ligne active », le repérage des comptes sur la ligne, la révocation. D'ici là, un
+   de NOS numéros de test se met « sur la ligne » à la main dans `/ops` (choix de Claude) : le solde, la garde et la
+   régularisation s'y éprouvent, et comme ce numéro reste payé par carte, Meta y rend encore `COST`, ce qui permet de
+   comparer notre coût recalculé au vrai.
 1. **Le solde et la garde**, invisibles du client : la grille dans `/ops`, le Crédit WhatsApp (journal, provisions par
    message, ajustement aux accusés), la garde sur tous les chemins d'envoi avec son inventaire et le mode open bar de
    l'Entreprise, l'estimation et la pause des campagnes, les écrans de coût sur la grille.
@@ -289,7 +304,7 @@ numéros déjà connectés et les numéros 360dialog ; une réponse dans la fen�
 - La coexistence (choix de Claude).
 - Les conditions du partenaire, son plafond global, le rapprochement avec sa facture (Julien).
 - Un plafond de recharge automatique (décision) ; un solde, des achats ou une recharge pour l'Entreprise (décision :
-  open bar, facturée à la main) ; un montant libre.
+  open bar, facturée à la main) ; un montant libre pour l'achat à la main (ses quatre boutons restent).
 - Le RCS (hors Meta).
 
 ## Ce qui ferait échouer le projet même s'il marche
