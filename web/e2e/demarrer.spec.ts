@@ -73,6 +73,6 @@ test('🟡 la suite survit au retour de Stripe, et s’efface une fois la page f
   await page.waitForURL('**/demarrer');
   await expect(page.getByTestId('demarrer-commande-1')).toBeVisible();
   await page.goto('/connecter-whatsapp');
-  await expect(page.getByTestId('choix-fourni')).toBeVisible();
+  await expect(page.getByTestId('question-compte')).toBeVisible();
   await expect(page.getByTestId('numero-plus-tard')).toHaveCount(0);
 });

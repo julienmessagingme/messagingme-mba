@@ -36,7 +36,8 @@ for (const locale of ['fr', 'en'] as Locale[]) {
       })));
       await communs(page);
       await page.goto('/connecter-whatsapp');
-      // 2. Pas de numéro ? « Fournissez-moi un numéro ».
+      // 2. Pas de numéro ? « Oui » au compte Meta Business, puis « Fournissez-moi un numéro » (les questions du tunnel).
+      await page.getByTestId('question-compte-oui').click();
       await capturer(page, CLE, 2, locale, undefined, 'haut', page.getByTestId('choix-fourni'));
     });
 

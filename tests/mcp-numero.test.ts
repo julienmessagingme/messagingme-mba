@@ -411,6 +411,19 @@ describe('watch_whatsapp_connection en coexistence', () => {
     expect((await attendre(QR_CODE)).suite).toMatch(/branchement est fini/);
   });
 
+  it('🔴 plus aucun nouveau QR code proposé (2026-10-30) : un appareil retiré ou endormi garde l’application, par Meta', async () => {
+    for (const statut of ['deconnecte', 'sommeil'] as const) {
+      const { suite } = await attendre({ ...QR_CODE, connecte: null, application: { statut, numero: '441555479304' } });
+      expect(suite, statut).not.toMatch(/filiere « application »/);
+      expect(suite, statut).toMatch(/mode « coexistence »/);
+    }
+    const banni = await attendre({ ...QR_CODE, connecte: null, application: { statut: 'banni', numero: '441555479304' } });
+    expect(banni.suite).toMatch(/fenêtre de Meta/);
+    // Ce que Claude lit de la filière : ne jamais la proposer.
+    const filiere = (outil('start_whatsapp_connection').entree as { properties: Record<string, { description: string }> }).properties.filiere!;
+    expect(filiere.description).toMatch(/no longer offered: never propose it/);
+  });
+
   it('🔴 l’empreinte change quand la coexistence arrive, et pas autrement', () => {
     const ordinaire: EtatConnexion = { ...VIDE, connecte: { chiffres: '441555479304', aActiver: false } };
     expect(empreinteEtat(EN_COEXISTENCE)).not.toBe(empreinteEtat(ordinaire));

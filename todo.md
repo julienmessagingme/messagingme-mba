@@ -1,21 +1,31 @@
 # todo.md : backlog
 
-## Aligner la console et le plugin sur le tunnel du numéro de la vitrine (arbre de Julien du 2026-10-30)
+## 🟡 Le numéro sans QR code : ce que l'alignement de la console et du plugin laisse (2026-10-30)
 
-La vitrine pose désormais trois questions (`scripts/vitrine/tunnel-textes.ts`, plan
-`docs/superpowers/plans/2026-10-30-tunnel-numero-generique.md`) : l'offre, le compte Meta Business (Oui : numéro API,
-libre ou fourni ; Non ou « Je ne sais pas » : question suivante, avec où vérifier), l'application WhatsApp Business
-(Oui : la garder ; Non : la télécharger et brancher tout de suite). Plus aucune voie par QR code (« on supprime une bonne
-fois pour toutes l'option QR code », Julien, 2026-10-30).
-- **L'écran « Connecter WhatsApp » de la console** doit poser les mêmes questions, dans le même ordre, sans la voie QR.
-- **La skill `mise-en-service` du plugin** aussi (elle offre encore le QR code sans compte Meta Business), avec sa FAQ
-  (`scripts/plugin/faq.ts`, publiée sur les pages développeurs) et son README ; nouvelle version du plugin.
-- 🔴 **Le numéro trop neuf** (Julien) : sur la voie « télécharger l'application », on branche tout de suite ; si Meta
-  refuse le numéro, la skill doit le reconnaître, le dire simplement et proposer de revenir quelques jours plus tard,
-  sans chiffre (Meta n'en publie aucun). Le refus se mesure d'abord par un essai réel avec un numéro neuf (liste
-  `docs/prive/ESSAIS-REELS.md`), pour savoir ce que Meta renvoie et à quelle étape.
-- La fiche d'aide `garder-mon-application-whatsapp-business` et le centre d'aide ne parlent pas encore de la voie
-  « télécharger l'application » : y ajouter le cas du numéro neuf.
+La console, le plugin 0.3.17, la FAQ, la doc MCP et la description de `start_whatsapp_connection` ne proposent plus la
+voie par QR code (plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-plugin.md`). Restent :
+- **Le refus d'un numéro trop neuf, vu par Claude lui-même.** Meta refuse dans SA fenêtre ; la skill le reconnaît à ce
+  que la personne rapporte. L'essai 198 relève ce que la fenêtre envoie à la page (`[ES] message reçu` dans la console
+  du navigateur) : si un refus lisible arrive, le faire remonter à `watch_whatsapp_connection`, pour que Claude le dise
+  sans qu'on le lui rapporte.
+- **Les espaces déjà reliés par QR code** : les courriels `application_appareil_retire` et `application_en_sommeil`
+  (`src/emails-produit/catalogue.ts`) et la phrase d'un envoi refusé sur un compte endormi ou délié
+  (`phraseApplicationIndisponible`, `src/application/envoi.ts`) disent encore « un nouveau lien, scanner le QR code »,
+  quand Claude propose désormais de garder l'application par Meta. Et rien ne REFUSE la filière : `filiere: application`
+  crée encore un lien (un plugin 0.3.16 pas mis à jour le propose toujours). La doc de l'API (`web/lib/api-champs.ts`,
+  `api-exemples.ts`, `web/app/developers/api/messages/page.tsx`) décrit le comportement de ces numéros. À trancher avec
+  Julien : réécrire ces textes et refuser la filière à un espace qui n'y est pas déjà, ou retirer la filière application
+  tout entière (service `mba-application`, `src/application/`, page `/brancher` en QR code) une fois ces espaces passés
+  par Meta.
+- **Sans compte Meta Business, le numéro fourni n'est plus proposé** (l'arbre de Julien : il n'existe que sous « Oui »).
+  Or le lien de l'Accueil dit « Pas de numéro ? Nous vous en fournissons un », et l'encadré « Avant de commencer, chez
+  Meta » (`PREREQUIS_META[2]`, lu aussi par Claude, la FAQ et la vitrine) dit la même chose et cite « Garder mon
+  application WhatsApp Business », qui n'apparaît plus qu'après les questions. Qui répond « Non » puis « Non » sans avoir
+  de numéro ne voit que « Téléchargez l'application ». À trancher avec Julien : retirer ces phrases, ou offrir le numéro
+  fourni aussi sous « Non ».
+
+## 🟡 Free et Pro sans article : ce qui reste (2026-10-30)
+
 - **Free et Pro sans article** (Julien, 2026-10-30 : « Free », « Pro », « formule Free », « formule Pro », jamais « la
   Free » ni « le Pro ») : la vitrine est faite. Restent, à sa décision : la console (une trentaine de lignes, la page
   Offre en tête, et ses boutons « Passer en Pro », « Rendre mon numéro à la fin du Pro » que la fiche publique cite tels

@@ -1,7 +1,7 @@
 ---
 description: Garder votre application WhatsApp Business et relier le même numéro à Messaging Me, écran par écran, avec le compte Meta Business créé en chemin s'il manque.
 source_section: Garder son application WhatsApp Business (2026-10-25)
-source_empreinte: 9ca028
+source_empreinte: 7ccb5a
 publique: oui
 rubrique: demarrer
 rang: 4
@@ -56,5 +56,7 @@ liés sont déliés. Ouvrez-la au moins toutes les deux semaines.
 Ce que vous tapez dans l'application n'apparaît pas encore dans Messaging Me. Si un agent IA répond à vos clients, il
 ne voit donc pas vos réponses : il peut répondre en même temps que vous.
 
-**Bon à savoir.** Meta peut refuser un numéro trop neuf dans l'application (« More activity on the WhatsApp Business
-App is needed ») : servez-vous de l'application quelques jours, puis recommencez.
+**Bon à savoir.** Pas encore l'application ? Téléchargez l'application WhatsApp Business sur un téléphone,
+mettez-y le numéro de votre entreprise, puis suivez ce guide tout de suite. Meta peut refuser un numéro trop neuf
+dans l'application (« More activity on the WhatsApp Business App is needed ») : servez-vous de l'application
+quelques jours, puis recommencez.

@@ -217,15 +217,19 @@ function suiteApplication(e: EtatConnexion): string | null {
     case 'en_attente':
       return 'Dis à la personne de scanner le QR code de la page avec le téléphone qui porte le numéro : '
         + `${numerotees(ETAPES_RELIER_APPLICATION.slice(0, 2).map((x) => x.fr))} ${RAPPEL_ATTENTE}`;
+    // Plus aucun nouveau QR code (Julien, 2026-10-30) : la suite d'un espace relié ainsi est de garder l'application et de
+    // passer le même numéro par Meta (`coexistence`), comme le dit la skill `mise-en-service`.
     case 'banni':
       return 'WhatsApp a coupé ce numéro : il ne peut plus être relié. Dis-le à la personne, et propose la suite : un autre '
-        + 'numéro (start_whatsapp_connection), ou l’API WhatsApp avec un compte Meta Business.';
+        + 'numéro par la fenêtre de Meta (start_whatsapp_connection), qui crée le compte Meta Business en chemin.';
     case 'deconnecte':
-      return 'L’appareil a été retiré depuis le téléphone : plus rien ne passe. Pour relier de nouveau, redonne un lien '
-        + '(start_whatsapp_connection, filiere « application ») et le QR code à scanner.';
+      return 'L’appareil a été retiré depuis le téléphone : plus rien ne passe. Propose la suite : garder l’application '
+        + 'WhatsApp Business et relier le même numéro par Meta (start_whatsapp_connection, mode « coexistence »), la fenêtre '
+        + 'de Meta créant le compte Meta Business en chemin. Ne propose pas de nouveau QR code.';
     case 'sommeil':
-      return 'Le numéro dort (aucun message depuis longtemps) : redonne un lien (start_whatsapp_connection, filiere '
-        + '« application ») pour le réveiller.';
+      return 'Le numéro dort (aucun message depuis longtemps). Propose la suite : garder l’application WhatsApp Business et '
+        + 'relier le même numéro par Meta (start_whatsapp_connection, mode « coexistence »), la fenêtre de Meta créant le '
+        + 'compte Meta Business en chemin. Ne propose pas de nouveau QR code.';
     default:
       return null;
   }
@@ -418,10 +422,15 @@ export const OUTILS_NUMERO: OutilMcp[] = [
           description: 'fourni: a number we provide; apporte: the person\'s own number; coexistence: the person\'s own number, '
             + 'kept in the WhatsApp Business app.',
         },
+        // 🔴 Plus aucune voie par QR code proposée (Julien, 2026-10-30) : sans compte Meta Business, le numéro de
+        // l'application WhatsApp Business se garde, par la fenêtre de Meta, qui crée le compte en chemin. La valeur
+        // `application` reste acceptée pour un lien déjà en cours ; rien ne la propose plus.
         filiere: {
           type: 'string', enum: ['api', 'application'],
-          description: 'api (default): the official WhatsApp API, through a Meta Business account. application: the WhatsApp Business '
-            + 'app, for a workspace without a Meta Business account, linked by a QR code scanned from the phone.',
+          description: 'Leave it out: api, the official WhatsApp API. application, the link of the WhatsApp Business app by QR '
+            + 'code, is no longer offered: never propose it. Without a Meta Business account, the person keeps (or downloads) '
+            + 'the WhatsApp Business app and connects its number with mode coexistence: Meta\'s window creates the account '
+            + 'along the way.',
         },
         numero: {
           type: 'string', maxLength: 30,

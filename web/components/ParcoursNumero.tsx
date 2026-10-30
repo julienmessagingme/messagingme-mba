@@ -11,14 +11,20 @@ import { ETAPES_NUMERO_FOURNI } from '@/lib/partage/etapes-numero-fourni';
 import { PREREQUIS_META } from '@/lib/partage/etapes-meta';
 import { ETAPES_COMPTE_FOURNI } from '@/lib/partage/etapes-application';
 import { QrApplication } from '@/components/QrApplication';
+import { ISSUE_API, ISSUE_TELECHARGER, META_BUSINESS_URL, QUESTION_APPLICATION, QUESTION_COMPTE, type ReponseCompte } from '@/lib/questions-numero';
 
 /**
  * LE PARCOURS DE CONNEXION DU NUMÉRO (lot 3b, sorti de `/connecter-whatsapp` au lot 3c pour servir aussi `/brancher`).
  *
- * Trois choix. « Fournissez-moi un numéro » : un numéro de notre réserve s'affiche ; le client le tape dans la fenêtre de
- * Meta, par SMS de préférence (la ligne fixe le lit à voix haute), sinon par la voix ; notre Asterisk capte le code
- * dans les deux cas, et le parcours l'affiche pour qu'il le recopie. Les étapes affichées sont celles que Claude redit
- * (`ETAPES_NUMERO_FOURNI`, essai réel 99). « J'ai déjà un numéro » : la fenêtre de Meta, comme depuis l'Accueil.
+ * Sans choix déjà fait, il pose d'abord les questions du tunnel de la vitrine (2026-10-30, `@/lib/questions-numero`) :
+ * « Avez-vous un compte Meta Business ? », Oui menant aux deux choix du numéro API ; Non ou « Je ne sais pas » à
+ * « Avez-vous déjà l'application WhatsApp Business ? », dont les deux réponses mènent à la garder (Non : après l'avoir
+ * téléchargée). Plus aucune voie par QR code.
+ *
+ * Les trois choix où elles mènent. « Fournissez-moi un numéro » : un numéro de notre réserve s'affiche ; le client le
+ * tape dans la fenêtre de Meta, par SMS de préférence (la ligne fixe le lit à voix haute), sinon par la voix ; notre
+ * Asterisk capte le code dans les deux cas, et le parcours l'affiche pour qu'il le recopie. Les étapes affichées sont
+ * celles que Claude redit (`ETAPES_NUMERO_FOURNI`, essai réel 99). « J'ai déjà un numéro » : la fenêtre de Meta, comme depuis l'Accueil.
  * « Garder mon application WhatsApp Business » : la même fenêtre en coexistence (plan 2026-10-24), le numéro reste dans
  * l'application.
  *
@@ -38,7 +44,7 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   filiere?: 'api' | 'application';
   /** Où Stripe renvoie après le paiement : cette page-ci (`/brancher` ou `/connecter-whatsapp`). */
   retour: 'brancher' | 'console';
-  /** Le choix déjà fait (le mode du lien de Claude Code), ou `null` pour proposer les trois. */
+  /** Le choix déjà fait (le mode du lien de Claude Code), ou `null` pour poser d'abord les questions du tunnel. */
   choixInitial: 'fourni' | 'apporte' | 'coexistence' | null;
   /** Le numéro est connecté : la lecture du code s'arrête. */
   connecte: boolean;
@@ -64,6 +70,11 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
   const [inclus, setInclus] = useState(false);
   /** Filière application, numéro fourni : le QR code s'affiche une fois le compte créé dans l'application. */
   const [qrDemande, setQrDemande] = useState(false);
+  /** La réponse à « Avez-vous un compte Meta Business ? » : gardée quand « Retour » ramène aux questions. */
+  const [compte, setCompte] = useState<ReponseCompte | null>(null);
+  /** Venu de « Non » à la question de l'application : la carte dit d'abord de la télécharger. */
+  const [telecharger, setTelecharger] = useState(false);
+  const choisir = (c: 'fourni' | 'apporte' | 'coexistence', apresTelechargement = false) => { setTelecharger(apresTelechargement); setChoix(c); };
   const application = filiere === 'application';
   const connexion = useConnexionNumero(tenantId, api, surConnexion);
   /**
@@ -179,29 +190,69 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
         </div>
       )}
       {choix === null ? (
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <button type="button" data-testid="choix-fourni" onClick={() => setChoix('fourni')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">
-            <div className="text-base font-semibold text-ink-900">{t('Fournissez-moi un numéro', 'Provide me a number')}</div>
-            <p className="mt-1 text-xs text-ink-500">
-              {inclus
-                ? t('Un numéro dédié, prêt pour WhatsApp. Inclus dans votre offre.', 'A dedicated number, ready for WhatsApp. Included in your plan.')
-                : t('Un numéro dédié, prêt pour WhatsApp : 3,50 € HT par mois.', 'A dedicated number, ready for WhatsApp: €3.50 excl. VAT per month.')}
+        // Les questions du tunnel de la vitrine : seule la page de la console y passe, un lien de Claude Code arrivant
+        // avec son choix (donc jamais sur la filière application).
+        <div className="mt-6 space-y-3">
+          <Question
+            testid="question-compte"
+            texte={QUESTION_COMPTE.texte}
+            precision={QUESTION_COMPTE.precision}
+            reponse={compte === null ? null : QUESTION_COMPTE[compte]}
+            modifier={() => setCompte(null)}
+            reponses={(['oui', 'non', 'nsp'] as const).map((r) => ({ cle: r, libelle: QUESTION_COMPTE[r], choisir: () => setCompte(r) }))}
+          />
+          {compte === 'non' && <p data-testid="note-compte" className="text-sm text-ink-700">{t(QUESTION_COMPTE.noteNon.fr, QUESTION_COMPTE.noteNon.en)}</p>}
+          {compte === 'nsp' && (
+            <p data-testid="note-compte" className="text-sm text-ink-700">
+              {t(QUESTION_COMPTE.noteNsp.avant.fr, QUESTION_COMPTE.noteNsp.avant.en)}
+              <a href={META_BUSINESS_URL} target="_blank" rel="noopener noreferrer" className="font-semibold text-ink-900 underline">business.facebook.com</a>
+              {t(QUESTION_COMPTE.noteNsp.apres.fr, QUESTION_COMPTE.noteNsp.apres.en)}
             </p>
-          </button>
-          <button type="button" data-testid="choix-apporte" onClick={() => setChoix('apporte')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">
-            <div className="text-base font-semibold text-ink-900">{t('J’ai déjà un numéro', 'I already have a number')}</div>
-            <p className="mt-1 text-xs text-ink-500">{t('Vous le saisissez dans la fenêtre de Meta et recevez son code.', 'You enter it in the Meta window and receive its code.')}</p>
-          </button>
-          {/* La coexistence passe par l'API officielle : la filière application, qui relie par QR code, ne la propose pas. */}
-          {!application && (
-            <button type="button" data-testid="choix-coexistence" onClick={() => setChoix('coexistence')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400 sm:col-span-2">
-              <div className="text-base font-semibold text-ink-900">{t(COEXISTENCE_BOUTON.fr, COEXISTENCE_BOUTON.en)}</div>
-              <p className="mt-1 text-xs text-ink-500">{t('Le numéro de votre application WhatsApp Business, qui reste sur votre téléphone.', 'Your WhatsApp Business app number, which stays on your phone.')}</p>
-            </button>
+          )}
+          {compte === 'oui' ? (
+            <div data-testid="issue-api">
+              <div className="text-sm font-semibold text-ink-900">{t(ISSUE_API.titre.fr, ISSUE_API.titre.en)}</div>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <button type="button" data-testid="choix-fourni" onClick={() => choisir('fourni')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">
+                  <div className="text-base font-semibold text-ink-900">{t('Fournissez-moi un numéro', 'Provide me a number')}</div>
+                  <p className="mt-1 text-xs text-ink-500">
+                    {inclus
+                      ? t('Un numéro dédié, prêt pour WhatsApp. Inclus dans votre offre.', 'A dedicated number, ready for WhatsApp. Included in your plan.')
+                      : t('Un numéro dédié, prêt pour WhatsApp : 3,50 € HT par mois.', 'A dedicated number, ready for WhatsApp: €3.50 excl. VAT per month.')}
+                  </p>
+                </button>
+                <button type="button" data-testid="choix-apporte" onClick={() => choisir('apporte')} className="rounded-carte border border-ink-200 bg-white p-5 text-left hover:border-ink-400">
+                  <div className="text-base font-semibold text-ink-900">{t('J’ai déjà un numéro', 'I already have a number')}</div>
+                  <p className="mt-1 text-xs text-ink-500">{t('Vous le saisissez dans la fenêtre de Meta et recevez son code.', 'You enter it in the Meta window and receive its code.')}</p>
+                </button>
+              </div>
+              <p className="mt-3 text-sm text-ink-700">
+                {t(ISSUE_API.garder.fr, ISSUE_API.garder.en)}{' '}
+                <button type="button" data-testid="choix-coexistence" onClick={() => choisir('coexistence')} className="font-semibold text-ink-900 underline">
+                  {t(ISSUE_API.lien.fr, ISSUE_API.lien.en)}
+                </button>
+              </p>
+            </div>
+          ) : compte !== null && (
+            <Question
+              testid="question-application"
+              texte={QUESTION_APPLICATION.texte}
+              precision={QUESTION_APPLICATION.precision}
+              reponses={[
+                { cle: 'oui', libelle: QUESTION_APPLICATION.oui, choisir: () => choisir('coexistence') },
+                { cle: 'non', libelle: QUESTION_APPLICATION.non, choisir: () => choisir('coexistence', true) },
+              ]}
+            />
           )}
         </div>
       ) : choix === 'coexistence' ? (
         <div data-testid="choix-coexistence-ouvert" className="mt-6 rounded-carte border border-ink-200 bg-white p-5">
+          {telecharger && (
+            <div data-testid="issue-telecharger" className="mb-4">
+              <div className="text-base font-semibold text-ink-900">{t(ISSUE_TELECHARGER.titre.fr, ISSUE_TELECHARGER.titre.en)}</div>
+              <p className="mt-1 text-sm text-ink-700">{t(ISSUE_TELECHARGER.textes[0].fr, ISSUE_TELECHARGER.textes[0].en)}</p>
+            </div>
+          )}
           <div className="flex items-center gap-3">
             <Bouton type="button" enCours={connexion.busy} disabled={!pret || connexion.busy} onClick={() => { void connexion.connect({ coexistence: true }); }} data-testid="ouvrir-fenetre-coexistence">
               {connexion.busy ? t('Fenêtre de Meta ouverte…', 'Meta window open…') : t(COEXISTENCE_BOUTON.fr, COEXISTENCE_BOUTON.en)}
@@ -209,6 +260,8 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
             {boutonRetour}
           </div>
           {COEXISTENCE_PHRASES.map((p) => <p key={p.fr} className="mt-3 text-sm text-ink-700">{t(p.fr, p.en)}</p>)}
+          {/* Un numéro qu'on vient de mettre dans l'application peut être refusé par Meta : on le dit avant qu'il le soit. */}
+          {telecharger && <p data-testid="numero-trop-neuf" className="mt-3 text-sm text-ink-700">{t(ISSUE_TELECHARGER.textes[1].fr, ISSUE_TELECHARGER.textes[1].en)}</p>}
         </div>
       ) : choix === 'apporte' && application ? (
         <QrApplication api={api} />
@@ -312,6 +365,45 @@ export function ParcoursNumero({ tenantId, api, choixInitial, connecte, retour, 
       )}
       {(erreur ?? connexion.error) && <p data-testid="erreur-connexion" className="mt-4 rounded-controle bg-danger-50 px-3 py-2 text-xs text-danger-700">{erreur ?? connexion.error}</p>}
     </>
+  );
+}
+
+type Texte = { readonly fr: string; readonly en: string };
+
+/**
+ * Une question du tunnel : ses boutons tant qu'on n'a pas répondu, puis la réponse repliée sur une ligne, que
+ * « Modifier » rouvre (la forme de la vitrine).
+ */
+function Question({ testid, texte, precision, reponse = null, modifier, reponses }: {
+  testid: string;
+  texte: Texte;
+  precision: Texte;
+  reponse?: Texte | null;
+  modifier?: () => void;
+  reponses: ReadonlyArray<{ cle: string; libelle: Texte; choisir(): void }>;
+}) {
+  const t = useT();
+  if (reponse !== null) {
+    return (
+      <div data-testid={`${testid}-repondue`} className="flex flex-wrap items-baseline gap-x-3 text-sm text-ink-700">
+        <span>{t(texte.fr, texte.en)}</span>
+        <span className="font-semibold text-ink-900">{t(reponse.fr, reponse.en)}</span>
+        {modifier && <Bouton type="button" variante="discret" taille="petite" onClick={modifier} data-testid={`${testid}-modifier`}>{t('Modifier', 'Change')}</Bouton>}
+      </div>
+    );
+  }
+  return (
+    <div data-testid={testid} className="rounded-carte border border-ink-200 bg-white p-5">
+      <div className="text-base font-semibold text-ink-900">{t(texte.fr, texte.en)}</div>
+      <p className="mt-1 text-xs text-ink-500">{t(precision.fr, precision.en)}</p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {reponses.map((r) => (
+          <Bouton key={r.cle} type="button" variante="secondaire" onClick={r.choisir} data-testid={`${testid}-${r.cle}`}>
+            {t(r.libelle.fr, r.libelle.en)}
+          </Bouton>
+        ))}
+      </div>
+    </div>
   );
 }
 

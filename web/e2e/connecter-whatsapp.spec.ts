@@ -82,6 +82,7 @@ test('🔴 numéro fourni : il s’affiche, puis le code capté apparaît sans r
   const etat = await simulerNumeroFourni(page, { lecturesAvantCode: 1 });
   await page.goto('/connecter-whatsapp');
 
+  await page.getByTestId('question-compte-oui').click();
   await page.getByTestId('choix-fourni').click();
   await page.getByTestId('obtenir-numero').click();
   await expect(page.getByTestId('numero-fourni')).toHaveText('+441235619343');
@@ -96,6 +97,7 @@ test('« Meta refuse ce numéro » : un autre numéro remplace le premier', asyn
   await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
   const etat = await simulerNumeroFourni(page, { lecturesAvantCode: 100 });
   await page.goto('/connecter-whatsapp');
+  await page.getByTestId('question-compte-oui').click();
   await page.getByTestId('choix-fourni').click();
   await page.getByTestId('obtenir-numero').click();
   await expect(page.getByTestId('numero-fourni')).toHaveText('+441235619343');
@@ -117,6 +119,7 @@ test('🔴 sans abonnement : le prix et « Payer », puis la page de paiement ; 
   await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
   const etat = await simulerNumeroFourni(page, { abonnement: null });
   await page.goto('/connecter-whatsapp');
+  await page.getByTestId('question-compte-oui').click();
   await page.getByTestId('choix-fourni').click();
   await expect(page.getByTestId('obtenir-numero')).toHaveCount(0);
   await expect(page.getByTestId('payer-numero')).toContainText('3,50');
@@ -130,6 +133,7 @@ test('🔴 en Pro (lot 6, B2b) : le numéro est inclus, « Obtenir mon numéro �
   await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
   const etat = await simulerNumeroFourni(page, { abonnement: null, inclusDansLePro: true });
   await page.goto('/connecter-whatsapp');
+  await page.getByTestId('question-compte-oui').click();
   await expect(page.getByTestId('choix-fourni')).toContainText('Inclus dans votre offre');
   await page.getByTestId('choix-fourni').click();
   await expect(page.getByTestId('numero-inclus')).toBeVisible();
@@ -169,6 +173,8 @@ test('🟡 « Abandonner » pendant que l’abonnement court : un texte qui le d
   await page.goto('/connecter-whatsapp');
   await expect(page.getByTestId('numero-fourni')).toHaveText('+441235619343');
   await page.getByTestId('abandonner-numero').click();
+  // Le numéro rendu ramène aux questions du tunnel.
+  await page.getByTestId('question-compte-oui').click();
   await page.getByTestId('choix-fourni').click();
   await expect(page.getByTestId('numero-rendu')).toBeVisible();
   await expect(page.getByTestId('numero-en-preparation')).toHaveCount(0);
@@ -183,6 +189,8 @@ test('🔴 « Abandonner » qui programme la fin chez Stripe (lot 4, B) : la pag
   await page.goto('/connecter-whatsapp');
   await expect(page.getByTestId('numero-fourni')).toHaveText('+441235619343');
   await page.getByTestId('abandonner-numero').click();
+  // Le numéro rendu ramène aux questions du tunnel.
+  await page.getByTestId('question-compte-oui').click();
   await page.getByTestId('choix-fourni').click();
   await expect(page.getByTestId('numero-rendu')).toContainText(/prend fin/);
   await expect(page.getByTestId('numero-rendu')).not.toContainText(/continue/);
@@ -192,6 +200,7 @@ test('🟡 le portail de Stripe s’ouvre depuis la console', async ({ page }) =
   await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
   const etat = await simulerNumeroFourni(page, { abonnement: 'actif' });
   await page.goto('/connecter-whatsapp');
+  await page.getByTestId('question-compte-oui').click();
   await page.getByTestId('choix-fourni').click();
   await page.getByTestId('gerer-abonnement').click();
   await expect(page).toHaveURL(/portail=ouvert/);
@@ -202,6 +211,7 @@ test('🟡 sans abonnement, pas de bouton du portail', async ({ page }) => {
   await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
   await simulerNumeroFourni(page, { abonnement: null });
   await page.goto('/connecter-whatsapp');
+  await page.getByTestId('question-compte-oui').click();
   await page.getByTestId('choix-fourni').click();
   await expect(page.getByTestId('payer-numero')).toBeVisible();
   await expect(page.getByTestId('gerer-abonnement')).toHaveCount(0);
@@ -236,6 +246,7 @@ test('payé, mais la réserve était vide : « en préparation »', async ({ pag
   await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
   await simulerNumeroFourni(page, { abonnement: 'actif' });
   await page.goto('/connecter-whatsapp');
+  await page.getByTestId('question-compte-oui').click();
   await page.getByTestId('choix-fourni').click();
   await expect(page.getByTestId('numero-en-preparation')).toBeVisible();
 });
@@ -255,4 +266,60 @@ test('🟡 espace connecté avec un numéro fourni payé : « Gérer mon abonnem
   await page.getByTestId('gerer-abonnement').click();
   await expect(page).toHaveURL(/portail=ouvert/);
   expect(etat.gestes).toEqual(['portail']);
+});
+
+/*
+ * LES QUESTIONS DU TUNNEL DE LA VITRINE (2026-10-30, plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-plugin.md`) :
+ * le compte Meta Business, puis l'application WhatsApp Business. Plus aucune voie par QR code.
+ */
+test('🔴 sans compte Meta Business ni application : la télécharger, brancher tout de suite, et le numéro trop neuf', async ({ page }) => {
+  await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
+  await simulerNumeroFourni(page, { abonnement: null });
+  await page.goto('/connecter-whatsapp');
+  await expect(page.getByTestId('question-compte')).toContainText('Avez-vous un compte Meta Business ?');
+  // Rien n'est choisi tant qu'on n'a pas répondu.
+  await expect(page.getByTestId('choix-fourni')).toHaveCount(0);
+  await page.getByTestId('question-compte-non').click();
+  await expect(page.getByTestId('note-compte')).toContainText('la fenêtre de Meta vous le fera créer en chemin');
+  await expect(page.getByTestId('question-application')).toContainText('Avez-vous déjà l’application WhatsApp Business ?');
+  await page.getByTestId('question-application-non').click();
+  await expect(page.getByTestId('issue-telecharger')).toContainText('branchez-le tout de suite');
+  await expect(page.getByTestId('ouvrir-fenetre-coexistence')).toBeVisible();
+  await expect(page.getByTestId('numero-trop-neuf')).toContainText('revenez le brancher');
+  await expect(page.locator('main')).not.toContainText(/QR/);
+  // « Retour » ramène à la question de l'application, la réponse sur le compte gardée.
+  await page.getByRole('button', { name: 'Retour' }).click();
+  await expect(page.getByTestId('question-compte-repondue')).toContainText('Non');
+  await expect(page.getByTestId('question-application')).toBeVisible();
+});
+
+test('« Je ne sais pas » : où le vérifier, puis l’application gardée, sans la télécharger', async ({ page }) => {
+  await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
+  await simulerNumeroFourni(page, { abonnement: null });
+  await page.goto('/connecter-whatsapp');
+  await page.getByTestId('question-compte-nsp').click();
+  await expect(page.getByTestId('note-compte').getByRole('link', { name: 'business.facebook.com' })).toHaveAttribute('href', 'https://business.facebook.com/');
+  await page.getByTestId('question-application-oui').click();
+  await expect(page.getByTestId('ouvrir-fenetre-coexistence')).toBeVisible();
+  await expect(page.getByTestId('issue-telecharger')).toHaveCount(0);
+  await expect(page.getByTestId('numero-trop-neuf')).toHaveCount(0);
+});
+
+test('avec un compte Meta Business : le numéro API, libre ou fourni, et « Vous pouvez la garder »', async ({ page }) => {
+  await mockAccueil(page, { account: SANS_NUMERO, inscription: { complete: {} } });
+  await simulerNumeroFourni(page, { abonnement: null });
+  await page.goto('/connecter-whatsapp');
+  await page.getByTestId('question-compte-oui').click();
+  await expect(page.getByTestId('issue-api')).toContainText('Votre numéro API');
+  await expect(page.getByTestId('choix-fourni')).toBeVisible();
+  await expect(page.getByTestId('choix-apporte')).toBeVisible();
+  await expect(page.getByTestId('question-application')).toHaveCount(0);
+  await page.getByTestId('choix-coexistence').click();
+  await expect(page.getByTestId('ouvrir-fenetre-coexistence')).toBeVisible();
+  await expect(page.getByTestId('issue-telecharger')).toHaveCount(0);
+  // « Modifier » rouvre la question.
+  await page.getByRole('button', { name: 'Retour' }).click();
+  await page.getByTestId('question-compte-modifier').click();
+  await expect(page.getByTestId('question-compte-oui')).toBeVisible();
+  await expect(page.getByTestId('issue-api')).toHaveCount(0);
 });

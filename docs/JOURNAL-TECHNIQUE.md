@@ -4,6 +4,28 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-30 (soir) : la console et le plugin posent les questions du tunnel, plus aucune voie par QR code
+
+Aucune migration. Plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-plugin.md`, suite de `010b721b`.
+- **Console** : la page « Connecter WhatsApp » (`ParcoursNumero`, textes dans `web/lib/questions-numero.ts`) pose
+  « Avez-vous un compte Meta Business ? » puis, sans compte, « Avez-vous déjà l'application WhatsApp Business ? » ; Non
+  mène à la même fenêtre de Meta après l'avoir téléchargée, avec la phrase du numéro trop neuf. L'offre, première
+  question de la vitrine, est celle de l'espace. Les reprises (retour de Stripe, numéro déjà attribué, lien de Claude
+  qui arrive avec son choix) sautent les questions comme elles sautaient les choix.
+- **Plugin 0.3.17** : la skill `mise-en-service` pose les trois questions dans l'ordre, ne propose plus le QR code (un
+  espace déjà relié ainsi passe par Meta en gardant l'application), et reconnaît le refus d'un numéro trop neuf à ce
+  que la personne rapporte (Meta refuse dans sa fenêtre, que Claude ne voit pas) : revenir quelques jours plus tard,
+  sans chiffre. README, FAQ (trois entrées réécrites, `npm run plugin:generer`) et skill Shopify alignés.
+- **Ce que Claude lit côté serveur** : la description de `filiere` (`start_whatsapp_connection`) dit de ne jamais
+  proposer `application` ; les suites d'un appareil retiré ou endormi proposent la coexistence au lieu d'un nouveau QR
+  code. Doc MCP de la console (`web/lib/mcp-outils.ts`, `npm run doc:md`) sans le QR code.
+- **Aide** : « Connecter mon numéro WhatsApp » dit la question avant « Fournissez-moi un numéro » ; « Garder mon
+  application WhatsApp Business » dit la voie « télécharger l'application » dans son encadré (le chapeau plafonne à
+  320 caractères). La capture de l'étape 2 du premier est refaite (`aide:captures`, ce scénario seul).
+- `tests/questions-numero-vitrine.test.ts` tient la console et la skill égales aux questions de la vitrine, au mot près.
+- Le message de Meta pour un numéro trop neuf n'est toujours PAS mesuré chez nous (celui de la fiche vient de
+  revendeurs) : essai 198, la console du navigateur ouverte. Restes au `todo.md`.
+
 ## 2026-10-30 (soir) : le tunnel plus lisible d'une question à l'autre, et Free et Pro sans article
 
 Vitrine seule, aucune migration. Trois retouches de Julien sur le tunnel livré le jour même. Une question répondue ne se

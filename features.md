@@ -168,8 +168,8 @@ vers le compte Meta Business et vers l'App Store et Google Play pour l'applicati
 « sans l'application » porte aussi. Plus aucune voie ne fait seulement répondre : le numéro relié par code
 (« on supprime une bonne fois pour toutes l'option QR code », Julien), et jamais « coexistence » face au visiteur. Sur
 Tarifs, « Démarrer gratuitement » (Free) et « Essayer Pro 14 jours » (Pro) ouvrent le tunnel l'offre déjà choisie
-(`?offre=free`, `?offre=pro`) ; la une de l'accueil y mène aussi. ⚠️ L'écran « Connecter WhatsApp » de la console et la
-skill `mise-en-service` du plugin posent encore l'ancien arbre (et le QR code) : leur alignement est au `todo.md`.
+(`?offre=free`, `?offre=pro`) ; la une de l'accueil y mène aussi. L'écran « Connecter WhatsApp » de la console et la
+skill `mise-en-service` du plugin posent les mêmes questions depuis le 2026-10-30, sans QR code.
 
 ✅ **Free et Pro, sans article, sur toute la vitrine française** (2026-10-30, Julien : « c'est Free ou Pro, ou formule
 Free ou formule Pro ») : jamais « la Free », « le Pro », « en Free » ni « passer au Pro » sur les pages, leurs
@@ -2159,6 +2159,14 @@ scénario, comment importer des contacts.
   l'application WhatsApp Business, qui y reste (« Garder mon application WhatsApp Business »). Claude Code dit
   la même chose avant de donner le lien de connexion, sans poser de question, et la vitrine le rappelle dans ses étapes
   et sa FAQ.
+- ✅ **Puis les questions du tunnel de la vitrine** (2026-10-30) : sous l'encadré, la page pose « Avez-vous un compte
+  Meta Business ? ». Oui : le numéro API, « Fournissez-moi un numéro » ou « J'ai déjà un numéro », avec « Votre numéro
+  est déjà dans l'application WhatsApp Business ? Vous pouvez la garder ». Non, ou « Je ne sais pas » (avec où le
+  vérifier, business.facebook.com) : « Avez-vous déjà l'application WhatsApp Business ? », Oui menant à « Garder mon
+  application WhatsApp Business », Non à la même fenêtre après l'avoir téléchargée, avec le numéro trop neuf que Meta
+  peut refuser (revenir quelques jours plus tard). L'offre, la première question de la vitrine, est celle de l'espace.
+  Chaque réponse se replie sur une ligne que « Modifier » rouvre ; plus aucune voie par QR code. Claude pose les mêmes
+  (skill `mise-en-service`).
 - ✅ **La carte chez Meta, juste après la connexion.** Dans notre montage, Meta facture le client directement : sans
   carte valable (Visa ou Mastercard), seules les réponses dans la fenêtre de 24 heures partent, les modèles sont
   bloqués. Messaging Me le détecte (la santé du compte, relue en général toutes les 20 minutes, et à chaque ouverture
@@ -2390,8 +2398,9 @@ scénario, comment importer des contacts.
 - ✅ **LIVE (lot 1, en production le 2026-10-25).** **À quoi ça sert.** Un numéro qui sert déjà dans l'application
   WhatsApp Business du téléphone y reste, et passe aussi par l'API officielle : le client continue de répondre depuis son
   téléphone, et ce que son site, son logiciel ou sa boutique envoie part de Messaging Me. Sans compte Meta Business, la
-  fenêtre de Meta le fait créer en chemin. Face au client, jamais le mot « coexistence » : « garder votre application
-  WhatsApp Business ».
+  fenêtre de Meta le fait créer en chemin. Pas encore l'application (2026-10-30) : la télécharger sur un téléphone, y
+  mettre le numéro de l'entreprise et brancher tout de suite ; si Meta refuse un numéro trop neuf, revenir quelques
+  jours plus tard. Face au client, jamais le mot « coexistence » : « garder votre application WhatsApp Business ».
 - ✅ **Lancer** : depuis Claude (`start_whatsapp_connection` en mode `coexistence`, puis `watch_whatsapp_connection`
   dans le même mode), ou le bouton « Garder mon application WhatsApp Business » de l'Accueil. La fenêtre de Meta demande
   le numéro et sa vérification, montre le profil de l'application, fait choisir ou créer le portefeuille business (nom
@@ -5009,6 +5018,12 @@ console : Claude lui donne un lien, il clique, et la page de connexion de son nu
 écran de connexion. Il y fait la fenêtre de Meta ; pendant ce temps, Claude suit le branchement, affiche dans le
 terminal le code de vérification d'un numéro fourni, et annonce le numéro connecté.
 
+**Les questions d'abord (2026-10-30).** Avant le lien, Claude pose celles du tunnel de la vitrine, une à une : l'offre,
+le compte Meta Business (Oui : numéro libre ou fourni, ou l'application gardée), puis l'application WhatsApp Business
+(la garder, ou la télécharger et brancher tout de suite). Meta vérifie le numéro dans sa propre fenêtre, que Claude ne
+voit pas : si la personne rapporte le refus d'un numéro trop neuf, Claude le dit simplement et propose de revenir
+quelques jours plus tard, sans chiffre.
+
 **Ce qu'il faut savoir.** Le lien vaut une heure, peut se rouvrir pendant ce temps, et cesse de servir dès que le
 numéro est connecté ; passé l'heure, Claude en donne un autre. Il n'ouvre que la connexion du numéro de cet espace,
 rien d'autre de la console. Il est donné au nom de la personne connectée à Claude, qui doit être admin de l'espace :
@@ -5027,13 +5042,14 @@ numéro.
 
 ### Relier l'application WhatsApp Business depuis Claude (filière application, 2026-10-22)
 
-- ✅ **LIVE, éprouvée par un essai réel les 22 et 23 octobre.** **À quoi ça sert.** Un développeur qui n'a pas de compte
-  Meta Business relie le compte WhatsApp Business de son téléphone, comme un appareil lié, par un QR code. Claude explique
-  d'abord les mots (compte Meta Business, application WhatsApp Business, API, garder son application, QR code), puis
-  pose une à une les questions de l'arbre du numéro (Julien, revu le 2026-10-25) ; sans compte Meta Business, pour un
-  numéro à part ou un nouveau numéro, et là seulement, il propose cette filière à côté de l'API (dont la fenêtre de Meta
-  crée le compte en chemin) et la dit en une phrase : aucun compte et des réponses que Meta ne facture pas, mais ce
-  n'est pas l'API officielle, le numéro ne fait que répondre, et WhatsApp peut le couper.
+- ⛔ **Plus proposée depuis le 2026-10-30** (« on supprime une bonne fois pour toutes l'option QR code », Julien) : ni
+  Claude, ni la console, ni la vitrine, ni la doc MCP ne l'offrent. Le code reste, pour les espaces déjà reliés ainsi ;
+  leur suite (écrire en premier, appareil retiré, sommeil) est de garder l'application et de passer le même numéro par
+  Meta. Ce qui suit décrit ces espaces.
+- ✅ **LIVE, éprouvée par un essai réel les 22 et 23 octobre.** **À quoi ça servait.** Un développeur sans compte Meta
+  Business reliait le compte WhatsApp Business de son téléphone, comme un appareil lié, par un QR code : aucun compte et
+  des réponses que Meta ne facture pas, mais ce n'est pas l'API officielle, le numéro ne fait que répondre, et WhatsApp
+  peut le couper.
 - ✅ **Relier** : `start_whatsapp_connection` avec la filière « application », pour un numéro que nous fournissons
   (recommandé pour un essai) ou le sien. Le lien ouvre la page de connexion, qui montre le QR code à scanner depuis
   l'application (« Appareils liés ») ; Claude suit par `watch_whatsapp_connection` et annonce le compte relié. Le crédit

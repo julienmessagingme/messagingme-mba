@@ -24,8 +24,8 @@ nouveau code à redemander, vous retrouvez le compte et le numéro existants. Qu
 s'affiche (code expiré, compte non partagé, plusieurs numéros à départager), pas un message d'erreur opaque.
 
 **2. Pas de numéro ? En obtenir un.** Le lien « Pas de numéro ? Nous vous en fournissons un » ouvre la page
-« Connecter WhatsApp » : « Fournissez-moi un numéro » vous propose un numéro britannique dédié, inclus dans l'offre
-Pro, et à 3,50 € HT par mois sans elle.
+« Connecter WhatsApp » : répondez « Oui » à « Avez-vous un compte Meta Business ? », puis « Fournissez-moi un
+numéro » vous propose un numéro britannique dédié, inclus dans l'offre Pro, et à 3,50 € HT par mois sans elle.
 
 Vous payez sur la page de Stripe (un code promo s'y saisit, si nous vous en avons remis un), puis le numéro
 s'affiche. Ensuite, dans l'ordre :
