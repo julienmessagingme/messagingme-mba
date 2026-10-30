@@ -31,12 +31,6 @@ voie par QR code (plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-
   d'aide modifiées (« Choisir mon offre », « Brancher ma boutique Shopify » et quatre fiches non publiques),
   `aide:charger` après ce déploiement. La console et la vitrine, elles, partent au push.
 
-## La fiche publique HubSpot renommée (2026-10-30)
-
-- `aide:charger` au prochain déploiement de l'API : jusque-là, le bot d'aide de la console garde l'ancienne fiche
-  `hubspot-sur-l-accueil`, et la nouvelle (`integrer-whatsapp-a-hubspot`, ce que fait l'app et l'argument « sans Sales
-  Hub ») n'y est pas.
-
 ## 🟡 Les alertes de Santé : ce que le lot 4 de la refonte de /ops laisse (relecture du 2026-10-30)
 
 - **La veille est aveugle quand elle serait la plus utile** : un signal illisible ne s'alerte pas (Cockpit muet n'est
