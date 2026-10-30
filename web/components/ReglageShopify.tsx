@@ -9,6 +9,7 @@ import { routeInconnue } from '@/lib/canaux-services';
 import { couperShopify, lireShopify, type EtatShopifyVue } from '@/lib/api-shopify';
 import { EVENEMENTS_SHOPIFY, LIBELLES_EVENEMENTS, type EvenementShopify } from '@/lib/partage/shopify-messages';
 import { delaiEnClair, etatDuMessage, type EtatMessage } from '@/lib/shopify-assistant';
+import { fmtMontant } from '@/lib/ventes';
 import { ShopifyBrancher } from '@/components/ShopifyBrancher';
 import { ShopifyAssistant } from '@/components/ShopifyAssistant';
 import { ShopifyImport } from '@/components/ShopifyImport';
@@ -24,6 +25,12 @@ import { ShopifyImport } from '@/components/ShopifyImport';
  *
  * ⚠️ ADMIN SEULEMENT : la carte ne vit que dans la page des administrateurs, et ses routes sont sous `g.admin`.
  */
+
+/** Le montant récupéré, par devise et jamais additionné, précédé de `avant` ; rien quand aucun panier n'a été récupéré. */
+function montantsRecuperes(vue: EtatShopifyVue, locale: string, avant: string): string {
+  const m = vue.paniers.montantsRecuperes;
+  return m.length === 0 ? '' : avant + m.map((x) => fmtMontant(x.montant, x.devise, locale)).join(' · ');
+}
 
 const ETATS: Record<EtatMessage, readonly [string, string]> = {
   a_regler: ['pas encore réglé', 'not set up yet'],
@@ -189,6 +196,13 @@ export function ReglageShopify({ tenantId }: { tenantId: string }) {
               {t(
                 `Paniers abandonnés : relance ${b.delaiPanierMinutes ?? 60} min après la dernière modification. Sur 7 jours, ${Object.values(vue!.paniers.relances).reduce((s, n) => s + n, 0)} relancés (${vue!.paniers.relances.envoye ?? 0} partis), ${vue!.paniers.fermesATemps} devenus une commande à temps, ${vue!.paniers.enAttente} en attente.`,
                 `Abandoned checkouts: reminder ${b.delaiPanierMinutes ?? 60} min after the last change. Over 7 days, ${Object.values(vue!.paniers.relances).reduce((s, n) => s + n, 0)} reminded (${vue!.paniers.relances.envoye ?? 0} sent), ${vue!.paniers.fermesATemps} turned into an order in time, ${vue!.paniers.enAttente} waiting.`,
+              )}
+              {/* Le chiffre d'affaires attribué (plan 2026-10-30) : relances parties et récupérés comptés sur la MÊME date,
+                  celle de la relance, pour qu'ils se comparent ; les commandes de test ne comptent pas. */}
+              {' '}
+              {t(
+                `Selon la date de la relance : ${vue!.paniers.relancesParties} relances parties, ${vue!.paniers.recuperes} récupérés${montantsRecuperes(vue!, 'fr', ' pour ')}${vue!.paniers.recuperesTest > 0 ? `, dont ${vue!.paniers.recuperesTest} de test, non comptés` : ''}.`,
+                `By reminder date: ${vue!.paniers.relancesParties} reminders sent, ${vue!.paniers.recuperes} recovered${montantsRecuperes(vue!, 'en', ' for ')}${vue!.paniers.recuperesTest > 0 ? `, plus ${vue!.paniers.recuperesTest} test orders, not counted` : ''}.`,
               )}
             </p>
           )}

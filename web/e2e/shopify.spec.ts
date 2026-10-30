@@ -177,6 +177,30 @@ test.describe('Tools > Intégrations > Shopify : la carte de la console', () => 
     expect(trace.preparations).toEqual([]);
   });
 
+  test('🔴 la ligne des paniers dit les relances parties et les récupérés de la même date, leur montant, les tests à part (plan 2026-10-30)', async ({ page }) => {
+    await monter(page, {
+      etat: {
+        ...RELANCE_ACTIVE,
+        paniers: {
+          relances: { envoye: 3 }, fermesATemps: 1, enAttente: 2,
+          relancesParties: 4, recuperes: 2, montantsRecuperes: [{ devise: 'EUR', montant: '59.9' }], recuperesTest: 1,
+        },
+      },
+    });
+    const ligne = page.getByTestId('integration-shopify-paniers');
+    await expect(ligne).toContainText('4 relances parties, 2 récupérés');
+    await expect(ligne).toContainText(/59,90\s€/);
+    await expect(ligne).toContainText('dont 1 de test, non comptés');
+  });
+
+  test('une API plus ancienne, sans récupérés : la ligne garde ses chiffres d’avant, sans montant', async ({ page }) => {
+    await monter(page, { etat: { ...RELANCE_ACTIVE, paniers: { relances: { envoye: 3 }, fermesATemps: 1, enAttente: 2 } } });
+    const ligne = page.getByTestId('integration-shopify-paniers');
+    await expect(ligne).toContainText('3 relancés');
+    await expect(ligne).toContainText('0 relances parties, 0 récupérés');
+    await expect(ligne).not.toContainText('de test');
+  });
+
   test('🔴 API pas encore déployée (404 du routeur) : AUCUNE carte', async ({ page }) => {
     await monter(page, { etat: 'absente' });
     await expect(page.getByTestId('integration-hubspot')).toBeVisible();

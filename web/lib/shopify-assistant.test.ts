@@ -87,5 +87,21 @@ describe('la lecture de l’état', () => {
     const v = lireEtatShopify({ boutique: { domaine: 'b.myshopify.com', etat: 'connectee' }, messages: [] });
     expect(v?.boutique?.origine).toBe('claude_code');
     expect(v?.attentes).toEqual([]);
+    // Les récupérés (plan 2026-10-30) absents : zéro et aucune ligne, jamais une exception.
+    expect(v?.paniers).toEqual({ relances: {}, fermesATemps: 0, enAttente: 0, relancesParties: 0, recuperes: 0, montantsRecuperes: [], recuperesTest: 0 });
+  });
+
+  it('lit les relances parties et les récupérés des 7 jours, une ligne de montant mal formée écartée (plan 2026-10-30)', () => {
+    const v = lireEtatShopify({
+      boutique: { domaine: 'b.myshopify.com', etat: 'connectee' }, messages: [],
+      paniers: {
+        relances: { envoye: 3 }, fermesATemps: 1, enAttente: 2, relancesParties: 4, recuperes: 2, recuperesTest: 1,
+        montantsRecuperes: [{ devise: 'EUR', montant: '59.9' }, { devise: 'EUR', montant: '12,5' }, { montant: '3' }],
+      },
+    });
+    expect(v?.paniers).toEqual({
+      relances: { envoye: 3 }, fermesATemps: 1, enAttente: 2,
+      relancesParties: 4, recuperes: 2, montantsRecuperes: [{ devise: 'EUR', montant: '59.9' }], recuperesTest: 1,
+    });
   });
 });

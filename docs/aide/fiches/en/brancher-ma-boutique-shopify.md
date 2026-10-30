@@ -1,7 +1,7 @@
 ---
 description: Connect a Shopify store to WhatsApp: order confirmation, shipping notice with tracking, abandoned checkout reminders. The simplest way: Claude Code.
 slug: connect-my-shopify-store
-traduit_de: 8b1cc7
+traduit_de: 58701c
 bouton_claude: Connect Shopify from Claude Code, for free
 bouton_console: Connect Shopify in the console
 ---
@@ -78,11 +78,27 @@ A customer who fills in the checkout with their phone number without ordering ge
 link that reopens their checkout, at the delay you choose after its last change (from 15 min to 72 h). Nothing goes out
 if an order came of it in the meantime, even an unpaid one. It is a marketing message: it carries at the bottom the
 line “Reply STOP to stop these messages” (in a French template, “Répondez STOP pour ne plus recevoir ces messages”). The
-card counts the reminders sent, the checkouts that turned into an order in time, and those waiting.
+card counts the reminders sent, the checkouts that turned into an order in time, and those waiting; and, by reminder
+date, the checkouts recovered (reminded then paid) and their amount.
 
 **Good to know.** The first name is optional at Shopify: many customers do not give it, especially before abandoning
 their checkout. A message that contains the first name still goes out, with “there” in its place (“Hello there”; “à
 vous” for a template in French). That is why the text suggested for the reminder simply starts with “Hello,”.
+
+## A phone number required at checkout
+
+In Shopify, set the shipping address phone number to “Required” (Settings > Checkout). Without a phone number, an order
+gets neither a confirmation nor a reminder on WhatsApp, and only a visit that came through one of your campaign links
+can still tie it to your messages.
+
+## What your sends brought in
+
+In the console (Analytics > Quantitative > Shopify, Pro plan) or by asking Claude Code (every plan): the revenue of the
+orders paid within 5 days after a WhatsApp message was received, credited to the last send (a campaign, the checkout
+reminder, a scenario, an AI agent or Meta’s agent). The figure is gross, refunds not deducted, and counted per currency.
+Part of it is **proven**: the reminded checkout itself paid, or a visit that came through your WhatsApp links. The rest
+is a match in time, not a proof. Shopify test orders are shown apart, never counted, and only orders paid since the
+store was connected count.
 
 ## The sending rules
 

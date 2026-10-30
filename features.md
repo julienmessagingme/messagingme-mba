@@ -2572,6 +2572,24 @@ aussi tout faire depuis la console, sans Claude Code (2026-10-22, voir la carte 
   consentantes : l'accord est déclaré par le client, sous sa responsabilité, et la fiche dit qui l'a déclaré (décision de
   Julien du 2026-10-25) ; depuis la carte de la console, elles arrivent sans consentement WhatsApp. Un STOP reste un
   STOP, une fiche déjà présente n'est pas touchée.
+- **Le chiffre d'affaires attribué aux envois WhatsApp** (2026-10-28 et 2026-10-30) : ce que les envois WhatsApp ont
+  rapporté sur la boutique branchée, lu de trois façons : dans la console, **Analytics > Quantitatif > Shopify** (formule
+  Pro et au-delà, entrée présente seulement pour un espace qui a une boutique) ; par Claude Code, l'outil
+  **`get_revenue_stats`** (toutes les offres, Free comprise : Free n'a pas de console) ; et sur la carte Shopify, les
+  paniers **récupérés** des 7 derniers jours.
+  - **La règle** : une commande payée dans les **5 jours** après un message WhatsApp reçu est attribuée au **dernier
+    envoi** : une campagne (par son nom), la relance de panier, les scénarios (en bloc), l'agent IA ou l'agent de Meta. Une
+    confirmation, un avis d'expédition, une réponse de l'équipe ou un envoi par l'API n'en sont jamais la source.
+  - **Prouvé ou non** : une part du chiffre est prouvée, quand le panier relancé lui-même est payé, ou quand Shopify
+    rattache la visite à un lien WhatsApp par ses UTM (relu 30 minutes après la commande, la vente peut alors changer de
+    source ou apparaître dans ses trois premières heures). Le reste est une concordance dans le temps, et l'écran comme
+    l'outil le disent.
+  - **Brut et par devise** : total payé, livraison comprise, remboursements non déduits ; deux devises ne s'additionnent
+    jamais.
+  - **Les paniers** : relancés, récupérés et montant récupéré se comptent à la date de la relance.
+  - **Les commandes de test** (passerelle de test de Shopify) sont annoncées à part et jamais comptées.
+  - **Depuis le branchement** : seules les commandes payées depuis le branchement de la boutique comptent, d'un client déjà
+    dans l'espace, ou, sans fiche, venu par le lien d'une campagne.
 
 ## API publique `/v1` (intégrateurs externes)
 

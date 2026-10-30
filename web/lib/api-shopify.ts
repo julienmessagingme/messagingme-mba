@@ -41,8 +41,14 @@ export interface EtatShopifyVue {
   } | null;
   messages: MessageShopifyVue[];
   compteurs: Record<string, number>;
-  /** Les paniers des 7 derniers jours, leur durée de vie (lot 2). */
-  paniers: { relances: Record<string, number>; fermesATemps: number; enAttente: number };
+  /**
+   * Les paniers des 7 derniers jours, leur durée de vie (lot 2) ; et, sur la date de RELANCE, les relances parties et les
+   * récupérés, leur montant par devise, les tests à part (plan 2026-10-30) : à comparer entre eux, pas aux premiers.
+   */
+  paniers: {
+    relances: Record<string, number>; fermesATemps: number; enAttente: number;
+    relancesParties: number; recuperes: number; montantsRecuperes: Array<{ devise: string; montant: string }>; recuperesTest: number;
+  };
   pageApps: string | null;
   /** Les messages préparés par l'assistant, dont le modèle attend l'approbation de Meta. */
   attentes: AttenteShopifyVue[];
@@ -82,7 +88,16 @@ export function lireEtatShopify(brut: unknown): EtatShopifyVue | null {
     for (const [k, v] of Object.entries(p.relances as Record<string, unknown>)) if (typeof v === 'number') relances[k] = v;
   }
   const nombre = (v: unknown): number => (typeof v === 'number' ? v : 0);
-  const paniers = { relances, fermesATemps: nombre(p.fermesATemps), enAttente: nombre(p.enAttente) };
+  const montantsRecuperes = (Array.isArray(p.montantsRecuperes) ? p.montantsRecuperes : []).flatMap((m: unknown) => {
+    const x = m as Record<string, unknown> | null;
+    return x && typeof x.devise === 'string' && /^[A-Z]{3}$/.test(x.devise) && typeof x.montant === 'string' && /^\d+(\.\d+)?$/.test(x.montant)
+      ? [{ devise: x.devise, montant: x.montant }]
+      : [];
+  });
+  const paniers = {
+    relances, fermesATemps: nombre(p.fermesATemps), enAttente: nombre(p.enAttente),
+    relancesParties: nombre(p.relancesParties), recuperes: nombre(p.recuperes), montantsRecuperes, recuperesTest: nombre(p.recuperesTest),
+  };
   const attentes = Array.isArray(o.attentes)
     ? o.attentes.flatMap((a: unknown) => {
       const x = a as Record<string, unknown> | null;

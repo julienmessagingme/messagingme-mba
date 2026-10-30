@@ -2,7 +2,7 @@
 description: Brancher une boutique Shopify à WhatsApp : confirmation de commande, avis d'expédition, relance des paniers abandonnés. Le plus simple : Claude Code.
 ecran: integrations
 source_section: Boutique Shopify : les messages de commande sur WhatsApp (Claude Code ou console, 2026-10-21)
-source_empreinte: 985b62
+source_empreinte: 2f7511
 publique: oui
 rubrique: parler-aux-clients
 rang: 6
@@ -86,12 +86,27 @@ Un client qui remplit le paiement avec son téléphone sans commander reçoit UN
 rouvre son panier, au délai que vous choisissez après sa dernière modification (de 15 min à 72 h). Rien ne part si une
 commande en est née entre-temps, même non payée. C'est un message marketing : elle porte en bas la mention « Répondez
 STOP pour ne plus recevoir ces messages ». La carte compte les relances parties, les paniers devenus une commande à
-temps, et ceux en attente.
+temps, et ceux en attente ; et, selon la date de la relance, les paniers récupérés (relancés puis payés) et leur montant.
 
 **Bon à savoir.** Le prénom est facultatif chez Shopify : beaucoup de clients ne le donnent pas, surtout avant
 d'abandonner leur panier. Un message qui contient le prénom part quand même, avec « à vous » à sa place (« Bonjour à
 vous » ; « there » pour un modèle en anglais). C'est pourquoi le texte proposé pour la relance commence simplement par
 « Bonjour, ».
+
+## Le téléphone, obligatoire au paiement
+
+Dans Shopify, réglez le numéro de téléphone de l'adresse de livraison sur « Obligatoire » (Paramètres > Paiement). Sans
+téléphone, une commande ne reçoit ni confirmation ni relance sur WhatsApp, et seule une visite venue d'un lien de vos
+campagnes permet encore de la relier à vos messages.
+
+## Ce que vos envois ont rapporté
+
+Dans la console (Analytics > Quantitatif > Shopify, offre Pro) ou en le demandant à Claude Code (toutes les offres) :
+le chiffre d'affaires des commandes payées dans les 5 jours après un message WhatsApp reçu, attribué au dernier envoi
+(une campagne, la relance de panier, un scénario, un agent IA ou l'agent de Meta). Le chiffre est brut, remboursements
+non déduits, et compté par devise. Une part est **prouvée** : le panier relancé lui-même payé, ou une visite venue de
+vos liens WhatsApp. Le reste est une concordance dans le temps, pas une preuve. Les commandes de test de Shopify sont
+annoncées à part, jamais comptées, et seules comptent les commandes payées depuis le branchement de la boutique.
 
 ## Les règles des envois
 

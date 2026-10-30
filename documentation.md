@@ -2408,6 +2408,16 @@ dans `PgShopifyStore`. Le jeton rendu n'est ni gardé ni renouvelé : les webhoo
   à la dernière touche du modèle nommé (`appliquerPreuveUtm`) : jamais par-dessus une preuve `panier`, et une vente
   absente n'est créée que pour une fiche vivante et une boutique branchée avant le paiement (un rebranchement suit un
   effacement qui a pu anonymiser la vente). Une panne de Shopify se relit plus tard ; seule une panne de notre base lève.
+  Chaque relecture écrit une ligne `shopify_preuve_utm` (espace, commande, essai, issue) : sans elle, l'issue ne se lisait
+  qu'en rejouant la relecture à la main ;
+- 🔴 **le chiffre se lit par UNE lecture, pour trois surfaces** (plan 2026-10-30) : `chiffreVentes`
+  (`src/shopify/chiffre.ts`, sur `PgVentesStore.lireChiffre`) sert la route `GET /tenants/:tenantId/stats/ventes`
+  (Quantitatif > Shopify, fonction `statistiques`), l'outil MCP `get_revenue_stats` (toutes les offres) et les récupérés de
+  l'état de la boutique (`etatShopify`, 7 jours de Paris). Les montants sont sommés par Postgres (`trim_scale`), PAR DEVISE,
+  et voyagent en texte décimal jusqu'à l'écran, qui ne les additionne jamais ; les commandes de test sortent dans un bloc à
+  part, de même forme. Les ventes se comptent à la date du PAIEMENT ; relances parties, récupérés et montant récupéré à
+  la date de la RELANCE (`relances_panier_jour.jour`, `ventes_attribuees.relance_le`), pour se comparer entre eux : la
+  carte Shopify les rend ensemble (`relancesParties`, `recuperes`), à part de ses compteurs par panier ouvert.
 
 - 🔴 **chaque envoi né d'un événement Shopify écrit la fiche consentante** (décision de Julien du 2026-10-26 : le
   consentement des clients relève du marchand, aucune affirmation ne lui est demandée, ni par Claude ni par la
