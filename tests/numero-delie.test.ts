@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { MetaClientFactory } from '../src/meta/factory';
+import { sansLigneDeCredit } from './credit-whatsapp-fixtures';
 import { MetaCredentialsResolver } from '../src/meta/credentials';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import { NumeroDelieError, MESSAGE_NUMERO_DELIE, creerGardeNumeroDelie } from '../src/meta/numero-delie';
@@ -59,6 +60,7 @@ function fabrique(delies: ReadonlySet<string>, transport: Transport, resolutions
     listeDeLAgent: { retirerAvantUnModele: async () => {} },
     // Les modèles du mois sans limite (lot 6) : ces tests ne portent pas sur l'offre, et le DISENT.
     quotaModeles: { consommer: async () => ({ ok: true }) },
+    creditWhatsapp: sansLigneDeCredit,
   });
 }
 

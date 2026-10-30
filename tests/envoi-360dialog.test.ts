@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { MetaClientFactory } from '../src/meta/factory';
+import { sansLigneDeCredit } from './credit-whatsapp-fixtures';
 import { CompteChez360dialog, MetaCredentialsResolver, TokenInvalidError, type CredentialsResolverDeps, type WabaCredential } from '../src/meta/credentials';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import { Media360dialogClient } from '../src/meta/media-360dialog';
@@ -54,7 +55,7 @@ function fabrique(r: MetaCredentialsResolver, transport: HttpTransport, marketin
   return new MetaClientFactory({
     resolver: r, transport, version: 'v25.0', marketingViaLite,
     numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu },
-    listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites,
+    listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites, creditWhatsapp: sansLigneDeCredit,
   });
 }
 

@@ -1,5 +1,6 @@
 import type { Queue } from '../queue/queue';
 import { campaignJobExpireSeconds, resolveRatePerMinute } from './pacing';
+import type { EstimationCredit } from '../credit-whatsapp/estimation';
 
 /**
  * LE LANCEMENT D'UNE CAMPAGNE, partagé par le bouton « Lancer » de la console (`POST /campaigns/:campaignId/run`) et par
@@ -22,6 +23,12 @@ export interface DepsLancement {
   queue: Pick<Queue, 'enqueue'>;
   /** Les modèles du mois : la limite, ce qu'il en reste, ce que la campagne enverrait. `null` = sans limite. */
   modelesDuLancement(tenantId: string, campaignId: string): Promise<{ max: number; reste: number; demandes: number } | null>;
+  /**
+   * Le Crédit WhatsApp au lancement (plan du Crédit WhatsApp, tâche 6) : ce que la campagne coûterait, le solde, ce qui
+   * manque ; `null` hors de la ligne ou en open bar. Une ESTIMATION pour refuser tôt, comme les modèles du mois : la garde
+   * de la fabrique décide à chaque envoi. Requise : les fixtures disent leur hypothèse (`campagnesInertes` : hors ligne).
+   */
+  creditDuLancement(tenantId: string, campaignId: string): Promise<EstimationCredit | null>;
   defaultRatePerMinute: number;
   plafondLePlusBas: number;
 }
@@ -30,7 +37,8 @@ export type IssueLancement =
   | { ok: true; programmee: Date }
   | { ok: true; enfilee: true }
   | { ok: false; raison: 'inconnue' | 'date_passee' | 'non_programmable' }
-  | { ok: false; raison: 'limite'; max: number; reste: number; demandes: number };
+  | { ok: false; raison: 'limite'; max: number; reste: number; demandes: number }
+  | { ok: false; raison: 'credit_whatsapp'; manqueMicroEur: number; montantMicroEur: number };
 
 /**
  * L'expiration du job d'un run, dimensionnée sur le travail réel (destinataires en attente / débit résolu) : un run
@@ -63,6 +71,12 @@ export async function lancerCampagne(deps: DepsLancement, tenantId: string, camp
   const modeles = await deps.modelesDuLancement(tenantId, campaignId);
   if (modeles !== null && modeles.demandes > modeles.reste) {
     return { ok: false, raison: 'limite', max: modeles.max, reste: modeles.reste, demandes: modeles.demandes };
+  }
+  // Le Crédit WhatsApp, au même moment et pour la même raison : une campagne qui manquerait de crédit est refusée avant
+  // de partir, avec ce qui manque. Une reprise passe ici aussi : elle se chiffre sur ce qui reste à envoyer.
+  const credit = await deps.creditDuLancement(tenantId, campaignId);
+  if (credit !== null && credit.manqueMicroEur > 0) {
+    return { ok: false, raison: 'credit_whatsapp', manqueMicroEur: credit.manqueMicroEur, montantMicroEur: credit.montantMicroEur };
   }
 
   const expireInSeconds = await expirationDuRun(deps, campaignId);

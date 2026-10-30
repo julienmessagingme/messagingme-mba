@@ -44,7 +44,7 @@ const agentActif = (o: Partial<AgentComplet> = {}): AgentComplet => ({
 });
 
 /** Le démarreur, sur des dépendances qui notent ce qu'on leur demande. */
-function demarreur(o: { gateway?: boolean; agent?: AgentComplet | null; solde?: number; lancement?: true | string } = {}) {
+function demarreur(o: { gateway?: boolean; agent?: AgentComplet | null; solde?: number; lancement?: true | string; creditWhatsappBloque?: boolean } = {}) {
   const journal: string[] = [];
   const demandes: DemandeDeLancement[] = [];
   const deps: DepsDemarreurRepondeur = {
@@ -54,9 +54,25 @@ function demarreur(o: { gateway?: boolean; agent?: AgentComplet | null; solde?: 
     lancements: { lancer: (async (d: DemandeDeLancement) => { journal.push(`lancer:${d.type}`); demandes.push(d); return o.lancement ?? true; }) as DepsDemarreurRepondeur['lancements']['lancer'] },
     gatewayDisponible: o.gateway ?? true,
     alerteCredit: { alerter: async (t) => { journal.push(`alerte:${t}`); } },
+    // Aucun numéro sur la ligne de crédit par défaut : ces tests ne portent pas sur le Crédit WhatsApp, et le DISENT.
+    creditWhatsapp: {
+      bloque: async () => {
+        if (o.creditWhatsappBloque !== undefined) journal.push('credit-whatsapp');
+        return o.creditWhatsappBloque ?? false;
+      },
+    },
   };
   return { d: creerDemarreurRepondeur(deps), journal, demandes };
 }
+
+describe('le Crédit WhatsApp avant le démarrage', () => {
+  it('🔴 un numéro de la ligne à sec : rien ne démarre, la conversation va à l’équipe, aucune alerte du crédit IA', async () => {
+    const { d, journal, demandes } = demarreur({ creditWhatsappBloque: true });
+    expect(await d.demarrer('t1', WA, { agentId: AGENT, messageDeclencheur: null })).toBe('credit_whatsapp_epuise');
+    expect(demandes).toEqual([]);
+    expect(journal).toEqual([`agent:${AGENT}`, 'solde', 'credit-whatsapp']);
+  });
+});
 
 describe('le démarreur : l’agent peut-il répondre ?', () => {
   it('🔴 oui : l’ancre du scénario système, puis UN lancement `repondeur` sur le graphe de l’agent, fenêtre prouvée', async () => {
@@ -166,6 +182,13 @@ describe('la remise « personne ne suit » démarre le répondeur IA, après les
     await b.fil.remettreSiPersonneNeSuit(ESPACE, 'w', MSG, entree());
     expect(b.etat('w')?.owner).toBe('app_human');
     expect(b.ecritures.at(-1)?.opts).toMatchObject({ par: { cause: 'automatique : crédit IA épuisé, le répondeur automatique ne peut pas répondre' }, ouvreUneDemande: true });
+  });
+
+  it('🔴 Crédit WhatsApp épuisé : à l’équipe avec une demande, sa propre cause (le crédit IA n’y est pour rien)', async () => {
+    const b = repondeur({ conversations: { w: { owner: 'app_workflow' } }, demarrage: 'credit_whatsapp_epuise' });
+    await b.fil.remettreSiPersonneNeSuit(ESPACE, 'w', MSG, entree());
+    expect(b.etat('w')?.owner).toBe('app_human');
+    expect(b.ecritures.at(-1)?.opts).toMatchObject({ par: { cause: 'automatique : Crédit WhatsApp épuisé, le répondeur automatique ne peut pas répondre' }, ouvreUneDemande: true });
   });
 
   it('indisponible, refusé, ou un démarreur qui LÈVE : à l’équipe aussi (le client n’attend pas un robot qui ne viendra pas)', async () => {
@@ -357,6 +380,7 @@ function bout(o: OptionsBanc = {}) {
     lancements,
     gatewayDisponible: true,
     alerteCredit: { alerter: async () => {} },
+    creditWhatsapp: { bloque: async () => false },
   });
   /**
    * Un job de webhook, dans l'ordre du handler : l'avance des parcours, puis la remise de ce qu'aucun n'a pris

@@ -397,6 +397,80 @@ export function ecrireGrillePrixOps(sessionOps: string, prix: GrillePrix, note: 
   return appelOps(sessionOps, '/ops/prix', { method: 'PATCH', corps: { ...prix, note } });
 }
 
+/** La grille de Meta en vigueur pour le Crédit WhatsApp (`ResumeGrille`, `src/credit-whatsapp/reglages.pg.ts`). */
+export interface ResumeGrilleMeta {
+  id: string;
+  enVigueurLe: string;
+  chargeeLe: string;
+  chargeePar: string;
+  note: string | null;
+  tarifs: number;
+  perimee: boolean;
+  prochaine: { enVigueurLe: string } | null;
+}
+
+/** Les réglages du Crédit WhatsApp : la grille de Meta en vigueur (ou aucune) et la commission des messages. */
+export function lireReglagesCreditWhatsappOps(sessionOps: string): Promise<{ grille: ResumeGrilleMeta | null; commissionPct: number }> {
+  return appelOps(sessionOps, '/ops/credit-whatsapp/reglages');
+}
+
+/**
+ * CHARGER LA GRILLE DE META : le fichier en euros que Meta publie, tel quel. Le serveur le lit, refuse un fichier faux
+ * et nomme la ligne fautive ; `note` dit d'où vient le fichier.
+ */
+export function chargerGrilleMetaOps(sessionOps: string, csv: string, enVigueurLe: string, note: string): Promise<{ grille: ResumeGrilleMeta | null }> {
+  return appelOps(sessionOps, '/ops/credit-whatsapp/grille', { method: 'PUT', corps: { csv, enVigueurLe, note } });
+}
+
+/** La commission des messages du Crédit WhatsApp, un entier de 0 à 100 ; `note` dit pourquoi. */
+export function reglerCommissionMessagesOps(sessionOps: string, commissionPct: number, note: string): Promise<{ commissionPct: number }> {
+  return appelOps(sessionOps, '/ops/credit-whatsapp/commission', { method: 'PUT', corps: { commissionPct, note } });
+}
+
+/** Un numéro sur la ligne du Crédit WhatsApp (`LigneCredit`, `src/credit-whatsapp/lignes.pg.ts`). */
+export interface LigneCreditOps {
+  id: string;
+  phoneNumberId: string;
+  origine: 'ops' | 'option';
+  depuis: string;
+  /** L'option a pris fin : les envois du numéro sont arrêtés, la ligne reste en cours. */
+  arreteeLe: string | null;
+}
+
+/** Une provision du Crédit WhatsApp (`ProvisionVue`, `src/credit-whatsapp/credit.ts`) : un envoi au prix de la grille. */
+export interface ProvisionCreditOps {
+  id: string;
+  creeLe: string;
+  phoneNumberId: string;
+  wamid: string | null;
+  pays: string | null;
+  categorie: string;
+  montantMicroEur: number;
+  /** `rendu` : échec ou message que Meta ne facture pas ; `ajuste` : catégorie corrigée à l'accusé. */
+  etat: 'provisionne' | 'rendu' | 'ajuste';
+  livreLe: string | null;
+}
+
+/** Ce que `/ops` montre du Crédit WhatsApp d'un espace. Le solde et les provisions sont absents sur une API plus ancienne. */
+export interface VueCreditOps {
+  lignes: LigneCreditOps[];
+  soldeMicroEur?: number;
+  provisions?: ProvisionCreditOps[];
+}
+
+/** Les numéros d'un espace sur la ligne du Crédit WhatsApp, son solde et ses dernières provisions. */
+export function lireLignesCreditOps(sessionOps: string, tenantId: string): Promise<VueCreditOps> {
+  return appelOps(sessionOps, `/ops/credit-whatsapp/ligne/${encodeURIComponent(tenantId)}`);
+}
+
+/**
+ * Pose un numéro de l'espace sur la ligne (un numéro d'essai), ou l'en retire. Le serveur refuse un numéro d'un autre
+ * espace (404), un numéro 360dialog, en coexistence ou délié (409) ; `note` dit pourquoi.
+ */
+export function poserLigneCreditOps(sessionOps: string, tenantId: string, phoneNumberId: string, poser: boolean, note: string): Promise<VueCreditOps> {
+  return appelOps(sessionOps, `/ops/credit-whatsapp/ligne/${encodeURIComponent(tenantId)}`, { method: 'POST', corps: { phoneNumberId, poser, note } });
+}
+
 export function getOpsOverview(sessionOps: string): Promise<OpsOverview> {
   return appelOps(sessionOps, '/ops/overview');
 }
@@ -626,6 +700,12 @@ export interface OffreEntrepriseOps {
    */
   business?: boolean;
   utilisateursBusiness?: number | null;
+  /**
+   * Le Crédit WhatsApp de l'Entreprise : l'open bar (messages facturés après) et la commission des messages négociée
+   * (`null` = la globale). Absents sur une API d'avant lui : lus comme faux et `null`.
+   */
+  openBarWhatsapp?: boolean;
+  commissionMessagesPct?: number | null;
   /** Ce que l'exploitant doit savoir avant de poser ou de retirer une offre à la main. Absent sur une API plus ancienne. */
   alertes?: { proPayeVivant: boolean; numeroSeulVivant: boolean; numeroFourniSansCouverture: boolean };
   /** Ce que le PUT a fait après l'écriture : le crédit offert (micro-euros), la fin du numéro, les gestes échoués. */
@@ -645,6 +725,8 @@ export function ecrireOffreOps(sessionOps: string, tenantId: string, corps: {
   contacts?: number | null; commissionPct?: number | null; note: string;
   /** Absent = inchangé (spec Business) ; vrai avec `entreprise` vrai : refusé par le serveur (400). */
   business?: boolean; utilisateursBusiness?: number | null;
+  /** Absents = inchangés ; l'open bar hors Entreprise est refusé (400) et tombe avec elle. */
+  openBarWhatsapp?: boolean; commissionMessagesPct?: number | null;
 }): Promise<OffreEntrepriseOps> {
   return appelOps(sessionOps, `/ops/offre/${encodeURIComponent(tenantId)}`, { method: 'PUT', corps });
 }

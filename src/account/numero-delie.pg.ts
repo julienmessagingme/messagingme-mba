@@ -112,6 +112,33 @@ export class PgNumeroDelieStore {
   }
 
   /**
+   * Met une campagne en pause sur un refus du Crédit WhatsApp (migration 0264), depuis un run. `true` = pause écrite.
+   *
+   * 🔴 `credit_whatsapp_epuise` ne s'écrit que si le solde refuse ENCORE le message (nul ou négatif, ou sous son prix), dans la même
+   * instruction : un crédit arrivé entre le refus et l'écriture lève les pauses de l'espace AVANT qu'elle n'existe, et
+   * une pause écrite après lui ne serait plus levée par personne. `for share` sur la ligne du solde, que le crédit écrit :
+   * l'un attend l'autre. `ligne_credit_inactive` s'écrit sur la foi du refus (l'option revient rarement entre les deux).
+   * Toujours sur une campagne qui tourne encore, scopée espace : une pause d'opérateur garde sa raison.
+   */
+  async pauserCampagneCredit(campaignId: string, tenantId: string, motif: 'credit_whatsapp_epuise' | 'ligne_credit_inactive', prixMicroEur: number): Promise<boolean> {
+    if (motif === 'ligne_credit_inactive') {
+      const res = await this.pool.query(
+        `update campaigns c set status = 'paused', pause_reason = 'ligne_credit_inactive', paused_until = null
+          where c.id = $1 and c.tenant_id = $2 and c.status in ('running', 'scheduled')`,
+        [campaignId, tenantId],
+      );
+      return (res.rowCount ?? 0) > 0;
+    }
+    const res = await this.pool.query(
+      `update campaigns c set status = 'paused', pause_reason = 'credit_whatsapp_epuise', paused_until = null
+        where c.id = $1 and c.tenant_id = $2 and c.status in ('running', 'scheduled')
+          and coalesce((select w.solde_micro_eur from credits_whatsapp w where w.tenant_id = $2 for share), 0) < greatest($3::bigint, 1)`,
+      [campaignId, tenantId, prixMicroEur],
+    );
+    return (res.rowCount ?? 0) > 0;
+  }
+
+  /**
    * Lève les pauses `numero_suspendu` de l'espace (lot 4) : son abonnement est payé de nouveau. Même reprise que
    * `relier` (une campagne programmée redevient `scheduled`, les autres `running`, relancées par le balayage des
    * campagnes gelées) ; seules ces pauses-là sont levées. Rend le nombre de campagnes reprises.

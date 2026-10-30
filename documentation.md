@@ -187,6 +187,7 @@ Où regarder avant de modifier quoi que ce soit.
 | **Exploitation** | vue cross-tenant, recharge de crédit, alertes, suppression d'un espace (§ 10) | `src/ops/` | `/ops` | `worker_heartbeat`, `audit_log`, `espaces_supprimes` | `dlq-sweep` |
 | **Numéros fournis** | la réserve de numéros DIDWW, et le pont qui lit le code que Meta dicte en appelant (lot 3a) | `src/otp/`, `src/didww/`, `src/http/otp-pont.ts`, `src/http/ops-numeros.ts`, `ops/otp-asterisk/` | `/ops` | `numeros_fournis`, `codes_verification` | purge du balayage de rétention |
 | **Offres** | l'offre d'un espace (Base, Pro, Entreprise), ses fonctions, ses limites, le refus 402 (§ 7), le paiement du Pro, la porte d'une Free pleine | `src/offres/`, `src/http/offre.ts`, `src/http/ops-offre.ts`, `src/http/offre-paiement.ts`, `src/stripe/pro.ts`, `src/webhooks/espace-plein.ts` | `/offre`, la barre (`web/lib/nav.ts`) | `abonnements_offre`, `tenants` (`offre_entreprise`), `contacts` (`ne_entrant`), `compteurs_debit` | aucune : une étape au montage, des compteurs |
+| **Crédit WhatsApp** | payer ses messages WhatsApp sur un solde chez nous quand un numéro est sur la ligne de crédit d'un partenaire : grille de Meta, garde avant l'envoi, ajustement à l'accusé, estimation au lancement (§ 7) | `src/credit-whatsapp/`, `src/meta/factory.ts`, `src/http/ops-credit-whatsapp.ts` | `/ops` | `credits_whatsapp`, `credit_whatsapp_provisions`, `credit_whatsapp_mouvements`, `lignes_credit_whatsapp`, `grilles_meta`, `grille_meta_tarifs`, `credit_whatsapp_reglages` | aucune : la garde dans la fabrique, l'ajustement sur `webhook` et `webhook-status`, le contrôle au départ dans le balayage des campagnes programmées |
 | **Auth et comptes** | connexion, invitations, rôles, multi-espace | `src/auth/`, `src/user/` | `/login`, `/admin` | `users`, `identities`, `auth_tokens` | |
 
 ---
@@ -3938,6 +3939,56 @@ fixes et de confiance.
 Servir un fichier pour ce qu'il prétend être est la façon classique de transformer un hébergeur d'images en
 hébergeur de pages : un PDF renommé en `.png` est refusé en **415**. Trois formats seulement (JPEG, PNG, GIF),
 pas de SVG, qui est du XML exécutable. La réponse porte `nosniff` et le type réel.
+
+### Le Crédit WhatsApp : payer ses messages sur un solde chez nous
+
+**Responsabilité.** Un espace dont un numéro est sur la ligne de crédit d'un partenaire paie ses messages WhatsApp sur un
+solde prépayé chez nous, en micro-euros HT, distinct du crédit IA ; il ne met aucune carte chez Meta. Le partenaire n'est
+nommé nulle part dans le dépôt. Spec : `docs/superpowers/specs/2026-10-30-credit-whatsapp-design.md` ; plan :
+`docs/superpowers/plans/2026-10-30-credit-whatsapp-notre-cote.md`.
+
+**Points d'entrée.** `src/credit-whatsapp/` (la grille de Meta, le prix d'un message, la garde, l'ajustement à l'accusé,
+l'estimation d'un lancement, les conditions d'un espace, les magasins), la fabrique d'envoi (`src/meta/factory.ts`), le
+lancement d'une campagne (`src/campaign/lancement.ts`, `schedule-sweep.ts`), les accusés (`src/webhooks/delivery.ts`),
+`/ops` (`src/http/ops-credit-whatsapp.ts` : la grille, la commission, un numéro posé sur la ligne, le solde et les dernières
+provisions d'un espace ; `src/http/ops-offre.ts` : l'open bar et la commission négociée d'une Entreprise).
+
+**Données** (migration 0264) : `credits_whatsapp` (le solde), `credit_whatsapp_provisions` (une par envoi : `provisionne`,
+`rendu` ou `ajuste`), `credit_whatsapp_mouvements` (achats, recharges, régularisations), `lignes_credit_whatsapp` (un numéro
+sur la ligne, arrêté ou retiré), `grilles_meta` et `grille_meta_tarifs` (les tarifs publiés par Meta, en euros),
+`credit_whatsapp_reglages` (la commission globale), et sur `tenants` l'open bar et la commission des messages d'une
+Entreprise.
+
+**Invariants.**
+- 🔴 La garde vit dans la fabrique d'envoi, et tout client Meta se construit là (`tests/credit-whatsapp-inventaire.test.ts`) :
+  chaque méthode `send*` d'un numéro sur la ligne prend sa provision AVANT l'appel, par un débit conditionnel atomique
+  (`solde − prix >= 0`, sans condition en open bar). Un compte 360dialog n'est jamais gardé.
+- Solde = mouvements − provisions non rendues, vérifié en intégration après toute suite d'écritures.
+- Un refus net de Meta rend la provision ; une panne réseau la garde (le message est peut-être parti), la régularisation
+  tranche sur les volumes de Meta.
+- L'accusé corrige au mieux : un échec ou un message que Meta ne facture pas est rendu ; une catégorie reclassée, ou un
+  service facturé que nous avions compté dans la franchise, est corrigé une fois au prix de la grille ; `delivered` date la
+  livraison. Un ajustement manqué ne fait jamais échouer le job.
+- Le prix d'un message : la grille en vigueur, au marché du pays du destinataire (au plus cher quand il est illisible),
+  majoré de la commission, globale ou négociée par une Entreprise. Les 1 000 premiers messages de service d'un numéro dans
+  le mois sont à zéro.
+- L'open bar et la commission négociée ne valent qu'en Entreprise, lue par `offre_de_l_espace` ; l'open bar retombe en base
+  quand l'Entreprise est retirée.
+- Un solde nul ou négatif ne laisse rien partir, pas même un message de la franchise : tout s'arrête à zéro, réponses
+  comprises.
+- Le refus : 402 `whatsapp_credit_exhausted` (solde), 409 `whatsapp_credit_line_inactive` (ligne arrêtée, ou aucune grille
+  en vigueur), pour la console et Claude ; sous `/v1`, le code public dédié n'est pas encore au contrat de l'API (le
+  gestionnaire commun y rend le code générique du statut). Un 5xx de Meta, un délai ou une panne réseau gardent la
+  provision (le message est peut-être parti) ; un refus de Meta sous 500 la rend. Une campagne qui bute passe en pause `credit_whatsapp_epuise` ou `ligne_credit_inactive`, jamais en échec ;
+  un lancement qui manquerait de crédit est refusé avec ce qui manque, une campagne programmée est mise en pause à son
+  départ, sans rien envoyer.
+- Un compte qui ne reçoit AUCUN `COST` de `pricing_analytics` (un compte payé par la ligne d'un partenaire) a un résumé de
+  coût inconnu, jamais « 0 € » ; un compte qui en reçoit garde la lecture point par point.
+
+**Pannes.** Sans grille de Meta en vigueur, la garde refuse tout envoi d'un numéro sur la ligne : `/ops` refuse donc d'y
+poser un numéro tant que la grille n'est pas chargée. Le solde d'un espace et ses provisions récentes se lisent dans `/ops`, fenêtre de l'offre.
+
+**Limites.** `todo.md`, section du Crédit WhatsApp.
 
 ### 🔴 Aucun message destiné à l'utilisateur dans un 5xx
 

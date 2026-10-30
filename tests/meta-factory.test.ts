@@ -6,6 +6,7 @@ import { MetaApiError, estPlafondNumero } from '../src/meta/errors';
 import { creerListeDeLAgent, RetraitDeLaListeRefuse, type ListeDeLAgent } from '../src/mba/liste';
 import { listeEnMemoire } from './banc-du-fil';
 import { LimiteOffreError } from '../src/offres/refus';
+import { sansLigneDeCredit } from './credit-whatsapp-fixtures';
 
 /** Aucun numéro délié (migration 0180) : ces tests ne portent pas sur le geste de l'Accueil, et le DISENT. */
 const jamaisDelie = async (): Promise<boolean> => false;
@@ -49,7 +50,7 @@ function resolver(over: {
 }
 
 function factory(r: MetaCredentialsResolver, transport: HttpTransport) {
-  return new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites });
+  return new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites, creditWhatsapp: sansLigneDeCredit });
 }
 
 describe('MetaClientFactory (B1 : câblage par tenant)', () => {
@@ -106,7 +107,7 @@ describe('MetaClientFactory (B1 : câblage par tenant)', () => {
     ]);
     const { resolver: r, invalidated } = resolver({ tenants: { tA: 'wA' }, creds: { wA: { businessTokenEnc: 'enc:TOK_A', tokenStatus: 'active' } } });
     let unites = 0;
-    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: true, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: { consommer: async () => { unites += 1; return { ok: true as const }; } } });
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: true, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: { consommer: async () => { unites += 1; return { ok: true as const }; } }, creditWhatsapp: sansLigneDeCredit });
     const r1 = await (await f.senderForTenant('tA', 'pnA')).sendMarketing({ to: '33600000001', template: { name: 'promo', language: 'fr' } });
     expect(r1).toEqual({ messageId: 'wamid.cloud' });
     expect(t.bearers).toHaveLength(2);
@@ -182,7 +183,7 @@ describe('MetaClientFactory : le frein par numéro est réellement câblé', () 
     const t = new FakeTransport();
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
     const espion = arbitreEspion();
-    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites });
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites, creditWhatsapp: sansLigneDeCredit });
 
     const client = await f.clientForTenant('t1', 'pn-42');
     await client.sendText('33600000001', 'bonjour');
@@ -196,7 +197,7 @@ describe('MetaClientFactory : le frein par numéro est réellement câblé', () 
     const t = new FakeTransport();
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
     const espion = arbitreEspion();
-    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites });
+    const f = new MetaClientFactory({ resolver: r, transport: t, version: 'v25.0', marketingViaLite: false, arbitreDebit: espion.arbitre, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites, creditWhatsapp: sansLigneDeCredit });
 
     // Deux constructions distinctes, comme le font le moteur de campagne et la route d'inbox.
     const campagne = await f.senderForTenant('t1', 'pn-42');
@@ -252,7 +253,7 @@ describe('MetaClientFactory : le destinataire quitte la liste de l’agent avant
       attendre: async () => {},
     });
     const { resolver: r } = resolver({ tenants: { t1: 'w1' }, creds: { w1: { businessTokenEnc: 'enc:TOK', tokenStatus: 'active' } } });
-    const f = new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: liste, quotaModeles: o.quota ?? modelesIllimites });
+    const f = new MetaClientFactory({ resolver: r, transport, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: liste, quotaModeles: o.quota ?? modelesIllimites, creditWhatsapp: sansLigneDeCredit });
     return { f, journal, table: table.lignes };
   }
   const MODELE = { name: 'promo', language: 'fr' };
@@ -349,13 +350,16 @@ describe('MetaClientFactory : le destinataire quitte la liste de l’agent avant
   it('🔴 la liste est REQUISE par le type de la fabrique', () => {
     const { resolver: r } = resolver();
     // @ts-expect-error `listeDeLAgent` manque : un câblage qui l'oublierait laisserait partir le modèle.
-    const sansListe = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, quotaModeles: modelesIllimites });
+    const sansListe = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, quotaModeles: modelesIllimites, creditWhatsapp: sansLigneDeCredit });
     expect(sansListe).toBeInstanceOf(MetaClientFactory);
     // @ts-expect-error `numerosSuspendus` manque : un câblage qui l'oublierait enverrait depuis un numéro impayé (lot 4).
-    const sansSuspension = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites });
+    const sansSuspension = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites, creditWhatsapp: sansLigneDeCredit });
     expect(sansSuspension).toBeInstanceOf(MetaClientFactory);
     // @ts-expect-error `quotaModeles` manque : un câblage qui l'oublierait laisserait la Base envoyer sans limite (lot 6).
-    const sansQuota = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide });
+    const sansQuota = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, creditWhatsapp: sansLigneDeCredit });
     expect(sansQuota).toBeInstanceOf(MetaClientFactory);
+    // @ts-expect-error `creditWhatsapp` manque : un câblage qui l'oublierait laisserait partir sur la ligne de crédit des messages que personne n'a payés.
+    const sansCredit = new MetaClientFactory({ resolver: r, transport: { post: async () => ({ status: 200, json: {} }) }, version: 'v25.0', marketingViaLite: false, numerosDelies: { estDelie: jamaisDelie }, numerosSuspendus: { estSuspendu: jamaisSuspendu }, listeDeLAgent: listeToujoursVide, quotaModeles: modelesIllimites });
+    expect(sansCredit).toBeInstanceOf(MetaClientFactory);
   });
 });

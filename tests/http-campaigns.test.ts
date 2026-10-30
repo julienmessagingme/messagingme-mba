@@ -109,6 +109,8 @@ interface Deps {
   sansCompteur?: boolean;
   /** Les modèles du mois au lancement (lot 6). Absent : sans limite, comme un espace Pro. */
   modeles?: { max: number; reste: number; demandes: number } | null;
+  /** Le Crédit WhatsApp au lancement (tâche 6) : absent = hors de la ligne. */
+  credit?: { montantMicroEur: number; soldeMicroEur: number; manqueMicroEur: number } | null;
   /** L'offre de l'espace (lot 6, B2a) : Entreprise par défaut. */
   offre?: Offre;
 }
@@ -152,6 +154,7 @@ function appWith(repo: FakeRepo, d: Deps = {}) {
       }),
       queue: d.queue ?? new FakeQueue(),
       modelesDuLancement: async () => d.modeles ?? null,
+      creditDuLancement: async () => d.credit ?? null,
       ...(d.offre ? { offres: { offreDe: async () => ({ offre: d.offre!, droits: DROITS[d.offre!], retourEnBaseLe: null }) } } : {}),
       // Dépendance OPTIONNELLE côté serveur : absente, les routes de brouillon ne sont pas montées du tout.
       ...(d.drafts ? { drafts: d.drafts } : {}),
@@ -471,6 +474,21 @@ describe('POST /campaigns/:campaignId/run', () => {
     expect(res.statusCode).toBe(402);
     expect(res.json()).toMatchObject({ code: 'plan_limit_reached', limite: 'envoisModelesMois', max: 1000, reste: 100, demandes: 120 });
     expect(res.json().upgradeUrl).toMatch(/\/offre$/);
+    expect(q.enqueued).toEqual([]);
+    expect(pauseCalls).toEqual([]);
+    await app.close();
+  });
+
+  it('🔴 il manque du Crédit WhatsApp : 402 avec le montant manquant en euros HT, rien n’est enfilé ni repris', async () => {
+    const q = new FakeQueue();
+    const pauseCalls: string[] = [];
+    const app = appWith(new FakeRepo(contacts), { queue: q, pauseCalls, credit: { montantMicroEur: 12_400_000, soldeMicroEur: 1_000_000, manqueMicroEur: 11_400_000 } });
+    const res = await app.inject({ method: 'POST', url: '/campaigns/known/run', ...auth() });
+    expect(res.statusCode).toBe(402);
+    expect(res.json()).toEqual({
+      error: 'Crédit WhatsApp insuffisant pour cette campagne : il vous manque 11,40 € HT. Un administrateur peut recharger le crédit depuis Paramètres > Offre, puis la relancer. Rien n’est parti.',
+      code: 'whatsapp_credit_exhausted', manqueMicroEur: 11_400_000, montantMicroEur: 12_400_000,
+    });
     expect(q.enqueued).toEqual([]);
     expect(pauseCalls).toEqual([]);
     await app.close();

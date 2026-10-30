@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { extractDelivery, instantDuStatut, processStatuses } from '../src/webhooks/delivery';
 import type { DeliveryStore, DeliveryStatus } from '../src/webhooks/delivery';
 import { handleWebhookJob } from '../src/webhooks/handler';
-import { aucunTarif, aucunEchecLibre, aucunSignalAccuse } from './webhook-fixtures';
+import { aucunTarif, aucunEchecLibre, aucunSignalAccuse, aucunAjustementCredit } from './webhook-fixtures';
 import type { EventStore, StoredEvent } from '../src/webhooks/store';
 
 describe('extractDelivery', () => {
@@ -75,7 +75,7 @@ describe('processStatuses via handleWebhookJob', () => {
       store: events,
       delivery,
       tarifsMeta: aucunTarif,
-      echecsLibres: aucunEchecLibre,
+      echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit,
       signauxAccuse: aucunSignalAccuse,
     });
     expect(delivery.calls.map((c) => `${c.messageId}:${c.status}`)).toEqual(['wamid.1:sent', 'wamid.1:read']);

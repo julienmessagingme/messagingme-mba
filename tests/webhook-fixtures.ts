@@ -1,4 +1,5 @@
 import type { TarifsMetaSink } from '../src/webhooks/tarif-meta';
+import type { AjustementCreditSink } from '../src/credit-whatsapp/ajustement';
 import type { EchecsLibresSink } from '../src/webhooks/delivery';
 import type { ArriveesPubDeps } from '../src/webhooks/arrivees-pub';
 import type { RoutagePubDeps } from '../src/webhooks/routage-pub';
@@ -16,6 +17,9 @@ import { rattacherLesEntrants, type EntrantRattache, type EspaceDuNumero } from 
  * cacher, comme `jamaisDesabonne` (`tests/consentement.ts`).
  */
 export const aucunTarif: TarifsMetaSink = { enregistrer: async () => {} };
+
+/** Aucun numéro sur la ligne du Crédit WhatsApp : l'accusé ne corrige aucune provision, et le test le DIT. */
+export const aucunAjustementCredit: AjustementCreditSink = { ajuster: async () => {} };
 
 /** Aucun journal des échecs de messages libres (lot 3 de l'API publique) : le puits est inerte et le DIT. */
 export const aucunEchecLibre: EchecsLibresSink = { noter: async () => null };

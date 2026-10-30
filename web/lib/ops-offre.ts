@@ -27,6 +27,9 @@ export const lireContactsEntreprise = (saisie: string): number | null | 'invalid
 /** La commission négociée d'une Entreprise : vide = 10 %, sinon un ENTIER de 0 à 100 (une décimale rendrait la vue illisible). */
 export const lireCommissionEntreprise = (saisie: string): number | null | 'invalide' => lireEntier(saisie, 0, 100);
 
+/** La commission des messages WhatsApp négociée d'une Entreprise : vide = la commission globale, sinon un ENTIER de 0 à 100. */
+export const lireCommissionMessages = (saisie: string): number | null | 'invalide' => lireEntier(saisie, 0, 100);
+
 /** Les utilisateurs d'un Business (spec Business) : vide = les cinq de la grille, sinon un entier de 1 à 10 000. */
 export const lireUtilisateursBusiness = (saisie: string): number | null | 'invalide' => lireEntier(saisie, 1, 10_000);
 

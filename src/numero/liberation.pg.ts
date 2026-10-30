@@ -167,11 +167,13 @@ export class PgLiberationStore {
       if (retire) {
         // Les campagnes WhatsApp vivantes passent en pause `numero_delie`, comme à un « Délier », et celles que la
         // suspension avait arrêtées changent de motif : sans quoi le balayage, voyant l'espace libéré et non plus
-        // suspendu, lèverait leur pause. Elles attendent un numéro que l'espace n'a plus.
+        // suspendu, lèverait leur pause. Elles attendent un numéro que l'espace n'a plus. Même chose pour celles qu'un
+        // refus du Crédit WhatsApp avait arrêtées : une recharge relancerait sinon une campagne sans numéro.
         await client.query(
           `update campaigns c set status = 'paused', pause_reason = 'numero_delie', paused_until = null
             where c.tenant_id = $1
-              and (c.status in ('running', 'scheduled') or (c.status = 'paused' and c.pause_reason = 'numero_suspendu'))
+              and (c.status in ('running', 'scheduled')
+                   or (c.status = 'paused' and c.pause_reason in ('numero_suspendu', 'credit_whatsapp_epuise', 'ligne_credit_inactive')))
               and (c.channel = 'whatsapp'
                    or exists (select 1 from campaign_etages e where e.campaign_id = c.id and e.canal = 'whatsapp'))`,
           [tenantId],

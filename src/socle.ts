@@ -49,6 +49,14 @@ import { PgKnowledgeStore } from './agent/knowledge.pg';
 import { creerRechercheSemantique } from './agent/recherche';
 import { PgToolCatalog, PgJournalAppels } from './agent/catalog.pg';
 import { PgCreditStore } from './agent/credits.pg';
+import { PgCreditWhatsappReglagesStore } from './credit-whatsapp/reglages.pg';
+import { PgCreditWhatsappStore } from './credit-whatsapp/credit.pg';
+import { PgLignesCreditStore } from './credit-whatsapp/lignes.pg';
+import { creerGardeCreditWhatsapp, creerLecteurCategorie } from './credit-whatsapp/garde';
+import { creerAjustementCredit } from './credit-whatsapp/ajustement';
+import { PgConditionsCreditStore } from './credit-whatsapp/conditions.pg';
+import { creerEstimationCampagne } from './credit-whatsapp/estimation';
+import { modeleDOuverture } from './workflow/ouverture-api';
 import { PgSourceStore } from './agent/sources.pg';
 import { PgRequeteStore } from './agent/requetes.pg';
 import { PgTestRunStore } from './agent/test-runs.pg';
@@ -305,6 +313,13 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   });
   const credits = new PgCreditStore(pool, (t, avant, apres) => alerteCreditBas.surDebit(t, avant, apres));
   /**
+   * Les réglages du Crédit WhatsApp (la grille de Meta, la commission des messages), lus avant chaque envoi sur la
+   * ligne de crédit : un seul magasin par processus, dont le cache d'une minute est celui de ce processus.
+   */
+  const reglagesCreditWhatsapp = new PgCreditWhatsappReglagesStore(pool);
+  /** Le solde prépayé des numéros sur la ligne : l'API (Inbox, /v1, MCP) et le worker (campagnes, agent, accusés) l'écrivent. */
+  const creditWhatsapp = new PgCreditWhatsappStore(pool);
+  /**
    * Le paiement refusé du Pro ou du numéro fourni (lot 7, livraison B), une fois par facture : le webhook de Stripe le
    * déclenche, dans l'API.
    */
@@ -408,6 +423,34 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   });
   /** Les modèles du mois de l'offre (lot 6), sur le compteur partagé des copies : la fabrique les consomme avant chaque modèle. */
   const quotaModeles = new QuotaModeles({ offres, compteur: compteurDebit });
+  /**
+   * La garde du Crédit WhatsApp (plan du Crédit WhatsApp, tâche 4), posée par la fabrique autour de chaque envoi : les
+   * numéros sur la ligne de crédit, la grille et la commission (`reglagesCreditWhatsapp`), le solde (`creditWhatsapp`).
+   * La catégorie d'un modèle se lit chez Meta par la fabrique elle-même, au moment du geste (elle est construite juste
+   * après, comme pour la liste de l'agent).
+   */
+  const lignesCreditWhatsapp = new PgLignesCreditStore(pool);
+  /**
+   * Les conditions d'un espace sur la ligne (tâche 8), communes à la garde, à l'ajustement et aux écrans : l'open bar et la
+   * commission négociée d'une Entreprise, sinon la commission globale.
+   */
+  const conditionsCreditWhatsapp = new PgConditionsCreditStore(pool, reglagesCreditWhatsapp);
+  /** La catégorie d'un modèle lue chez Meta, un cache pour la garde et l'estimation du lancement. */
+  const categorieDuModeleWa = creerLecteurCategorie({ wabaDeLEspace, modeles: (t) => metaFactory.templateClientForTenant(t) });
+  const gardeCreditWhatsapp = creerGardeCreditWhatsapp({
+    lignes: lignesCreditWhatsapp,
+    grille: () => reglagesCreditWhatsapp.grilleEnVigueur(),
+    conditions: (tenant) => conditionsCreditWhatsapp.conditions(tenant),
+    categorieDuModele: (t, nom, langue) => categorieDuModeleWa(t, nom, langue),
+    credit: creditWhatsapp,
+  });
+  /** L'ajustement à l'accusé (tâche 7), branché par le worker sur les deux files qui voient des accusés. */
+  const ajustementCreditWhatsapp = creerAjustementCredit({
+    lignes: lignesCreditWhatsapp,
+    credit: creditWhatsapp,
+    grille: () => reglagesCreditWhatsapp.grilleEnVigueur(),
+    conditions: (tenant) => conditionsCreditWhatsapp.conditions(tenant),
+  });
   const metaFactory = new MetaClientFactory({
     resolver: metaCredentials,
     transport,
@@ -425,6 +468,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     numerosSuspendus: gardeNumeroSuspendu,
     listeDeLAgent,
     quotaModeles,
+    creditWhatsapp: gardeCreditWhatsapp,
   });
 
   /**
@@ -467,6 +511,33 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
   // filière application n'est pas bloqué par son ancien numéro de Meta, délié (`filiereDe`).
   const numeroBloqueDeLEspace = creerNumeroBloqueDeLEspace({
     numeroDeLEspace, verifierNumero: (pn) => metaFactory.verifierNumero(pn), filiereDe: (t) => comptesApplication.filiereDe(t),
+  });
+  /**
+   * Le Crédit WhatsApp bloque-t-il le numéro de l'espace (ligne arrêtée, aucune grille, solde nul hors open bar) ? Le
+   * démarreur du répondeur et le tour d'un agent le demandent avant d'appeler un modèle, à côté du numéro bloqué. Le fil
+   * ne le lit pas : l'agent de Meta n'y est pas soumis.
+   */
+  const creditWhatsappBloque = async (tenantId: string): Promise<boolean> => {
+    const numero = await numeroDeLEspace(tenantId);
+    return numero !== null && await gardeCreditWhatsapp.bloque(tenantId, numero);
+  };
+  /**
+   * L'estimation d'une campagne au lancement (tâche 6), sur les magasins de la garde : la route et les outils de campagne
+   * la lisent au lancement immédiat, le balayage des campagnes programmées à leur départ.
+   */
+  const estimerCreditCampagne = creerEstimationCampagne({
+    numeroDeLEspace,
+    lignes: lignesCreditWhatsapp,
+    conditions: (tenant) => conditionsCreditWhatsapp.conditions(tenant),
+    grille: () => reglagesCreditWhatsapp.grilleEnVigueur(),
+    categorieDuModele: (t, nom, langue) => categorieDuModeleWa(t, nom, langue),
+    modeleDuScenario: async (tenant, workflowId) => {
+      const graphe = (await workflowStore.getById(workflowId, tenant))?.graph;
+      const m = graphe ? modeleDOuverture(graphe) : null;
+      return m === null ? null : { name: m.templateName, language: m.language };
+    },
+    groupes: (campagne, tenant) => repo.groupesACreditWhatsapp(campagne, tenant),
+    solde: (tenant) => creditWhatsapp.solde(tenant),
   });
 
   /**
@@ -574,6 +645,7 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     lancements: workflowRuntime.lancements,
     gatewayDisponible: config.AI_GATEWAY_API_KEY !== '',
     alerteCredit,
+    creditWhatsapp: { bloque: creditWhatsappBloque },
   });
   demarreurScenario = creerDemarreurScenario({
     scenarios: workflowStore,
@@ -599,8 +671,8 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
     inboxStore, settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages,
     poolAttentesStore, httpLatencesStore, mesuresTachesStore, mesuresFilesStore, santeStore, memoireWorkersStore, seuilsStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore,
     workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels,
-    credits, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
-    wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
+    credits, reglagesCreditWhatsapp, creditWhatsapp, lignesCreditWhatsapp, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver,
+    wabaDeLEspace, numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, numeroBloqueDeLEspace, creditWhatsappBloque, ajustementCreditWhatsapp, conditionsCreditWhatsapp, estimerCreditCampagne, esCredentialsStore, metaCredentials, metaFactory, listeDeLAgent,
     connexionsPub, connexionPub, publicites, clientPubs, clientCreationPubs, workflowRuntime, fil, alerteCredit, offres, quotaModeles,
     emailsProduit, emetteurEmails, envoisResend, paiementRefuse, prevenirEquipe, lienConversation,
     comptesApplication, clientApplication, envoiApplication,

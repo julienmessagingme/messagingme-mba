@@ -74,6 +74,24 @@ test.describe('Ops : l’offre Entreprise d’un espace', () => {
     expect(ecrits).toEqual([{ entreprise: true, utilisateurs: 10, contacts: 20000, commissionPct: 7, note: 'Devis signé' }]);
   });
 
+  test('🔴 le Crédit WhatsApp de l’Entreprise (open bar, commission des messages) ne part que s’il change', async ({ page }) => {
+    const { modale, ecrits } = await ouvrir(page, {
+      entreprise: true, utilisateurs: 10, conservationJours: null, contacts: null, commissionPct: null, openBarWhatsapp: false, commissionMessagesPct: null,
+    });
+    await modale.getByTestId('offre-changer-devis').check();
+    await modale.getByTestId('offre-commission-messages').fill('2.5');
+    await modale.getByTestId('offre-note').fill('Devis signé, messages facturés après');
+    await expect(modale.getByTestId('offre-enregistrer')).toBeDisabled();
+    await modale.getByTestId('offre-commission-messages').fill('3');
+    await modale.getByTestId('offre-open-bar').check();
+    await modale.getByTestId('offre-enregistrer').click();
+    await expect(modale.getByTestId('offre-message')).toBeVisible();
+    expect(ecrits).toEqual([{
+      entreprise: true, utilisateurs: 10, contacts: null, commissionPct: null, openBarWhatsapp: true, commissionMessagesPct: 3,
+      note: 'Devis signé, messages facturés après',
+    }]);
+  });
+
   test('sans limite d’utilisateurs : `null` part', async ({ page }) => {
     const { modale, ecrits } = await ouvrir(page, { entreprise: false, utilisateurs: null, conservationJours: null });
     await modale.getByTestId('offre-entreprise').check();

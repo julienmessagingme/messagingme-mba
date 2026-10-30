@@ -99,9 +99,11 @@ export class PgOffresStore implements SourceOffres {
       offre_entreprise: boolean; entreprise_utilisateurs: number | null; conversation_retention_days: number | null;
       entreprise_contacts: number | null; entreprise_commission_pct: number | null;
       offre_business: boolean; business_utilisateurs: number | null;
+      entreprise_open_bar_whatsapp: boolean; entreprise_commission_messages_pct: number | null;
     }>(
       `select t.offre_entreprise, t.entreprise_utilisateurs, s.conversation_retention_days,
-              t.entreprise_contacts, t.entreprise_commission_pct, t.offre_business, t.business_utilisateurs
+              t.entreprise_contacts, t.entreprise_commission_pct, t.offre_business, t.business_utilisateurs,
+              t.entreprise_open_bar_whatsapp, t.entreprise_commission_messages_pct
          from tenants t left join tenant_settings s on s.tenant_id = t.id
         where t.id = $1`,
       [tenantId],
@@ -112,6 +114,7 @@ export class PgOffresStore implements SourceOffres {
         entreprise: l.offre_entreprise, utilisateurs: l.entreprise_utilisateurs, conservationJours: l.conversation_retention_days,
         contacts: l.entreprise_contacts, commissionPct: l.entreprise_commission_pct,
         business: l.offre_business, utilisateursBusiness: l.business_utilisateurs,
+        openBarWhatsapp: l.entreprise_open_bar_whatsapp, commissionMessagesPct: l.entreprise_commission_messages_pct,
       }
       : null;
   }
@@ -146,6 +149,8 @@ export class PgOffresStore implements SourceOffres {
       // Le Business (spec du 2026-10-27) : une seule offre posée à la main, l'Entreprise le fait tomber ; absent, il reste
       // tel quel. Sa sortie est datée comme celle de l'Entreprise (la grâce de la conservation, la couverture du numéro).
       // Les deux colonnes de date relisent l'état AVANT la mise à jour (Postgres évalue tout `set` sur l'ancienne ligne).
+      // Le Crédit WhatsApp (plan du 2026-10-30, tâche 8) : l'open bar et la commission des messages ne s'écrivent que
+      // DONNÉS. 🔴 L'open bar tombe avec l'Entreprise : un espace qui y reviendrait ne doit pas le retrouver sans décision.
       const maj = await client.query(
         `update tenants
             set offre_entreprise = $2, entreprise_utilisateurs = $3,
@@ -155,11 +160,15 @@ export class PgOffresStore implements SourceOffres {
                 offre_business = case when $2 then false when $8::boolean is null then offre_business else $8::boolean end,
                 business_quitte_le = case
                   when offre_business and ($2 or $8::boolean = false) then now() else business_quitte_le end,
-                business_utilisateurs = case when $9 then $10::int else business_utilisateurs end
+                business_utilisateurs = case when $9 then $10::int else business_utilisateurs end,
+                entreprise_open_bar_whatsapp = case
+                  when not $2 then false when $11 then $12::boolean else entreprise_open_bar_whatsapp end,
+                entreprise_commission_messages_pct = case when $13 then $14::int else entreprise_commission_messages_pct end
           where id = $1`,
         [
           tenantId, r.entreprise, r.utilisateurs, r.contacts !== undefined, r.contacts ?? null, r.commissionPct !== undefined,
           r.commissionPct ?? null, r.business ?? null, r.utilisateursBusiness !== undefined, r.utilisateursBusiness ?? null,
+          r.openBarWhatsapp !== undefined, r.openBarWhatsapp ?? false, r.commissionMessagesPct !== undefined, r.commissionMessagesPct ?? null,
         ],
       );
       if ((maj.rowCount ?? 0) === 0) return false;
@@ -190,6 +199,10 @@ export interface EcritureEntreprise {
   business?: boolean;
   /** La limite d'utilisateurs du Business : absente = inchangée, `null` = les 5 de la grille. */
   utilisateursBusiness?: number | null;
+  /** Le Crédit WhatsApp en open bar, facturé après (Entreprise seulement) : absent = inchangé, retombe hors Entreprise. */
+  openBarWhatsapp?: boolean;
+  /** La commission des messages négociée : absente = inchangée, `null` = la globale de `/ops`. */
+  commissionMessagesPct?: number | null;
 }
 
 /** Ce que l'exploitant doit voir avant de poser ou de retirer une offre à la main (`PgOffresStore.alertes`). */
@@ -209,4 +222,7 @@ export interface ReglageEntreprise {
   /** Le Business posé à la main, et sa limite d'utilisateurs (`null` = les 5 de la grille). */
   business: boolean;
   utilisateursBusiness: number | null;
+  /** Le Crédit WhatsApp de l'Entreprise : l'open bar, et la commission des messages (`null` = la globale). */
+  openBarWhatsapp: boolean;
+  commissionMessagesPct: number | null;
 }

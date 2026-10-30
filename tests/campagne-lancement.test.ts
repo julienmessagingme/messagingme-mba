@@ -10,6 +10,7 @@ function deps(o: {
   appartient?: boolean;
   programmable?: boolean;
   modeles?: { max: number; reste: number; demandes: number } | null;
+  credit?: { montantMicroEur: number; soldeMicroEur: number; manqueMicroEur: number } | null;
   enfilementCasse?: boolean;
 } = {}) {
   const appels: string[] = [];
@@ -29,6 +30,7 @@ function deps(o: {
       },
     },
     modelesDuLancement: async () => o.modeles ?? null,
+    creditDuLancement: async (t, id) => { appels.push(`credit:${t}:${id}`); return o.credit ?? null; },
     defaultRatePerMinute: 0,
     plafondLePlusBas: 80,
   };
@@ -67,7 +69,8 @@ describe('lancerCampagne', () => {
   it('lancement immédiat : la pause est levée PUIS le run enfilé dans le groupe de l’espace', async () => {
     const { d, appels, enfiles } = deps();
     expect(await lancerCampagne(d, 't', 'c', null)).toEqual({ ok: true, enfilee: true });
-    expect(appels).toEqual(['appartient:c:t', 'reprend:c:t']);
+    // Le crédit se lit AVANT la levée de pause : un refus ne doit rien avoir repris.
+    expect(appels).toEqual(['appartient:c:t', 'credit:t:c', 'reprend:c:t']);
     expect(enfiles).toEqual([{ name: 'campaign-run', data: { campaignId: 'c' }, opts: { expireInSeconds: 900, groupId: 't' } }]);
   });
 
@@ -81,6 +84,28 @@ describe('lancerCampagne', () => {
   it('🔴 l’enfilement échoue : la pause est rétablie et l’erreur remonte', async () => {
     const { d, appels } = deps({ enfilementCasse: true });
     await expect(lancerCampagne(d, 't', 'c', null)).rejects.toThrow('file en panne');
-    expect(appels).toEqual(['appartient:c:t', 'reprend:c:t', 'suspend:c:t']);
+    expect(appels).toEqual(['appartient:c:t', 'credit:t:c', 'reprend:c:t', 'suspend:c:t']);
+  });
+
+  it('🔴 il manque du Crédit WhatsApp : refusé avec ce qui manque, avant toute levée de pause ni enfilement', async () => {
+    const { d, appels, enfiles } = deps({ credit: { montantMicroEur: 2_480_000, soldeMicroEur: 1_000_000, manqueMicroEur: 1_480_000 } });
+    expect(await lancerCampagne(d, 't', 'c', null)).toEqual({ ok: false, raison: 'credit_whatsapp', manqueMicroEur: 1_480_000, montantMicroEur: 2_480_000 });
+    expect(appels).toEqual(['appartient:c:t', 'credit:t:c']);
+    expect(enfiles).toHaveLength(0);
+  });
+
+  it('le solde couvre l’estimation, ou l’espace est hors de la ligne : la campagne part', async () => {
+    for (const credit of [{ montantMicroEur: 2_480_000, soldeMicroEur: 3_000_000, manqueMicroEur: 0 }, null]) {
+      const { d, enfiles } = deps({ credit });
+      expect(await lancerCampagne(d, 't', 'c', null)).toEqual({ ok: true, enfilee: true });
+      expect(enfiles).toHaveLength(1);
+    }
+  });
+
+  it('une campagne programmée ne se chiffre pas à la programmation : le balayage le fait à son départ', async () => {
+    const { d, appels } = deps({ credit: { montantMicroEur: 2_480_000, soldeMicroEur: 0, manqueMicroEur: 2_480_000 } });
+    expect(await lancerCampagne(d, 't', 'c', DEMAIN)).toEqual({ ok: true, programmee: DEMAIN });
+    expect(appels.some((a) => a.startsWith('credit'))).toBe(false);
   });
 });
+

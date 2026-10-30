@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { MetaClientFactory } from '../src/meta/factory';
+import { sansLigneDeCredit } from './credit-whatsapp-fixtures';
 import { MetaCredentialsResolver } from '../src/meta/credentials';
 import type { HttpTransport, HttpResponse } from '../src/meta/http';
 import {
@@ -141,6 +142,7 @@ function fabrique(o: { delies?: string[]; suspendus?: string[] }, transport: Tra
     listeDeLAgent: { retirerAvantUnModele: async () => {} },
     // Les modèles du mois sans limite (lot 6) : ces tests ne portent pas sur l'offre.
     quotaModeles: { consommer: async () => ({ ok: true }) },
+    creditWhatsapp: sansLigneDeCredit,
   });
 }
 

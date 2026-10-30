@@ -53,6 +53,24 @@ describe('parsePricing', () => {
     expect(parsePricing({ pricing_analytics: { data: [] } })).toBeNull();
   });
 
+  it('🔴 un compte sans COST (payé par la ligne de crédit d’un partenaire) : coût inconnu, jamais 0 ni « gratuit »', () => {
+    expect(parsePricing({ currency: 'EUR', pricing_analytics: { data: [{ data_points: [
+      { pricing_category: 'MARKETING', pricing_type: 'REGULAR', volume: 12 },
+      { pricing_category: 'UTILITY', pricing_type: 'FREE_CUSTOMER_SERVICE', volume: 3 },
+    ] }] } })).toBeNull();
+    // Un compte qui reçoit des coûts garde la lecture d'avant, point par point : un point facturé sans coût y compte zéro
+    // (jamais observé sur un compte payé par carte). Seul le compte sans AUCUN coût devient inconnu.
+    expect(parsePricing({ pricing_analytics: { data: [{ data_points: [
+      { pricing_category: 'MARKETING', pricing_type: 'REGULAR', volume: 10, cost: 1.0 },
+      { pricing_category: 'UTILITY', pricing_type: 'REGULAR', volume: 4, cost: null },
+    ] }] } })?.totalCost).toBe(1.0);
+    // Un point gratuit sans coût ne dit rien du facturé.
+    expect(parsePricing({ pricing_analytics: { data: [{ data_points: [
+      { pricing_category: 'MARKETING', pricing_type: 'REGULAR', volume: 10, cost: 1.0 },
+      { pricing_category: 'UTILITY', pricing_type: 'FREE_CUSTOMER_SERVICE', volume: 4 },
+    ] }] } })?.totalCost).toBe(1.0);
+  });
+
   it('volume nul -> tarif 0 (pas de division par zéro)', () => {
     const p = parsePricing({ pricing_analytics: { data: [{ data_points: [{ pricing_category: 'MARKETING', pricing_type: 'REGULAR', volume: 0, cost: 0 }] }] } })!;
     expect(p.byCategory.marketing?.ratePerMessage).toBe(0);

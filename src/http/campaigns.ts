@@ -5,6 +5,8 @@ import { avertissementPalier } from '../meta/palier';
 import type { CampaignRepoLike } from '../campaign/create';
 import type { CampaignSummary, CampaignDetail, PhoneNumberRow, RetryReset } from '../campaign/store.pg';
 import { expirationDuRun, lancerCampagne } from '../campaign/lancement';
+import { messageManqueCredit, type EstimationCredit } from '../credit-whatsapp/estimation';
+import { CODE_REFUS_CREDIT } from '../credit-whatsapp/refus';
 import type { WorkflowGraph } from '../workflow/graph';
 import { gardeEtendue } from '../auth/middleware';
 import type { Guard, PreHandler } from '../auth/middleware';
@@ -136,6 +138,8 @@ export interface CampaignRouteDeps {
    * fixtures disent leur hypothèse (`campagnesInertes` : sans limite).
    */
   modelesDuLancement(tenantId: string, campaignId: string): Promise<{ max: number; reste: number; demandes: number } | null>;
+  /** Le Crédit WhatsApp au lancement (tâche 6) : `null` hors de la ligne ou en open bar (`DepsLancement`). */
+  creditDuLancement(tenantId: string, campaignId: string): Promise<EstimationCredit | null>;
 }
 
 /** Routes de campagne : lecture (liste/détail/numéros), création et déclenchement du run. */
@@ -273,6 +277,12 @@ export function registerCampaigns(app: FastifyInstance, deps: CampaignRouteDeps,
         const refus = corpsRefusLimite(new LimiteOffreError(authTenant, 'envoisModelesMois', issue.max));
         return reply.code(STATUT_REFUS_OFFRE).send({ ...refus, reste: issue.reste, demandes: issue.demandes });
       }
+      // 402 comme le refus d'un envoi par la garde ; la campagne reste en brouillon, rien n'est parti.
+      case 'credit_whatsapp':
+        return reply.code(402).send({
+          error: messageManqueCredit(issue.manqueMicroEur), code: CODE_REFUS_CREDIT.solde,
+          manqueMicroEur: issue.manqueMicroEur, montantMicroEur: issue.montantMicroEur,
+        });
     }
   });
 

@@ -21,6 +21,8 @@ const INCONNU = '11111111-2222-4333-8444-555555555555';
 const SANS_ALERTE: AlertesOffreManuelle = { proPayeVivant: false, numeroSeulVivant: false, numeroFourniSansCouverture: false };
 /** Les champs du Business (spec du 2026-10-27) d'un espace qui ne l'a jamais eu. */
 const SANS_BUSINESS = { business: false, utilisateursBusiness: null } as const;
+/** Les champs du Crédit WhatsApp (plan du 2026-10-30, tâche 8) d'une Entreprise qui ne l'a jamais eu en open bar. */
+const SANS_CREDIT_WA = { openBarWhatsapp: false, commissionMessagesPct: null } as const;
 
 class MagasinMemoire {
   lectures = 0;
@@ -53,6 +55,9 @@ class MagasinMemoire {
             // Une seule offre posée à la main : l'Entreprise fait tomber le Business (`PgOffresStore.ecrireEntreprise`).
             business: r.entreprise ? false : r.business === undefined ? avant.business : r.business,
             utilisateursBusiness: r.utilisateursBusiness === undefined ? avant.utilisateursBusiness : r.utilisateursBusiness,
+            // L'open bar tombe avec l'Entreprise ; absent, il reste tel quel, comme la commission des messages.
+            openBarWhatsapp: !r.entreprise ? false : r.openBarWhatsapp === undefined ? avant.openBarWhatsapp : r.openBarWhatsapp,
+            commissionMessagesPct: r.commissionMessagesPct === undefined ? avant.commissionMessagesPct : r.commissionMessagesPct,
           });
           return true;
         },
@@ -92,7 +97,7 @@ function monter() {
 }
 
 const BASE = { entreprise: false, utilisateurs: null, conservationJours: null, note: 'essai ramené en Base' };
-const ENTREPRISE = { entreprise: true, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null };
+const ENTREPRISE = { entreprise: true, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null, ...SANS_CREDIT_WA };
 
 describe('la route d’exploitation /ops/offre/:tenantId', () => {
   it('🔴 sans la session d’exploitation, ou avec un faux : 401, rien n’est lu ni écrit', async () => {
@@ -109,11 +114,11 @@ describe('la route d’exploitation /ops/offre/:tenantId', () => {
 
   it('GET rend le réglage et les 10 utilisateurs proposés ; 404 sur un espace inconnu ou mal formé', async () => {
     const { server, magasin } = monter();
-    magasin.reglages.set(T1, { ...SANS_BUSINESS, entreprise: true, utilisateurs: 25, conservationJours: 180, contacts: null, commissionPct: null });
+    magasin.reglages.set(T1, { ...SANS_BUSINESS, ...SANS_CREDIT_WA, entreprise: true, utilisateurs: 25, conservationJours: 180, contacts: null, commissionPct: null });
     const res = await server.inject({ method: 'GET', url: `/ops/offre/${T1}`, headers: ops });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      tenantId: T1, entreprise: true, utilisateurs: 25, conservationJours: 180, contacts: null, commissionPct: null, ...SANS_BUSINESS,
+      tenantId: T1, entreprise: true, utilisateurs: 25, conservationJours: 180, contacts: null, commissionPct: null, ...SANS_BUSINESS, ...SANS_CREDIT_WA,
       alertes: SANS_ALERTE, utilisateursProposes: 10,
     });
     expect((await server.inject({ method: 'GET', url: `/ops/offre/${INCONNU}`, headers: ops })).statusCode).toBe(404);
@@ -147,7 +152,7 @@ describe('la route d’exploitation /ops/offre/:tenantId', () => {
     }));
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      tenantId: T1, entreprise: false, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null, ...SANS_BUSINESS,
+      tenantId: T1, entreprise: false, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null, ...SANS_BUSINESS, ...SANS_CREDIT_WA,
       alertes: SANS_ALERTE, gestes: { creditOffert: null, finDuNumero: 'porte', echecs: [] }, utilisateursProposes: 10,
     });
     // Quitter l'Entreprise sans autre offre : le numéro fourni que plus rien ne couvre suit le chemin d'un impayé (spec Business).
@@ -168,26 +173,26 @@ describe('la route d’exploitation /ops/offre/:tenantId', () => {
     // Relecture finale du lot 6 : la conservation était requise et réécrite à chaque changement d'offre. Ramener un
     // espace en Base avec 30 jours lançait au balayage suivant la purge irréversible de ses conversations plus anciennes.
     const { server, magasin } = monter();
-    magasin.reglages.set(T1, { ...SANS_BUSINESS, entreprise: true, utilisateurs: null, conservationJours: 0, contacts: null, commissionPct: null });
+    magasin.reglages.set(T1, { ...SANS_BUSINESS, ...SANS_CREDIT_WA, entreprise: true, utilisateurs: null, conservationJours: 0, contacts: null, commissionPct: null });
     const res = await server.inject({
       method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: { entreprise: false, utilisateurs: null, note: 'essai ramené en Base' },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ entreprise: false, conservationJours: 0, contacts: null, commissionPct: null });
     expect(magasin.ecritures).toEqual([{ tenantId: T1, reglage: { entreprise: false, utilisateurs: null } }]);
-    expect(magasin.reglages.get(T1)).toEqual({ ...SANS_BUSINESS, entreprise: false, utilisateurs: null, conservationJours: 0, contacts: null, commissionPct: null });
+    expect(magasin.reglages.get(T1)).toEqual({ ...SANS_BUSINESS, ...SANS_CREDIT_WA, entreprise: false, utilisateurs: null, conservationJours: 0, contacts: null, commissionPct: null });
     await server.close();
   });
 
   it('PUT pose l’Entreprise avec sa limite d’utilisateurs et sa conservation', async () => {
     const { server, magasin } = monter();
-    magasin.reglages.set(T1, { ...SANS_BUSINESS, entreprise: false, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null });
+    magasin.reglages.set(T1, { ...SANS_BUSINESS, ...SANS_CREDIT_WA, entreprise: false, utilisateurs: null, conservationJours: null, contacts: null, commissionPct: null });
     const res = await server.inject({
       method: 'PUT', url: `/ops/offre/${T1}`, headers: ops,
       payload: { entreprise: true, utilisateurs: 10, conservationJours: 365, note: 'devis signé' },
     });
     expect(res.statusCode).toBe(200);
-    expect(magasin.reglages.get(T1)).toEqual({ ...SANS_BUSINESS, entreprise: true, utilisateurs: 10, conservationJours: 365, contacts: null, commissionPct: null });
+    expect(magasin.reglages.get(T1)).toEqual({ ...SANS_BUSINESS, ...SANS_CREDIT_WA, entreprise: true, utilisateurs: 10, conservationJours: 365, contacts: null, commissionPct: null });
     await server.close();
   });
 
@@ -322,9 +327,62 @@ describe('l’offre posée par l’exploitation, au journal des actions de l’e
         entreprise: false, utilisateurs: null, conservationJours: 365, contacts: null, commissionPct: null,
         entrepriseAvant: true, utilisateursAvant: null, conservationJoursAvant: null, contactsAvant: null, commissionPctAvant: null,
         business: false, utilisateursBusiness: null, businessAvant: false, utilisateursBusinessAvant: null,
+        openBarWhatsapp: false, commissionMessagesPct: null, openBarWhatsappAvant: false, commissionMessagesPctAvant: null,
       },
     }]);
     expect(JSON.stringify(magasin.audits)).not.toContain(BASE.note);
+    await server.close();
+  });
+});
+
+/**
+ * LE CRÉDIT WHATSAPP D'UNE ENTREPRISE (plan du 2026-10-30, tâche 8) : l'open bar (facturé après) et la commission des
+ * messages négociée, posés avec l'offre. Que la garde ne les lise qu'en Entreprise est tenu par
+ * `tests/credit-whatsapp-conditions.test.ts` ; ici, la route et ce qu'elle écrit.
+ */
+describe('le Crédit WhatsApp de l’Entreprise, posé avec l’offre', () => {
+  it('🔴 l’open bar ne se pose que sur une Entreprise : 400 sinon, rien d’écrit', async () => {
+    const { server, magasin } = monter();
+    const res = await server.inject({ method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: { ...BASE, openBarWhatsapp: true } });
+    expect(res.statusCode).toBe(400);
+    expect([magasin.ecritures.length, magasin.invalides.length]).toEqual([0, 0]);
+    await server.close();
+  });
+
+  it('pose l’open bar et la commission des messages d’une Entreprise, et la trace les porte avant et après', async () => {
+    const { server, magasin } = monter();
+    const res = await server.inject({
+      method: 'PUT', url: `/ops/offre/${T1}`, headers: ops,
+      payload: { entreprise: true, utilisateurs: null, openBarWhatsapp: true, commissionMessagesPct: 3, note: 'devis signé, messages facturés après' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ openBarWhatsapp: true, commissionMessagesPct: 3 });
+    expect(magasin.audits[0]?.detail).toMatchObject({
+      openBarWhatsapp: true, commissionMessagesPct: 3, openBarWhatsappAvant: false, commissionMessagesPctAvant: null,
+    });
+    // Absents, ils restent tels quels.
+    await server.inject({ method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: { entreprise: true, utilisateurs: 12, note: 'plus d’utilisateurs' } });
+    expect(magasin.reglages.get(T1)).toMatchObject({ openBarWhatsapp: true, commissionMessagesPct: 3 });
+    await server.close();
+  });
+
+  it('🔴 l’Entreprise retirée fait tomber l’open bar ; la commission négociée reste, sans effet hors Entreprise', async () => {
+    const { server, magasin } = monter();
+    magasin.reglages.set(T1, { ...SANS_BUSINESS, ...ENTREPRISE, openBarWhatsapp: true, commissionMessagesPct: 3 });
+    const res = await server.inject({ method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: BASE });
+    expect(res.statusCode).toBe(200);
+    expect(magasin.ecritures.at(-1)?.reglage).not.toHaveProperty('openBarWhatsapp');
+    expect(magasin.reglages.get(T1)).toMatchObject({ entreprise: false, openBarWhatsapp: false, commissionMessagesPct: 3 });
+    await server.close();
+  });
+
+  it('refuse une commission des messages hors de 0 à 100, ou décimale, et un open bar qui n’est pas un booléen', async () => {
+    const { server, magasin } = monter();
+    for (const extra of [{ commissionMessagesPct: -1 }, { commissionMessagesPct: 101 }, { commissionMessagesPct: 2.5 }, { openBarWhatsapp: 'oui' }]) {
+      const res = await server.inject({ method: 'PUT', url: `/ops/offre/${T1}`, headers: ops, payload: { entreprise: true, utilisateurs: null, note: 'devis', ...extra } });
+      expect(res.statusCode, JSON.stringify(extra)).toBe(400);
+    }
+    expect(magasin.ecritures).toHaveLength(0);
     await server.close();
   });
 });

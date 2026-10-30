@@ -7,6 +7,7 @@ import type { DepsEnvoiModeleDansLeFil } from '../inbox/envoi-operateur';
 import type { PlafondPartage } from '../auth/plafond-partage';
 import { MetaApiError } from '../meta/errors';
 import { NumeroBloqueError } from '../meta/numero-delie';
+import { CreditWhatsappRefus } from '../credit-whatsapp/refus';
 import { LimiteOffreError, corpsRefusLimite } from '../offres/refus';
 import { journaliser } from '../lib/journal';
 import { catalogueTemplates, type EnteteTemplate } from './v1-catalogues';
@@ -163,6 +164,8 @@ export function refusAvantEnvoi(err: unknown): RefusModele | null {
     return { statut: 409, corps: { error: err.message, code: err.motif === 'numero_delie' ? 'number_unlinked' : 'number_suspended' } };
   }
   if (err instanceof LimiteOffreError) return { statut: 402, corps: corpsRefusLimite(err) };
+  // Le Crédit WhatsApp a refusé avant tout appel à Meta : rien n'est parti, la clé se rend.
+  if (err instanceof CreditWhatsappRefus) return { statut: err.statusCode, corps: { error: err.message, code: err.code } };
   return null;
 }
 

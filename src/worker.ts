@@ -231,7 +231,7 @@ export async function demarrerWorker(): Promise<void> {
     poolAttentesStore, httpLatencesStore, mesuresTachesStore, mesuresFilesStore, memoireWorkersStore, seuilsStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, numeroDelieStore, opsStore,
     heartbeatStore, workflowStore, automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog,
     journalAppels, credits, agentSources, agentRequetes, essaisStore, depotAide, metaFactory, connexionsPub, connexionPub,
-    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, offres,
+    publicites, clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, alerteCredit, numeroBloqueDeLEspace, creditWhatsappBloque, ajustementCreditWhatsapp, estimerCreditCampagne, offres,
     emailsProduit, emetteurEmails, envoisResend, prevenirEquipe, lienConversation, quotaModeles, comptesApplication, clientApplication,
     magasinObjets,
   } = construireSocle({ pool, queue, config });
@@ -546,6 +546,8 @@ export async function demarrerWorker(): Promise<void> {
       tarifsMeta: tarifsMetaStore,
       // Sur les deux files qui voient des accusés, comme le tarif : un échec arrive par l'une ou par l'autre.
       echecsLibres: echecsMessages,
+      // Le Crédit WhatsApp sur les deux files aussi : la gratuité et l'échec d'un message arrivent par l'une ou l'autre.
+      ajustementCredit: ajustementCreditWhatsapp,
       // Les signaux d'accusé sur les deux files aussi ; la réponse, elle, n'arrive que par celle-ci.
       signauxAccuse: puitsSignaux.accuse,
       signalReponse: puitsSignaux.reponse,
@@ -799,7 +801,7 @@ export async function demarrerWorker(): Promise<void> {
   await queue.work('webhook-status', async (data) => {
     // Trois dépendances nommées : ce qui est absent l'est volontairement (aucune conversation, aucune
     // automation, aucun scénario ne se déclenche sur un accusé).
-    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: fil.remettreSurAccuse, tarifsMeta: tarifsMetaStore, echecsLibres: echecsMessages, signauxAccuse: puitsSignaux.accuse });
+    await handleWebhookJob(data, { store: eventStore, delivery: recipientStore, nodeEvents: nodeEventStore, remiseMba: fil.remettreSurAccuse, tarifsMeta: tarifsMetaStore, echecsLibres: echecsMessages, signauxAccuse: puitsSignaux.accuse, ajustementCredit: ajustementCreditWhatsapp });
   }, { concurrency: config.WEBHOOK_STATUS_CONCURRENCY, groupConcurrency: 1 });
 
   // File campaign-run. DRY_RUN=true : sender de démo (aucun appel Meta). Sinon : token résolu par tenant,
@@ -1292,6 +1294,11 @@ export async function demarrerWorker(): Promise<void> {
     const n = await runCampaignScheduleSweep({
       repo,
       enqueueRun: (id, tenantId, expireInSeconds) => queue.enqueue('campaign-run', { campaignId: id }, { expireInSeconds, groupId: tenantId }),
+      // Le Crédit WhatsApp au départ (tâche 6) : l'estimation du lancement immédiat, et la pause du refus d'un envoi.
+      creditAuDepart: {
+        estimer: estimerCreditCampagne,
+        pauser: (campagne, tenant, montant) => numeroDelieStore.pauserCampagneCredit(campagne, tenant, 'credit_whatsapp_epuise', montant),
+      },
       defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
       plafondLePlusBas: plafondLePlusBas(config),
       onError: (m, err) => {
@@ -2245,8 +2252,9 @@ export async function demarrerWorker(): Promise<void> {
        * l'agent jusqu'à sa fin (essai réel du 2026-10-23).
        */
       estDesabonne: (t, waId) => contactStore.machineSeTaitParWaId(t, waId),
-      // 🔴 Lot 4 : un numéro délié ou suspendu ne paie pas un tour dont la réponse ne partirait pas.
-      numeroBloque: numeroBloqueDeLEspace,
+      // 🔴 Lot 4 : un numéro délié ou suspendu ne paie pas un tour dont la réponse ne partirait pas. Le Crédit WhatsApp à
+      // sec non plus : même issue, la session reste ouverte et le prochain message relance l'agent.
+      numeroBloque: async (t) => (await numeroBloqueDeLEspace(t)) || (await creditWhatsappBloque(t)),
       // 🔴 Deux agents de Messaging Me ne se répondent pas en boucle (2026-10-30).
       ecritParNosMachines: creerEcritParNosMachines(pool),
       envoyer: (t, waId, texte) => envoyerTexteAgent(t, waId, texte),

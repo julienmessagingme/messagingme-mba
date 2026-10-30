@@ -221,6 +221,28 @@ describe.skipIf(!url)('Numéro délié (Postgres réel)', () => {
     await pool.query(`update campaigns set status = 'completed' where tenant_id = any($1::uuid[])`, [[tenant, autre]]);
   });
 
+  it('🔴 Crédit WhatsApp (0264) : la pause du crédit ne s’écrit que si le solde refuse ENCORE le message (nul, ou sous son prix)', async () => {
+    // Aucun solde (zéro) : même un message à zéro est refusé, la pause s'écrit.
+    const aZero = await campagne(tenant, { status: 'running' });
+    expect(await store.pauserCampagneCredit(aZero, tenant, 'credit_whatsapp_epuise', 0)).toBe(true);
+    expect(await etat(aZero)).toMatchObject({ status: 'paused', pause_reason: 'credit_whatsapp_epuise', paused_until: null });
+    // Un crédit arrivé entre-temps qui couvre le prix : aucune pause ; un prix au-dessus du solde : la pause.
+    await pool.query(
+      `insert into credits_whatsapp (tenant_id, solde_micro_eur) values ($1, 100000)
+       on conflict (tenant_id) do update set solde_micro_eur = excluded.solde_micro_eur`,
+      [tenant],
+    );
+    const couverte = await campagne(tenant, { status: 'running' });
+    expect(await store.pauserCampagneCredit(couverte, tenant, 'credit_whatsapp_epuise', 74_760)).toBe(false);
+    expect(await store.pauserCampagneCredit(couverte, tenant, 'credit_whatsapp_epuise', 200_000)).toBe(true);
+    // La ligne inactive s'écrit sur la foi du refus, jamais sur la campagne d'un autre espace.
+    const chezLAutre = await campagne(autre, { status: 'running' });
+    expect(await store.pauserCampagneCredit(chezLAutre, tenant, 'ligne_credit_inactive', 0)).toBe(false);
+    expect((await etat(chezLAutre)).status).toBe('running');
+    await pool.query(`update campaigns set status = 'completed' where tenant_id = any($1::uuid[])`, [[tenant, autre]]);
+    await pool.query('delete from credits_whatsapp where tenant_id = $1', [tenant]);
+  });
+
   it('lot 4 : le numéro d’envoi, son espace et ses chiffres sans « + » ni espaces ; inconnu, `null`', async () => {
     expect(await store.telephone(PN)).toEqual({ tenantId: tenant, chiffres: '33500000077' });
     expect(await store.telephone('pn-inconnu')).toBeNull();

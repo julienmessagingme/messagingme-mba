@@ -65,6 +65,7 @@ import { registerAccount } from './http/account';
 import { registerMe } from './http/me';
 import { registerEspaces } from './http/espaces';
 import { registerOps } from './http/ops';
+import { registerOpsCreditWhatsapp } from './http/ops-credit-whatsapp';
 import { registerWorkflows } from './http/workflows';
 import { registerAutomations } from './http/automations';
 import { registerChannelsMeRoutes, type ChannelsMeRouteDeps } from './http/channels-me';
@@ -135,6 +136,7 @@ import { CompteChez360dialog } from './meta/credentials';
 import type { CodeApi } from './api/erreurs';
 import { classerErreurMeta } from './api/refus-meta';
 import { NumeroBloqueError } from './meta/numero-delie';
+import { CreditWhatsappRefus } from './credit-whatsapp/refus';
 import { FlowJsonInvalidError } from './meta/flows';
 import type { AuthRouteDeps } from './auth/routes';
 import type { ImportRouteDeps } from './http/import';
@@ -737,7 +739,11 @@ export function modulesDeRoutes(
     // Surface /ops : autorité séparée de la session d'espace (`g.ops`, la session d'exploitation nominative). Le
     // garde d'usage injecté est la même instance que celle de `/v1` : l'écran d'exploitation montre exactement
     // ce que les routes ont compté.
-    entree('ops', 'session-ops', deps.ops, (app, d, g) => registerOps(app, { ...d, usage: usageApi }, g.ops)),
+    // Les réglages du Crédit WhatsApp (grille de Meta, commission) sont des routes `/ops` de plus, sous la même garde.
+    entree('ops', 'session-ops', deps.ops, (app, d, g) => {
+      registerOps(app, { ...d, usage: usageApi }, g.ops);
+      if (d.creditWhatsapp) registerOpsCreditWhatsapp(app, d.creditWhatsapp, g.ops);
+    }),
     // Le réglage du plafond de l'API d'un espace : même autorité que `/ops`, dans un module à part.
     entree('plafondApi', 'session-ops', deps.plafondApi, (app, d, g) => registerOpsPlafondApi(
       app, { store: d, reglages: reglagesPlafond, defauts: defautsPlafond(), offres: limitesApiDesOffres(deps.offres ?? toutOuvert), compteur: debit }, g.ops,
@@ -1132,6 +1138,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // `statusCode`). Hors `/v1`, inchangé.
     if (surV1 && err instanceof NumeroBloqueError) {
       return reply.code(409).send({ error: err.message, code: (err.motif === 'numero_delie' ? 'number_unlinked' : 'number_suspended') satisfies CodeApi });
+    }
+    // Un refus du Crédit WhatsApp (la fabrique d'envoi, avant tout appel à Meta) : 402 pour le solde, 409 pour une ligne
+    // inactive, sur TOUTE route, jamais un 500. Sous `/v1`, les codes publics `whatsapp_credit_*` entrent au contrat avec
+    // le lot 2 (quand un client peut être sur la ligne) ; d'ici là, le statut, la phrase et le code par défaut.
+    if (err instanceof CreditWhatsappRefus) {
+      return reply.code(err.statusCode).send(surV1 ? { error: err.message, code: codeParDefautV1(err.statusCode) } : { error: err.message, code: err.code });
     }
     // Une limite de l'offre atteinte (lot 6) : 402, la phrase et le lien vers l'offre, sur TOUTE route, d'où qu'elle
     // vienne (un magasin, la fabrique). Jamais un 500 : ce n'est pas une panne, et Cloudflare masquerait le corps.

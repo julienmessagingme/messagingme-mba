@@ -10,6 +10,7 @@ import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import type { EtatConfirme } from './confirmation';
 import { RECIPIENT_FAILED_SQL } from './echecs-sql';
 import type { CampagneAssignante } from '../inbox/assignation-campagne';
+import type { GroupeAEstimer } from '../credit-whatsapp/estimation';
 import {
   RANG_INITIAL, normaliserChaine, type CanalEtage, type DevenirEtage, type Etage, type EtageEntrant, type RepondeurDeLaReponse,
   type RepondeurEtage,
@@ -557,6 +558,31 @@ export class PgCampaignRepo {
       [campaignId, tenantId],
     );
     return res.rows[0]?.n ?? 0;
+  }
+
+  /**
+   * Les destinataires en attente d'un étage WhatsApp, groupés pour l'estimation du Crédit WhatsApp (tâche 6) : par les neuf
+   * premiers caractères du numéro (le « + », l'indicatif et les chiffres qui départagent un pays partageant son indicatif,
+   * `paysDuNumero` : jamais plus de huit chiffres en tout) et par le contenu de l'étage. Calquée sur `modelesEnAttente`,
+   * scopée sur l'espace ; un groupe par millier de mobiles français, jamais une ligne par destinataire.
+   */
+  async groupesACreditWhatsapp(campaignId: string, tenantId: string): Promise<GroupeAEstimer[]> {
+    const res = await this.pool.query<{ exemple: string; template_name: string | null; template_language: string | null; workflow_id: string | null; n: number }>(
+      `select min(r.to_e164) as exemple, e.template_name, e.template_language, e.workflow_id, count(*)::int as n
+       from campaign_recipients r
+       join campaigns c on c.id = r.campaign_id
+       join campaign_etages e on e.campaign_id = r.campaign_id and e.rang = r.etage_courant
+       where r.campaign_id = $1 and c.tenant_id = $2 and r.status = 'pending' and e.canal = 'whatsapp'
+       group by left(r.to_e164, 9), e.template_name, e.template_language, e.workflow_id`,
+      [campaignId, tenantId],
+    );
+    return res.rows.map((r) => ({
+      exemple: r.exemple,
+      // Un étage à scénario envoie ce que le scénario ouvre, même s'il garde un nom de modèle.
+      modele: r.workflow_id === null && r.template_name !== null ? { name: r.template_name, language: r.template_language ?? '' } : null,
+      workflowId: r.workflow_id,
+      n: r.n,
+    }));
   }
 
   /** Débit choisi + nb de destinataires en attente : dimensionne le timeout du job de run (pacing.ts). */

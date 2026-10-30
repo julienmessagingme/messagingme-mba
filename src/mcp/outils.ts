@@ -12,6 +12,7 @@ import { messageDeForme } from '../api/forme';
 import { MetaApiError } from '../meta/errors';
 import { parCause, type AuteurDuChangement } from '../inbox/evenements';
 import { NumeroBloqueError } from '../meta/numero-delie';
+import { CreditWhatsappRefus } from '../credit-whatsapp/refus';
 import { e164DepuisSaisie } from '../crm/phone';
 import { LONGUEUR_MAX_ETIQUETTE, nettoyerEtiquettes, type PoseEtiquette } from '../crm/poser-etiquette';
 import {
@@ -1168,6 +1169,8 @@ async function reponseOuRefus(envoi: () => Promise<ResultatReponse>): Promise<Ex
     res = await envoi();
   } catch (err) {
     if (err instanceof NumeroBloqueError) throw new RefusOutil(err.message);
+    // Le Crédit WhatsApp a refusé : la phrase dit quoi faire (recharger), l'agent ne réessaie pas.
+    if (err instanceof CreditWhatsappRefus) throw new RefusOutil(err.message);
     // Meta refuse le contenu : un refus lisible, sinon l'agent lirait une panne et renverrait le même message.
     if (err instanceof MetaApiError && err.httpStatus >= 400 && err.httpStatus < 500 && !err.retryable) {
       throw new RefusOutil(`Meta a refusé le message : ${(err.userMessage ?? err.message).slice(0, 300)}`);

@@ -111,6 +111,9 @@ const CATALOGUE_ACTIONS_AUDIT = {
   'ops.risque_balaye': ['Risque de désengagement recalculé par Messaging Me', 'Disengagement risk recomputed by Messaging Me'],
   'ops.espace_observe': ['Espace observé par Messaging Me (lecture seule)', 'Workspace viewed by Messaging Me (read-only)'],
   'ops.numero_rattache': ['Numéro WhatsApp rattaché par Messaging Me', 'WhatsApp number connected by Messaging Me'],
+  // Le Crédit WhatsApp (plan du 2026-10-30) : le détail porte l'identifiant Meta du numéro, jamais le numéro affiché.
+  'ops.ligne_credit_posee': ['Numéro passé au Crédit WhatsApp par Messaging Me', 'Number moved to WhatsApp Credit by Messaging Me'],
+  'ops.ligne_credit_retiree': ['Numéro retiré du Crédit WhatsApp par Messaging Me', 'Number removed from WhatsApp Credit by Messaging Me'],
 } as const satisfies Record<string, readonly [string, string]>;
 
 /** Une nouvelle action doit porter ses deux libellés avant de pouvoir être écrite. */

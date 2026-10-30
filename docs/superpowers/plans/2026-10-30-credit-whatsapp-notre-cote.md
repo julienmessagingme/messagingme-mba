@@ -134,10 +134,10 @@ Déploiement : la migration (tâche 1) part seule, `migration=avant`, appliquée
 - `campaigns_pause_reason_check` redéfinie sous son nom (drop if exists puis add) avec `credit_whatsapp_epuise` et
   `ligne_credit_inactive` en plus des motifs existants ; `set local lock_timeout = '5s'` en tête.
 
-- [ ] Écrire `tests/migration-<NNNN>.test.ts` sur le SQL réel (`decouperInstructions`) : `lock_timeout` en premier, aucun
+- [x] Écrire `tests/migration-<NNNN>.test.ts` sur le SQL réel (`decouperInstructions`) : `lock_timeout` en premier, aucun
   accent grave, le CHECK des pauses porte exactement `MOTIFS_DE_PAUSE`, aucune clé étrangère vers `phone_numbers` sur
   `lignes_credit_whatsapp`. Le voir échouer.
-- [ ] Écrire la migration ; passer `tests/numero-suspendu.test.ts` sur la nouvelle migration du CHECK ; le test passe.
+- [x] Écrire la migration ; passer `tests/numero-suspendu.test.ts` sur la nouvelle migration du CHECK ; le test passe.
 - [ ] Commit seul, déploiement `migration=avant`, relecture en base point par point (colonnes, CHECK sous leur nom, index
   partiels exacts).
 
@@ -159,12 +159,12 @@ tests `tests/credit-whatsapp-grille.test.ts`, `tests/integration/credit-whatsapp
   ligne fautive, note signée, `journaliser('warn')`), drapeau « périmée » si elle date d'avant le trimestre en cours.
 - La carte `/ops` lit le CSV en euros que Meta publie DANS le navigateur et envoie le JSON validé : un seul geste pour Julien.
 
-- [ ] Récupérer le CSV en euros de Meta du trimestre et le figer en fixture (`tests/fixtures/grille-meta-eur.csv`).
-- [ ] Tests unitaires : prix France marketing et utility égaux à la fixture fois 1,05 ; `+1` et `+44` départagés par le pays
+- [x] Récupérer le CSV en euros de Meta du trimestre et le figer en fixture (`tests/fixtures/grille-meta-eur.csv`).
+- [x] Tests unitaires : prix France marketing et utility égaux à la fixture fois 1,05 ; `+1` et `+44` départagés par le pays
   (`paysDuNumero`) ; pays inconnu et catégorie nulle au plus haut ; `marketing_lite` normalisé ; palier 1 moins cher que le
   palier 0 pour utility. Les voir échouer, implémenter, les voir passer.
-- [ ] Intégration (CI) : chargement daté, lecture de la version en vigueur, refus d'une ligne invalide.
-- [ ] Commit.
+- [x] Intégration (CI) : chargement daté, lecture de la version en vigueur, refus d'une ligne invalide.
+- [x] Commit.
 
 ### Tâche 3 : le magasin du Crédit WhatsApp
 
@@ -188,11 +188,11 @@ tests `tests/credit-whatsapp-credit.test.ts`, `tests/integration/credit-whatsapp
 - `regulariser(tenantId: string, jour: string, montantMicroEur: number): Promise<void>` : remplace la ligne `regularisation`
   du jour, et le solde bouge de la seule différence avec la ligne précédente (tâche 12).
 
-- [ ] Intégration (CI) : deux `provisionner` simultanés sur un solde qui n'en couvre qu'un, un seul `ok` ; `crediter` rejoué
+- [x] Intégration (CI) : deux `provisionner` simultanés sur un solde qui n'en couvre qu'un, un seul `ok` ; `crediter` rejoué
   avec la même référence, un seul crédit ; `rendre` deux fois, un seul retour ; open bar, solde négatif permis. Les voir
   échouer, implémenter, les voir passer.
-- [ ] Unitaires : historique agrégé par jour de Paris (minuit du 1er novembre à Paris reste au 1er), aucune note exposée.
-- [ ] Commit (le socle en plomberie, annoncé).
+- [x] Unitaires : historique agrégé par jour de Paris (minuit du 1er novembre à Paris reste au 1er), aucune note exposée.
+- [x] Commit (le socle en plomberie, annoncé).
 
 ### Tâche 4 : la garde dans la fabrique d'envoi
 
@@ -213,15 +213,15 @@ tests `tests/credit-whatsapp-garde.test.ts`, `tests/credit-whatsapp-inventaire.t
   liste) ; une provision par appel de méthode, hors des rejeux de `MetaClient.call` ; envois libres = `service`, modèles =
   catégorie lue chez Meta ; service dans la franchise du numéro = provision nulle ; ligne arrêtée = refus `ligne_inactive`.
 
-- [ ] Tests unitaires (fabrique au transport factice) : à solde insuffisant, chacune des neuf méthodes `send*` lève
+- [x] Tests unitaires (fabrique au transport factice) : à solde insuffisant, chacune des neuf méthodes `send*` lève
   `CreditWhatsappRefus` SANS aucun POST ; un 4xx de Meta rend la provision, une erreur réseau la garde ; un rejeu de
   `withRetry` et le repli de `sendMarketing` ne provisionnent qu'une fois ; un client 360dialog, un numéro hors ligne et
   `DRY_RUN` ne provisionnent jamais ; le wamid rendu est rattaché.
-- [ ] Inventaire `tests/credit-whatsapp-inventaire.test.ts`, sur le modèle de `tests/optout-chemins.test.ts` : (a) les
+- [x] Inventaire `tests/credit-whatsapp-inventaire.test.ts`, sur le modèle de `tests/optout-chemins.test.ts` : (a) les
   méthodes `send*` dérivées de `src/meta/client.ts` ; (b) `new MetaClient(` n'apparaît que dans `src/meta/factory.ts` ;
   (c) tout fichier qui attrape `NumeroBloqueError` traite aussi `CreditWhatsappRefus`, ou est classé avec une raison de plus
   de 60 caractères ; (d) aucune entrée fantôme.
-- [ ] Voir les tests échouer, implémenter, les voir passer ; commit (la fabrique et le socle en plomberie, annoncés).
+- [x] Voir les tests échouer, implémenter, les voir passer ; commit (la fabrique et le socle en plomberie, annoncés).
 
 ### Tâche 5 : les chemins qui reçoivent le refus
 
@@ -238,12 +238,12 @@ tests `tests/credit-whatsapp-garde.test.ts`, `tests/credit-whatsapp-inventaire.t
 - Produit : `MotifDePause` étendu de `'credit_whatsapp_epuise' | 'ligne_credit_inactive'` ;
   `leverPausesCreditWhatsapp(tenantId: string): Promise<number>` (tâche 11 l'appelle après un crédit).
 
-- [ ] Tests : le moteur rend le destinataire et pause `credit_whatsapp_epuise` (jamais `failed` ni `skipped`, jamais la porte
+- [x] Tests : le moteur rend le destinataire et pause `credit_whatsapp_epuise` (jamais `failed` ni `skipped`, jamais la porte
   de qualité) ; `run-job` pause avant tout `claim` ; un parcours à crédit nul n'exécute pas l'e-mail placé avant le modèle
   (vérification avant effets aux quatre points) ; un tour d'agent dont la réponse ne partirait pas ne débite pas le crédit
   IA ; le répondeur IA ne démarre pas, l'agent de Meta n'est pas bloqué ; Inbox, `/v1/messages`, MCP, HubSpot (clé
   d'idempotence rendue), Shopify (issue propre) rendent le code dédié ; `refuserLaReponse` reste exhaustive.
-- [ ] Voir échouer, implémenter, voir passer ; l'inventaire de la tâche 4 passe au vert ; commit.
+- [x] Voir échouer, implémenter, voir passer ; l'inventaire de la tâche 4 passe au vert ; commit.
 
 ### Tâche 6 : l'estimation avant un lancement
 
@@ -256,12 +256,12 @@ tests `tests/credit-whatsapp-garde.test.ts`, `tests/credit-whatsapp-inventaire.t
 soldeMicroEur: number; manqueMicroEur: number } | null>` (`null` hors ligne ou en open bar) ; issue de lancement
 `{ ok: false; raison: 'credit_whatsapp'; manqueMicroEur: number }`.
 
-- [ ] Tests : un lancement dont l'estimation dépasse le solde est refusé avec le montant manquant en euros HT et le lien de
+- [x] Tests : un lancement dont l'estimation dépasse le solde est refusé avec le montant manquant en euros HT et le lien de
   l'onglet ; le `switch` de la route traite le cas (aucune réponse vide) ; une campagne de scénario s'estime sur son premier
   modèle ; un envoi unitaire à solde insuffisant est refusé à la création ; un espace hors ligne n'est pas estimé.
-- [ ] La règle « aucun prix en euros » de `EtapeRecap` et de `prepare_campaign` ne vaut plus pour un espace sur la ligne :
+- [x] La règle « aucun prix en euros » de `EtapeRecap` et de `prepare_campaign` ne vaut plus pour un espace sur la ligne :
   test qui l'affiche sur la ligne et jamais ailleurs.
-- [ ] Voir échouer, implémenter, voir passer ; commit.
+- [x] Voir échouer, implémenter, voir passer ; commit.
 
 ### Tâche 7 : l'ajustement à l'accusé
 
@@ -270,10 +270,10 @@ soldeMicroEur: number; manqueMicroEur: number } | null>` (`null` hors ligne ou e
 
 **Interfaces :** consomme `PgCreditWhatsappStore.ajusterParWamid` (tâche 3) et `normaliserCategorie` (tâche 2).
 
-- [ ] Tests : `facturable: false` ou type `free_*` rend la provision ; une catégorie différente la corrige au prix de la
+- [x] Tests : `facturable: false` ou type `free_*` rend la provision ; une catégorie différente la corrige au prix de la
   grille ; `failed` la rend même traité après un `sent` à tarif ; un accusé rejoué ne change rien ; l'instant `delivered`
   date la provision (`livre_le`) ; best-effort : un échec d'ajustement ne fait pas échouer le job.
-- [ ] Voir échouer, implémenter, voir passer ; commit (le worker en plomberie, annoncé).
+- [x] Voir échouer, implémenter, voir passer ; commit (le worker en plomberie, annoncé).
 
 ### Tâche 8 : `/ops`, numéro de test sur la ligne, Entreprise open bar, commission
 
@@ -286,10 +286,10 @@ soldeMicroEur: number; manqueMicroEur: number } | null>` (`null` hors ligne ou e
 globale) ; `POST /ops/tenants/:tenantId/ligne-credit` `{ phoneNumberId, poser: boolean, note }` : numéro de CET espace,
 fournisseur Meta, hors coexistence, note signée, trace.
 
-- [ ] Tests : open bar et commission négociée ignorés hors Entreprise (état effectif après écriture) ; la route refuse un
+- [x] Tests : open bar et commission négociée ignorés hors Entreprise (état effectif après écriture) ; la route refuse un
   numéro d'un autre espace (404), un numéro 360dialog, un numéro en coexistence ; la commission globale garde ses bornes
   (`tests/prix-bornes.test.ts`) ; l'action entre au journal avec ses libellés.
-- [ ] Voir échouer, implémenter, voir passer ; commit.
+- [x] Voir échouer, implémenter, voir passer ; commit.
 
 ### Tâche 9 : les écrans de coût sur la ligne
 
@@ -298,10 +298,61 @@ fournisseur Meta, hors coexistence, note signée, trace.
 `web/lib/api/stats.ts`, `web/components/...` des cartes de coût (`FactureCard`, `TemplateBreakdownCard`, `CostChartCard`),
 l'Accueil et la page Campagnes.
 
-- [ ] Tests : `parsePricing` sans `COST` rend un coût inconnu, jamais 0, et aucun écran ne lit « gratuit » ; un espace sur la
+- [x] Tests : `parsePricing` sans `COST` rend un coût inconnu, jamais 0, et aucun écran ne lit « gratuit » ; un espace sur la
   ligne lit ses montants dans le journal des provisions (ce qu'il a payé), commission comprise, sans parler de facture Meta ;
   un espace hors ligne ne change pas d'un caractère ; `cout_estime` du MCP suit.
 - [ ] Voir échouer, implémenter, voir passer ; commit. Fin du lot 1 : relecture indépendante, puis essai réel.
+
+### Écarts du lot 1, relevés à la livraison (2026-10-30)
+
+1. La commission globale vit dans `credit_whatsapp_reglages` (une ligne, migration 0264), pas dans la grille de prix :
+   `src/stats/prix.ts` et `src/settings/store.pg.ts` ne bougent pas. Sa borne (0 à 100) est tenue par la contrainte et par
+   la route (`tests/ops-credit-whatsapp.test.ts`).
+2. Le magasin expose des primitives (`rendreParWamid`, `corrigerParWamid`, `marquerLivre`, `provisionDuWamid`) au lieu d'un
+   `ajusterParWamid` unique ; l'ajustement de la tâche 7 les compose (`src/credit-whatsapp/ajustement.ts`).
+3. La ligne a une date de retrait (`retiree_le`) en plus de l'arrêt : un numéro arrêté reste bloqué par la garde, un numéro
+   retiré revient à la normale. L'unicité d'une ligne en cours porte sur `retiree_le is null`.
+4. Les codes publics `whatsapp_credit_*` entrent au contrat de l'API au lot 2, avec le refus à la création d'un envoi
+   unitaire (`src/api/envoi-public.ts`) : aucun client n'est sur la ligne avant. D'ici là, la garde refuse l'envoi.
+5. La route du numéro sur la ligne est `GET|POST /ops/credit-whatsapp/ligne/:tenantId`, dans le module `/ops` du Crédit
+   WhatsApp ; elle rend aussi le solde et les 50 dernières provisions, que l'essai réel du lot 1 lit dans `/ops`.
+6. Les conditions (open bar, commission négociée) se lisent par `PgConditionsCreditStore` (`conditions.pg.ts`, cache de 5 s
+   sans invalidation à câbler), et l'open bar retombe en base quand l'Entreprise est retirée.
+7. Le prix en euros de `EtapeRecap` passe au lot 2 : la console crée la campagne au clic, sans identifiant avant, et le prix
+   par catégorie viendra de la route d'espace du lot 2. D'ici là, le refus du lancement dit « il vous manque X € HT » sous
+   le bouton et la campagne reste en brouillon ; `prepare_campaign` donne déjà l'estimation (son brouillon existe).
+8. Les cartes de coût lues dans le journal des provisions (`FactureCard`, `TemplateBreakdownCard`, `CostChartCard`, Accueil,
+   Campagnes, `cout_estime`) passent au lot 2, avec la route d'espace : aucun espace n'est payé par la ligne d'un partenaire
+   avant le lot 5 (un numéro d'essai posé dans `/ops` reste facturé à notre carte, et Meta rend son `COST`). La protection
+   vaut dès le lot 1 : un `COST` absent rend le résumé inconnu (`parsePricing` rend `null`), l'écran montre le volume seul.
+9. Une campagne programmée mise en pause à son départ faute de crédit garde son `scheduled_at` passé : la reprise du lot 2
+   (`leverPausesCreditWhatsapp`) la remet en `scheduled`, que le balayage reprend aussitôt, et non en `running`.
+10. 🔴 POUR LE LOT 2, AVANT TOUT CLIENT SUR LA LIGNE (relecture du lot 1, constat 1) : un refus du crédit au MILIEU de la
+    liste d'un bloc de scénario rejoue, à la reprise, ce qui était déjà parti (le modèle est envoyé et payé deux fois),
+    pour une campagne de scénario comme pour la réponse d'un contact (`apply` relance le refus sans écrire le parcours).
+    Correctif : convertir le refus en refus d'étape dès qu'un envoi du bloc est parti, et lire `bloque()` aux points où
+    `verifierNumeroWhatsApp` est déjà lu (un bloc e-mail avant un modèle ne part plus à sec). Impossible au lot 1 : aucun
+    solde n'y est jamais positif (aucun achat, l'open bar ne refuse rien).
+11. La déconnexion d'un numéro ne retire pas sa ligne (aucune clé étrangère vers `phone_numbers`, par choix) : relié ensuite
+    à un autre espace, il y est bloqué. `/ops` le retire désormais depuis l'espace de sa ligne, même sorti de l'espace
+    (relecture, constat 2) ; au lot 4, la sortie de l'option le retire d'elle-même.
+12. La migration prend le numéro 0264 : des pairs ont pris 0262 puis 0263 pendant le lot (`0262_seuils_capacite.sql`,
+    `0263_etage_repondeur.sql`). Elle part SEULE,
+    par un commit construit sur `origin/main` (la migration, son test, `pause.ts` et la partie CHECK de
+    `tests/numero-suspendu.test.ts`), déployée en `migration=avant` avant que le code n'arrive sur `main`.
+13. Corrigés après la relecture du lot 1 (constats 3, 5, 6, 7, 9, 10) : un solde nul ne laisse plus rien partir, même un
+    message de la franchise (« tout s'arrête à zéro, réponses comprises ») ; le répondeur arrêté par le Crédit WhatsApp passe
+    à l'équipe avec sa propre cause ; seul un compte sans AUCUN coût facturé rend le résumé de Meta inconnu ; l'accusé
+    compare le PRIX exact de la catégorie facturée au montant provisionné ; un 5xx de Meta garde la provision ; les
+    destinataires se groupent par neuf caractères, et la franchise se compte par un index partiel ; `/ops` refuse de
+    poser un numéro tant qu'aucune grille n'est en vigueur.
+14. Pour les lots suivants : après « Retirer », l'accusé ne corrige plus les provisions du numéro (il lit la ligne en
+    cours ; la régularisation du lot 3 tranche) ; la ligne d'un numéro et la catégorie d'un modèle se relisent sans
+    mutualiser les lectures en vol, et un échec de lecture chez Meta n'est pas gardé en cache (lot 2) ; les textes du
+    refus et de la pause promettent la recharge et la reprise automatique, que le lot 2 rend vraies.
+15. Essai réel du lot 1 : retirer l'open bar (ou l'Entreprise) laisse le solde négatif des envois de l'essai, et chaque
+    envoi est alors refusé ; aucun crédit n'est possible au lot 1, seul « Retirer » le numéro de la ligne rend l'espace à
+    la normale.
 
 ## Lot 2 : acheter et suivre son Crédit WhatsApp
 

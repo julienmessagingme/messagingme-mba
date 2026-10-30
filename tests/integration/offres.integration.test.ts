@@ -11,6 +11,7 @@ import { QuotaModeles } from '../../src/offres/compteurs';
 import { PgAbonnementsNumeroStore } from '../../src/stripe/abonnements.pg';
 import { PgAbonnementsOffreStore } from '../../src/offres/abonnements-offre.pg';
 import { PgRcsAgentStore } from '../../src/rcs/store.pg';
+import { PgConditionsCreditStore } from '../../src/credit-whatsapp/conditions.pg';
 
 /**
  * L'OFFRE CALCULÉE (migration 0218, lot 6 livraison A), sur une vraie base.
@@ -161,6 +162,24 @@ describe.skipIf(!url)('l’offre calculée (0218)', () => {
     await offres.ecrireEntreprise(t, { entreprise: true, utilisateurs: null });
     expect(await offres.lireEntreprise(t)).toMatchObject({ entreprise: true, business: false });
     expect((await offres.offreDe(t)).offre).toBe('entreprise');
+  });
+
+  it('🔴 0264 : l’open bar du Crédit WhatsApp tombe avec l’Entreprise, et les conditions ne lisent l’Entreprise que par sa fonction', async () => {
+    const t = await espace('itest-offre-credit-wa');
+    const conditions = () => new PgConditionsCreditStore(pool, { commission: async () => 5 }).conditions(t);
+    await offres.ecrireEntreprise(t, { entreprise: true, utilisateurs: null, openBarWhatsapp: true, commissionMessagesPct: 3 });
+    expect(await offres.lireEntreprise(t)).toMatchObject({ entreprise: true, openBarWhatsapp: true, commissionMessagesPct: 3 });
+    expect(await conditions()).toEqual({ openBar: true, commissionPct: 3 });
+    // Absents, ils restent tels quels.
+    await offres.ecrireEntreprise(t, { entreprise: true, utilisateurs: 12 });
+    expect(await offres.lireEntreprise(t)).toMatchObject({ openBarWhatsapp: true, commissionMessagesPct: 3 });
+    // L'Entreprise retirée : l'open bar tombe en base, la commission négociée reste sans effet.
+    await offres.ecrireEntreprise(t, { entreprise: false, utilisateurs: null });
+    expect(await offres.lireEntreprise(t)).toMatchObject({ entreprise: false, openBarWhatsapp: false, commissionMessagesPct: 3 });
+    expect(await conditions()).toEqual({ openBar: false, commissionPct: 5 });
+    // Une colonne posée à la main hors Entreprise ne fait rien : les conditions passent par `offre_de_l_espace`.
+    await pool.query('update tenants set entreprise_open_bar_whatsapp = true where id = $1', [t]);
+    expect(await conditions()).toEqual({ openBar: false, commissionPct: 5 });
   });
 
   it('🔴 les alertes de /ops : un Pro payé vivant, un numéro payé à part, un numéro fourni que plus rien ne couvrirait', async () => {

@@ -299,8 +299,8 @@ async function main(): Promise<void> {
     adressesEvenements, envoisEvenements, espacesEvenements,
     settingsStore, flowStore, idempotencyStore, auditStore, erreursLivraison, echecsMessages, poolAttentesStore,
     httpLatencesStore, mesuresTachesStore, mesuresFilesStore, santeStore, memoireWorkersStore, seuilsStore, nodeEventStore, trackedLinkStore, webhookStore, verrousCourts, compteurDebit, phoneStatusStore, opsStore, heartbeatStore, workflowStore,
-    automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits,
-    agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
+    automationStore, agentStore, knowledgeStore, rechercheSemantique, toolCatalog, journalAppels, credits, reglagesCreditWhatsapp,
+    lignesCreditWhatsapp, estimerCreditCampagne, creditWhatsapp, agentSources, agentRequetes, essaisStore, depotAide, emailAccounts, emailTemplates, emailResolver, wabaDeLEspace,
     numeroDelieStore, gardeNumeroDelie, gardeNumeroSuspendu, esCredentialsStore, metaCredentials, metaFactory, connexionsPub, connexionPub, publicites,
     clientPubs, clientCreationPubs, workflowRuntime, clesGateway, fil, listeDeLAgent, offres, quotaModeles,
     emailsProduit, envoisResend, paiementRefuse, emetteurEmails, envoiApplication, comptesApplication, clientApplication,
@@ -1454,6 +1454,8 @@ async function main(): Promise<void> {
     drafts: campaignDraftStore,
     // Les modèles du mois (lot 6) : une campagne qui ne tient pas dans ce qu'il reste est refusée au lancement.
     modelesDuLancement: creerModelesDuLancement(quotaModeles, (campagne, tenant) => repo.modelesEnAttente(campagne, tenant)),
+    // Le Crédit WhatsApp (tâche 6) : une campagne d'un espace sur la ligne qui manquerait de crédit est refusée au lancement.
+    creditDuLancement: estimerCreditCampagne,
     // L'offre (lot 6, B2a) : hors `scenarios`, une campagne ou un étage à scénario est refusé à la création.
     offres,
     // Palier d'envoi du numéro, pour avertir avant un lancement plus gros que ce que Meta laissera passer
@@ -2937,6 +2939,9 @@ async function main(): Promise<void> {
        */
       lireGrillePrix: chiffrage.grille,
       reglages: settingsStore,
+      // La grille de Meta et la commission des messages du Crédit WhatsApp, et les numéros sur la ligne : les magasins du
+      // socle, ceux que lit la garde (une pose s'y voit en moins de 5 s, le cache de la ligne).
+      creditWhatsapp: { reglages: reglagesCreditWhatsapp, lignes: lignesCreditWhatsapp, audit: auditSink, credit: creditWhatsapp },
       // Les jobs morts et leur rejeu : un geste d'exploitation cross-espace, qui suppose qu'on ait corrigé la
       // cause de l'échec.
       file: queue,

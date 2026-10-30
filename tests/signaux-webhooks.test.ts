@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import { destinataireDuStatut, instantDuStatut, type AccuseDuStatut } from '../src/webhooks/delivery';
 import { processInbound, type InboundMessage } from '../src/webhooks/inbound';
-import { aucunEspacePlein, agentEteintALArrivee, aucunTarif, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
+import { aucunEspacePlein, agentEteintALArrivee, aucunTarif, aucunEchecLibre, aucunAjustementCredit, aucuneArriveePub, aucunRoutagePub, aucunNumeroDelie, aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 
 /**
@@ -30,7 +30,7 @@ describe('les accusés Meta passent au puits des signaux', () => {
     await handleWebhookJob(statuts(
       { id: 'wamid.1', status: 'delivered', recipient_id: '33612345678', timestamp: '1790000000' },
       { id: 'wamid.2', status: 'failed', recipient_id: '33612345678', errors: [{ code: 131026, title: 'Message undeliverable' }] },
-    ), { store, delivery, tarifsMeta: aucunTarif, echecsLibres: aucunEchecLibre, signauxAccuse: async (pn, a) => { vus.push({ pn, a }); } });
+    ), { store, delivery, tarifsMeta: aucunTarif, echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit, signauxAccuse: async (pn, a) => { vus.push({ pn, a }); } });
     expect(vus).toEqual([
       { pn: 'PN1', a: { messageId: 'wamid.1', status: 'delivered', waId: '33612345678', motif: null, codeMeta: null, le: new Date(1790000000 * 1000).toISOString() } },
       { pn: 'PN1', a: { messageId: 'wamid.2', status: 'failed', waId: '33612345678', motif: '131026 Message undeliverable', codeMeta: 131026, le: null } },
@@ -42,7 +42,7 @@ describe('les accusés Meta passent au puits des signaux', () => {
     await expect(handleWebhookJob(statuts({ id: 'wamid.3', status: 'read', recipient_id: '336' }), {
       store,
       delivery: { updateDeliveryByMessageId: async (id) => { maj.push(id); return 1; } },
-      tarifsMeta: aucunTarif, echecsLibres: aucunEchecLibre,
+      tarifsMeta: aucunTarif, echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit,
       signauxAccuse: async () => { throw new Error('file indisponible'); },
     })).resolves.toBeUndefined();
     expect(maj).toEqual(['wamid.3']);
@@ -51,7 +51,7 @@ describe('les accusés Meta passent au puits des signaux', () => {
   it('un accusé sans numéro Meta (aucun rattachement à un espace) ne va pas au puits', async () => {
     const vus: string[] = [];
     await handleWebhookJob({ entry: [{ changes: [{ field: 'messages', value: { statuses: [{ id: 'wamid.4', status: 'read' }] } }] }] }, {
-      store, delivery, tarifsMeta: aucunTarif, echecsLibres: aucunEchecLibre, signauxAccuse: async (_pn, a) => { vus.push(a.messageId); },
+      store, delivery, tarifsMeta: aucunTarif, echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit, signauxAccuse: async (_pn, a) => { vus.push(a.messageId); },
     });
     expect(vus).toEqual([]);
   });

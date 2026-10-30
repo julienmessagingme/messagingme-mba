@@ -14,6 +14,7 @@ import type { RoutageDuMessage } from '../pubs/routage';
 import { ecarterLesEntrantsDelies, type NumerosDelies } from './numeros-delies';
 import { ecarterLesInconnusDesEspacesPleins, type EspacesPleins } from './espace-plein';
 import type { TarifsMetaSink } from './tarif-meta';
+import type { AjustementCreditSink } from '../credit-whatsapp/ajustement';
 import type { DeliveryStore } from './delivery';
 import type { DetenteurDuFil, InboxStore, InboundAssignation, InboundContactUpsert, InboundOptOut } from './inbound';
 import type { ArriveeParWidget } from '../widgets/arrivee';
@@ -109,7 +110,7 @@ interface EtapesRattachees {
  *    (`listeALArrivee`) : un `standby` d'un contact absent de la liste est pour nous (`./standby-hors-liste.ts`), et
  *    un câblage qui l'oublierait laisserait sans réponse, en silence, toute réponse texte à un modèle. Le numéro vers
  *    l'espace se lit dans `inbox` (`NumeroVersEspace`).
- * Les tests qui n'en parlent pas passent les fixtures de `tests/webhook-fixtures.ts` (`aucunTarif`,
+ * Les tests qui n'en parlent pas passent les fixtures de `tests/webhook-fixtures.ts` (`aucunTarif`, `aucunAjustementCredit`,
  * `aucuneArriveePub`, `aucunRoutagePub`, `aucunSignalAccuse`, `aucunSignalReponse`, `aucunNumeroDelie`,
  * `aucunEspacePlein`, `aucuneCorrectionDuDetenteur`, `agentEteintALArrivee`, `aucunStop`), qui disent leur
  * hypothèse.
@@ -118,8 +119,9 @@ export type WebhookJobDeps = WebhookJobDepsCommunes
   & (
     // `echecsLibres` entre dans le couple des accusés : une file qui applique des statuts note aussi l'échec d'un
     // message libre, sinon il redevient invisible selon la file.
-    { delivery: DeliveryStore; tarifsMeta: TarifsMetaSink; echecsLibres: EchecsLibresSink; signauxAccuse: SignalAccuse }
-    | { delivery?: undefined; tarifsMeta?: undefined; echecsLibres?: undefined; signauxAccuse?: undefined }
+    // `ajustementCredit` aussi : la provision du Crédit WhatsApp se corrige à l'accusé, quelle que soit sa file.
+    { delivery: DeliveryStore; tarifsMeta: TarifsMetaSink; echecsLibres: EchecsLibresSink; signauxAccuse: SignalAccuse; ajustementCredit: AjustementCreditSink }
+    | { delivery?: undefined; tarifsMeta?: undefined; echecsLibres?: undefined; signauxAccuse?: undefined; ajustementCredit?: undefined }
   )
   & (
     ({
@@ -143,7 +145,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
   const {
     store, delivery, flowMapping, workflowAdvance, remiseMbaEntrant, inboundContactUpsert,
     handover, triggers, testTokens, nodeEvents, inboundAssignation, inboundWidget, remiseMba,
-    tarifsMeta, echecsLibres, arriveesPub, routagePub, signauxAccuse, signalReponse, numerosDelies,
+    tarifsMeta, echecsLibres, ajustementCredit, arriveesPub, routagePub, signauxAccuse, signalReponse, numerosDelies,
   } = deps;
   /**
    * La lecture du numéro vers l'espace, une par numéro distinct pour tout le job (`uneLectureParNumero`) : la porte d'une
@@ -177,7 +179,7 @@ export async function handleWebhookJob(recu: unknown, deps: WebhookJobDeps): Pro
     const isNew = await store.insertEvent(ev);
     if (!isNew && ev.dedupKey.startsWith('msg:')) alreadySeen.add(ev.dedupKey.slice(4));
   }
-  if (delivery) await processStatuses(events, delivery, { tarifs: tarifsMeta, echecsLibres, nodeEvents, remiseMba, signaux: signauxAccuse });
+  if (delivery) await processStatuses(events, delivery, { tarifs: tarifsMeta, echecsLibres, ajustementCredit, nodeEvents, remiseMba, signaux: signauxAccuse });
   /**
    * Un payload qui ne porte QUE des statuts de modèles : une panne lève et fait rejouer le job par pg-boss, sans risque
    * (rien d'autre à rejouer, identifiant d'événement stable, ligne d'envoi unique par adresse). Mêlé à des messages :

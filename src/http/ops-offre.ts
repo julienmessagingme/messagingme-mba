@@ -70,6 +70,10 @@ const corpsSchema = z.object({
   // Le Business (spec du 2026-10-27) : absent = inchangé ; sa limite d'utilisateurs, absente = inchangée, `null` = les 5.
   business: z.boolean().optional(),
   utilisateursBusiness: z.number().int().min(1).max(10_000).nullable().optional(),
+  // Le Crédit WhatsApp de l'Entreprise (plan du 2026-10-30, tâche 8) : l'open bar (facturé après, hors de tout solde) et la
+  // commission des messages négociée. Absents = inchangés ; la commission `null` = la globale, un ENTIER comme l'autre.
+  openBarWhatsapp: z.boolean().optional(),
+  commissionMessagesPct: z.number().int().min(0).max(100).nullable().optional(),
   note: z.string(),
 }).strict();
 
@@ -93,11 +97,15 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
     const lu = corpsSchema.safeParse(req.body ?? {});
     if (!lu.success) {
       return reply.code(400).send({
-        error: 'entreprise (booléen) et utilisateurs (entier positif ou null) requis, avec une note ; facultatifs, absents = inchangés : conservationJours (0 à 3650, ou null), contacts (entier positif, ou null), commissionPct (entier de 0 à 100, ou null)',
+        error: 'entreprise (booléen) et utilisateurs (entier positif ou null) requis, avec une note ; facultatifs, absents = inchangés : conservationJours (0 à 3650, ou null), contacts (entier positif, ou null), commissionPct (entier de 0 à 100, ou null), openBarWhatsapp (booléen), commissionMessagesPct (entier de 0 à 100, ou null)',
       });
     }
     if (lu.data.entreprise && lu.data.business === true) {
       return reply.code(400).send({ error: 'une seule offre posée à la main : l’Entreprise ou le Business, pas les deux' });
+    }
+    // `entreprise` est requis : c'est l'état APRÈS écriture, et l'open bar tombe avec l'Entreprise (`ecrireEntreprise`).
+    if (lu.data.openBarWhatsapp === true && !lu.data.entreprise) {
+      return reply.code(400).send({ error: 'l’open bar du Crédit WhatsApp ne se pose que sur une Entreprise' });
     }
     const note = lu.data.note.trim().slice(0, 500);
     if (note.length < MIN_NOTE) return reply.code(400).send({ error: 'note requise : pourquoi cette offre' });
@@ -111,6 +119,8 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
       ...(lu.data.commissionPct !== undefined ? { commissionPct: lu.data.commissionPct } : {}),
       ...(lu.data.business !== undefined ? { business: lu.data.business } : {}),
       ...(lu.data.utilisateursBusiness !== undefined ? { utilisateursBusiness: lu.data.utilisateursBusiness } : {}),
+      ...(lu.data.openBarWhatsapp !== undefined ? { openBarWhatsapp: lu.data.openBarWhatsapp } : {}),
+      ...(lu.data.commissionMessagesPct !== undefined ? { commissionMessagesPct: lu.data.commissionMessagesPct } : {}),
     };
     if (!(await deps.store.ecrireEntreprise(tenantId, ecriture))) return reply.code(404).send({ error: 'espace inconnu' });
     // L'état RELU, pour la réponse et la trace : un réglage absent n'a pas été écrit.
@@ -124,6 +134,8 @@ export function registerOpsOffre(app: FastifyInstance, deps: OpsOffreDeps, garde
       contactsAvant: avant.contacts, commissionPctAvant: avant.commissionPct,
       business: apres.business, utilisateursBusiness: apres.utilisateursBusiness,
       businessAvant: avant.business, utilisateursBusinessAvant: avant.utilisateursBusiness,
+      openBarWhatsapp: apres.openBarWhatsapp, commissionMessagesPct: apres.commissionMessagesPct,
+      openBarWhatsappAvant: avant.openBarWhatsapp, commissionMessagesPctAvant: avant.commissionMessagesPct,
     });
     const gestes = await jouerLesGestes(deps, tenantId, avant, apres);
     const alertes = await deps.store.alertes(tenantId);

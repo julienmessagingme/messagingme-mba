@@ -37,6 +37,8 @@ function deps(o: {
   modeles?: { max: number; reste: number; demandes: number } | null;
   /** Un contact de la cible que la création écarte (bloqué ou supprimé) : il doit apparaître dans « other ». */
   avecBloque?: boolean;
+  /** Le Crédit WhatsApp au lancement (tâche 6) : absent = hors de la ligne. */
+  credit?: { montantMicroEur: number; soldeMicroEur: number; manqueMicroEur: number } | null;
 } = {}) {
   const trace: string[] = [];
   const crees: CreateCampaignInput[] = [];
@@ -79,6 +81,7 @@ function deps(o: {
         repo,
         contacts: { contactIdsForTarget: async (_t: string, cible: BulkTarget) => ('ids' in cible ? cible.ids : (cible.filters as ContactFilters).tags?.includes('retard') ? [C1, C2, ...(o.avecBloque ? [C3] : [])] : []) },
         modelesDuLancement: async () => o.modeles ?? null,
+        creditDuLancement: async () => o.credit ?? null,
         identifiantsDeTousLesContacts: async () => { throw new Error('jamais « tous les contacts »'); },
         plafondDestinataires: 10_000,
         rcs: { belongsToTenant: async () => false },
@@ -206,6 +209,18 @@ describe('prepare_campaign', () => {
     expect(r.will_send).toBe(2);
     expect(r.excluded.other).toBe(1);
     expect(r.monthly_templates).toEqual({ limit: 1000, remaining: 900, needed: 2 });
+  });
+
+  it('🔴 sur la ligne du Crédit WhatsApp, le récapitulatif dit ce que la campagne coûterait, le solde et ce qui manque ; jamais ailleurs', async () => {
+    const surLaLigne = (await outil.executer(deps({ credit: { montantMicroEur: 54_560, soldeMicroEur: 20_009, manqueMicroEur: 34_551 } }).d, T, BASE, PERSONNE)) as Record<string, unknown>;
+    expect(surLaLigne.whatsapp_credit).toEqual({
+      estimated_cost_eur_excl_tax: '0,06', balance_eur_excl_tax: '0,02', missing_eur_excl_tax: '0,04',
+      warning: 'Crédit WhatsApp insuffisant pour cette campagne : il vous manque 0,04 € HT. Un administrateur peut recharger le crédit depuis Paramètres > Offre, puis la relancer. Rien n’est parti.',
+    });
+    const couvert = (await outil.executer(deps({ credit: { montantMicroEur: 54_560, soldeMicroEur: 900_000, manqueMicroEur: 0 } }).d, T, BASE, PERSONNE)) as Record<string, unknown>;
+    expect(couvert.whatsapp_credit).toEqual({ estimated_cost_eur_excl_tax: '0,06', balance_eur_excl_tax: '0,90' });
+    const horsLigne = (await outil.executer(deps().d, T, BASE, PERSONNE)) as Record<string, unknown>;
+    expect(horsLigne).not.toHaveProperty('whatsapp_credit');
   });
 
   it('🔴 un brouillon sans aucun destinataire : supprimé et refusé avec ses motifs, sans code (constat 6)', async () => {

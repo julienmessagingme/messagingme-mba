@@ -170,7 +170,7 @@ export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etat
 export const campagnesInertes: Pick<CampaignRouteDeps,
   'getMessagingLimitTier' | 'drafts' | 'contacts' | 'identifiantsDeTousLesContacts' | 'plafondDestinataires'
   | 'rcs' | 'emailTemplateBelongsToTenant' | 'webhookUsableByTenant' | 'defaultRatePerMinute' | 'plafondLePlusBas'
-  | 'modelesDuLancement' | 'offres' | 'agents'> = {
+  | 'modelesDuLancement' | 'creditDuLancement' | 'offres' | 'agents'> = {
   // Absent : aucun palier connu, donc aucun avertissement.
   getMessagingLimitTier: async () => null,
   // Tout ouvert : une campagne à scénario est permise (lot 6, B2a).
@@ -197,6 +197,8 @@ export const campagnesInertes: Pick<CampaignRouteDeps,
   plafondLePlusBas: SANS_PLAFOND,
   // Les modèles du mois sans limite (lot 6) : un espace Pro, l'hypothèse des tests qui ne parlent pas d'offre.
   modelesDuLancement: async () => null,
+  // Hors de la ligne du Crédit WhatsApp : aucune estimation, le lancement ne regarde pas le crédit.
+  creditDuLancement: async () => null,
 };
 
 export const campagnesRepoInerte: Pick<CampagnesDep, 'stopWebhookCampaign' | 'pauseCampaign' | 'resumeCampaign'> = {

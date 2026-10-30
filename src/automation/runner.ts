@@ -5,6 +5,7 @@ import type { SourceOffres } from '../offres/offre.pg';
 import type { AutomationRow, AutomationEvent, AutomationTriggerKind } from './match';
 import type { DemandeAutomatisme } from '../workflow/lancements';
 import { NumeroBloqueError } from '../meta/numero-delie';
+import { CreditWhatsappRefus } from '../credit-whatsapp/refus';
 import { messageDe } from '../lib/erreur';
 
 /**
@@ -274,7 +275,10 @@ export async function runAutomations(
        * Sauf `avant_date`, qui garde son tir : son balayage republierait chaque minute un rappel dont le marqueur a
        * disparu. Tenu par `tests/automation-runner.test.ts` et `tests/numero-delie-parcours.test.ts`.
        */
-      if (err instanceof NumeroBloqueError && ev.kind !== 'avant_date') await deps.automations.clearFired(a.id, ev.waId).catch(() => {});
+      // Même chose pour un refus du Crédit WhatsApp : levé avant tout appel à Meta, rien n'est parti par ce message.
+      if ((err instanceof NumeroBloqueError || err instanceof CreditWhatsappRefus) && ev.kind !== 'avant_date') {
+        await deps.automations.clearFired(a.id, ev.waId).catch(() => {});
+      }
     }
   }
   return started;

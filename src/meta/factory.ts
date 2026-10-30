@@ -10,11 +10,49 @@ import type { HttpTransport } from './http';
 import type { MessageSender } from '../campaign/engine';
 import type { MetaCredentialsResolver, ResolvedToken } from './credentials';
 import type { ArbitreDeDebit } from './arbitre-debit';
-import { NumeroDelieError, NumeroSuspenduError } from './numero-delie';
-import type { MarketingParams, TemplateSpec } from './types';
-import type { ListeDeLAgent } from '../mba/liste';
+import { NumeroBloqueError, NumeroDelieError, NumeroSuspenduError } from './numero-delie';
+import { MetaApiError } from './errors';
+import type { MarketingParams, SendResult, TemplateSpec } from './types';
+import { RetraitDeLaListeRefuse, type ListeDeLAgent } from '../mba/liste';
 import { LimiteOffreError } from '../offres/refus';
 import type { VerdictModeles } from '../offres/compteurs';
+import type { GardeCreditWhatsapp, NatureEnvoi } from '../credit-whatsapp/garde';
+
+/**
+ * Ce qu'un appel `send*` du client Meta dit de son envoi : le destinataire et sa nature (message libre, marketing par la
+ * MM API, modèle à catégorie lue chez Meta). Un `sendMessage` au format de Meta peut porter un modèle.
+ */
+function envoiDeLAppel(methode: string, args: readonly unknown[]): { destinataire: string; nature: NatureEnvoi } {
+  if (methode === 'sendMarketing') {
+    const p = (args[0] ?? {}) as MarketingParams;
+    return { destinataire: p.to ?? p.recipient ?? '', nature: { type: 'marketing' } };
+  }
+  const destinataire = typeof args[0] === 'string' ? args[0] : '';
+  if (methode === 'sendTemplate') {
+    const tpl = (args[1] ?? {}) as Partial<TemplateSpec>;
+    return { destinataire, nature: { type: 'modele', name: String(tpl.name ?? ''), language: String(tpl.language ?? '') } };
+  }
+  if (methode === 'sendMessage') {
+    const corps = (args[1] ?? {}) as { type?: unknown; template?: { name?: unknown; language?: unknown } };
+    if (corps.type === 'template') {
+      const langue = corps.template?.language;
+      const code = typeof langue === 'object' && langue !== null ? (langue as { code?: unknown }).code : langue;
+      return { destinataire, nature: { type: 'modele', name: String(corps.template?.name ?? ''), language: String(code ?? '') } };
+    }
+  }
+  return { destinataire, nature: { type: 'libre' } };
+}
+
+/**
+ * Un refus NET : rien n'est parti. Une réponse d'erreur de Meta sous 500 (`MetaApiError` 4xx, 429 compris), le retrait
+ * de la liste refusé (un 503 levé chez nous, AVANT l'appel), ou une garde levée avant lui (numéro bloqué, modèles du
+ * mois). Un 5xx de Meta, un délai, une panne réseau laissent un doute : le message est peut-être parti, la provision
+ * reste et la régularisation tranche.
+ */
+function estUnRefusNet(err: unknown): boolean {
+  return (err instanceof MetaApiError && (err.httpStatus < 500 || err instanceof RetraitDeLaListeRefuse))
+    || err instanceof NumeroBloqueError || err instanceof LimiteOffreError;
+}
 
 /**
  * Fabrique de clients Meta par tenant. Elle résout le token du tenant (repli sur le token global quand le WABA
@@ -65,6 +103,13 @@ export interface MetaClientFactoryOpts {
    * disent leur hypothèse (`modelesIllimites`).
    */
   quotaModeles: { consommer(tenantId: string): Promise<VerdictModeles> };
+  /**
+   * La garde du Crédit WhatsApp (`src/credit-whatsapp/garde.ts`) : avant chaque `send*` d'un numéro sur la ligne de
+   * crédit, la provision du message, et rien ne part si le solde ne la couvre pas (`CreditWhatsappRefus`). 🔴 Requise,
+   * pour la même raison que `numerosDelies` : oubliée par un câblage, elle laisserait partir sur notre ligne des messages
+   * que personne n'a payés. Les fixtures disent leur hypothèse (`sansLigneDeCredit`, `tests/credit-whatsapp-fixtures.ts`).
+   */
+  creditWhatsapp: GardeCreditWhatsapp;
 }
 
 export class MetaClientFactory {
@@ -106,7 +151,10 @@ export class MetaClientFactory {
       // appel `messages`, et seulement celui-là : lire un template ou téléverser un média ne consomme pas le budget.
       ...(this.o.arbitreDebit ? { rateLimiter: this.o.arbitreDebit.pour(phoneNumberId) } : {}),
     });
-    return this.avantUnModele(this.guard(client, resolu), tenantId);
+    const garde = this.avantUnModele(this.guard(client, resolu), tenantId);
+    // Un compte 360dialog n'est jamais sur la ligne de crédit : sa facturation est ailleurs (décidé sur le fournisseur déjà
+    // rendu par `resolvePourEnvoi`, sans autre lecture).
+    return fournisseur === '360dialog' ? garde : this.avecCreditWhatsapp(garde, tenantId, phoneNumberId);
   }
 
   /**
@@ -194,6 +242,34 @@ export class MetaClientFactory {
           };
         }
         return Reflect.get(obj, prop, receiver);
+      },
+    });
+  }
+
+  /**
+   * La garde du Crédit WhatsApp, la plus EXTÉRIEURE : elle passe avant la limite des modèles du mois et le retrait de la
+   * liste de l'agent (`avantUnModele`), pour qu'un crédit nul ne coûte ni une unité du mois ni un appel à Meta. Elle
+   * enveloppe TOUTES les méthodes `send*` du client, telles qu'il les définit : une méthode d'envoi ajoutée au client est
+   * gardée sans rien écrire ici (inventaire `tests/credit-whatsapp-inventaire.test.ts`). Une provision par appel : les
+   * rejeux internes du client (`withRetry`, le repli de `sendMarketing` sur 134101) se font sous elle, sans la reprendre.
+   */
+  private avecCreditWhatsapp(client: MetaClient, tenantId: string, phoneNumberId: string): MetaClient {
+    const garde = this.o.creditWhatsapp;
+    return new Proxy(client, {
+      get(obj, prop, receiver) {
+        const value = Reflect.get(obj, prop, receiver);
+        if (typeof prop !== 'string' || !prop.startsWith('send') || typeof value !== 'function') return value;
+        return async (...args: unknown[]): Promise<SendResult> => {
+          const { provisionId } = await garde.avant({ tenantId, phoneNumberId, ...envoiDeLAppel(prop, args) });
+          try {
+            const res = await (value as (...a: unknown[]) => Promise<SendResult>).apply(obj, args);
+            if (provisionId !== null) await garde.apres(provisionId, res.messageId);
+            return res;
+          } catch (err) {
+            if (provisionId !== null) await garde.surEchec(provisionId, estUnRefusNet(err));
+            throw err;
+          }
+        };
       },
     });
   }

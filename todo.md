@@ -44,6 +44,15 @@ voie par QR code (plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-
   la veille de Santé de l'API, chacune avec son délai. Décider, à l'usage, si l'une des deux doit se taire sur ces
   signaux.
 
+## Le Crédit WhatsApp : la suite de notre côté, puis le partenaire (plan `docs/superpowers/plans/2026-10-30-credit-whatsapp-notre-cote.md`)
+
+- Lot 2 : l'achat par Stripe, l'onglet Crédit WhatsApp, `get_credit` et `buy_credit`, les alertes, la reprise des campagnes
+  en pause après un crédit ; et ce que le lot 1 y a renvoyé (écarts 4, 7, 8 et 9 du plan : codes publics et refus à la
+  création d'un envoi unitaire, prix en euros du récapitulatif, cartes de coût lues dans les provisions, reprise d'une
+  campagne programmée).
+- Lot 3 : la régularisation sur les volumes de Meta. Lot 4 : l'option à 30 € par numéro et la recharge automatique.
+- Lot 5, avec le partenaire : l'Embedded Signup sur sa ligne de crédit (rien ne lui est écrit sans Julien).
+
 ## 🟡 Le chiffre d'affaires attribué : ce que la v1 laisse (spec du 2026-10-28)
 
 Spec `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`, section « Hors du chantier ».

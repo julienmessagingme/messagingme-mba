@@ -9,8 +9,10 @@ import type { Etage } from '../src/campaign/etages';
 import type { SendResult, MarketingParams, TemplateSpec } from '../src/meta/types';
 import { MetaApiError } from '../src/meta/errors';
 import { RetraitDeLaListeRefuse } from '../src/mba/liste';
-import type { MotifDePause } from '../src/campaign/pause';
+import { messageDePause, type MotifDePause } from '../src/campaign/pause';
 import { LimiteOffreError } from '../src/offres/refus';
+import { CreditWhatsappRefus } from '../src/credit-whatsapp/refus';
+import { RAISON_CREDIT_RECHARGE_ENTRE_TEMPS } from '../src/campaign/engine';
 
 class FakeSender implements MessageSender {
   readonly calls: string[] = [];
@@ -221,6 +223,52 @@ describe('runCampaign', () => {
     expect(recipients.results.get('r3')).toEqual({ status: 'skipped', error: limite.message });
     expect(essais, 'le troisième n’a pas rappelé la fabrique').toBe(2);
     expect(campaigns.statuses).toEqual(['running', 'completed']);
+  });
+
+  /**
+   * LE CRÉDIT WHATSAPP À SEC EN COURS (plan du Crédit WhatsApp, tâche 5) : la fabrique refuse AVANT tout appel à Meta. Le
+   * destinataire est RENDU à la file, ni écarté ni en échec, la porte de qualité ne le compte pas, et la campagne passe en
+   * pause `credit_whatsapp_epuise`, levée par un crédit.
+   */
+  it('🔴 crédit à sec en cours : destinataire rendu à la file, pause du crédit, rien en échec', async () => {
+    let essais = 0;
+    const sender: MessageSender = {
+      sendMarketing: async (p) => { essais += 1; if (essais > 1) throw new CreditWhatsappRefus('solde', 10_000, 74_760); return { messageId: `m-${p.to ?? ''}` }; },
+      sendTemplate: async () => { throw new Error('jamais : campagne marketing'); },
+    };
+    const recipients = new FakeRecipients([rec('r1', '+33611'), rec('r2', '+33622'), rec('r3', '+33633')]);
+    const campaigns = new FakeCampaigns();
+    const report = await lancerCampagne(campaign, deps({ recipients, sender, campaigns, categorieDuModele: MARKETING_CHEZ_META }));
+    expect(report).toMatchObject({ sent: 1, failed: 0, paused: true, reason: messageDePause('credit_whatsapp_epuise', null, undefined) });
+    expect(recipients.relaches).toEqual(['r2']);
+    expect([...recipients.results.keys()]).toEqual(['r1']);
+    expect(campaigns.pauses).toEqual([{ raison: 'credit_whatsapp_epuise', reprise: null }]);
+    expect(essais, 'le troisième n’a pas été tenté').toBe(2);
+  });
+
+  it('une ligne inactive met en pause `ligne_credit_inactive` ; un crédit arrivé entre-temps n’écrit aucune pause', async () => {
+    const inactive: MessageSender = {
+      sendMarketing: async () => { throw new CreditWhatsappRefus('ligne_inactive'); },
+      sendTemplate: async () => { throw new Error('jamais'); },
+    };
+    const campaigns = new FakeCampaigns();
+    await lancerCampagne(campaign, deps({ recipients: new FakeRecipients([rec('r1', '+33611')]), sender: inactive, campaigns, categorieDuModele: MARKETING_CHEZ_META }));
+    expect(campaigns.pauses).toEqual([{ raison: 'ligne_credit_inactive', reprise: null }]);
+
+    const aSec: MessageSender = {
+      sendMarketing: async () => { throw new CreditWhatsappRefus('solde', 10_000, 74_760); },
+      sendTemplate: async () => { throw new Error('jamais'); },
+    };
+    const ecrites: Array<[string, number]> = [];
+    const report = await lancerCampagne(campaign, deps({
+      recipients: new FakeRecipients([rec('r1', '+33611')]), sender: aSec, campaigns: new FakeCampaigns(), categorieDuModele: MARKETING_CHEZ_META,
+      numerosDelies: {
+        pauserCampagne: async () => false,
+        pauserCampagneCredit: async (_c, _t, motif, prix) => { ecrites.push([motif, prix]); return false; },
+      },
+    }));
+    expect(ecrites).toEqual([['credit_whatsapp_epuise', 74_760]]);
+    expect(report).toMatchObject({ paused: false, reason: RAISON_CREDIT_RECHARGE_ENTRE_TEMPS });
   });
 
   it('🔴 même sur une campagne de SCÉNARIO : le parcours ne démarre pas pour un STOP relu à la réclamation', async () => {

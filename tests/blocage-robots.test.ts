@@ -43,8 +43,9 @@ describe('🔴 les trois câblages des robots lisent le blocage', () => {
   const wiring = readFileSync(new URL('../src/workflow/wiring.ts', import.meta.url), 'utf8');
 
   it('la réponse de l’agent IA (le tour, `run-turn`) et ses gestes d’envoi', () => {
-    // Les dépendances du tour : sa garde est la dernière `estDesabonne:` avant le numéro bloqué, son voisin dans l'objet.
-    const ancre = worker.indexOf('numeroBloque: numeroBloqueDeLEspace');
+    // Les dépendances du tour : sa garde est la dernière `estDesabonne:` avant le numéro bloqué, son voisin dans l'objet. Le
+    // numéro bloqué lit aussi le Crédit WhatsApp (plan du 2026-10-30, tâche 5) : un tour qui ne partirait pas ne se paie pas.
+    const ancre = worker.indexOf('numeroBloque: async (t) => (await numeroBloqueDeLEspace(t)) || (await creditWhatsappBloque(t))');
     expect(ancre, 'les dépendances du tour sont introuvables : ce test a besoin d’être revisé').toBeGreaterThan(0);
     expect(worker.slice(worker.lastIndexOf('estDesabonne:', ancre), ancre)).toContain('contactStore.machineSeTaitParWaId(t, waId)');
     const gestes = bloc(worker, 'creerGestesEnvoiAgent({', '});');

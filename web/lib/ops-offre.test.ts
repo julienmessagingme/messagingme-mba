@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise, lireUtilisateursBusiness, retraitCoupeLeNumero } from './ops-offre';
+import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise, lireCommissionMessages, lireUtilisateursBusiness, retraitCoupeLeNumero } from './ops-offre';
 
 /** Les réglages de devis d'une Entreprise (spec offres v2) : vide = le défaut, sinon un entier dans ses bornes. */
 describe('les contacts et la commission saisis', () => {
@@ -62,5 +62,15 @@ describe('le Business dans /ops', () => {
     // Aucun numéro sans couverture, ou rien de posé avant : rien à confirmer.
     expect(retraitCoupeLeNumero({ entreprise: false, business: true }, rien, false)).toBe(false);
     expect(retraitCoupeLeNumero(rien, rien, true)).toBe(false);
+  });
+});
+
+/** La commission des messages WhatsApp d'une Entreprise (plan du Crédit WhatsApp, tâche 8) : vide = la globale. */
+describe('la commission des messages saisie', () => {
+  it('vide = la commission globale, un entier de 0 à 100 passe, une décimale ou plus de 100 est refusée', () => {
+    expect(lireCommissionMessages('')).toBeNull();
+    expect(lireCommissionMessages('0')).toBe(0);
+    expect(lireCommissionMessages(' 3 ')).toBe(3);
+    for (const s of ['2.5', '2,5', '101', '-1', 'trois']) expect(lireCommissionMessages(s), s).toBe('invalide');
   });
 });

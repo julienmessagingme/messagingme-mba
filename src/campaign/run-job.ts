@@ -96,7 +96,7 @@ export interface RunJobDeps {
    * « Relier ». Écriture conditionnelle et non lecture puis écriture ; elle n'écrase pas une pause d'opérateur.
    * Transmise au moteur pour le même arrêt en cours de run, jamais par `CapacitesMoteur`.
    */
-  numerosDelies: { pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string, motif: MotifBlocage): Promise<boolean> };
+  numerosDelies: NonNullable<EngineDeps['numerosDelies']>;
   /**
    * Sérialisation des runs d'une même campagne (cf. `run-lock.ts`). Un seul objet : on ne câble pas le verrou
    * sans dimensionner son bail ni relancer le travail qu'il a écarté. Absent (tests) = aucune sérialisation ; en

@@ -9,6 +9,7 @@ import type { SendResult, TemplateSpec, MarketingParams } from '../meta/types';
 import { MetaApiError, raisonDePause } from '../meta/errors';
 import { NumeroBloqueError, type MotifBlocage } from '../meta/numero-delie';
 import { LimiteOffreError } from '../offres/refus';
+import { CreditWhatsappRefus } from '../credit-whatsapp/refus';
 import { instantDeReprise, messageDePause } from './pause';
 import type { MotifDePause } from './pause';
 import { withinBusinessHours } from '../workflow/conditions';
@@ -254,8 +255,19 @@ export interface EngineDeps {
    * la campagne tourne encore. `true` = écrite. Cf. `arreterSurNumeroDelie`. Absente (faux de test) : la pause
    * est écrite par `setStatus`, sur la foi du refus.
    */
-  numerosDelies?: { pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string, motif: MotifBlocage): Promise<boolean> };
+  numerosDelies?: {
+    pauserCampagne(campaignId: string, tenantId: string, phoneNumberId: string, motif: MotifBlocage): Promise<boolean>;
+    /**
+     * Écrit la pause d'un refus du Crédit WhatsApp (`PgNumeroDelieStore.pauserCampagneCredit`) : seulement si le solde
+     * est encore sous le prix du message refusé. Cf. `arreterSurCredit`. Absente (faux de test) : `setStatus`.
+     */
+    pauserCampagneCredit?(campaignId: string, tenantId: string, motif: 'credit_whatsapp_epuise' | 'ligne_credit_inactive', prixMicroEur: number): Promise<boolean>;
+  };
 }
+
+/** La raison d'un arrêt sur un refus du Crédit WhatsApp dont la pause n'a pas été écrite : un crédit est arrivé entre-temps. */
+export const RAISON_CREDIT_RECHARGE_ENTRE_TEMPS =
+  'Crédit WhatsApp rechargé entre-temps : run arrêté sans écrire de pause, la campagne repart';
 
 /**
  * La raison d'un run arrêté sur un refus « numéro délié » dont la pause n'a pas été écrite : le numéro a été
@@ -526,6 +538,29 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
   };
 
   /**
+   * Arrêt sur un refus du Crédit WhatsApp (la fabrique l'a levé AVANT tout appel à Meta) : le destinataire a été rendu à
+   * la file par l'appelant, la campagne passe en pause `credit_whatsapp_epuise` (levée par un crédit) ou
+   * `ligne_credit_inactive` (levée quand l'option revient). Jamais `failed` ni `skipped` : le refus vise l'espace, pas ce
+   * contact, et la porte de qualité ne doit pas le compter. La pause du solde ne s'écrit que si le solde est encore sous
+   * le prix du message (`pauserCampagneCredit`) ; sinon on sort, la campagne reste `running` et le balayage des
+   * campagnes gelées la relance.
+   */
+  const arreterSurCredit = async (err: CreditWhatsappRefus): Promise<RunReport> => {
+    const motif = err.motif === 'solde' ? 'credit_whatsapp_epuise' as const : 'ligne_credit_inactive' as const;
+    if (deps.numerosDelies?.pauserCampagneCredit) {
+      if (!(await deps.numerosDelies.pauserCampagneCredit(campaign.id, campaign.tenantId, motif, err.prixMicroEur ?? Number.MAX_SAFE_INTEGER))) {
+        report.reason = RAISON_CREDIT_RECHARGE_ENTRE_TEMPS;
+        return report;
+      }
+    } else {
+      await deps.campaigns.setStatus(campaign.id, 'paused', { raison: motif, reprise: null });
+    }
+    report.paused = true;
+    report.reason = messageDePause(motif, null, undefined);
+    return report;
+  };
+
+  /**
    * Le modèle WhatsApp n'est pas envoyable : on le sait avant d'avoir commencé. Le refus ne vise que les
    * destinataires de l'étage WhatsApp, les autres (repli RCS) repartent dans la boucle normale. Il est traité
    * ici et pas dans la boucle, sinon la porte de qualité verrait 100 % d'échecs et mettrait la campagne en
@@ -732,6 +767,8 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
      * suivants recevraient leur message sans jamais leur suite.
      */
     let scenarioSurNumeroDelie: NumeroBloqueError | null = null;
+    /** De même, un scénario qui a buté sur le Crédit WhatsApp : le message est parti, sa suite non. */
+    let scenarioSurCredit: CreditWhatsappRefus | null = null;
     try {
       if (servi.sender) {
         // Le jeton de ce destinataire, pour savoir qui a cliqué. Absent : lien tracé mais anonyme, jamais cassé.
@@ -767,6 +804,7 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
             } catch (e) {
               scenarioNonDemarre = `Scénario non démarré : ${texteDe(e)}`;
               if (e instanceof NumeroBloqueError) scenarioSurNumeroDelie = e;
+              if (e instanceof CreditWhatsappRefus) scenarioSurCredit = e;
             }
           }
         }
@@ -827,6 +865,11 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
       if (err instanceof NumeroBloqueError) {
         await deps.recipients.relacher(r.id);
         return arreterSurNumeroDelie(err);
+      }
+      // Le Crédit WhatsApp a refusé, AVANT tout appel à Meta : même arrêt, le destinataire rendu à la file.
+      if (err instanceof CreditWhatsappRefus) {
+        await deps.recipients.relacher(r.id);
+        return arreterSurCredit(err);
       }
 
       const msg = err instanceof MetaApiError ? `${err.code ?? ''} ${err.message}`.trim() : String(err);
@@ -920,6 +963,9 @@ export async function runCampaign(campaign: Campaign, deps: EngineDeps): Promise
      */
     if (scenarioSurNumeroDelie !== null && aTraiter.slice(aTraiter.indexOf(r) + 1).some((x) => x.status !== 'sent')) {
       return arreterSurNumeroDelie(scenarioSurNumeroDelie);
+    }
+    if (scenarioSurCredit !== null && aTraiter.slice(aTraiter.indexOf(r) + 1).some((x) => x.status !== 'sent')) {
+      return arreterSurCredit(scenarioSurCredit);
     }
   }
 

@@ -10,6 +10,7 @@ import { estUuid } from '../http/scope';
 import { preparerCampagne, type PreparationCampagneDeps } from '../http/preparation-campagne';
 import { createCampaignWithRecipients, type CampaignRepoLike } from '../campaign/create';
 import { lancerCampagne, type DepsLancement, type IssueLancement } from '../campaign/lancement';
+import { eurosDisponibles, eurosManquants, messageManqueCredit } from '../credit-whatsapp/estimation';
 import { LimiteOffreError, corpsRefusLimite } from '../offres/refus';
 import { empreinteEtat, type ConfirmationStore, type EtatConfirme, type IssueReclamation } from '../campaign/confirmation';
 import { modeleEnvoyable, numeroDEnvoi, type DepsModeleEnvoyable } from '../api/modele-envoi';
@@ -109,7 +110,7 @@ const REFUS_HORS_PAUSE: Record<string, string> = {
   failed: 'cette campagne a échoué : elle ne se reprend pas, get_campaign_stats dit ce qui est parti',
 };
 /** Une pause que seul un autre geste lève : reprendre la remettrait aussitôt en pause (`messageDePause` dit lequel). */
-const PAUSES_SANS_REPRISE: ReadonlySet<MotifDePause> = new Set(['numero_delie', 'numero_suspendu']);
+const PAUSES_SANS_REPRISE: ReadonlySet<MotifDePause> = new Set(['numero_delie', 'numero_suspendu', 'credit_whatsapp_epuise', 'ligne_credit_inactive']);
 const REFUS_DU_LANCEMENT: Record<'inconnue' | 'date_passee' | 'non_programmable', string> = {
   inconnue: 'campagne inconnue dans cet espace',
   date_passee: 'la date prévue est passée : préparez à nouveau avec prepare_campaign et replaces, avec une nouvelle date',
@@ -370,6 +371,8 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       const partiront = Math.max(0, cree.recipientCount - desabonnes);
       // La marge des modèles du mois, quand l'offre en a une (constat 4) : une campagne qui la dépasse serait refusée au lancement.
       const modelesDuMois = prevueLe === null ? await c.route.modelesDuLancement(tenantId, cree.campaignId) : null;
+      // Le Crédit WhatsApp d'un espace sur la ligne (tâche 6) : ce que la campagne coûterait, au prix que le crédit débitera.
+      const credit = await c.route.creditDuLancement(tenantId, cree.campaignId);
       return {
         campaign_id: cree.campaignId,
         status: 'draft',
@@ -385,8 +388,17 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
         ...(prepare.input.repondeurAgentId ? { responder_agent_id: prepare.input.repondeurAgentId } : {}),
         ...(modelesDuMois ? { monthly_templates: { limit: modelesDuMois.max, remaining: modelesDuMois.reste, needed: modelesDuMois.demandes } } : {}),
         sample: apercu,
-        // Un volume, jamais un montant : un prix affiché à côté du bouton qui envoie serait cru (`EtapeRecap.tsx`).
+        // Un volume, jamais un montant : un prix affiché à côté du bouton qui envoie serait cru (`EtapeRecap.tsx`). Sauf sur la
+        // ligne du Crédit WhatsApp : le prix est alors celui que NOTRE crédit débitera, lu sur notre grille, et il décide
+        // du lancement.
         billable_messages_up_to: partiront,
+        ...(credit ? {
+          whatsapp_credit: {
+            estimated_cost_eur_excl_tax: eurosManquants(credit.montantMicroEur),
+            balance_eur_excl_tax: eurosDisponibles(credit.soldeMicroEur),
+            ...(credit.manqueMicroEur > 0 ? { missing_eur_excl_tax: eurosManquants(credit.manqueMicroEur), warning: messageManqueCredit(credit.manqueMicroEur) } : {}),
+          },
+        } : {}),
         confirmation_code: pose.code,
         code_expires_at: pose.expireLe.toISOString(),
         ...(remplacement ? { replaced: remplacement } : {}),
@@ -449,7 +461,7 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
         await c.confirmations.rendre(tenantId, campaignId);
         throw new RefusOutil(issue.raison === 'limite'
           ? corpsRefusLimite(new LimiteOffreError(tenantId, 'envoisModelesMois', issue.max)).error
-          : REFUS_DU_LANCEMENT[issue.raison]);
+          : issue.raison === 'credit_whatsapp' ? messageManqueCredit(issue.manqueMicroEur) : REFUS_DU_LANCEMENT[issue.raison]);
       }
       return 'programmee' in issue
         ? { campaign_id: campaignId, status: 'scheduled', scheduled_for: { iso: issue.programmee.toISOString(), paris: dateDeParis(issue.programmee) } }

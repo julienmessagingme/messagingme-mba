@@ -19,7 +19,10 @@ const ETAT: EtatConfirme = {
   paramMapping: [], recipientCount: 38, status: 'draft',
 };
 
-function deps(o: { etat?: EtatConfirme | null; reclamation?: IssueReclamation; programmable?: boolean; appartient?: boolean } = {}) {
+function deps(o: {
+  etat?: EtatConfirme | null; reclamation?: IssueReclamation; programmable?: boolean; appartient?: boolean;
+  credit?: { montantMicroEur: number; soldeMicroEur: number; manqueMicroEur: number } | null;
+} = {}) {
   const trace: string[] = [];
   const reclames: Array<{ code: string; etat: string }> = [];
   const etat = o.etat === undefined ? ETAT : o.etat;
@@ -37,6 +40,7 @@ function deps(o: { etat?: EtatConfirme | null; reclamation?: IssueReclamation; p
         },
         queue: { enqueue: async (name: string, data: unknown) => { trace.push(`enfile:${name}:${JSON.stringify(data)}`); } },
         modelesDuLancement: async () => null,
+        creditDuLancement: async () => o.credit ?? null,
         defaultRatePerMinute: 0,
         plafondLePlusBas: 80,
       },
@@ -62,6 +66,13 @@ describe('launch_campaign', () => {
     expect(await outil.executer(d, T, { campaign_id: ID, confirmation_code: 'k7m2qp' }, PERSONNE)).toMatchObject({ campaign_id: ID, status: 'sending' });
     expect(reclames).toEqual([{ code: 'k7m2qp', etat: empreinteEtat(ETAT) }]);
     expect(trace).toEqual(['plafond', 'reclame', 'reprend', `enfile:campaign-run:${JSON.stringify({ campaignId: ID })}`]);
+  });
+
+  it('🔴 il manque du Crédit WhatsApp : refusé avec le montant, le code rendu, rien ne part', async () => {
+    const { d, trace } = deps({ credit: { montantMicroEur: 5_000_000, soldeMicroEur: 0, manqueMicroEur: 5_000_000 } });
+    await expect(outil.executer(d, T, { campaign_id: ID, confirmation_code: 'k7m2qp' }, PERSONNE))
+      .rejects.toThrow('Crédit WhatsApp insuffisant pour cette campagne : il vous manque 5,00 € HT.');
+    expect(trace).toEqual(['plafond', 'reclame', 'rend']);
   });
 
   it('🔴 une campagne datée est PROGRAMMÉE à sa date, rien n’est enfilé', async () => {

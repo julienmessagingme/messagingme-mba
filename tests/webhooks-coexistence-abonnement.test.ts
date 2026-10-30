@@ -4,7 +4,7 @@ import { cleDeContact, nAQueDesAccuses } from '../src/webhooks/parse';
 import type { InboundMessage } from '../src/webhooks/inbound';
 import type { StoredEvent } from '../src/webhooks/store';
 import {
-  aucunEspacePlein, agentEteintALArrivee, aucunEchecLibre, aucuneArriveePub, aucunRoutagePub, aucunSignalAccuse, aucunSignalReponse, aucunTarif,
+  aucunEspacePlein, agentEteintALArrivee, aucunEchecLibre, aucunAjustementCredit, aucuneArriveePub, aucunRoutagePub, aucunSignalAccuse, aucunSignalReponse, aucunTarif,
 } from './webhook-fixtures';
 import { aucunStop } from './consentement';
 
@@ -95,7 +95,7 @@ function reception() {
   const deps: WebhookJobDeps = {
     store: { insertEvent: async (e: StoredEvent) => { vu.bruts.push(e.dedupKey); return true; } },
     delivery: { updateDeliveryByMessageId: async (id) => { vu.accuses.push(id); return 0; } },
-    tarifsMeta: aucunTarif, echecsLibres: aucunEchecLibre, signauxAccuse: aucunSignalAccuse,
+    tarifsMeta: aucunTarif, echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit, signauxAccuse: aucunSignalAccuse,
     inbox: {
       phoneNumberTenant: async (pn) => (pn === NUMERO_BUSINESS ? 't1' : null),
       recordInbound: async (_t: string, m: InboundMessage) => { vu.entrants.push(m.messageId); return { rouverte: false }; },

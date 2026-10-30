@@ -4,7 +4,7 @@ import { processStatuses } from '../src/webhooks/delivery';
 import type { DeliveryStore, DeliveryStatus } from '../src/webhooks/delivery';
 import type { WebhookEvent } from '../src/webhooks/parse';
 import { handleWebhookJob } from '../src/webhooks/handler';
-import { aucunEchecLibre, aucunSignalAccuse } from './webhook-fixtures';
+import { aucunEchecLibre, aucunSignalAccuse, aucunAjustementCredit } from './webhook-fixtures';
 
 const accuse = (id: string, status: string, pricing?: unknown): unknown =>
   ({ id, status, ...(pricing === undefined ? {} : { pricing }) });
@@ -55,7 +55,7 @@ describe('processStatuses : le tarif de Meta', () => {
   it('enregistre le tarif, rattaché au numéro destinataire de l’accusé', async () => {
     const vus: Array<{ pn: string; t: TarifMeta }> = [];
     await processStatuses([statut('wamid.1', 'sent', gratuit)], new FakeDelivery(), {
-      echecsLibres: aucunEchecLibre,
+      echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit,
       tarifs: { enregistrer: async (pn, t) => { vus.push({ pn, t }); } },
     });
     expect(vus).toEqual([{ pn: 'pn1', t: { messageId: 'wamid.1', type: 'free_entry_point', categorie: 'referral_conversion', facturable: false, modele: null } }]);
@@ -64,7 +64,7 @@ describe('processStatuses : le tarif de Meta', () => {
   it('sans numéro destinataire, rien n’est enregistré (aucun espace à qui rattacher la ligne)', async () => {
     let n = 0;
     await processStatuses([statut('wamid.2', 'sent', gratuit, null)], new FakeDelivery(), {
-      echecsLibres: aucunEchecLibre,
+      echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit,
       tarifs: { enregistrer: async () => { n += 1; } },
     });
     expect(n).toBe(0);
@@ -73,7 +73,7 @@ describe('processStatuses : le tarif de Meta', () => {
   it('🔴 un échec d’écriture du tarif ne bloque ni la livraison ni le job', async () => {
     const delivery = new FakeDelivery();
     await expect(processStatuses([statut('wamid.3', 'delivered', gratuit)], delivery, {
-      echecsLibres: aucunEchecLibre,
+      echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit,
       tarifs: { enregistrer: async () => { throw new Error('base indisponible'); } },
     })).resolves.toBeUndefined();
     expect(delivery.calls).toEqual(['wamid.3:delivered']);
@@ -82,7 +82,7 @@ describe('processStatuses : le tarif de Meta', () => {
   it('le tarif est lu même sur un statut que la livraison ignore', async () => {
     const vus: string[] = [];
     await processStatuses([statut('wamid.4', 'warning', { type: 'regular' })], new FakeDelivery(), {
-      echecsLibres: aucunEchecLibre,
+      echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit,
       tarifs: { enregistrer: async (_pn, t) => { vus.push(t.messageId); } },
     });
     expect(vus).toEqual(['wamid.4']);
@@ -100,7 +100,7 @@ describe('handleWebhookJob : le tarif des accusés', () => {
     }, {
       store: { insertEvent: async () => true },
       delivery: new FakeDelivery(),
-      echecsLibres: aucunEchecLibre,
+      echecsLibres: aucunEchecLibre, ajustementCredit: aucunAjustementCredit,
       signauxAccuse: aucunSignalAccuse,
       tarifsMeta: { enregistrer: async (pn, t) => { vus.push(`${pn}:${t.messageId}:${t.type}`); } },
     });

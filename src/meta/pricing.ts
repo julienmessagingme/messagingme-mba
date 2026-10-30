@@ -64,6 +64,8 @@ export function parsePricing(json: unknown): PricingSummary | null {
 
   const byCategory: Record<string, CategoryPricing> = {};
   let totalCost = 0;
+  let facturesSansCout = 0;
+  let facturesAvecCout = 0;
   for (const raw of points) {
     const p = raw as { pricing_type?: unknown; pricing_category?: unknown; cost?: unknown; volume?: unknown };
     const lue = typeof p.pricing_category === 'string' ? p.pricing_category.toLowerCase() : '';
@@ -73,6 +75,7 @@ export function parsePricing(json: unknown): PricingSummary | null {
     if (!category) continue;
     // Seul le facturé (REGULAR) dérive un tarif effectif ; les FREE_* ont cost 0.
     if (p.pricing_type !== 'REGULAR') continue;
+    if (typeof p.cost === 'number' || typeof p.cost === 'string') facturesAvecCout += 1; else facturesSansCout += 1;
     const cost = Number(p.cost) || 0;
     const volume = Number(p.volume) || 0;
     const acc = byCategory[category] ?? { category, cost: 0, volume: 0, ratePerMessage: 0 };
@@ -81,6 +84,10 @@ export function parsePricing(json: unknown): PricingSummary | null {
     byCategory[category] = acc;
     totalCost += cost;
   }
+  // 🔴 Un coût ABSENT n'est pas un coût nul : Meta ne rend pas le COST d'un compte payé par la ligne de crédit d'un
+  // partenaire (le VOLUME seul). Sans AUCUN coût facturé, le résumé est inconnu, comme un échec : l'écran montre le volume
+  // seul, jamais « 0 € » ni « gratuit ». Un compte qui reçoit des coûts garde la lecture d'avant, point par point.
+  if (facturesSansCout > 0 && facturesAvecCout === 0) return null;
   for (const c of Object.values(byCategory)) {
     c.ratePerMessage = c.volume > 0 ? c.cost / c.volume : 0;
   }

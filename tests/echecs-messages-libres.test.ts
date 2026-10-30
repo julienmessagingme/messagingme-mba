@@ -3,7 +3,7 @@ import { processStatuses } from '../src/webhooks/delivery';
 import type { DeliveryStore, DeliveryStatus, EchecsLibresSink } from '../src/webhooks/delivery';
 import { handleWebhookJob } from '../src/webhooks/handler';
 import type { WebhookEvent } from '../src/webhooks/parse';
-import { aucunTarif, aucunSignalAccuse } from './webhook-fixtures';
+import { aucunTarif, aucunSignalAccuse, aucunAjustementCredit } from './webhook-fixtures';
 
 /**
  * L'ÉCHEC D'UN MESSAGE LIBRE N'ÉTAIT ÉCRIT NULLE PART (défaut 4 de la spec 2026-09-24).
@@ -33,7 +33,7 @@ const INJOIGNABLE = { code: 131026, title: 'Message undeliverable' };
 describe('processStatuses : l’échec d’un message LIBRE', () => {
   it('🔴 un échec qui ne touche aucun destinataire de campagne est NOTÉ, avec son code et son motif', async () => {
     const { notes, sink } = puits();
-    await processStatuses([statut('wamid.libre', 'failed', INJOIGNABLE)], new Livraison(), { tarifs: aucunTarif, echecsLibres: sink });
+    await processStatuses([statut('wamid.libre', 'failed', INJOIGNABLE)], new Livraison(), { tarifs: aucunTarif, echecsLibres: sink, ajustementCredit: aucunAjustementCredit });
     expect(notes).toEqual([{ messageId: 'wamid.libre', code: 131026, motif: '131026 Message undeliverable' }]);
   });
 
@@ -41,7 +41,7 @@ describe('processStatuses : l’échec d’un message LIBRE', () => {
     const { notes, sink } = puits();
     await processStatuses(
       [statut('wamid.campagne', 'failed', INJOIGNABLE), statut('wamid.libre', 'failed', INJOIGNABLE)],
-      new Livraison(), { tarifs: aucunTarif, echecsLibres: sink },
+      new Livraison(), { tarifs: aucunTarif, echecsLibres: sink, ajustementCredit: aucunAjustementCredit },
     );
     // L'ancre positive est le second : le mécanisme a bien tourné sur ce lot.
     expect(notes.map((n) => n.messageId)).toEqual(['wamid.libre']);
@@ -51,14 +51,14 @@ describe('processStatuses : l’échec d’un message LIBRE', () => {
     const { notes, sink } = puits();
     await processStatuses(
       [statut('wamid.a', 'sent'), statut('wamid.a', 'delivered'), statut('wamid.a', 'read'), statut('wamid.b', 'failed', INJOIGNABLE)],
-      new Livraison(), { tarifs: aucunTarif, echecsLibres: sink },
+      new Livraison(), { tarifs: aucunTarif, echecsLibres: sink, ajustementCredit: aucunAjustementCredit },
     );
     expect(notes.map((n) => n.messageId)).toEqual(['wamid.b']);
   });
 
   it('🔴 un journal en panne ne fait pas échouer le job (pg-boss le rejouerait en entier)', async () => {
     const enPanne: EchecsLibresSink = { noter: async () => { throw new Error('base indisponible'); } };
-    await expect(processStatuses([statut('wamid.libre', 'failed', INJOIGNABLE)], new Livraison(), { tarifs: aucunTarif, echecsLibres: enPanne }))
+    await expect(processStatuses([statut('wamid.libre', 'failed', INJOIGNABLE)], new Livraison(), { tarifs: aucunTarif, echecsLibres: enPanne, ajustementCredit: aucunAjustementCredit }))
       .resolves.toBeUndefined();
   });
 
@@ -69,7 +69,7 @@ describe('processStatuses : l’échec d’un message LIBRE', () => {
         metadata: { phone_number_id: 'pn1' },
         statuses: [{ id: 'wamid.h1', status: 'failed', errors: [INJOIGNABLE] }],
       } }] }],
-    }, { store: { insertEvent: async () => true }, delivery: new Livraison(), tarifsMeta: aucunTarif, echecsLibres: sink, signauxAccuse: aucunSignalAccuse });
+    }, { store: { insertEvent: async () => true }, delivery: new Livraison(), tarifsMeta: aucunTarif, echecsLibres: sink, ajustementCredit: aucunAjustementCredit, signauxAccuse: aucunSignalAccuse });
     expect(notes.map((n) => n.messageId)).toEqual(['wamid.h1']);
   });
 });

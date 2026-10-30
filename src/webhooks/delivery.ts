@@ -1,5 +1,6 @@
 import type { WebhookEvent } from './parse';
 import { extraireTarif, type TarifsMetaSink } from './tarif-meta';
+import type { AjustementCreditSink } from '../credit-whatsapp/ajustement';
 import { asRecord } from './json';
 import { tenter } from '../lib/tenter';
 import { messageDe } from '../lib/erreur';
@@ -120,6 +121,11 @@ export interface PuitsAccuses {
   tarifs: TarifsMetaSink;
   /** Obligatoire aussi, pour la même raison ; les tests qui n'en parlent pas passent `aucunEchecLibre`. */
   echecsLibres: EchecsLibresSink;
+  /**
+   * Obligatoire aussi : la provision du Crédit WhatsApp se corrige à l'accusé, et un câblage qui l'oublierait
+   * débiterait les échecs et les messages offerts jusqu'à la régularisation ; les tests passent `aucunAjustementCredit`.
+   */
+  ajustementCredit: AjustementCreditSink;
   nodeEvents?: NodeStatusSink;
   remiseMba?: RemiseMbaSurAccuse;
   /** Les signaux ; requis au niveau du handler, seul appelant de production. */
@@ -137,9 +143,10 @@ export async function processStatuses(
   delivery: DeliveryStore,
   puits: PuitsAccuses,
 ): Promise<void> {
-  const { tarifs, echecsLibres, nodeEvents, remiseMba, signaux } = puits;
+  const { tarifs, echecsLibres, ajustementCredit, nodeEvents, remiseMba, signaux } = puits;
   for (const ev of events) {
     if (ev.source !== 'statuses') continue;
+    const d = extractDelivery(ev.data);
     /**
      * Le tarif de Meta (`./tarif-meta.ts`), lu avant la garde de livraison : un statut que la livraison ignore peut
      * porter un tarif. Best-effort : une exception ferait rejouer tout le job ; un tarif manqué laisse le message
@@ -155,8 +162,18 @@ export async function processStatuses(
           console.error('tarif Meta non enregistré:', messageDe(err));
         }
       }
+      /**
+       * Le Crédit WhatsApp (`../credit-whatsapp/ajustement.ts`) : le tarif et le statut corrigent la provision du
+       * message, au mieux (un ajustement manqué attend la régularisation). Un numéro hors de la ligne de crédit n'y
+       * coûte qu'une lecture en cache.
+       */
+      const numero = ev.phoneNumberId;
+      const wamid = t?.messageId ?? d?.messageId;
+      if (wamid !== undefined) {
+        await tenter('ajustement du Crédit WhatsApp ignoré:', () =>
+          ajustementCredit.ajuster(numero, { wamid, tarif: t, statut: d?.status ?? null, livreLe: instantDuStatut(ev.data) }));
+      }
     }
-    const d = extractDelivery(ev.data);
     if (!d) continue;
     // `le` : l'instant de l'accusé selon Meta, que le statut du message garde (`statut_le`, migration 0225).
     const touches = await delivery.updateDeliveryByMessageId(d.messageId, d.status, d.error, d.errorCode, instantDuStatut(ev.data));

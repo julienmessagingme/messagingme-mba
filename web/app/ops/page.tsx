@@ -21,6 +21,8 @@ import { useLocale, useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { saveSession, getSessionOps, saveSessionOps, clearSessionOps, type SessionOps } from '@/lib/session';
 import { Bouton } from '@/components/Bouton';
+import { OpsCreditWhatsappCard } from '@/components/OpsCreditWhatsappCard';
+import { OpsLignesCreditWhatsapp } from '@/components/OpsLignesCreditWhatsapp';
 import { TitrePage } from '@/components/TitrePage';
 import { EtapesSecondFacteur } from '@/components/SecondFacteur';
 import { GoogleButton } from '@/components/GoogleButton';
@@ -28,7 +30,7 @@ import { alerte, brand, danger, ink, succes } from '@/lib/couleurs';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
 import { Nd } from '@/components/Nd';
-import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise } from '@/lib/ops-offre';
+import { lireConservation, conservationPeutPurger, lireContactsEntreprise, lireCommissionEntreprise, lireCommissionMessages } from '@/lib/ops-offre';
 import { lireUtilisateursBusiness, retraitCoupeLeNumero } from '@/lib/ops-offre';
 import { OpsEmailsCard } from '@/components/OpsEmailsCard';
 import { MbaTabs } from '@/components/MbaTabs';
@@ -253,6 +255,7 @@ export default function OpsPage() {
               <>
                 <OpsSeuils token={session.token} />
                 <GrillePrixCard token={session.token} />
+                <OpsCreditWhatsappCard token={session.token} />
                 <NumerosFournisCard token={session.token} />
                 <OpsEmailsCard token={session.token} />
               </>
@@ -1517,6 +1520,9 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
   const [changerDevis, setChangerDevis] = useState(false);
   const [contacts, setContacts] = useState('');
   const [commission, setCommission] = useState('');
+  // Le Crédit WhatsApp de l'Entreprise (plan du 2026-10-30) : partent avec le devis, comme la commission du crédit IA.
+  const [openBar, setOpenBar] = useState(false);
+  const [commissionMessages, setCommissionMessages] = useState('');
   // Le Business (spec Business) : une seule offre posée à la main, exclusive de l'Entreprise.
   const [business, setBusiness] = useState(false);
   const [utilisateursBusiness, setUtilisateursBusiness] = useState('');
@@ -1535,6 +1541,8 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
     setChangerDevis(false);
     setContacts(r.contacts == null ? '' : String(r.contacts));
     setCommission(r.commissionPct == null ? '' : String(r.commissionPct));
+    setOpenBar(r.openBarWhatsapp === true);
+    setCommissionMessages(r.commissionMessagesPct == null ? '' : String(r.commissionMessagesPct));
     setBusiness(r.business === true);
     setUtilisateursBusiness(r.utilisateursBusiness == null ? '' : String(r.utilisateursBusiness));
     setRetraitConfirme(false);
@@ -1557,7 +1565,8 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
   const devis = entreprise && changerDevis;
   const nouveauxContacts = devis ? lireContactsEntreprise(contacts) : undefined;
   const nouvelleCommission = devis ? lireCommissionEntreprise(commission) : undefined;
-  const devisValide = nouveauxContacts !== 'invalide' && nouvelleCommission !== 'invalide';
+  const nouvelleCommissionMessages = devis ? lireCommissionMessages(commissionMessages) : undefined;
+  const devisValide = nouveauxContacts !== 'invalide' && nouvelleCommission !== 'invalide' && nouvelleCommissionMessages !== 'invalide';
   const noteValide = note.trim().length >= 3;
   const nouveauxUtilisateursBusiness = business ? lireUtilisateursBusiness(utilisateursBusiness) : undefined;
   const businessValide = nouveauxUtilisateursBusiness !== 'invalide';
@@ -1582,6 +1591,10 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
         // `pret` a déjà écarté une saisie invalide (le compilateur le sait).
         ...(nouveauxContacts !== undefined ? { contacts: nouveauxContacts } : {}),
         ...(nouvelleCommission !== undefined ? { commissionPct: nouvelleCommission } : {}),
+        // Le Crédit WhatsApp ne part que s'il change, comme le Business (absents = inchangés côté serveur).
+        ...(devis && openBar !== (etat?.openBarWhatsapp === true) ? { openBarWhatsapp: openBar } : {}),
+        ...(nouvelleCommissionMessages !== undefined && nouvelleCommissionMessages !== (etat?.commissionMessagesPct ?? null)
+          ? { commissionMessagesPct: nouvelleCommissionMessages } : {}),
         // Le Business ne part que s'il change, sa limite que s'il est coché (absents = inchangés côté serveur).
         ...(business !== (etat?.business === true) ? { business } : {}),
         ...(business && nouveauxUtilisateursBusiness !== undefined ? { utilisateursBusiness: nouveauxUtilisateursBusiness } : {}),
@@ -1694,6 +1707,15 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
                     <input className={`${inputCls} w-24`} inputMode="numeric" value={commission} onChange={(e) => setCommission(e.target.value)} data-testid="offre-commission" />
                     {nouvelleCommission === 'invalide' && <span className="text-xs text-danger-700">{t('Un entier de 0 à 100, ou vide.', 'A whole number from 0 to 100, or empty.')}</span>}
                   </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={openBar} onChange={(e) => setOpenBar(e.target.checked)} data-testid="offre-open-bar" className="h-4 w-4" />
+                    <span className="text-ink-900">{t('Crédit WhatsApp en open bar : aucun solde, les messages sont facturés après', 'WhatsApp credit on open bar: no balance, messages are invoiced afterwards')}</span>
+                  </label>
+                  <label className="grid gap-1">
+                    <span className="text-xs font-medium text-ink-500">{t('Commission sur les messages WhatsApp, en % (vide = la commission globale)', 'WhatsApp message commission, in % (empty = the global commission)')}</span>
+                    <input className={`${inputCls} w-24`} inputMode="numeric" value={commissionMessages} onChange={(e) => setCommissionMessages(e.target.value)} data-testid="offre-commission-messages" />
+                    {nouvelleCommissionMessages === 'invalide' && <span className="text-xs text-danger-700">{t('Un entier de 0 à 100, ou vide.', 'A whole number from 0 to 100, or empty.')}</span>}
+                  </label>
                 </div>
               )}
             </div>
@@ -1736,6 +1758,7 @@ function OffreEspace({ jeton, tenantId, nom, membres, onFermer }: { jeton: strin
           {msg && (
             <p data-testid="offre-message" className={`rounded-controle px-3 py-2 text-sm ${msg.kind === 'ok' ? 'bg-succes-50 text-succes-700' : 'bg-danger-50 text-danger-700'}`}>{msg.text}</p>
           )}
+          <OpsLignesCreditWhatsapp jeton={jeton} tenantId={tenantId} />
         </div>
       )}
     </Modale>

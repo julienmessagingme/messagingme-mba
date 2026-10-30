@@ -10,6 +10,7 @@ import type { TacheMesureRow } from '../ops/mesure-taches';
 import type { MesureStockage } from '../ops/stockage.pg';
 import type { ConsommationEquipe } from '../agent/llm/consommation-equipe';
 import type { LatenceHttpRow } from '../ops/latence-http';
+import type { OpsCreditWhatsappDeps } from './ops-credit-whatsapp';
 import type { BilanRisque } from '../engagement/balayage';
 import { dlqName, seuilLatenceSecondes } from '../queue/names';
 import { z } from 'zod';
@@ -197,6 +198,11 @@ export interface OpsRouteDeps {
    * l'adresse de l'exploitant pour acteur, sans la note (`makeTraceOps`).
    */
   audit: AuditSink;
+  /**
+   * Les réglages du Crédit WhatsApp (`src/http/ops-credit-whatsapp.ts`), montés par `buildServer` à côté de `/ops`.
+   * Absents, leurs routes rendent 404 et l'écran masque sa carte.
+   */
+  creditWhatsapp?: OpsCreditWhatsappDeps;
 }
 
 /**
