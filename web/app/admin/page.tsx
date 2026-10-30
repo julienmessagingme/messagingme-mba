@@ -315,7 +315,7 @@ function InviteCard({ tenantId, onInvited, tousAdmins }: { tenantId: string; onI
     }
   }
 
-  /** Le siège payé chez Stripe D'ABORD (le prorata, sur la carte du Pro), puis la même invitation. */
+  /** Le siège payé chez Stripe D'ABORD (le prorata, sur la carte de la formule Pro), puis la même invitation. */
   async function acheterEtInviter() {
     if (!siege) return;
     setMsg(null);
@@ -377,7 +377,7 @@ function InviteCard({ tenantId, onInvited, tousAdmins }: { tenantId: string; onI
       <p className="text-xs leading-snug text-ink-500" data-testid="roles-explication">
         {tousAdmins
           ? t(
-            'En Pro, chaque membre est administrateur. Les rôles (manager, agent) viennent avec l’offre Business.',
+            'En formule Pro, chaque membre est administrateur. Les rôles (manager, agent) viennent avec l’offre Business.',
             'On Pro, every member is an administrator. Roles (manager, agent) come with the Business plan.',
           )
           : t(
@@ -389,8 +389,8 @@ function InviteCard({ tenantId, onInvited, tousAdmins }: { tenantId: string; onI
         <div data-testid="siege-requis" className="space-y-3 rounded-controle border border-brand-200 bg-white px-4 py-3 text-sm text-ink-700">
           <p>
             {siege.periodicite === 'an'
-              ? t(`Votre Pro compte déjà tous ses utilisateurs. Un utilisateur de plus coûte ${prixSiege} € HT par an : le prorata jusqu’à la fin de votre période est facturé maintenant, sur la carte du Pro (pendant un essai, rien n’est facturé avant sa fin).`, `Your Pro plan already has all its users. One more user costs €${prixSiege} excl. VAT per year: the prorated amount until the end of your period is charged now, on the Pro card (during a trial, nothing is charged before it ends).`)
-              : t(`Votre Pro compte déjà tous ses utilisateurs. Un utilisateur de plus coûte ${prixSiege} € HT par mois : le prorata jusqu’à la fin de votre période est facturé maintenant, sur la carte du Pro (pendant un essai, rien n’est facturé avant sa fin).`, `Your Pro plan already has all its users. One more user costs €${prixSiege} excl. VAT per month: the prorated amount until the end of your period is charged now, on the Pro card (during a trial, nothing is charged before it ends).`)}
+              ? t(`Votre formule Pro compte déjà tous ses utilisateurs. Un utilisateur de plus coûte ${prixSiege} € HT par an : le prorata jusqu’à la fin de votre période est facturé maintenant, sur la carte de la formule Pro (pendant un essai, rien n’est facturé avant sa fin).`, `Your Pro plan already has all its users. One more user costs €${prixSiege} excl. VAT per year: the prorated amount until the end of your period is charged now, on the Pro card (during a trial, nothing is charged before it ends).`)
+              : t(`Votre formule Pro compte déjà tous ses utilisateurs. Un utilisateur de plus coûte ${prixSiege} € HT par mois : le prorata jusqu’à la fin de votre période est facturé maintenant, sur la carte de la formule Pro (pendant un essai, rien n’est facturé avant sa fin).`, `Your Pro plan already has all its users. One more user costs €${prixSiege} excl. VAT per month: the prorated amount until the end of your period is charged now, on the Pro card (during a trial, nothing is charged before it ends).`)}
           </p>
           <div className="flex flex-wrap gap-2">
             <Bouton type="button" enCours={busy} disabled={busy} onClick={() => { void acheterEtInviter(); }}>{t('Ajouter et inviter', 'Add and invite')}</Bouton>

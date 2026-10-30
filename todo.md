@@ -26,13 +26,10 @@ voie par QR code (plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-
 
 ## 🟡 Free et Pro sans article : ce qui reste (2026-10-30)
 
-- **Free et Pro sans article** (Julien, 2026-10-30 : « Free », « Pro », « formule Free », « formule Pro », jamais « la
-  Free » ni « le Pro ») : la vitrine est faite. Restent, à sa décision : la console (une trentaine de lignes, la page
-  Offre en tête, et ses boutons « Passer en Pro », « Rendre mon numéro à la fin du Pro » que la fiche publique cite tels
-  quels), la FAQ du plugin (`scripts/plugin/faq.ts`), les descriptions des outils MCP (`src/mcp`) et quatre fiches
-  d'aide non publiques. Le relevé ligne à ligne a été remis à Julien le 2026-10-30.
-- La fiche publique « Choisir mon offre » a changé : `aide:charger` au prochain déploiement de l'API, pour que le bot
-  d'aide de la console dise aussi « formule Pro ».
+- **Free et Pro sans article, ce qui n'est pas encore en production** (2026-10-30) : les réponses des outils MCP et les
+  refus de l'API attendent le prochain déploiement de l'API ; la FAQ du plugin, sa prochaine version publiée ; les fiches
+  d'aide modifiées (« Choisir mon offre », « Brancher ma boutique Shopify » et quatre fiches non publiques),
+  `aide:charger` après ce déploiement. La console et la vitrine, elles, partent au push.
 
 ## La fiche publique HubSpot renommée (2026-10-30)
 

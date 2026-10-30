@@ -133,7 +133,7 @@ test.describe('la page Offre et les sièges', () => {
     await expect(bloc).toContainText('ne rembourse pas');
     await page.getByTestId('offre-retirer-siege').click();
     await repondre(page, true, 'n’est pas remboursée');
-    await expect(bloc).toContainText('Votre Pro comprend 3 utilisateurs.');
+    await expect(bloc).toContainText('Votre formule Pro comprend 3 utilisateurs.');
     await expect(page.getByTestId('offre-retirer-siege')).toHaveCount(0);
     expect(sieges).toEqual([{ depuis: 1, cible: 0 }]);
   });

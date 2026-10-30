@@ -48,7 +48,7 @@ describe('la source', () => {
     expect(e.reponse.en).toMatch(/templates and replies are counted separately/);
     expect(e.reponse.en).toContain('quota_exceeded');
     // Le Pro « illimité » ne se dit que si le code n'en pose aucun (« sans plafond de notre part » allait de soi, Julien).
-    expect(e.reponse.fr.includes('illimités en Pro')).toBe(DROITS.pro.limites.envoisModelesMois === null);
+    expect(e.reponse.fr.includes('illimités en formule Pro')).toBe(DROITS.pro.limites.envoisModelesMois === null);
     expect(e.reponse.en.includes('unlimited on Pro')).toBe(DROITS.pro.limites.envoisModelesMois === null);
     expect(`${e.reponse.fr} ${e.reponse.en}`).not.toMatch(/de notre part|from us/);
   });

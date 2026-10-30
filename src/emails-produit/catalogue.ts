@@ -207,7 +207,7 @@ export const CATALOGUE = [
   {
     cle: 'pro_suite_numero',
     categorie: 'service',
-    nom: 'Fin du Pro : la suite du numéro fourni',
+    nom: 'Fin de la formule Pro : la suite du numéro fourni',
     quand: 'L’offre Pro arrive à sa fin prévue : le numéro inclus passe à 3,50 € HT par mois, ou se rend.',
     variables: {
       date_fin_pro: { description: 'Le jour où l’offre Pro se termine', forme: 'date', exemple: '2026-11-15T10:00:00.000Z' },
@@ -218,8 +218,8 @@ export const CATALOGUE = [
         sujet: 'Votre offre Pro se termine le {{date_fin_pro}} : et votre numéro WhatsApp ?',
         corps: 'Bonjour,\n\nL’offre Pro de l’espace {{espace}} se termine le {{date_fin_pro}}. Le numéro WhatsApp que nous '
           + 'vous avons fourni y était inclus.\n\nÀ cette date, vous le gardez : il passera à 3,50 € HT par mois, prélevés sur '
-          + 'la même carte que votre Pro, sans rien reconfigurer.\n\nSi vous préférez le rendre, choisissez-le sur la page '
-          + '« Offre » de la console, ou demandez-le à Claude : ses envois seront coupés à la fin du Pro, puis il sera libéré '
+          + 'la même carte que votre formule Pro, sans rien reconfigurer.\n\nSi vous préférez le rendre, choisissez-le sur la page '
+          + '« Offre » de la console, ou demandez-le à Claude : ses envois seront coupés à la fin de la formule Pro, puis il sera libéré '
           + '7 jours après.',
         bouton: { libelle: 'Ouvrir la page « Offre »', lien: '{{lien_offre}}' },
       },
@@ -421,7 +421,7 @@ export const CATALOGUE = [
     cle: 'limite_contacts_depassee',
     categorie: 'service',
     nom: 'Offre Free : limite de contacts dépassée',
-    quand: 'Un espace Free compte plus de contacts que sa limite, par exemple au retour en Free après un Pro. Une fois à chaque franchissement.',
+    quand: 'Un espace Free compte plus de contacts que sa limite, par exemple au retour en formule Free après la formule Pro. Une fois à chaque franchissement.',
     variables: {
       contacts: { description: 'Les contacts que compte l’espace, ceux qui lui ont écrit les premiers compris', forme: 'texte', exemple: '3000' },
       limite: LIMITE,

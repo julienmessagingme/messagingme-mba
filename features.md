@@ -173,9 +173,11 @@ skill `mise-en-service` du plugin posent les mêmes questions depuis le 2026-10-
 
 ✅ **Free et Pro, sans article, sur toute la vitrine française** (2026-10-30, Julien : « c'est Free ou Pro, ou formule
 Free ou formule Pro ») : jamais « la Free », « le Pro », « en Free » ni « passer au Pro » sur les pages, leurs
-générateurs, les dictionnaires anglais et les fiches d'aide publiques. Restent, à la décision de Julien : les libellés de
-la console que la fiche « Choisir mon offre » cite tels quels (« Passer en Pro »), la console elle-même, la FAQ du plugin
-(publiée sur les pages développeurs), les descriptions des outils MCP et les fiches d'aide non publiques.
+générateurs, les dictionnaires anglais et les fiches d'aide. Le même soir, à la demande de Julien (« oui, partout ») :
+la console (la page Offre, l'abonnement, les utilisateurs, l'Accueil, la doc développeurs), la FAQ du plugin, les
+descriptions et les réponses des outils MCP, les refus que la console affiche et un e-mail. Le bouton « Rendre mon numéro
+à la fin du Pro » devient « … à la fin de la formule Pro ». Restent exprès : le bouton « Passer en Pro » et « l'offre Free »
+(les deux gardés par Julien), et les alertes internes adressées à Julien.
 
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton

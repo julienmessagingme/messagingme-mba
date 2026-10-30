@@ -31,7 +31,7 @@ Your number goes through the official API, connected through Meta. It writes fir
 
 **FR · Quel numéro WhatsApp prendre ?**
 
-Votre numéro passe par l’API officielle, relié par Meta. Il écrit en premier (modèles, confirmations, rappels, campagnes, messages Shopify), et Meta facture les modèles et, au-delà d’une franchise mensuelle, les réponses, sur un moyen de paiement chez Meta. Claude vous pose trois questions, une par une. Votre offre : Free ou Pro. Avez-vous un compte Meta Business ? Oui : un numéro libre, qui ne sert ni dans WhatsApp ni dans l’application WhatsApp Business, ou un numéro fourni (3,50 € HT par mois, inclus dans le Pro) ; s’il est déjà dans l’application WhatsApp Business, vous pouvez la garder. Non, ou vous ne savez pas : avez-vous déjà l’application WhatsApp Business ? Oui, vous la gardez ; non, vous la téléchargez avec le numéro de votre entreprise ; la fenêtre de Meta crée le compte en chemin.
+Votre numéro passe par l’API officielle, relié par Meta. Il écrit en premier (modèles, confirmations, rappels, campagnes, messages Shopify), et Meta facture les modèles et, au-delà d’une franchise mensuelle, les réponses, sur un moyen de paiement chez Meta. Claude vous pose trois questions, une par une. Votre offre : Free ou Pro. Avez-vous un compte Meta Business ? Oui : un numéro libre, qui ne sert ni dans WhatsApp ni dans l’application WhatsApp Business, ou un numéro fourni (3,50 € HT par mois, inclus en formule Pro) ; s’il est déjà dans l’application WhatsApp Business, vous pouvez la garder. Non, ou vous ne savez pas : avez-vous déjà l’application WhatsApp Business ? Oui, vous la gardez ; non, vous la téléchargez avec le numéro de votre entreprise ; la fenêtre de Meta crée le compte en chemin.
 
 ## What do I need at Meta before I start?
 
@@ -79,7 +79,7 @@ Four causes. The AI credit is used up: `get_credit`, then `buy_credit`. The agen
 
 **FR · Mon agent IA ne répond plus.**
 
-Quatre causes. Le crédit IA est épuisé : `get_credit`, puis `buy_credit`. L’agent a été désactivé, ou n’est plus celui qui répond : `get_setup_state` le dit. Quelqu’un a répondu à la main, Claude compris (`reply_in_open_window`) : répondre prend la conversation, et l’agent se tait jusqu’à ce qu’elle lui revienne, d’elle-même après un délai sans nouvelle réponse, ou tout de suite : `control_conversation` la rend depuis Claude, ou « Rendre la main » dans l’Inbox de la console. Et en Free, un nouveau client qui écrit à un espace qui a déjà ses 100 contacts n’entre pas, donc l’agent ne lui répond pas : `get_plan` montre le compte.
+Quatre causes. Le crédit IA est épuisé : `get_credit`, puis `buy_credit`. L’agent a été désactivé, ou n’est plus celui qui répond : `get_setup_state` le dit. Quelqu’un a répondu à la main, Claude compris (`reply_in_open_window`) : répondre prend la conversation, et l’agent se tait jusqu’à ce qu’elle lui revienne, d’elle-même après un délai sans nouvelle réponse, ou tout de suite : `control_conversation` la rend depuis Claude, ou « Rendre la main » dans l’Inbox de la console. Et en formule Free, un nouveau client qui écrit à un espace qui a déjà ses 100 contacts n’entre pas, donc l’agent ne lui répond pas : `get_plan` montre le compte.
 
 ## Can my AI agent act in my application?
 
@@ -111,7 +111,7 @@ No: it is rented for €3.50 excl. VAT a month, included in Pro. A number you br
 
 **FR · Le numéro fourni m’appartient-il ?**
 
-Non : il est loué 3,50 € HT par mois, inclus dans le Pro. Un numéro que vous apportez reste à vous.
+Non : il est loué 3,50 € HT par mois, inclus en formule Pro. Un numéro que vous apportez reste à vous.
 
 ## How many messages can I send?
 
@@ -119,7 +119,7 @@ Three limits. The plan’s: 1,000 templates a month on Free, unlimited on Pro; r
 
 **FR · Combien de messages puis-je envoyer ?**
 
-Trois limites. Celle de l’offre : 1 000 modèles par mois en Free, illimités en Pro ; les réponses dans la fenêtre de 24 heures n’y comptent jamais. Celle de l’API : un quota par jour et par espace, selon l’offre, où les modèles et les réponses se comptent à part (un envoi de modèles ne prend jamais la place des réponses), relevable sur demande ; au-delà, le refus quota_exceeded jusqu’au lendemain. Et celle de Meta, qui fixe ce qu’un numéro peut envoyer et l’augmente avec sa qualité.
+Trois limites. Celle de l’offre : 1 000 modèles par mois en formule Free, illimités en formule Pro ; les réponses dans la fenêtre de 24 heures n’y comptent jamais. Celle de l’API : un quota par jour et par espace, selon l’offre, où les modèles et les réponses se comptent à part (un envoi de modèles ne prend jamais la place des réponses), relevable sur demande ; au-delà, le refus quota_exceeded jusqu’au lendemain. Et celle de Meta, qui fixe ce qu’un numéro peut envoyer et l’augmente avec sa qualité.
 
 ## What happens when my Free workspace reaches 100 contacts?
 
@@ -127,7 +127,7 @@ On Free, all your contacts count, those who write to you first included. Once th
 
 **FR · Que se passe-t-il quand mon espace Free atteint ses 100 contacts ?**
 
-En Free, tous vos contacts comptent, ceux qui vous écrivent les premiers compris. Une fois l’espace plein, créer ou importer un contact est refusé (plan_limit_reached), et un nouveau client qui vous écrit n’entre pas : ni fiche, ni conversation, ni réponse de votre agent IA. Un e-mail vous prévient, un par jour au plus. Si ce client a écrit STOP, son refus est quand même gardé. Vos contacts déjà là écrivent et reçoivent comme avant. Pour faire de la place, demandez à Claude de supprimer les contacts dont vous n’avez plus besoin, en masse : les plus anciens, ceux d’une étiquette, selon leur consentement ou d’après une liste (`prepare_contacts_deletion`, puis `delete_contacts`). Il vous montre d’abord combien et quelques fiches, puis supprime sur votre accord, 1 000 au plus par fois ; la suppression est définitive. Ou passez au Pro, où ceux qui vous écrivent les premiers ne comptent pas et ne sont jamais refusés.
+En formule Free, tous vos contacts comptent, ceux qui vous écrivent les premiers compris. Une fois l’espace plein, créer ou importer un contact est refusé (plan_limit_reached), et un nouveau client qui vous écrit n’entre pas : ni fiche, ni conversation, ni réponse de votre agent IA. Un e-mail vous prévient, un par jour au plus. Si ce client a écrit STOP, son refus est quand même gardé. Vos contacts déjà là écrivent et reçoivent comme avant. Pour faire de la place, demandez à Claude de supprimer les contacts dont vous n’avez plus besoin, en masse : les plus anciens, ceux d’une étiquette, selon leur consentement ou d’après une liste (`prepare_contacts_deletion`, puis `delete_contacts`). Il vous montre d’abord combien et quelques fiches, puis supprime sur votre accord, 1 000 au plus par fois ; la suppression est définitive. Ou passez en formule Pro, où ceux qui vous écrivent les premiers ne comptent pas et ne sont jamais refusés.
 
 ## Can Claude prepare and launch a campaign?
 
@@ -135,7 +135,7 @@ Yes, on Pro, and nothing goes out without your yes. Claude finds the contacts (`
 
 **FR · Claude peut-il préparer et lancer une campagne ?**
 
-Oui, en Pro, et rien ne part sans votre oui. Claude trouve les contacts (`find_contacts`), en fait un segment, qui est une étiquette (`tag_contacts`), puis prépare la campagne (`prepare_campaign`) : un brouillon visible dans la console, avec un récapitulatif (contacts visés, combien partiront, les écartés et pourquoi, 5 noms, le nombre de messages facturables par Meta) et un code valable 30 minutes. Il ne lance (`launch_campaign`) qu'après votre oui, avec ce code ; une date choisie programme l'envoi. Vous pouvez aussi lancer le brouillon depuis la console. Le modèle doit être approuvé, et un modèle marketing ne part qu'aux contacts qui ont consenti.
+Oui, en formule Pro, et rien ne part sans votre oui. Claude trouve les contacts (`find_contacts`), en fait un segment, qui est une étiquette (`tag_contacts`), puis prépare la campagne (`prepare_campaign`) : un brouillon visible dans la console, avec un récapitulatif (contacts visés, combien partiront, les écartés et pourquoi, 5 noms, le nombre de messages facturables par Meta) et un code valable 30 minutes. Il ne lance (`launch_campaign`) qu'après votre oui, avec ce code ; une date choisie programme l'envoi. Vous pouvez aussi lancer le brouillon depuis la console. Le modèle doit être approuvé, et un modèle marketing ne part qu'aux contacts qui ont consenti.
 
 ## How do I add a colleague?
 
@@ -143,7 +143,7 @@ From the console, with an invitation. 1 user on Free, 3 on Pro then €15 excl. 
 
 **FR · Comment ajouter un collègue ?**
 
-Depuis la console, par une invitation. 1 utilisateur en Free, 3 en Pro puis 15 € HT par utilisateur en plus et par mois (proposé à l'invitation), 5 en Business puis 10 € HT par utilisateur en plus et par mois (demandé au Support), selon le devis en Entreprise.
+Depuis la console, par une invitation. 1 utilisateur en formule Free, 3 en formule Pro puis 15 € HT par utilisateur en plus et par mois (proposé à l'invitation), 5 en Business puis 10 € HT par utilisateur en plus et par mois (demandé au Support), selon le devis en Entreprise.
 
 ## How do I cancel, and what happens to the number?
 
@@ -151,7 +151,7 @@ Pro and the provided number are managed in the Stripe portal, from the console P
 
 **FR · Comment résilier, et que devient le numéro ?**
 
-Le Pro et le numéro fourni se gèrent dans le portail de Stripe, depuis la page Offre de la console ou par Claude (`manage_number_subscription`). À la fin d’un Pro, le numéro fourni passe à 3,50 € HT par mois sur la même carte, sauf si vous choisissez de le rendre (`return_number_at_plan_end`).
+La formule Pro et le numéro fourni se gèrent dans le portail de Stripe, depuis la page Offre de la console ou par Claude (`manage_number_subscription`). À la fin de la formule Pro, le numéro fourni passe à 3,50 € HT par mois sur la même carte, sauf si vous choisissez de le rendre (`return_number_at_plan_end`).
 
 ## How do I update the plugin?
 

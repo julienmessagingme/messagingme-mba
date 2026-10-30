@@ -88,7 +88,7 @@ export function AbonnementPro({ tenantId, vue }: { tenantId: string; vue: VueOff
     const ok = await confirmer({
       titre: t('Résilier votre abonnement Pro', 'Cancel your Pro subscription'),
       message: t(
-        `Votre Pro reste ouvert ${quand} : vous gardez tout jusque-là.${essai} Ensuite, votre espace repasse en Free.${numero}\n\nVous pourrez annuler cette résiliation jusqu’à cette date.`,
+        `Votre formule Pro reste ouverte ${quand} : vous gardez tout jusque-là.${essai} Ensuite, votre espace repasse en formule Free.${numero}\n\nVous pourrez annuler cette résiliation jusqu’à cette date.`,
         `Your Pro plan stays open ${quand}: you keep everything until then.${essai} After that, your workspace goes back to Free.${numero}\n\nYou can cancel this cancellation until that date.`,
       ),
       confirmer: t('Résilier', 'Cancel subscription'),
@@ -167,19 +167,19 @@ export function AbonnementPro({ tenantId, vue }: { tenantId: string; vue: VueOff
 
       {a.statut === 'en_retard' && (
         <p className="mt-3 text-sm text-danger" data-testid="offre-abonnement-retard">
-          {t('Le dernier paiement n’est pas passé. Stripe va retenter le prélèvement : mettez à jour votre carte bancaire pour garder le Pro.',
+          {t('Le dernier paiement n’est pas passé. Stripe va retenter le prélèvement : mettez à jour votre carte bancaire pour garder la formule Pro.',
             'The last payment did not go through. Stripe retries: update your card to keep Pro.')}
         </p>
       )}
       {a.statut === 'resiliation_programmee' && a.finPrevueLe && (
         <p className="mt-3 text-sm text-ink-700" data-testid="offre-abonnement-resilie">
-          {t(`Votre Pro reste ouvert jusqu’au ${date(a.finPrevueLe)}, puis votre espace repasse en Free. Vous pouvez encore annuler la résiliation.`,
+          {t(`Votre formule Pro reste ouverte jusqu’au ${date(a.finPrevueLe)}, puis votre espace repasse en formule Free. Vous pouvez encore annuler la résiliation.`,
             `Your Pro plan stays open until ${date(a.finPrevueLe)}, then your workspace goes back to Free. You can still cancel the cancellation.`)}
         </p>
       )}
       {a.statut === 'essai' && a.essaiFinLe && (
         <p className="mt-3 text-sm text-ink-700" data-testid="offre-essai-fin">
-          {t(`Votre essai du Pro se termine le ${date(a.essaiFinLe)} : sans résiliation, le premier paiement a lieu ce jour-là.`,
+          {t(`Votre essai de la formule Pro se termine le ${date(a.essaiFinLe)} : sans résiliation, le premier paiement a lieu ce jour-là.`,
             `Your Pro trial ends on ${date(a.essaiFinLe)}: unless you cancel, the first payment happens that day.`)}
         </p>
       )}

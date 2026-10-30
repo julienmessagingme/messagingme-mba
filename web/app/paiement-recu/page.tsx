@@ -42,7 +42,7 @@ export default function PaiementRecuPage() {
             <TitrePage>{t('Paiement reçu', 'Payment received')}</TitrePage>
             <p className="mt-4 text-sm text-ink-700">
               {produit === 'pro'
-                ? t('Merci. Retournez dans Claude : il vous confirme le passage de votre espace en Pro dès que Stripe l’a validé, en général en quelques secondes.', 'Thank you. Go back to Claude: it confirms your workspace’s move to Pro as soon as Stripe has validated it, usually within seconds.')
+                ? t('Merci. Retournez dans Claude : il vous confirme le passage de votre espace en formule Pro dès que Stripe l’a validé, en général en quelques secondes.', 'Thank you. Go back to Claude: it confirms your workspace’s move to Pro as soon as Stripe has validated it, usually within seconds.')
                 : produit === 'credit'
                 ? t('Merci. Retournez dans Claude : il vous confirme la recharge de votre crédit IA dès que Stripe l’a validée, en général en quelques secondes.', 'Thank you. Go back to Claude: it confirms your AI credit top-up as soon as Stripe has validated it, usually within seconds.')
                 : t('Merci. Retournez dans Claude : il vous confirme le réabonnement de votre numéro dès que Stripe l’a validé, en général en quelques secondes.', 'Thank you. Go back to Claude: it confirms your number subscription as soon as Stripe has validated it, usually within seconds.')}

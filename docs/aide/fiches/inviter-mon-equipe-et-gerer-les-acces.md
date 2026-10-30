@@ -11,12 +11,12 @@ mot de passe ou passe par Google, et rejoint l'espace. Tant qu'elle ne l'a pas f
 « invité ». Vous ne pouvez pas créer un compte en choisissant vous-même son mot de passe, et c'est voulu :
 personne d'autre que la personne concernée ne doit connaître le sien.
 
-**Au-delà des utilisateurs de votre offre**, l'invitation est refusée. En Pro, elle vous propose d'ajouter un
+**Au-delà des utilisateurs de votre offre**, l'invitation est refusée. En formule Pro, elle vous propose d'ajouter un
 utilisateur payé : son prix s'affiche, rien n'est facturé avant votre confirmation, puis le prorata jusqu'à la fin de
-la période est prélevé sur la carte du Pro et l'invitation part. La page Offre retire un utilisateur payé, sans
+la période est prélevé sur la carte de la formule Pro et l'invitation part. La page Offre retire un utilisateur payé, sans
 remboursement, une fois le membre en trop désactivé. En Business, un utilisateur de plus se demande au Support.
 
-**Trois rôles, à partir du Business.** En Pro, chaque membre est administrateur : l'invitation ne propose pas de
+**Trois rôles, à partir du Business.** En formule Pro, chaque membre est administrateur : l'invitation ne propose pas de
 rôle, et un rôle déjà donné reprend effet si l'espace passe en Business.
 
 

@@ -129,7 +129,7 @@ export function registerOffrePaiement(app: FastifyInstance, deps: OffrePaiementR
     const lu = corpsRendreSchema.safeParse(req.body ?? {});
     if (!lu.success) return reply.code(400).send({ error: 'rendre requis : true ou false' });
     if (!(await deps.rendreLeNumero(tenant, lu.data.rendre))) {
-      return reply.code(409).send({ error: 'Cet espace n’a pas de Pro en cours : il n’y a pas de fin du Pro où rendre le numéro.', cause: 'aucun_pro' });
+      return reply.code(409).send({ error: 'Cet espace n’a pas de formule Pro en cours : il n’y a pas de fin de formule Pro où rendre le numéro.', cause: 'aucun_pro' });
     }
     return reply.code(200).send({ rendreNumero: lu.data.rendre });
   });

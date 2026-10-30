@@ -4,6 +4,18 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-30 (nuit) : Free et Pro sans article, partout
+
+Textes seulement, aucune migration. Julien a tranché le relevé laissé par le lot de la vitrine : « oui, partout ». La
+console (page Offre, abonnement, utilisateurs, Accueil, doc développeurs), la FAQ du plugin, les descriptions et les
+réponses des outils MCP, les refus que l'API renvoie à la console (Pro indisponible, sièges, fin de formule) et l'e-mail
+de fin du Pro disent « formule Pro » ou « formule Free ». Le bouton « Rendre mon numéro à la fin du Pro » devient « … à la
+fin de la formule Pro », et la fiche « Choisir mon offre » qui le cite suit. Restent exprès « Passer en Pro » et « l'offre
+Free » (gardés par Julien) et les alertes Telegram internes. La fiche « Brancher ma boutique Shopify » perd aussi la
+phrase sur le consentement que Shopify ne recueille pas. Le test de la vitrine n'exclut plus la FAQ du plugin. En
+production en trois temps : la console et la vitrine au push, les textes de l'API au prochain déploiement, la FAQ du
+plugin à sa prochaine version, puis `aide:charger`.
+
 ## 2026-10-30 (soir) : la console et le plugin posent les questions du tunnel, plus aucune voie par QR code
 
 Aucune migration. Plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-plugin.md`, suite de `010b721b`.

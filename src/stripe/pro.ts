@@ -41,7 +41,7 @@ export interface DepsPro extends DepsPortail {
  */
 export type RetourPro = 'offre' | 'claude';
 
-export const PRO_INDISPONIBLE = refus(503, 'le Pro n’est pas encore en vente', { code: 'pro_indisponible' });
+export const PRO_INDISPONIBLE = refus(503, 'la formule Pro n’est pas encore en vente', { code: 'pro_indisponible' });
 
 /** La récurrence que doit porter chaque prix chez Stripe. */
 const RECURRENCE: Readonly<Record<PeriodicitePro, string>> = { mois: 'month', an: 'year' };
@@ -64,16 +64,16 @@ export async function ouvrirPro(
   }
   const offre = await d.offreDe(tenantId);
   if (offre === 'entreprise') {
-    return refus(409, 'Votre espace est en offre Entreprise : le Pro ne lui ajouterait rien.', { code: 'deja_entreprise' });
+    return refus(409, 'Votre espace est en offre Entreprise : la formule Pro ne lui ajouterait rien.', { code: 'deja_entreprise' });
   }
   // Le Business (spec du 2026-10-27) est facturé par Messaging Me, hors Stripe : un Pro le ferait payer deux fois.
   if (offre === 'business') {
-    return refus(409, 'Votre espace est en offre Business : le Pro ne lui ajouterait rien.', { code: 'deja_business' });
+    return refus(409, 'Votre espace est en offre Business : la formule Pro ne lui ajouterait rien.', { code: 'deja_business' });
   }
   if ((await d.filiereDe(tenantId)) === 'application') {
     // La coexistence (plan 2026-10-24, tâche 4) : le même numéro passe sur l'API, l'application WhatsApp Business gardée.
-    return refus(409, 'Le Pro passe par l’API WhatsApp officielle, avec un compte Meta Business : un numéro relié par QR code '
-      + `n’y entre pas tel quel. Pour le Pro, ${RELIER_EN_COEXISTENCE}`,
+    return refus(409, 'La formule Pro passe par l’API WhatsApp officielle, avec un compte Meta Business : un numéro relié par QR code '
+      + `n’y entre pas tel quel. Pour la formule Pro, ${RELIER_EN_COEXISTENCE}`,
     { code: 'filiere_application' });
   }
   try {
@@ -85,7 +85,7 @@ export async function ouvrirPro(
         tenantId, periodicite, prix: prixId, attenduCentimes: attendu, luCentimes: prix.montantCentimes, devise: prix.devise,
         recurrence: prix.recurrence,
       });
-      return refus(422, 'Le Pro est momentanément indisponible : son tarif est en cours de correction. Réessayez plus tard, ou contactez-nous.',
+      return refus(422, 'La formule Pro est momentanément indisponible : son tarif est en cours de correction. Réessayez plus tard, ou contactez-nous.',
         { code: 'prix_incoherent' });
     }
     // L'essai, une fois par espace : un espace qui a déjà eu un Pro (même fini) paie dès le départ.

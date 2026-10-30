@@ -292,9 +292,9 @@ describe('le tunnel du numéro WhatsApp', () => {
 
 /**
  * FREE ET PRO SANS ARTICLE (Julien, 2026-10-30 : « on arrête de dire en français la Free ou le Pro, c'est Free ou Pro, ou
- * formule Free ou formule Pro »). Toute la vitrine française, tournures dérivées comprises. Restent, et leur sort est à
- * Julien : les libellés de la console cités entre guillemets (« Passer en Pro »), que la console affiche encore, et la FAQ
- * du plugin (`scripts/plugin/faq.ts`), publiée entre `faq:debut` et `faq:fin` sur les pages développeurs.
+ * formule Free ou formule Pro »). Toute la vitrine française, tournures dérivées comprises, FAQ du plugin comprise (« oui,
+ * partout »). Seuls restent les libellés de la console cités entre guillemets, comme le bouton « Passer en Pro », que Julien
+ * a gardé.
  */
 describe('Free et Pro, sans article, sur la vitrine française', () => {
   const ARTICLE = /(?<![\p{L}’'])(?:la|le|au|du|en)\s+(?:Free|Pro)\b/iu;
@@ -302,8 +302,8 @@ describe('Free et Pro, sans article, sur la vitrine française', () => {
     const francaises = pagesHtml().filter((p) => !p.startsWith('en/') && p !== '404.html');
     expect(francaises.length).toBeGreaterThan(40);
     for (const p of francaises) {
-      // Le texte affiché, sans la FAQ du plugin ni les libellés cités entre guillemets français.
-      const lu = corps(lire(p).replace(/<!-- faq:debut[\s\S]*?<!-- faq:fin -->/g, '')).replace(/«[^»]*»/g, '');
+      // Le texte affiché, sans les libellés cités entre guillemets français.
+      const lu = corps(lire(p)).replace(/«[^»]*»/g, '');
       const m = lu.match(new RegExp(`.{0,40}${ARTICLE.source}.{0,40}`, 'iu'));
       expect(m?.[0], p).toBeUndefined();
     }

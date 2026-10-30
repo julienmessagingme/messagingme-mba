@@ -77,9 +77,8 @@ les chiffres des 30 derniers jours : messages partis, clients écartés et pourq
 L'app reste alors installée sur votre boutique : désinstallez-la depuis la page des apps de la boutique, dont le lien
 est sur la carte. Vous pourrez la rebrancher depuis la carte ou depuis Claude Code.
 
-**Bon à savoir.** Shopify ne recueille aucun accord pour WhatsApp : le consentement de vos clients relève de vous, et
-aucune question ne vous le demande. Chaque message de la boutique rend la fiche du client consentante partout,
-campagnes comprises ; un client qui a répondu STOP le reste et ne reçoit rien.
+**Bon à savoir.** Chaque message de la boutique rend la fiche du client consentante partout, campagnes comprises ; un
+client qui a répondu STOP le reste et ne reçoit rien.
 
 ## La relance des paniers abandonnés
 

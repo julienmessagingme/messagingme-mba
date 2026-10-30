@@ -423,21 +423,8 @@ const en = (): TexteBoutique => {
  * 2026-10-29) : écrite sans offre, elle nommait à côté d'une étiquette « Offre Free » l'agent de Meta, les scénarios,
  * l'analyse ou l'attribution, qui ne le sont pas, et parlait « du marchand » à qui la lit. 🔴 Une ligne Free qui nomme
  * une fonction payante dit son offre (`tests/vitrine-boutique.test.ts`). Les autres outils gardent la phrase de la doc.
- * Depuis le 2026-10-30, la vitrine dit aussi « Free » et « Pro » sans article (Julien) quand la doc MCP dit encore « le Pro ».
  */
 export const PHRASES_OUTILS: Readonly<Partial<Record<NomOutilMcp, Readonly<Record<Langue, string>>>>> = {
-  get_plan: {
-    fr: 'L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en formule Pro.',
-    en: 'The workspace plan, its limits and current usage, with the link to upgrade.',
-  },
-  subscribe_pro: {
-    fr: 'Ouvrir le paiement de la formule Pro, au mois ou à l’année, montant hors taxe.',
-    en: 'Open the Pro plan payment, monthly or yearly, amount before tax.',
-  },
-  return_number_at_plan_end: {
-    fr: `Choisir de rendre le numéro fourni à la fin de la formule Pro, ou de le garder à ${euros(PRIX_NUMERO_AFFICHE_HT_CENTIMES, 'fr')} HT par mois sur la même carte.`,
-    en: `Choose to give back the provided number when Pro ends, or keep it at ${euros(PRIX_NUMERO_AFFICHE_HT_CENTIMES, 'en')} excl. VAT a month on the same card.`,
-  },
   set_default_responder: {
     fr: 'Choisir qui répond au client (un nouveau contact, et tout message que personne ne tient)&nbsp;: un agent IA actif, l’équipe ou votre application, et en formule Pro un scénario publié, en formule Business l’agent de Meta.',
     en: 'Choose who answers the customer (a new contact, and every message nobody handles): an active AI agent, the team or your app, plus a published scenario with Pro and Meta’s agent with Business.',

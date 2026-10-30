@@ -950,13 +950,13 @@ function AccueilInner({ session }: { session: Session }) {
           <h2 className="mt-2 text-base font-semibold text-ink-900">{t('Piloter votre espace depuis Claude Code', 'Run your workspace from Claude Code')}</h2>
           <p className="mt-1 text-sm text-ink-500">
             {t(
-              'En Free, tout se fait depuis Claude Code, Cursor ou l’API : vos contacts, vos modèles, vos envois, votre agent IA et la bulle de votre site. Trois gestes suffisent pour commencer.',
+              'En formule Free, tout se fait depuis Claude Code, Cursor ou l’API : vos contacts, vos modèles, vos envois, votre agent IA et la bulle de votre site. Trois gestes suffisent pour commencer.',
               'On Free, everything is done from Claude Code, Cursor or the API: your contacts, templates, sends, AI agent and your site’s bubble. Three steps are enough to start.',
             )}
           </p>
           <PiloterDepuisClaude tenantId={session.tenantId} isAdmin={isAdmin} />
           <section className="mt-4 rounded-carte border border-brand-200 bg-brand-50 p-5" data-testid="accueil-free-pro">
-            <h2 className="text-base font-semibold text-ink-900">{t('La console complète, avec le Pro', 'The full console, with Pro')}</h2>
+            <h2 className="text-base font-semibold text-ink-900">{t('La console complète, en formule Pro', 'The full console, with Pro')}</h2>
             <p className="mt-1 text-sm text-ink-500">
               {t(
                 'L’Inbox pour répondre à plusieurs, les campagnes, les scénarios et les statistiques, à l’écran : tout s’ouvre avec l’offre Pro.',

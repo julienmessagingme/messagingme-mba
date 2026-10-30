@@ -85,9 +85,9 @@ export function rappelDeLAbonnement(a: EtatDeLEspace | null): string | null {
 export function rappelDeLaSuiteDuPro(s: { finPrevueLe: Date | null; rendreNumero: boolean } | null): string | null {
   if (s === null || s.finPrevueLe === null) return null;
   return s.rendreNumero
-    ? `Rappel : le Pro de l’espace se termine le ${jour(s.finPrevueLe)}, et le numéro WhatsApp fourni sera alors rendu (ses `
+    ? `Rappel : la formule Pro de l’espace se termine le ${jour(s.finPrevueLe)}, et le numéro WhatsApp fourni sera alors rendu (ses `
       + 'envois coupés, puis libéré 7 jours après). return_number_at_plan_end avec rendre = false le garde.'
-    : `Rappel : le Pro de l’espace se termine le ${jour(s.finPrevueLe)}. Le numéro WhatsApp fourni passera alors à 3,50 € HT `
+    : `Rappel : la formule Pro de l’espace se termine le ${jour(s.finPrevueLe)}. Le numéro WhatsApp fourni passera alors à 3,50 € HT `
       + 'par mois sur la même carte ; return_number_at_plan_end avec rendre = true le rend à la place.';
 }
 
@@ -314,7 +314,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
       signataire(personne);
       if (typeof args.rendre !== 'boolean') throw new RefusOutil('paramètre « rendre » requis : true ou false');
       if (!(await deps.numero.rendreLeNumero(tenantId, args.rendre))) {
-        throw new RefusOutil('Cet espace n’a pas de Pro en cours : il n’y a pas de fin du Pro où rendre le numéro.');
+        throw new RefusOutil('Cet espace n’a pas de formule Pro en cours : il n’y a pas de fin de formule Pro où rendre le numéro.');
       }
       return { rendre_numero: args.rendre };
     },
@@ -336,7 +336,7 @@ export const OUTILS_NUMERO: OutilMcp[] = [
         abonnement: e.abonnement?.statut ?? null,
         prochaine_echeance: e.abonnement?.periodeFin ?? null,
         numero_fourni: e.fourni,
-        prix: e.inclusDansLePro ? 'inclus dans le Pro' : '3,50 € HT par mois',
+        prix: e.inclusDansLePro ? 'inclus en formule Pro' : '3,50 € HT par mois',
         inclus_dans_le_pro: e.inclusDansLePro,
         // Lot 4 : l'état calculé (actif, fin_prevue, en_retard, suspendu, libere) et ses dates.
         etat: a?.etat ?? null,

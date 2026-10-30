@@ -5,7 +5,7 @@ source_empreinte: d1bfb9
 ---
 # L'abonnement du numéro fourni : coupure, réabonnement, restitution
 
-Un numéro fourni par Messaging Me se paie par un abonnement, inclus dans le Pro. Voici ce qui se passe quand cet
+Un numéro fourni par Messaging Me se paie par un abonnement, inclus en formule Pro. Voici ce qui se passe quand cet
 abonnement tombe, et comment rendre le numéro.
 
 **Si l'abonnement du numéro fourni tombe.** Un renouvellement qui échoue vous laisse 7 jours pour régler : un bandeau,

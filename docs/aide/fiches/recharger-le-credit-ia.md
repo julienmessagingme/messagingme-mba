@@ -11,7 +11,7 @@ vos fiches de connaissance**, et **la traduction et la transcription des convers
 celui de votre offre, affiché dans l'onglet Modèle d'un agent. Vous le trouvez dans **Paramètres >
 Offre**, onglet **Crédit IA** ; l'écran est réservé aux administrateurs.
 
-**Recharger.** Quatre boutons : 5, 10, 50 ou 100 €, hors taxe. La Free n'a pas cet onglet : elle recharge depuis
+**Recharger.** Quatre boutons : 5, 10, 50 ou 100 €, hors taxe. La formule Free n'a pas cet onglet : elle recharge depuis
 Claude, aux mêmes montants. Un clic vous emmène sur la page de paiement sécurisée
 de Stripe, où vous saisissez votre carte, votre raison sociale, votre adresse de facturation et, si vous le
 souhaitez, votre numéro de TVA. La TVA s'ajoute au paiement : 50 € hors taxe payés donnent 50 € de crédit.

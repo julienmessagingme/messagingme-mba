@@ -101,7 +101,7 @@ function Recette() {
           <C>set_default_responder</C>
           {t(') la prend, avec votre politique de livraison dans sa connaissance (', ') takes it, with your delivery policy in its knowledge (')}
           <C>add_knowledge</C>
-          {t(') ; en Pro, votre équipe peut reprendre la main dans l’Inbox de la console. La route n’a rien à faire.', '); on Pro, your team can take over in the console’s Inbox. The route has nothing to do.')}
+          {t(') ; en formule Pro, votre équipe peut reprendre la main dans l’Inbox de la console. La route n’a rien à faire.', '); on Pro, your team can take over in the console’s Inbox. The route has nothing to do.')}
         </p>
       </Section>
 

@@ -67,20 +67,20 @@ export async function changerSieges(d: DepsSieges, tenantId: string, demande: De
   try {
     const a = await lireAbonnementStripe(s.transport, { cle: s.cle, abonnementId: pro.abonnementId });
     if (a.statut !== 'active' && a.statut !== 'trialing') {
-      return refus(409, 'Le paiement de votre Pro est en attente : réglez-le depuis la page Offre, puis ajoutez l’utilisateur.', { code: 'pro_en_retard' });
+      return refus(409, 'Le paiement de votre formule Pro est en attente : réglez-le depuis la page Offre, puis ajoutez l’utilisateur.', { code: 'pro_en_retard' });
     }
     const lignes = a.lignes.filter(estSiege);
     // Une ligne posée à la main chez Stripe, dans l'autre formule ou en double : on ne devine pas laquelle changer.
     if (lignes.length > 1 || (lignes[0] !== undefined && lignes[0].prix !== prixSiege)) {
       journaliser('error', 'stripe_sieges_a_regler', { tenantId, abonnement: pro.abonnementId, lignes: lignes.map((l) => l.prix) });
-      return refus(409, 'Les utilisateurs de votre Pro demandent un réglage de notre part : contactez-nous.', { code: 'sieges_a_regler' });
+      return refus(409, 'Les utilisateurs de votre formule Pro demandent un réglage de notre part : contactez-nous.', { code: 'sieges_a_regler' });
     }
     const ligne = lignes[0];
     const actuel = ligne?.quantite ?? 0;
     // Déjà fait (un second clic, l'autre onglet) : rien à écrire, la base se recale.
     if (cible === actuel) return noter(d, tenantId, pro.abonnementId, actuel, null);
     if (actuel !== depuis) {
-      return refus(409, 'Le nombre d’utilisateurs de votre Pro a changé entre-temps : rechargez la page, puis recommencez.', { code: 'sieges_changes' });
+      return refus(409, 'Le nombre d’utilisateurs de votre formule Pro a changé entre-temps : rechargez la page, puis recommencez.', { code: 'sieges_changes' });
     }
 
     if (cible < actuel) {
@@ -124,7 +124,7 @@ export async function changerSieges(d: DepsSieges, tenantId: string, demande: De
     if (!(err instanceof StripeError)) throw err;
     // La même modification encore en vol chez Stripe (un double clic très rapproché) : à réessayer, pas un refus.
     if (err.code === 'idempotency_key_in_use') {
-      return refus(409, 'Un changement des utilisateurs de votre Pro est déjà en cours : réessayez dans quelques secondes.', { code: 'sieges_en_cours' });
+      return refus(409, 'Un changement des utilisateurs de votre formule Pro est déjà en cours : réessayez dans quelques secondes.', { code: 'sieges_en_cours' });
     }
     return refusDeStripe(err, tenantId, 'sieges');
   }

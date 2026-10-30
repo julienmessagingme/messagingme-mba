@@ -214,7 +214,7 @@ describe('les outils de l’abonnement du numéro (livraison B)', () => {
   it('🔴 J4 : en Pro, get_number_subscription dit que le numéro est inclus, sans prix ; l’état de la connexion aussi', async () => {
     const { deps } = monter(() => ({ ...VIDE, fourni: '+441235619343', inclusDansLePro: true }));
     expect(await outil('get_number_subscription').executer(deps, 't1', {}, null))
-      .toMatchObject({ abonnement: null, inclus_dans_le_pro: true, prix: 'inclus dans le Pro' });
+      .toMatchObject({ abonnement: null, inclus_dans_le_pro: true, prix: 'inclus en formule Pro' });
     expect(outil('get_number_subscription').description).toMatch(/inclus_dans_le_pro/);
     const r = await outil('watch_whatsapp_connection').executer(deps, 't1', {}, PERSONNE) as Record<string, unknown>;
     expect(r.etat).toMatchObject({ inclus_dans_le_pro: true });

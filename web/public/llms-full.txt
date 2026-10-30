@@ -849,7 +849,7 @@ Efface une fiche pour de vrai (RGPD), dans la limite du jour de l’offre.
 
 Droit : `contacts:admin`
 
-Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en Free, sans limite en Pro et Entreprise). Une fiche désabonnée (STOP) laisse une empreinte de son numéro, illisible sans notre clé, gardée trois ans après le STOP : recréée, elle naît désabonnée.
+Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en formule Free, sans limite en formules Pro et Entreprise). Une fiche désabonnée (STOP) laisse une empreinte de son numéro, illisible sans notre clé, gardée trois ans après le STOP : recréée, elle naît désabonnée.
 
 ### Réponse 200
 
@@ -3681,7 +3681,7 @@ export async function POST(req: Request) {
 
 ## Si le client répond
 
-Sa réponse ouvre une conversation. L’agent IA qui répond pour l’espace (`set_default_responder`) la prend, avec votre politique de livraison dans sa connaissance (`add_knowledge`) ; en Pro, votre équipe peut reprendre la main dans l’Inbox de la console. La route n’a rien à faire.
+Sa réponse ouvre une conversation. L’agent IA qui répond pour l’espace (`set_default_responder`) la prend, avec votre politique de livraison dans sa connaissance (`add_knowledge`) ; en formule Pro, votre équipe peut reprendre la main dans l’Inbox de la console. La route n’a rien à faire.
 
 <a id="essayer"></a>
 
@@ -4914,7 +4914,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | tag_conversation | mcp:write | Poser des tags sur le contact d’un fil. |
 | assign_conversation | mcp:write | Confier un fil à un membre, ou le libérer. |
 | control_conversation | mcp:write | Prendre la main sur un fil, ou la rendre au répondeur automatique, qui répondra au message suivant. |
-| get_plan | mcp:read | L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en Pro. |
+| get_plan | mcp:read | L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en formule Pro. |
 | get_setup_state | mcp:read | Où en est la mise en service de l’espace (numéro, agent IA, répondeur, bulle, crédit, offre), et l’étape suivante avec ses outils. À appeler en premier pour mettre un espace en service, ou reprendre. |
 | list_widgets | mcp:read | Les widgets WhatsApp de l’espace, avec la balise à coller sur le site. |
 | list_scenarios | mcp:read | Les scénarios, et lesquels sont publiés : un widget ne démarre qu’un scénario publié. |
@@ -4941,12 +4941,12 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 | set_default_responder | mcp:write connexion OAuth requise | Choisir qui répond au client (à un nouveau contact, et à tout message que personne ne tient) : l’agent de Meta, un agent IA actif, un scénario publié, l’équipe, ou votre application (une adresse de webhooks sortants). Hors du mode agent de Meta, celui-ci reste en veille. |
 | get_credit | mcp:read | Le solde du crédit IA et ses derniers mouvements. |
 | buy_credit | mcp:write connexion OAuth requise | Ouvrir le paiement d’une recharge, montant hors taxe ; la personne paie elle-même sur la page de Stripe. |
-| subscribe_pro | mcp:write connexion OAuth requise | Ouvrir le paiement du Pro, au mois ou à l’année, montant hors taxe ; la personne paie elle-même sur la page de Stripe, et revient sur « Paiement reçu ». |
+| subscribe_pro | mcp:write connexion OAuth requise | Ouvrir le paiement de la formule Pro, au mois ou à l’année, montant hors taxe ; la personne paie elle-même sur la page de Stripe, et revient sur « Paiement reçu ». |
 | create_api_key | mcp:write connexion OAuth requise | Créer la clé d’API de votre application, montrée une seule fois : elle passe par la conversation, à ranger aussitôt dans le fichier .env. |
 | start_whatsapp_connection | mcp:write connexion OAuth requise | Donner le lien qui ouvre la connexion du numéro WhatsApp, sans passer par la console, valable une heure : numéro fourni ou apporté, ou celui de l’application WhatsApp Business, en gardant l’application (les messages qui partent par Messaging Me sont facturés par Meta). Sans compte Meta Business, la fenêtre de Meta le crée en chemin. |
 | get_number_subscription | mcp:read | L’abonnement du numéro fourni : son statut, la fin de la période payée et le numéro. |
 | resubscribe_number | mcp:write connexion OAuth requise | Renouveler l’abonnement du numéro quand il est impayé ou terminé : le portail de Stripe, ou un nouveau paiement qui rend le même numéro. |
-| return_number_at_plan_end | mcp:write connexion OAuth requise | Choisir de rendre le numéro fourni à la fin du Pro, ou de le garder à 3,50 € HT par mois sur la même carte. |
+| return_number_at_plan_end | mcp:write connexion OAuth requise | Choisir de rendre le numéro fourni à la fin de la formule Pro, ou de le garder à 3,50 € HT par mois sur la même carte. |
 | manage_number_subscription | mcp:write connexion OAuth requise | Ouvrir le portail de Stripe pour l’abonnement du numéro : carte, factures, résiliation. |
 | watch_whatsapp_connection | mcp:write connexion OAuth requise | Suivre la connexion du numéro jusqu’au bout : numéro attribué, code de vérification à lire à la personne, numéro connecté, ou relié en gardant l’application WhatsApp Business. |
 | create_webhook_endpoint | mcp:write connexion OAuth requise | Inscrire l’adresse HTTPS de l’application qui recevra les événements choisis (webhook sortant, signé) ; le secret de signature est montré une seule fois. |
@@ -4959,7 +4959,7 @@ Les outils marqués « connexion OAuth requise » agissent au nom d’une person
 
 ## Ce qu’il ne fait pas
 
-- **Pas de campagne sans votre oui.** En Pro, il prépare une campagne et vous en montre le récapitulatif ; il ne la lance qu’avec le code de ce récapitulatif, après votre oui. Hors du Pro, il envoie un modèle à une personne à la fois.
+- **Pas de campagne sans votre oui.** En formule Pro, il prépare une campagne et vous en montre le récapitulatif ; il ne la lance qu’avec le code de ce récapitulatif, après votre oui. Hors de la formule Pro, il envoie un modèle à une personne à la fois.
 - **Hors de la fenêtre de 24 h, seul un modèle approuvé part.** Un message libre est refusé, avec la raison ; un modèle approuvé part par send_template_to_contact.
 - **Numéro WhatsApp délié, rien ne part.** L’outil refuse, avec la raison, jusqu’à ce qu’un administrateur relie le numéro depuis l’Accueil.
 - **Les automations ne se déclenchent pas.** Un tag posé par l’assistant classe le contact, sans réveiller les automations qui écoutent ce tag.

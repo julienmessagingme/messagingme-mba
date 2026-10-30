@@ -193,7 +193,7 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
   const libelleLimite = (k: (typeof LIGNES_LIMITES)[number]): string => ({
     utilisateurs: t('Utilisateurs', 'Users'),
     // La grille compare les offres : la Free compte aussi ceux qui écrivent (`contactsToutesOrigines`, 2026-10-25).
-    contacts: t('Contacts (en Free, ceux qui vous écrivent compris)', 'Contacts (on Free, including those who write to you)'),
+    contacts: t('Contacts (en formule Free, ceux qui vous écrivent compris)', 'Contacts (on Free, including those who write to you)'),
     envoisModelesMois: t('Modèles envoyés par mois', 'Templates sent per month'),
     automations: t('Automations allumées', 'Active automations'),
     adressesWebhook: t('Adresses de webhook sortant actives', 'Active outgoing webhook addresses'),
@@ -274,7 +274,7 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
         </IntroPage>
         {retour === 'recu' && (
           <p className="mt-3 rounded-carte border border-succes-200 bg-succes-50 px-4 py-3 text-sm text-succes-700" data-testid="offre-paiement-recu">
-            {t('Paiement reçu : votre espace passe en Pro dans quelques instants. Rechargez la page si la grille ne l’indique pas encore.',
+            {t('Paiement reçu : votre espace passe en formule Pro dans quelques instants. Rechargez la page si la grille ne l’indique pas encore.',
               'Payment received: your workspace moves to Pro in a few moments. Reload the page if the grid does not show it yet.')}
           </p>
         )}
@@ -329,9 +329,9 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
                 peut encore les dire sans limite (une API plus ancienne que la console). */}
             {suivante === 'pro'
               ? (vue.grille.pro.limites.contacts != null
-                ? t(`Le Pro ouvre la console (l’Inbox, les scénarios, les statistiques), crée jusqu’à ${valeurLimite(vue.grille.pro.limites, 'contacts')} contacts et lève les limites d’envois et d’automations.`,
+                ? t(`La formule Pro ouvre la console (l’Inbox, les scénarios, les statistiques), crée jusqu’à ${valeurLimite(vue.grille.pro.limites, 'contacts')} contacts et lève les limites d’envois et d’automations.`,
                   `Pro unlocks the console (the Inbox, scenarios, statistics), creates up to ${valeurLimite(vue.grille.pro.limites, 'contacts')} contacts and lifts the sending and automation limits.`)
-                : t('Le Pro ouvre la console (l’Inbox, les scénarios, les statistiques) et lève les limites de contacts, d’envois et d’automations.',
+                : t('La formule Pro ouvre la console (l’Inbox, les scénarios, les statistiques) et lève les limites de contacts, d’envois et d’automations.',
                   'Pro unlocks the console (the Inbox, scenarios, statistics) and lifts the contact, sending and automation limits.'))
               : suivante === 'business'
                 // Le Business (spec Business) : posé par Messaging Me à la demande, jamais payé en ligne ; la carte mène au Support.
@@ -363,12 +363,12 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
             {/* Les sièges (livraison 7) : 3 utilisateurs inclus, puis un prix par utilisateur, dans la formule du Pro. */}
             {vue.prixSiege && vue.grille.pro.limites.utilisateurs !== null && (
               <p className="w-full text-xs text-ink-500" data-testid="offre-sieges-prix">
-                {t(`Le Pro comprend ${vue.grille.pro.limites.utilisateurs} utilisateurs ; chaque utilisateur en plus coûte ${euros(vue.prixSiege.moisCentimes)} HT par mois (${euros(vue.prixSiege.anCentimes)} HT par an avec le Pro annuel).`,
+                {t(`La formule Pro comprend ${vue.grille.pro.limites.utilisateurs} utilisateurs ; chaque utilisateur en plus coûte ${euros(vue.prixSiege.moisCentimes)} HT par mois (${euros(vue.prixSiege.anCentimes)} HT par an avec la formule Pro annuelle).`,
                   `Pro includes ${vue.grille.pro.limites.utilisateurs} users; each extra user costs ${euros(vue.prixSiege.moisCentimes)} excl. VAT a month (${euros(vue.prixSiege.anCentimes)} excl. VAT a year with yearly Pro).`)}
               </p>
             )}
             <p className="w-full text-xs text-ink-500" data-testid="offre-numero-inclus">
-              {t('Le numéro WhatsApp que nous vous fournissons est inclus dans le Pro : s’il est déjà payé à part, cet abonnement s’arrête au premier paiement du Pro, avec un avoir.',
+              {t('Le numéro WhatsApp que nous vous fournissons est inclus en formule Pro : s’il est déjà payé à part, cet abonnement s’arrête au premier paiement de la formule Pro, avec un avoir.',
                 'The WhatsApp number we provide is included in Pro: if it is already paid separately, that subscription stops at the first Pro payment, with a credit.')}
             </p>
             </>
@@ -394,11 +394,11 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
           <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-suite-numero">
             <p className="min-w-0 flex-1 text-sm text-ink-500">
               {fin === null
-                ? t('Votre numéro WhatsApp fourni est inclus dans votre Pro.', 'Your provided WhatsApp number is included in your Pro plan.')
+                ? t('Votre numéro WhatsApp fourni est inclus dans votre formule Pro.', 'Your provided WhatsApp number is included in your Pro plan.')
                 : rendre
-                  ? t(`Votre Pro se termine le ${date}, et votre numéro WhatsApp fourni sera alors rendu : ses envois seront coupés, puis il sera libéré 7 jours après.`,
+                  ? t(`Votre formule Pro se termine le ${date}, et votre numéro WhatsApp fourni sera alors rendu : ses envois seront coupés, puis il sera libéré 7 jours après.`,
                     `Your Pro plan ends on ${date}, and your provided WhatsApp number will then be given back: its sending stops, and it is released 7 days later.`)
-                  : t(`Votre Pro se termine le ${date}. Votre numéro WhatsApp fourni passera alors à 3,50 € HT par mois, sur la même carte.`,
+                  : t(`Votre formule Pro se termine le ${date}. Votre numéro WhatsApp fourni passera alors à 3,50 € HT par mois, sur la même carte.`,
                     `Your Pro plan ends on ${date}. Your provided WhatsApp number will then cost €3.50 excl. VAT a month, on the same card.`)}
             </p>
             {fin !== null && (rendre ? (
@@ -407,7 +407,7 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
               </Bouton>
             ) : (
               <Bouton variante="secondaire" onClick={() => void choisirRendre(true)} enCours={rendreEnCours} disabled={rendreEnCours} data-testid="offre-rendre-numero">
-                {t('Rendre mon numéro à la fin du Pro', 'Give back my number when Pro ends')}
+                {t('Rendre mon numéro à la fin de la formule Pro', 'Give back my number when Pro ends')}
               </Bouton>
             ))}
             {erreurRendre && <p className="w-full text-sm text-danger" data-testid="offre-rendre-erreur">{erreurRendre}</p>}
@@ -424,8 +424,8 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
           <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-sieges">
             <p className="min-w-0 flex-1 text-sm text-ink-500">
               {achetes === 0
-                ? t(`Votre Pro comprend ${vue.sieges.inclus} utilisateurs.`, `Your Pro plan includes ${vue.sieges.inclus} users.`)
-                : t(`Votre Pro comprend ${vue.sieges.inclus} utilisateurs, et ${achetes} utilisateur${achetes > 1 ? 's' : ''} payé${achetes > 1 ? 's' : ''} en plus.`,
+                ? t(`Votre formule Pro comprend ${vue.sieges.inclus} utilisateurs.`, `Your Pro plan includes ${vue.sieges.inclus} users.`)
+                : t(`Votre formule Pro comprend ${vue.sieges.inclus} utilisateurs, et ${achetes} utilisateur${achetes > 1 ? 's' : ''} payé${achetes > 1 ? 's' : ''} en plus.`,
                   `Your Pro plan includes ${vue.sieges.inclus} users, and ${achetes} paid extra user${achetes > 1 ? 's' : ''}.`)}
               {prix !== null && (vue.sieges.periodicite === 'an'
                 ? t(` Un utilisateur de plus : ${euros(prix)} HT par an, proposé quand vous invitez un membre au-delà.`, ` One more user: ${euros(prix)} excl. VAT a year, offered when you invite a member beyond that.`)
@@ -452,7 +452,7 @@ function OffreInner({ session, vue, retour }: { session: Session; vue: VueOffre 
         <section className="flex flex-wrap items-center gap-3 rounded-carte border border-ink-200 bg-white p-5" data-testid="offre-abonnement">
           {vue.essai?.finLe && (
             <p className="w-full text-sm text-ink-700" data-testid="offre-essai-fin">
-              {t(`Votre essai du Pro se termine le ${new Date(vue.essai.finLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} : sans résiliation, le premier paiement a lieu ce jour-là.`,
+              {t(`Votre essai de la formule Pro se termine le ${new Date(vue.essai.finLe).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })} : sans résiliation, le premier paiement a lieu ce jour-là.`,
                 `Your Pro trial ends on ${new Date(vue.essai.finLe).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}: unless you cancel, the first payment happens that day.`)}
             </p>
           )}

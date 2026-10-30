@@ -217,7 +217,7 @@ function Contacts() {
       <Route ep="DELETE /v1/contacts/{contactId}">
         <p>
           {t(
-            'Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en Free, sans limite en Pro et Entreprise). Une fiche désabonnée (STOP) laisse une empreinte de son numéro, illisible sans notre clé, gardée trois ans après le STOP : recréée, elle naît désabonnée.',
+            'Avec le droit contacts:admin. Irréversible : la fiche, ses conversations, ses messages et son analyse sont effacés ; ce qui porte les compteurs est anonymisé. Dans la limite du jour de l’offre (10 en formule Free, sans limite en formules Pro et Entreprise). Une fiche désabonnée (STOP) laisse une empreinte de son numéro, illisible sans notre clé, gardée trois ans après le STOP : recréée, elle naît désabonnée.',
             'With the contacts:admin scope. Irreversible: the record, its conversations, messages and analysis are erased; what carries the counters is anonymised. Within the plan’s daily limit (10 on Free, unlimited on Pro and Enterprise). An opted-out record (STOP) leaves a fingerprint of its number, unreadable without our key, kept three years after the STOP: recreated, it is born opted out.',
           )}
         </p>

@@ -96,6 +96,6 @@ espace dépasse sa limite, ces suppressions ne sont pas limitées par jour.
 Il est inclus en formules Pro, Business et Entreprise : obtenez-le sans payer depuis la page « Connecter WhatsApp ». S'il était déjà payé à
 part, cet abonnement s'arrête au premier paiement de la formule Pro, avec un avoir sur la facture suivante. Si vous résiliez
 la formule Pro, la page Offre et un e-mail vous préviennent : à la fin de la formule Pro, le numéro passe à 3,50 € HT par mois sur la
-même carte. Pour le rendre à la place, choisissez « Rendre mon numéro à la fin du Pro » sur la page Offre ; vous
+même carte. Pour le rendre à la place, choisissez « Rendre mon numéro à la fin de la formule Pro » sur la page Offre ; vous
 pouvez revenir sur ce choix tant que la formule Pro court. Si vous envoyez par votre propre numéro, le numéro fourni ne
 reprend pas : il est libéré sept jours après la fin de la formule Pro.

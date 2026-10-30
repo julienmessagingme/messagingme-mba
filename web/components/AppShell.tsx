@@ -208,7 +208,7 @@ export function AppShell({ active, fullBleed = false, fonction, children }: {
           <p className="mt-2" data-testid="acces-suspendu-phrase">{phraseSansAdresse(accesSuspendu.phrase)}</p>
           <p className="mt-2 text-ink-500">
             {t(
-              'L’offre de l’espace ne compte plus de place pour vous. Rien n’a été effacé : un administrateur qui passe l’espace en Pro vous rend l’accès.',
+              'L’offre de l’espace ne compte plus de place pour vous. Rien n’a été effacé : un administrateur qui passe l’espace en formule Pro vous rend l’accès.',
               'The workspace plan no longer has a seat for you. Nothing was deleted: an administrator who moves the workspace to Pro gives you access back.',
             )}
           </p>

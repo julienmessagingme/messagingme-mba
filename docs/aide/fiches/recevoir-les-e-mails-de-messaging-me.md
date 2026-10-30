@@ -17,7 +17,7 @@ IA ne répondent plus, une fois par jour au plus). Un paiement refusé de votre 
 le premier échec, avec la date où les envois du numéro seraient coupés. Le numéro fourni suspendu, le rappel deux jours
 avant sa libération, sa libération, et la suite du numéro quand votre offre Pro se termine. En offre Free, 80 % puis
 100 % des modèles du mois et de vos contacts, ceux qui vous ont écrit les premiers compris : l'alerte de 100 % propose
-de passer en Pro. Au-delà de votre limite de contacts (au retour en Free après un Pro, par exemple), une alerte vous
+de passer en Pro. Au-delà de votre limite de contacts (au retour en formule Free après la formule Pro, par exemple), une alerte vous
 dit combien en supprimer pour y revenir, en le demandant à Claude. Quand votre espace Free est plein et qu'un nouveau
 client vous écrit, un e-mail vous dit que son message n'est pas entré, une fois par jour au plus. En offre Pro, 80 % puis 100 % de vos contacts : l'alerte renvoie à
 l'offre Entreprise.

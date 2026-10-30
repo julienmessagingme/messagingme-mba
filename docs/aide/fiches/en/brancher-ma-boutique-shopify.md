@@ -1,7 +1,7 @@
 ---
 description: Connect a Shopify store to WhatsApp: order confirmation, shipping notice with tracking, abandoned checkout reminders. The simplest way: Claude Code.
 slug: connect-my-shopify-store
-traduit_de: d1bdee
+traduit_de: 8b1cc7
 bouton_claude: Connect Shopify from Claude Code, for free
 bouton_console: Connect Shopify in the console
 ---
@@ -69,9 +69,8 @@ the figures for the last 30 days: messages sent, customers left out and why. “
 The app then stays installed on your store: uninstall it from the store apps page, whose link is on the card. You can
 reconnect it from the card or from Claude Code.
 
-**Good to know.** Shopify collects no agreement for WhatsApp: your customers’ consent is your responsibility, and no
-question asks you about it. Each message from the store makes the customer’s record consenting everywhere, campaigns
-included; a customer who replied STOP stays opted out and gets nothing.
+**Good to know.** Each message from the store makes the customer’s record consenting everywhere, campaigns included; a
+customer who replied STOP stays opted out and gets nothing.
 
 ## The abandoned checkout reminder
 
