@@ -2,7 +2,29 @@ import type { Pool } from 'pg';
 import { PREFIXE_ENVOI_API } from '../api/cible-rcs';
 import { PREFIXE_LIGNE_HUBSPOT } from '../hubspot-workflow/envoi';
 import { ficheActive } from '../crm/contact-store.pg';
+import { BOUNDS_CTE, STATS_TZ, type DateRange } from '../stats/range';
 import { LIGNE_RELANCE_PANIER, PREFIXE_LIGNE_SHOPIFY, type SourceVente, type Touche, type VenteAttribuee } from './attribution';
+
+/**
+ * Ce que la base somme pour une période (plan 2026-10-30, lot 2) : les montants sont des décimaux en TEXTE, additionnés
+ * par Postgres et par devise, jamais par du code. `test` sépare les commandes de la passerelle de test de Shopify.
+ */
+export interface LignesChiffre {
+  totaux: Array<{ test: boolean; devise: string; brut: string; prouve: string; commandes: number }>;
+  ventes: Array<{
+    test: boolean; source: SourceVente; campaignId: string | null; nom: string | null; devise: string; brut: string; prouve: string;
+    commandes: number;
+  }>;
+  /** Les relances parties dans la période, par leur jour de Paris (`relances_panier_jour`). */
+  relances: number;
+  /** Les ventes `relance_panier` dont la RELANCE tombe dans la période (et non le paiement). */
+  recuperes: Array<{ test: boolean; devise: string; montant: string; commandes: number }>;
+}
+
+/** La somme, et la part prouvée, d'un groupe de ventes : `trim_scale` rend `150.5` plutôt que `150.500`. */
+const SOMMES = `trim_scale(sum(v.montant))::text as brut,
+       trim_scale(coalesce(sum(v.montant) filter (where v.preuve is not null), 0))::text as prouve,
+       count(*)::int as commandes`;
 
 /** Une vente à figer : la commande, son montant dans la devise de la boutique, et son attribution. */
 export type VenteAEnregistrer = {
@@ -165,6 +187,64 @@ export class PgVentesStore {
       [tenantId, commandeIds],
     );
     return res.rowCount ?? 0;
+  }
+
+  /**
+   * Le chiffre d'une période, en trois lectures : les ventes par leur date de PAIEMENT (par source, avec le nom actuel de
+   * la campagne ; une campagne supprimée garde sa ligne, sans nom), les relances par leur jour, et les récupérés par leur
+   * date de RELANCE (la décision de la spec : relancés et récupérés se comptent sur la même date). `payee_le >= start_ts`
+   * y est toujours vrai (une relance précède le paiement) et laisse l'index `(tenant_id, payee_le)` servir.
+   */
+  async lireChiffre(tenantId: string, range: DateRange): Promise<LignesChiffre> {
+    const p = [tenantId, range.from, range.to, STATS_TZ];
+    const [totaux, ventes, relances, recuperes] = await Promise.all([
+      this.pool.query<{ test: boolean; devise: string; brut: string; prouve: string; commandes: number }>(
+        `with ${BOUNDS_CTE}
+         select v.test, v.devise, ${SOMMES}
+           from ventes_attribuees v, bounds b
+          where v.tenant_id = $1 and v.payee_le >= b.start_ts and v.payee_le < b.end_ts
+          group by v.test, v.devise
+          order by v.test, v.devise`,
+        p,
+      ),
+      this.pool.query<{
+        test: boolean; source: SourceVente; campaign_id: string | null; nom: string | null; devise: string; brut: string; prouve: string;
+        commandes: number;
+      }>(
+        `with ${BOUNDS_CTE}
+         select v.test, v.source, v.campaign_id, k.name as nom, v.devise, ${SOMMES}
+           from ventes_attribuees v
+           cross join bounds b
+           left join campaigns k on k.id = v.campaign_id and k.tenant_id = v.tenant_id
+          where v.tenant_id = $1 and v.payee_le >= b.start_ts and v.payee_le < b.end_ts
+          group by v.test, v.source, v.campaign_id, k.name, v.devise
+          order by sum(v.montant) desc, v.source, k.name`,
+        p,
+      ),
+      this.pool.query<{ n: number }>(
+        `select coalesce(sum(n), 0)::int as n from relances_panier_jour where tenant_id = $1 and jour between $2::date and $3::date`,
+        p.slice(0, 3),
+      ),
+      this.pool.query<{ test: boolean; devise: string; montant: string; commandes: number }>(
+        `with ${BOUNDS_CTE}
+         select v.test, v.devise, trim_scale(sum(v.montant))::text as montant, count(*)::int as commandes
+           from ventes_attribuees v, bounds b
+          where v.tenant_id = $1 and v.source = 'relance_panier'
+            and v.relance_le >= b.start_ts and v.relance_le < b.end_ts and v.payee_le >= b.start_ts
+          group by v.test, v.devise
+          order by v.test, v.devise`,
+        p,
+      ),
+    ]);
+    return {
+      totaux: totaux.rows.map((r) => ({ test: r.test, devise: r.devise, brut: r.brut, prouve: r.prouve, commandes: r.commandes })),
+      ventes: ventes.rows.map((r) => ({
+        test: r.test, source: r.source, campaignId: r.campaign_id, nom: r.nom, devise: r.devise, brut: r.brut, prouve: r.prouve,
+        commandes: r.commandes,
+      })),
+      relances: relances.rows[0]?.n ?? 0,
+      recuperes: recuperes.rows.map((r) => ({ test: r.test, devise: r.devise, montant: r.montant, commandes: r.commandes })),
+    };
   }
 
   private async lire(

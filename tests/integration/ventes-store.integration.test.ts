@@ -241,4 +241,85 @@ describe.skipIf(!url)('le store des ventes', () => {
     expect(await store.panierRelance(T, 'tok-attente')).toBeNull();
     expect(await store.panierRelance(T, 'inconnu')).toBeNull();
   });
+
+  /** Une vente posée à la main, pour la lecture du chiffre (plan 2026-10-30, lot 2, tâche 1). */
+  async function vente(o: {
+    commande: string; montant: string; payee: Date; devise?: string; source?: string; campagne?: string | null;
+    preuve?: string | null; relance?: Date | null; test?: boolean; espace?: string;
+  }): Promise<void> {
+    await pool.query(
+      `insert into ventes_attribuees (tenant_id, commande_id, contact_id, montant, devise, payee_le, source, campaign_id, preuve, relance_le, test)
+       values ($1, $2, null, $3::numeric, $4, $5, $6, $7, $8, $9, $10)`,
+      [o.espace ?? T, o.commande, o.montant, o.devise ?? 'EUR', o.payee, o.source ?? 'campagne', o.campagne ?? null, o.preuve ?? null,
+        o.relance ?? null, o.test ?? false],
+    );
+  }
+  /** Du 15 au 20 octobre 2026, heure de Paris : du 2026-10-14T22:00Z au 2026-10-20T22:00Z. */
+  const periode = { from: '2026-10-15', to: '2026-10-20' };
+
+  it('lireChiffre : par devise, les tests à part, la part prouvée, une campagne supprimée gardée, rien hors période', async () => {
+    await vider();
+    const soldes = await campagne('Soldes');
+    const noel = await campagne('Noël');
+    await vente({ commande: 'a', montant: '100.50', payee: ilYA(2), campagne: soldes, preuve: 'utm' });
+    await vente({ commande: 'b', montant: '50', payee: ilYA(3), campagne: soldes });
+    await vente({ commande: 'c', montant: '30', payee: ilYA(4), devise: 'USD', source: 'agent' });
+    await vente({ commande: 'd', montant: '20', payee: ilYA(5), campagne: noel });
+    await vente({ commande: 'e', montant: '999', payee: ilYA(6), campagne: soldes, test: true });
+    await vente({ commande: 'f', montant: '70', payee: new Date('2026-10-14T21:59:00Z'), source: 'agent' });
+    await vente({ commande: 'g', montant: '15', payee: new Date('2026-10-20T22:00:00Z'), source: 'agent' });
+    await pool.query('delete from campaigns where id = $1', [noel]);
+
+    const l = await store.lireChiffre(T, periode);
+    expect(l.totaux).toEqual([
+      { test: false, devise: 'EUR', brut: '170.5', prouve: '100.5', commandes: 3 },
+      { test: false, devise: 'USD', brut: '30', prouve: '0', commandes: 1 },
+      { test: true, devise: 'EUR', brut: '999', prouve: '0', commandes: 1 },
+    ]);
+    expect(l.ventes).toEqual([
+      { test: true, source: 'campagne', campaignId: soldes, nom: 'Soldes', devise: 'EUR', brut: '999', prouve: '0', commandes: 1 },
+      { test: false, source: 'campagne', campaignId: soldes, nom: 'Soldes', devise: 'EUR', brut: '150.5', prouve: '100.5', commandes: 2 },
+      { test: false, source: 'agent', campaignId: null, nom: null, devise: 'USD', brut: '30', prouve: '0', commandes: 1 },
+      { test: false, source: 'campagne', campaignId: null, nom: null, devise: 'EUR', brut: '20', prouve: '0', commandes: 1 },
+    ]);
+  });
+
+  it('lireChiffre : relancés par jour de relance, récupérés par date de relance, un autre espace jamais compté', async () => {
+    await vider();
+    await pool.query('delete from relances_panier_jour where tenant_id = $1', [T]);
+    await pool.query(
+      `insert into relances_panier_jour (tenant_id, jour, n) values ($1, '2026-10-14', 5), ($1, '2026-10-16', 2), ($1, '2026-10-20', 1)`,
+      [T],
+    );
+    // Relancée la veille de la période, payée dedans : dans les ventes (date de paiement), pas dans les récupérés.
+    await vente({ commande: 'r1', montant: '60', source: 'relance_panier', preuve: 'panier',
+      relance: new Date('2026-10-14T20:00:00Z'), payee: new Date('2026-10-15T08:00:00Z') });
+    await vente({ commande: 'r2', montant: '40', source: 'relance_panier', preuve: 'panier',
+      relance: new Date('2026-10-16T10:00:00Z'), payee: new Date('2026-10-16T11:00:00Z') });
+    await vente({ commande: 'r3', montant: '9.99', source: 'relance_panier', test: true,
+      relance: new Date('2026-10-17T10:00:00Z'), payee: new Date('2026-10-17T11:00:00Z') });
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-ventes-autre') returning id`)).rows[0]!.id;
+    try {
+      await vente({ espace: autre, commande: 'x', montant: '1000', source: 'relance_panier',
+        relance: new Date('2026-10-16T10:00:00Z'), payee: new Date('2026-10-16T11:00:00Z') });
+      const l = await store.lireChiffre(T, periode);
+      expect(l.relances).toBe(3);
+      expect(l.recuperes).toEqual([
+        { test: false, devise: 'EUR', montant: '40', commandes: 1 },
+        { test: true, devise: 'EUR', montant: '9.99', commandes: 1 },
+      ]);
+      expect(l.totaux).toEqual([
+        { test: false, devise: 'EUR', brut: '100', prouve: '100', commandes: 2 },
+        { test: true, devise: 'EUR', brut: '9.99', prouve: '0', commandes: 1 },
+      ]);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [autre]);
+    }
+  });
+
+  it('lireChiffre : un espace sans vente ni relance rend des listes vides et zéro', async () => {
+    await vider();
+    await pool.query('delete from relances_panier_jour where tenant_id = $1', [T]);
+    expect(await store.lireChiffre(T, periode)).toEqual({ totaux: [], ventes: [], relances: 0, recuperes: [] });
+  });
 });
