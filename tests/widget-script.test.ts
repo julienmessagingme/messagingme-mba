@@ -469,11 +469,15 @@ class Noeud {
   readonly enfants: Noeud[] = [];
   readonly attributs: Record<string, string> = {};
   readonly ecouteurs: Record<string, Array<(e: unknown) => void>> = {};
-  readonly style: Record<string, string> & { setProperty(cle: string, valeur: string): void };
+  readonly style: Record<string, string> & { setProperty(cle: string, valeur: string, priorite?: string): void };
+  /** La priorité passée à `setProperty` (`important` ou rien), par propriété. */
+  readonly priorites: Record<string, string> = {};
   ombre: { mode: string; racine: Noeud } | null = null;
   constructor(readonly tag: string) {
     const style: Record<string, string> = {};
-    this.style = Object.assign(style, { setProperty: (cle: string, valeur: string) => { style[cle] = valeur; } });
+    this.style = Object.assign(style, {
+      setProperty: (cle: string, valeur: string, priorite?: string) => { style[cle] = valeur; this.priorites[cle] = priorite ?? ''; },
+    });
   }
   appendChild(n: Noeud): Noeud { this.enfants.push(n); return n; }
   setAttribute(cle: string, valeur: string): void { this.attributs[cle] = String(valeur); }
@@ -521,6 +525,14 @@ const SERVI: ConfigScript = {
 };
 
 describe('le script exécuté', () => {
+  it('🔴 l’hôte s’affiche en `important` : un thème qui masque les `div:empty` ne cache plus la bulle (Shopify, 2026-10-30)', () => {
+    for (const config of [SERVI, { etat: 'grise', position: 'haut_gauche' } as const]) {
+      const hote = executer(construireScript(config)).body.enfants[0]!;
+      expect(hote.style.display).toBe('block');
+      expect(hote.priorites.display).toBe('important');
+    }
+  });
+
   it('servi sur ordinateur : ombre FERMÉE, coin, couleur, et le clic ouvre le panneau au lieu de suivre le lien', () => {
     const page = executer(construireScript(SERVI));
     const hote = page.body.enfants[0]!;

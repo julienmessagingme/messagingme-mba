@@ -152,6 +152,9 @@ const CSS = [
  *   s'exécuter avant que `body` existe.
  * - Shadow DOM FERMÉ : le style du site ne casse pas la bulle, celui de la bulle ne fuit pas sur le site, et le
  *   site ne peut pas atteindre ses nœuds par `shadowRoot`.
+ * - 🔴 L'ombre ne protège pas l'HÔTE : vu du site, c'est un `div` vide, que masque un thème qui cache les `div:empty`
+ *   (celui de la boutique d'essai Shopify, mesuré le 2026-10-30 : `display: none`, bulle invisible). Son `display` se
+ *   pose donc en ligne et en `important`, ce qu'aucune feuille du site ne bat.
  * - Tactile (`pointer: coarse`) : le clic suit le lien, WhatsApp s'ouvre sur le téléphone. Ordinateur : le clic
  *   ouvre un panneau avec le QR code et le lien, ouvert dans un nouvel onglet.
  * - Grisée : un `span` sans lien ni gestionnaire de clic, avec `title` et `aria-label`.
@@ -190,6 +193,7 @@ function monter() {
   var hote = document.createElement('div');
   hote.style.position = 'fixed';
   hote.style.zIndex = '2147483000';
+  hote.style.setProperty('display', 'block', 'important');
   hote.style.setProperty(coin[0], '20px');
   hote.style.setProperty(coin[1], '20px');
   var racine = hote.attachShadow({ mode: 'closed' });
