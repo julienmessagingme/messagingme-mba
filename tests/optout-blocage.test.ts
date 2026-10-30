@@ -9,7 +9,7 @@ import type { WorkflowExecutorDeps } from '../src/workflow/executor';
 import type { WorkflowGraph } from '../src/workflow/graph';
 import { repondreDansLaFenetre, type DepsRepondre } from '../src/inbox/repondre';
 import { ORIGINES } from '../src/inbox/origine';
-import { jamaisDesabonne, numeroJamaisBloque } from './consentement';
+import { jamaisDesabonne, jamaisNosMachines, numeroJamaisBloque } from './consentement';
 import { avecGardesDEtatInertes, depsInertes } from './executeur-inerte';
 import { priseDeFilSansEffet } from './routes-inertes';
 import { filiereApiSeule, aucunPremierMessage } from './gardes';
@@ -358,7 +358,7 @@ describe('l’agent IA se tait devant un contact désabonné', () => {
       agents: { byId: async () => FICHE },
       envoyer: async (_t: string, _w: string, texte: string) => { envois.push(texte); },
       estRepondeur: async () => false,
-      numeroBloque: numeroJamaisBloque,
+      numeroBloque: numeroJamaisBloque, ecritParNosMachines: jamaisNosMachines,
       ...over,
     } as unknown as RunTurnDeps;
     return { deps, brain, envois, clotures };

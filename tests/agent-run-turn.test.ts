@@ -1,4 +1,4 @@
-import { jamaisDesabonne } from './consentement';
+import { jamaisDesabonne, jamaisNosMachines } from './consentement';
 import { describe, it, expect, vi } from 'vitest';
 import { MEMOIRE_JOURS, runTurn } from '../src/agent/run-turn';
 import { creerCerveauGateway } from '../src/agent/brain.gateway';
@@ -59,6 +59,7 @@ function make(over: Partial<RunTurnDeps> = {}, decision?: DecisionAgent) {
     estDesabonne: jamaisDesabonne,
     estRepondeur: async () => false,
     numeroBloque: async () => false,
+    ecritParNosMachines: jamaisNosMachines,
     sessions: {
       ...sessionsOk(),
       clore: async (_t: string, _id: string, status: string, sortie?: string) => { clotures.push({ status, ...(sortie ? { sortie } : {}) }); },
@@ -93,6 +94,37 @@ describe('runTurn : le numéro bloqué (lot 4)', () => {
     const { deps, envois } = make({ numeroBloque: async () => false });
     expect((await runTurn(JOB, deps)).fait).toBe('repondu');
     expect(envois).toEqual(['Bonjour']);
+  });
+});
+
+describe('runTurn : une machine d’un autre espace écrit (2026-10-30)', () => {
+  it('🔴 ni modèle, ni débit, ni envoi ; la session reste ouverte, le tour se finit et l’échéance est posée', async () => {
+    const debits: number[] = [];
+    const finis: string[] = [];
+    const echeances: string[] = [];
+    const { deps, brain, envois, clotures } = make({
+      ecritParNosMachines: async () => true,
+      debiterTenant: async (_t, m) => { debits.push(m); },
+      majRun: async (_t, runId) => { echeances.push(runId); },
+    });
+    deps.sessions = { ...deps.sessions, finirLeTour: async (_t: string, id: string) => { finis.push(id); } } as RunTurnDeps['sessions'];
+    const r = await runTurn(JOB, deps);
+    expect(r.fait).toBe('nos_machines');
+    expect(r.repos?.status).toBe('waiting');
+    expect(brain.appels).toEqual([]);
+    expect(debits).toEqual([]);
+    expect(envois).toEqual([]);
+    expect(clotures).toEqual([]);
+    expect(finis).toEqual(['s1']);
+    expect(echeances).toEqual(['r1']);
+  });
+
+  it('les plafonds passent avant : une session au plafond sort par le plafond, même devant une machine', async () => {
+    const { deps } = make({
+      ecritParNosMachines: async () => true,
+      sessions: { ...sessionsOk(), prendreLeTour: async () => ({ ...SESSION, tours: FICHE.plafonds.maxTours + 1 }) } as unknown as RunTurnDeps['sessions'],
+    });
+    expect((await runTurn(JOB, deps)).fait).toBe('plafond');
   });
 });
 

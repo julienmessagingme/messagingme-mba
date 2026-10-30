@@ -64,6 +64,7 @@ import { balayerRisque, jourABalayer } from './engagement/balayage';
 import { depsBalayageRisque } from './engagement/cablage';
 import { AUTOMATION_EVENT_QUEUE, enfilerEvenementAutomation, parseAutomationEventJob, type AutomationEventJob } from './automation/event-job';
 import { AGENT_TURN_QUEUE, parseAgentTurnJob } from './agent/turn-job';
+import { creerEcritParNosMachines } from './agent/nos-machines.pg';
 
 /** Messages de conversation donnés au cerveau à chaque tour. Borné : le contexte se paie à chaque appel de
  *  modèle, et un fil bavard ferait payer au client une conversation qu'il a déjà réglée. */
@@ -2246,6 +2247,8 @@ export async function demarrerWorker(): Promise<void> {
       estDesabonne: (t, waId) => contactStore.machineSeTaitParWaId(t, waId),
       // 🔴 Lot 4 : un numéro délié ou suspendu ne paie pas un tour dont la réponse ne partirait pas.
       numeroBloque: numeroBloqueDeLEspace,
+      // 🔴 Deux agents de Messaging Me ne se répondent pas en boucle (2026-10-30).
+      ecritParNosMachines: creerEcritParNosMachines(pool),
       envoyer: (t, waId, texte) => envoyerTexteAgent(t, waId, texte),
       mesures: nodeEventStore,
       sortir: async ({ tenantId, waId, sessionId, sortie }) => {

@@ -5358,6 +5358,13 @@ Ajouté par le lot 4 de l'API publique :
     calcule qu'une ligne se supprime. Un module d'adaptation qui reste importe le
     contrat sans en garder de copie (`src/webhook-entrant/chemin.ts`, `web/lib/chemin-json.ts`,
     `web/lib/contact-filters.ts`).
+62. 🔴 **Deux machines de Messaging Me ne se répondent pas en boucle** (`src/agent/nos-machines.pg.ts`, décision de
+    Julien du 2026-10-30). Un message qui vient d'un numéro EN SERVICE dans un autre espace (numéro API non délié,
+    compte de l'application relié ou en sommeil), quand le dernier sortant de cet espace vers nous, de moins de 120 s,
+    n'est pas une réponse d'équipe (`vautReponseDeLEquipe`), ne reçoit pas de réponse de l'agent IA : `runTurn` lit
+    `ecritParNosMachines` (requise) au rang des plafonds, se tait sans modèle ni débit, session ouverte. Un message
+    tapé à la main depuis ce numéro (écho `humain`) a toujours sa réponse. Non couverts : un robot d'un autre éditeur,
+    une boucle entre deux scénarios, et la course où le tour lit l'envoi d'en face avant qu'il soit journalisé.
 
 ### Sur la méthode
 

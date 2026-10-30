@@ -4,6 +4,21 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-30 (nuit) : deux agents de Messaging Me ne se répondent plus en boucle
+
+Vers 20 h 28, la bulle de l'espace « Messaging Me demo » touchée depuis le téléphone de Julien, dont le WhatsApp est
+l'application WhatsApp Business reliée à « newCompany », qui a son propre agent : les deux agents se sont répondu, six
+fois de chaque côté en une minute (relevé en base de production par la session qui a ouvert ce lot), jusqu'au « Stop »
+tapé sur le téléphone. Sans lui, chaque session allait à son plafond de 20 tours, payés sur le crédit des clients.
+
+Julien a choisi la reconnaissance de nos machines plutôt qu'un débit maximal (un client rapide l'aurait déclenché, et la
+boucle aurait coûté N tours de chaque côté). La garde lit le dernier sortant de l'espace qui écrit vers nous ; un
+message tapé à la main y est `humain` et garde sa réponse, ce qui laisse l'essai de la bulle possible. Le test
+`tests/agent-boucle-nos-machines.test.ts` rejoue la boucle avec le vrai `runTurn` des deux côtés : 20 réponses de
+chaque côté sans la garde, 1 et 0 avec, vérifié dans les deux sens. Une relecture indépendante n'a relevé aucun rouge ;
+trois de ses jaunes ont été pris avant le push (la requête en deux temps pour rester sur les index, les numéros retirés
+ou déliés exclus, un test de l'état laissé par la garde).
+
 ## 2026-10-30 (nuit) : la page développeurs en deux, et ce qu'on construit avec les outils MCP (plugin 0.3.18)
 
 Vitrine et plugin seulement, aucune migration ni déploiement d'API. Julien voulait la doc de l'API, la doc MCP et le

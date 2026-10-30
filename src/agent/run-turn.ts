@@ -76,6 +76,12 @@ export interface RunTurnDeps {
    * Requise : un câblage qui l'oublierait débiterait le crédit du client pour rien.
    */
   numeroBloque(tenantId: string): Promise<boolean>;
+  /**
+   * 🔴 Ce contact est-il le numéro d'un autre espace dont la MACHINE vient d'écrire (`src/agent/nos-machines.pg.ts`) ?
+   * Deux agents de Messaging Me se répondaient en boucle (2026-10-30) : l'agent se tait alors, au rang des plafonds,
+   * sans modèle ni débit. Requise : un câblage qui l'oublierait rouvrirait la boucle.
+   */
+  ecritParNosMachines(tenantId: string, waId: string): Promise<boolean>;
   /** Envoie le texte de l'agent, par la même dépendance que le reste du scénario (DRY_RUN honoré, message
    *  journalisé dans le fil). */
   envoyer(tenantId: string, waId: string, texte: string): Promise<ResultatEnvoi>;
@@ -97,7 +103,7 @@ export interface ReposApresTour {
 
 /** Ce que le tour a fait, pour le journal et les tests. Jamais une exception sur un cas métier. */
 export interface ResultatTour {
-  fait: 'rejeu' | 'run_mort' | 'plafond' | 'main_perdue' | 'desabonne' | 'numero_bloque' | 'repondu' | 'sorti' | 'scenario_lance' | 'erreur';
+  fait: 'rejeu' | 'run_mort' | 'plafond' | 'main_perdue' | 'desabonne' | 'numero_bloque' | 'nos_machines' | 'repondu' | 'sorti' | 'scenario_lance' | 'erreur';
   sortie?: string;
   /**
    * Le repos posé sur le parcours, quand le tour s'est terminé en attente. Pour le journal et les tests
@@ -276,6 +282,18 @@ export async function runTurn(job: AgentTurnJob, deps: RunTurnDeps): Promise<Res
     await poserEcheance(job, repos, maintenant, deps);
     await finirLeTour(job, session.id, deps);
     return { fait: 'numero_bloque', repos };
+  }
+
+  /**
+   * 3quater. Une machine de Messaging Me écrit à une autre (2026-10-30) : l'agent se tait de la même façon, pour que deux
+   * agents ne se répondent pas en boucle sur le crédit de leurs clients. Le prochain message tapé par une personne depuis
+   * ce numéro le relance.
+   */
+  if (await deps.ecritParNosMachines(job.tenantId, job.waId)) {
+    const repos = reposApresReponse(job.nodeId, fiche.inactiviteMinutes);
+    await poserEcheance(job, repos, maintenant, deps);
+    await finirLeTour(job, session.id, deps);
+    return { fait: 'nos_machines', repos };
   }
 
   /**

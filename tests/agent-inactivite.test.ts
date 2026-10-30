@@ -1,4 +1,4 @@
-import { jamaisDesabonne, numeroJamaisBloque } from './consentement';
+import { jamaisDesabonne, jamaisNosMachines, numeroJamaisBloque } from './consentement';
 import { describe, it, expect } from 'vitest';
 import { runTurn, reposApresReponse } from '../src/agent/run-turn';
 import type { RunTurnDeps, EtatRun } from '../src/agent/run-turn';
@@ -43,7 +43,7 @@ function make(fiche: FicheAgent = FICHE, decision?: DecisionAgent, session: Agen
   const deps: RunTurnDeps = {
     estDesabonne: jamaisDesabonne,
     estRepondeur: async () => false,
-    numeroBloque: numeroJamaisBloque,
+    numeroBloque: numeroJamaisBloque, ecritParNosMachines: jamaisNosMachines,
     sessions: {
       prendreLeTour: async () => session,
       clore: async () => {},

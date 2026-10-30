@@ -34,3 +34,9 @@ export const aucunStop = async (): Promise<string | null> => null;
  * sur lui, DITE plutôt qu'omise (la dépendance est requise).
  */
 export const numeroJamaisBloque = async (): Promise<boolean> => false;
+
+/**
+ * Aucun message n'est écrit par une machine d'un autre espace (`src/agent/nos-machines.pg.ts`) : l'hypothèse des suites qui
+ * ne portent pas sur la boucle entre deux agents, DITE plutôt qu'omise (la dépendance est requise).
+ */
+export const jamaisNosMachines = async (): Promise<boolean> => false;
