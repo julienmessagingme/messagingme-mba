@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   ESSAIS_PREUVE, REESSAI_PREUVE_MS, lireParcours, traiterPreuveUtm, type DepsPreuveUtm, type JobPreuve,
 } from '../src/shopify/preuve-utm';
@@ -128,6 +128,45 @@ describe('la relecture de la preuve par UTM', () => {
   it('un job illisible : abandon, sans lever', async () => {
     for (const j of [null, {}, { ...JOB, montant: '12,00' }, { ...JOB, payeeLe: 'hier' }, { ...JOB, contactId: '' }]) {
       expect(await traiterPreuveUtm(monter().deps, j)).toBe('abandon');
+    }
+  });
+});
+
+describe('le journal de la relecture (essai réel du 2026-10-30, plan 2026-10-30 tâche 4)', () => {
+  /** Les lignes `shopify_preuve_utm` qu'un espion a vues passer sur la sortie. */
+  const lignes = (espion: { mock: { calls: unknown[][] } }) => espion.mock.calls
+    .map((c) => JSON.parse(String(c[0])) as Record<string, unknown>)
+    .filter((l) => l.msg === 'shopify_preuve_utm');
+
+  it('🔴 chaque relecture écrit UNE ligne avec son issue et son essai, rien de la personne', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await traiterPreuveUtm(monter().deps, JOB);
+      await traiterPreuveUtm(monter({ parcours: { ok: true, pret: false } }).deps, { ...JOB, essai: 1 });
+      await traiterPreuveUtm(monter({ parcours: { ok: true, pret: true, modele: null } }).deps, JOB);
+      await traiterPreuveUtm(monter({ acces: null }).deps, JOB);
+      const base = { lvl: 'info', msg: 'shopify_preuve_utm', tenantId: T, commandeId: JOB.commandeId };
+      expect(lignes(log)).toEqual([
+        { ...base, essai: 0, issue: 'prouvee' },
+        { ...base, essai: 1, issue: 'reessai' },
+        { ...base, essai: 0, issue: 'sans_preuve' },
+        { ...base, essai: 0, issue: 'abandon' },
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('un job illisible garde sa seule ligne d’avertissement', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(await traiterPreuveUtm(monter().deps, null)).toBe('abandon');
+      expect(lignes(log)).toEqual([]);
+      expect(warn.mock.calls.map((c) => (JSON.parse(String(c[0])) as { msg: string }).msg)).toEqual(['shopify_preuve_job_illisible']);
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
     }
   });
 });

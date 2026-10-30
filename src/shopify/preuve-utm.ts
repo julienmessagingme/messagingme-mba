@@ -116,6 +116,14 @@ export async function traiterPreuveUtm(deps: DepsPreuveUtm, donnees: unknown): P
     return 'abandon';
   }
   const job = lu.data;
+  const issue = await relire(deps, job);
+  // Une ligne par relecture (plan 2026-10-30, tâche 4) : sans elle, savoir pourquoi une vente restait sans preuve a
+  // demandé de rejouer la relecture à la main dans le conteneur (essai réel du 2026-10-30). Rien de la personne.
+  journaliser('info', 'shopify_preuve_utm', { tenantId: job.tenantId, commandeId: job.commandeId, essai: job.essai, issue });
+  return issue;
+}
+
+async function relire(deps: DepsPreuveUtm, job: JobPreuve): Promise<IssuePreuve> {
   const plusTard = async (): Promise<IssuePreuve> => {
     if (job.essai + 1 >= ESSAIS_PREUVE) return 'abandon';
     await deps.programmer({ ...job, essai: job.essai + 1 }, new Date((deps.maintenant ?? Date.now)() + REESSAI_PREUVE_MS));
