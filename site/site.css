@@ -1115,6 +1115,21 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .dev-sans a{color:inherit;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--action-ink)}
 /* La mention « gratuit » sur le titre de la page Développeurs (Julien, 2026-10-19) */
 .dev-gratuit{margin-left:12px;padding:4px 12px;border-radius:999px;background:#17C74E;color:#010630;font-size:.8rem;font-weight:800;letter-spacing:0;text-transform:none}
+/* La porte du code (Julien, 2026-10-30) : sous la séance Claude Code, sur toute la largeur de la une, la doc de l'API, la
+   doc MCP, les deux dépôts et le contrat. Au téléphone, elle passe avant la séance : on y arrive sans la faire défiler. */
+.dev-une{row-gap:36px}
+.dev-portes{grid-column:1/-1;padding-top:24px;border-top:1px solid var(--line)}
+.dev-portes-titre{margin:0 0 16px;color:var(--muted);font-weight:600}
+.dev-portes ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.dev-portes a{display:flex;align-items:center;gap:12px;height:100%;box-sizing:border-box;padding:14px 16px;border-radius:14px;border:1px solid var(--line);background:rgb(255 255 255 / .04);color:var(--ink);text-decoration:none;transition:border-color .2s,background-color .2s,transform .2s}
+.dev-portes a:hover{border-color:var(--action-ink);background:rgb(255 255 255 / .07);transform:translateY(-2px)}
+.dev-porte-ic{flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:10px;background:var(--action-wash);color:var(--action-ink);font-size:1.2rem}
+.dev-portes strong{display:block;font-size:.95rem;line-height:1.3}
+.dev-portes small{display:block;margin-top:2px;color:var(--muted);font-size:.8rem;line-height:1.35}
+@media (max-width:1200px){.dev-portes ul{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:960px){.dev-portes{order:1}.dev-une > figure{order:2}}
+/* Au téléphone, deux colonnes sans sous-titre : la bande ne repousse pas la séance de tout un écran. */
+@media (max-width:640px){.dev-portes ul{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.dev-portes a{padding:12px;gap:10px}.dev-porte-ic{width:32px;height:32px;font-size:1rem}.dev-portes small{display:none}}
 /* Le guide « Votre compte Meta Business, pas à pas » : ses étapes, générées depuis web/lib/partage/etapes-meta.ts */
 .guide-bloc{padding:56px 0}
 .guide-bloc .f-texte{margin-bottom:8px}
@@ -1420,9 +1435,13 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 @media (max-width:1100px){.dev-grille{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:700px){.dev-grille{grid-template-columns:minmax(0,1fr)}}
 
-/* Ce que vous pouvez construire : trois familles, une ligne par capacité, chacune un lien vers sa page (générée par
-   npm run plugin:generer depuis scripts/plugin/construire.ts). */
+/* Ce que vous pouvez construire : quatre familles, une ligne par capacité, chacune un lien vers sa page, ses outils
+   dessous (générée par npm run plugin:generer depuis scripts/plugin/construire.ts). Deux colonnes sur la page
+   développeurs, trois sur la page SaaS, qui reprend la carte. */
 .dev-construire{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:36px}
+.dev-construire-bloc .dev-construire{grid-template-columns:repeat(2,minmax(0,1fr))}
+.dev-construire-bloc .dev-construire li{color:var(--muted);line-height:1.5}
+.dev-construire-bloc .bt-avec{display:block;margin-top:6px;font-size:.85rem}
 .dev-construire > div{position:relative;min-width:0;padding:28px;border-radius:16px;background:var(--surface);border:1px solid var(--line);overflow:hidden;transition:border-color .2s,transform .2s}
 .dev-construire > div:hover{border-color:rgb(255 255 255 / .22);transform:translateY(-3px)}
 .dev-construire h3{margin:0 0 16px;font-size:1.2rem;line-height:1.25;letter-spacing:-.02em;font-weight:800}
@@ -1434,21 +1453,24 @@ h1 > .f-surtitre{display:flex;width:fit-content;line-height:1.6}
 .dev-ic .dev-ic-fond{opacity:.35}
 .dev-ic-cloche{--a:#FFB547;--b:#F2711C}
 .dev-ic-prises{--a:#6FC2FE;--b:#5B5BF0}
+.dev-ic-graphique{--a:#D49BFF;--b:#8B3FE0}
 .dev-construire > div::before{content:"";position:absolute;top:-90px;left:-40px;width:220px;height:180px;border-radius:50%;background:radial-gradient(closest-side,rgb(37 211 102 / .16),transparent);pointer-events:none}
 .dev-construire > div:has(.dev-ic-cloche)::before{background:radial-gradient(closest-side,rgb(255 181 71 / .16),transparent)}
 .dev-construire > div:has(.dev-ic-prises)::before{background:radial-gradient(closest-side,rgb(111 194 254 / .18),transparent)}
+.dev-construire > div:has(.dev-ic-graphique)::before{background:radial-gradient(closest-side,rgb(212 155 255 / .16),transparent)}
 @media (prefers-reduced-motion:no-preference){
   .dev-ic svg{transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
   .dev-construire > div:hover .dev-ic-chats svg{animation:dev-bulles .7s ease}
   .dev-construire > div:hover .dev-ic-cloche svg{transform-origin:50% 12%;animation:dev-sonne .8s ease}
   .dev-construire > div:hover .dev-ic-prises svg{transform:rotate(-12deg) scale(1.1)}
+  .dev-construire > div:hover .dev-ic-graphique svg{transform:translateY(-3px) scale(1.1)}
   @keyframes dev-bulles{0%,100%{transform:none}30%{transform:translateY(-4px) scale(1.08)}60%{transform:translateY(1px)}}
   @keyframes dev-sonne{0%,100%{transform:none}15%{transform:rotate(16deg)}35%{transform:rotate(-14deg)}55%{transform:rotate(9deg)}75%{transform:rotate(-5deg)}}
 }
 .dev-construire ul{list-style:none;margin:0;padding:0;display:grid;gap:14px}
 .dev-construire a{color:var(--muted);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px;line-height:1.5}
 .dev-construire a:hover{color:var(--ink);text-decoration-color:var(--action-ink)}
-@media (max-width:900px){.dev-construire{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:900px){.dev-construire,.dev-construire-bloc .dev-construire{grid-template-columns:minmax(0,1fr)}}
 /* « Et depuis Claude » de la page SaaS : dans chaque colonne, « Avec la Free » puis « Et en plus, avec le Pro », repliés. */
 .hub-offre{border-top:1px solid var(--line)}
 .hub-offre summary{display:flex;align-items:center;gap:10px;padding:14px 0;cursor:pointer;list-style:none;font-weight:700}

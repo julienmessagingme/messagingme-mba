@@ -38,14 +38,17 @@ anglais `/en/developers/`. Pour qui construit avec Claude Code, Cursor ou Lovabl
 une séance Claude Code rejouée (l'agent IA, la lecture du site, la bulle WhatsApp), les trois étapes (installer le
 plugin ; autoriser Claude, ce qui crée l'espace d'une adresse Google inconnue, sans formulaire ; lancer
 `/messagingme:demarrer`, où Meta n'est demandé qu'au moment de relier le numéro), ce que l'on peut construire, en mots de
-métier (répondre à vos clients, leur écrire au bon moment, brancher à votre app : une ligne par usage, qui mène à son cas
-d'usage ou à la documentation, la même liste que le README du plugin sur GitHub), le branchement par le code (API, SDK,
+métier (répondre à vos clients, leur écrire au bon moment, brancher à votre app, piloter depuis Claude : une ligne par
+usage, qui mène à son cas d'usage ou à la documentation, la même liste que le README du plugin sur GitHub ; depuis le
+2026-10-30, sous chaque ligne que Claude fait seul, les outils du serveur MCP qu'il appelle, et l'offre qu'elle demande au-delà de
+Free), le branchement par le code (API, SDK,
 webhooks signés) et ce que permet l'offre gratuite. « Développeurs », dans le menu de toutes les pages, y mène. Le titre porte la
-mention « Gratuit et sans abonnement ». Sous les boutons du haut, trois promesses : aucun compte à créer, un numéro
+mention « Gratuit et sans abonnement ». Sous le bouton du haut, trois promesses : aucun compte à créer, un numéro
 fourni si l'on n'en a pas, seulement un compte Meta Business ou l'application WhatsApp Business à avoir ; la troisième mène au guide « Votre compte Meta
 Business, pas à pas » (`/developpeurs/compte-meta-business/` et sa jumelle anglaise), dont les étapes sont celles que
-donnent la console et Claude, générées depuis `web/lib/partage/etapes-meta.ts`. En haut et en bas de la page, « Installer le plugin » mène aux trois étapes et « Le plugin sur
-GitHub » à son dépôt : depuis le
+donnent la console et Claude, générées depuis `web/lib/partage/etapes-meta.ts`. En haut de la page, « Installer le plugin » mène aux trois étapes ; sous la séance Claude Code, une bande « Plutôt le
+code ? » mène d'un clic à la doc de l'API, à la doc MCP, aux dépôts GitHub du plugin et du SDK et au contrat OpenAPI
+(2026-10-30) ; en bas, « Installer le plugin » et « Le plugin sur GitHub » : depuis le
 2026-10-19, aucune page Développeurs ne renvoie vers l'inscription de la console, et sur la page des tarifs la Free mène
 au plugin (le Pro garde la création d'espace dans la console, qui mène depuis le 2026-10-28 à la souscription du Pro,
 `/signup?offre=pro`, et non au tunnel de la Free). « Créer mon espace », en haut de l'accueil, ouvre

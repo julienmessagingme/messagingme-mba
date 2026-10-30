@@ -17,11 +17,12 @@ import { CATALOGUE_MCP } from '../../web/lib/partage/catalogue-mcp';
 import { pageDoc } from '../../web/lib/doc-api-pages';
 import { ENV_NEXTJS, EXEMPLES_CAS, VERSION_SDK, type ExempleCode } from '../../web/lib/exemples-code';
 import { ENTREES } from '../../web/lib/registre-vitrine';
-import { DROITS, ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES } from '../../src/offres/offres';
+import { DROITS, ESSAI_PRO_JOURS, PRIX_PRO_HT_CENTIMES, type Offre } from '../../src/offres/offres';
 import { PRIX_NUMERO_HT_CENTIMES } from '../../src/stripe/abonnement';
 import { schema } from '../../src/config';
 import { COMMANDES } from './commandes';
-import { CONSTRUIRE, ICONES_FAMILLES, type LienCapacite } from './construire';
+import { NOMS_OFFRES, etiquetteDOffre, offreDeLaCarte } from '../vitrine/offres-outils';
+import { CONSTRUIRE, ICONES_FAMILLES, type Capacite, type LienCapacite } from './construire';
 import { FAMILLES_OUTILS } from './familles-outils';
 import { FAQ } from './faq';
 
@@ -182,7 +183,21 @@ export function hrefCapacite(lien: LienCapacite, langue: Langue): string {
 
 const DEBUT_CONSTRUIRE = '<!-- construire:debut, généré par npm run plugin:generer depuis scripts/plugin/construire.ts : ne pas modifier à la main -->';
 
+/** L'offre d'une capacité qui cite ses outils, au-delà de Free : la page se dit gratuite, seul l'écart se signale. */
+function offreAuDela(c: Capacite): Offre | null {
+  if (!c.outils?.length) return null;
+  const offre = offreDeLaCarte({ outils: c.outils });
+  return offre === 'base' ? null : offre;
+}
+
 export function blocConstruireVitrine(langue: Langue): string {
+  const ligne = (c: Capacite): string => {
+    const offre = offreAuDela(c);
+    const avec = c.outils?.length
+      ? `<span class="bt-avec">${langue === 'fr' ? 'Avec' : 'With'} ${c.outils.map((o) => `<code>${o}</code>`).join(', ')}</span>`
+      : '';
+    return `      <li><a href="${hrefCapacite(c.lien, langue)}">${echapper(c.texte[langue])}</a>${offre ? ` ${etiquetteDOffre(offre, langue)}` : ''}${avec}</li>`;
+  };
   return [
     '<div class="dev-construire">',
     ...CONSTRUIRE.flatMap((f) => [
@@ -190,7 +205,7 @@ export function blocConstruireVitrine(langue: Langue): string {
       `    <span class="dev-ic dev-ic-${f.icone}" aria-hidden="true"><svg viewBox="0 0 256 256"><path class="dev-ic-fond" d="${ICONES_FAMILLES[f.icone].fond}"/><path d="${ICONES_FAMILLES[f.icone].trait}"/></svg></span>`,
       `    <h3>${echapper(f.titre[langue])}</h3>`,
       '    <ul>',
-      ...f.capacites.map((c) => `      <li><a href="${hrefCapacite(c.lien, langue)}">${echapper(c.texte[langue])}</a></li>`),
+      ...f.capacites.map(ligne),
       '    </ul>',
       '  </div>',
     ]),
@@ -211,7 +226,12 @@ export function readmeAJour(md: string): string {
   const absolue = (href: string) => (href.startsWith('/') ? VITRINE + href : href);
   const construire = CONSTRUIRE.flatMap((f) => [
     `### ${f.titre.en}`, '',
-    ...f.capacites.map((c) => `- [${c.texte.en}](${absolue(hrefCapacite(c.lien, 'en'))})`), '',
+    ...f.capacites.map((c) => {
+      const offre = offreAuDela(c);
+      const outils = (c.outils ?? []).map((o) => `\`${o}\``).join(', ');
+      const suite = [outils, ...(offre ? [`${NOMS_OFFRES.en[offre]} plan`] : [])].filter(Boolean).join('; ');
+      return `- [${c.texte.en}](${absolue(hrefCapacite(c.lien, 'en'))})${suite ? ` (${suite})` : ''}`;
+    }), '',
   ]).join('\n').trimEnd();
   const base = DROITS.base.limites;
   const pro = DROITS.pro.limites;

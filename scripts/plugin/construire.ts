@@ -2,12 +2,18 @@
  * « CE QUE VOUS POUVEZ CONSTRUIRE », EN MOTS DE MÉTIER, ÉCRIT UNE SEULE FOIS (Julien, 2026-10-21 : la page développeurs
  * et le README du plugin disaient comment brancher, jamais ce qu'on en fait). `npm run plugin:generer` le publie dans
  * les deux pages développeurs de la vitrine, entre leurs marques, et dans `plugin/README.md` ; `tests/plugin-readme.test.ts`
- * exige les copies identiques, chaque cas en ligne du registre cité, et chaque lien vers une page qui existe.
+ * exige les copies identiques, chaque cas en ligne du registre cité, chaque lien vers une page qui existe, et chaque
+ * famille d'outils du serveur MCP citée par au moins une ligne.
  *
  * Une ligne par capacité, qui mène à sa page : le cas d'usage du registre (son adresse suit le registre), une page de
- * la vitrine, ou une page de la documentation de la console (`PAGES_DOC`).
+ * la vitrine, ou une page de la documentation de la console (`PAGES_DOC`). Une ligne que Claude fait seul cite ses
+ * outils (Julien, 2026-10-30 : la section ne montrait rien des outils ajoutés depuis) ; son offre s'en DÉRIVE
+ * (`scripts/vitrine/offres-outils.ts`), jamais écrite à la main. Une ligne que seul le code de votre app réalise (l'API,
+ * le SDK, un webhook reçu) n'en cite aucun. ⚠️ L'offre dérivée lit la `fonction` de l'outil, pas ce qu'il rend selon
+ * l'offre : `get_message_stats` est ouvert en Free mais n'y donne ni coût ni détail, donc sa ligne n'en promet pas.
  */
 import type { CleDePage } from '../../web/lib/doc-api-pages';
+import type { NomOutilMcp } from '../../web/lib/partage/catalogue-mcp';
 
 type Bilingue = { readonly fr: string; readonly en: string };
 
@@ -19,10 +25,11 @@ export type LienCapacite =
 export interface Capacite {
   readonly texte: Bilingue;
   readonly lien: LienCapacite;
+  readonly outils?: readonly NomOutilMcp[];
 }
 
 /** L'icône d'une famille, sur la vitrine seulement (le README n'en porte pas). */
-export type IconeFamille = 'chats' | 'cloche' | 'prises';
+export type IconeFamille = 'chats' | 'cloche' | 'prises' | 'graphique';
 
 export interface FamilleCapacites {
   readonly titre: Bilingue;
@@ -31,7 +38,7 @@ export interface FamilleCapacites {
 }
 
 /**
- * Les trois icônes (Phosphor, graisse duotone, viewBox 256) : `fond` est la forme pleine à 20 %, `trait` le dessin.
+ * Les icônes (Phosphor, graisse duotone, viewBox 256) : `fond` est la forme pleine à 20 %, `trait` le dessin.
  * Recopiées ici une fois, pour que le bloc généré ne dépende ni d'un paquet ni du jeu d'icônes de la page.
  */
 export const ICONES_FAMILLES: Readonly<Record<IconeFamille, { readonly fond: string; readonly trait: string }>> = {
@@ -47,6 +54,10 @@ export const ICONES_FAMILLES: Readonly<Record<IconeFamille, { readonly fond: str
     fond: 'M185,127,127,185a24,24,0,0,1-33.94,0L71,162.91A24,24,0,0,1,71,129L129,71a24,24,0,0,1,33.94,0L185,93.09A24,24,0,0,1,185,127Z',
     trait: 'M237.66,18.34a8,8,0,0,0-11.32,0l-52.4,52.41-5.37-5.38a32.05,32.05,0,0,0-45.26,0L100,88.69l-6.34-6.35A8,8,0,0,0,82.34,93.66L88.69,100,65.37,123.31a32,32,0,0,0,0,45.26l5.38,5.37-52.41,52.4a8,8,0,0,0,11.32,11.32l52.4-52.41,5.37,5.38a32.06,32.06,0,0,0,45.26,0L156,167.31l6.34,6.35a8,8,0,0,0,11.32-11.32L167.31,156l23.32-23.31a32,32,0,0,0,0-45.26l-5.38-5.37,52.41-52.4A8,8,0,0,0,237.66,18.34Zm-116.29,161a16,16,0,0,1-22.62,0L76.69,157.25a16,16,0,0,1,0-22.62L100,111.31,144.69,156Zm57.94-57.94h0L156,144.69,111.31,100l23.32-23.31a16,16,0,0,1,22.62,0l22.06,22a16,16,0,0,1,0,22.63ZM88.57,35A8,8,0,0,1,103.43,29l8,20A8,8,0,0,1,96.57,55ZM24.57,93A8,8,0,0,1,35,88.57l20,8A8,8,0,0,1,49,111.43l-20-8A8,8,0,0,1,24.57,93ZM231.43,163a8,8,0,0,1-10.4,4.46l-20-8A8,8,0,1,1,207,144.57l20,8A8,8,0,0,1,231.43,163Zm-64,58.06A8,8,0,0,1,152.57,227l-8-20A8,8,0,0,1,159.43,201Z',
   },
+  graphique: {
+    fond: 'M224,64V208H32V48H208A16,16,0,0,1,224,64Z',
+    trait: 'M232,208a8,8,0,0,1-8,8H32a8,8,0,0,1-8-8V48a8,8,0,0,1,16,0V156.69l50.34-50.35a8,8,0,0,1,11.32,0L128,132.69,180.69,80H160a8,8,0,0,1,0-16h40a8,8,0,0,1,8,8v40a8,8,0,0,1-16,0V91.31l-58.34,58.35a8,8,0,0,1-11.32,0L96,123.31l-56,56V200H224A8,8,0,0,1,232,208Z',
+  },
 };
 
 export const CONSTRUIRE: readonly FamilleCapacites[] = [
@@ -60,6 +71,7 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           en: 'An AI agent that answers day and night from your site or your docs, and hands over to your team when needed.',
         },
         lien: { cas: 'support' },
+        outils: ['create_agent', 'import_site', 'import_document_text', 'activate_agent'],
       },
       {
         texte: {
@@ -67,6 +79,7 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           en: 'The WhatsApp bubble on your site, Lovable included: the visitor writes, the agent answers.',
         },
         lien: { cas: 'bulle-lovable' },
+        outils: ['create_widget'],
       },
       {
         texte: {
@@ -74,13 +87,39 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           en: 'Appointment booking in the conversation: the agent notes the reason, your app offers the slots.',
         },
         lien: { cas: 'rendez-vous' },
+        outils: ['set_agent_action'],
       },
       {
         texte: {
-          fr: 'Vos conversations lues et répondues depuis Claude, dans la fenêtre de 24 heures ou par un modèle.',
-          en: 'Your conversations read and answered from Claude, within the 24-hour window or with a template.',
+          fr: 'Vos heures d’ouverture, et ce que l’agent promet quand il passe la main à votre équipe.',
+          en: 'Your opening hours, and what the agent promises when it hands over to your team.',
+        },
+        lien: { doc: 'mcp' },
+        outils: ['set_business_hours', 'set_transfer_mode'],
+      },
+      {
+        texte: {
+          fr: 'L’agent essayé sur une conversation fictive avant vos clients, et ses limites par conversation : réponses, actions, crédit.',
+          en: 'The agent tried on a mock conversation before your customers, and its limits per conversation: answers, actions, credit.',
+        },
+        lien: { doc: 'mcp' },
+        outils: ['test_agent', 'set_agent_limits'],
+      },
+      {
+        texte: {
+          fr: 'Vos conversations lues et répondues depuis Claude, dans la fenêtre de 24 heures ou par un modèle, puis la main rendue au répondeur automatique.',
+          en: 'Your conversations read and answered from Claude, within the 24-hour window or with a template, then handed back to the automatic responder.',
         },
         lien: { page: { fr: '/developpeurs/repondre-a-une-conversation/', en: '/en/developers/reply-to-a-conversation/' } },
+        outils: ['get_conversation', 'reply_in_open_window', 'control_conversation'],
+      },
+      {
+        texte: {
+          fr: 'Votre équipe dans l’Inbox de la console : Claude lui confie et étiquette les conversations.',
+          en: 'Your team in the console Inbox: Claude assigns and tags conversations for it.',
+        },
+        lien: { doc: 'mcp' },
+        outils: ['assign_conversation', 'tag_conversation'],
       },
     ],
   },
@@ -97,10 +136,11 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
       },
       {
         texte: {
-          fr: 'Votre boutique Shopify branchée par Claude : confirmation de commande, avis d’expédition, relance de panier.',
-          en: 'Your Shopify store connected by Claude: order confirmation, shipping notice, checkout reminder.',
+          fr: 'Votre boutique Shopify branchée par Claude : confirmation de commande, avis d’expédition, relance de panier, et vos clients abonnés importés.',
+          en: 'Your Shopify store connected by Claude: order confirmation, shipping notice, checkout reminder, and your subscribed customers imported.',
         },
         lien: { page: { fr: '/solutions/shopify/', en: '/en/solutions/shopify-stores/' } },
+        outils: ['connect_shopify', 'set_shopify_message', 'import_shopify_customers'],
       },
       {
         texte: {
@@ -125,10 +165,11 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
       },
       {
         texte: {
-          fr: 'Une campagne vers vos contacts, préparée par Claude et lancée avec votre oui (offre Pro).',
-          en: 'A campaign to your contacts, prepared by Claude and launched with your yes (Pro plan).',
+          fr: 'Une campagne vers vos contacts, préparée par Claude et lancée avec votre oui.',
+          en: 'A campaign to your contacts, prepared by Claude and launched with your yes.',
         },
         lien: { page: { fr: '/developpeurs/preparer-une-campagne/', en: '/en/developers/prepare-a-campaign/' } },
+        outils: ['find_contacts', 'prepare_campaign', 'launch_campaign'],
       },
       {
         texte: {
@@ -136,6 +177,7 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           en: 'Your templates written by Claude and submitted to Meta, and the reason for a rejection.',
         },
         lien: { doc: 'templates' },
+        outils: ['create_template', 'get_template_status'],
       },
     ],
   },
@@ -156,6 +198,23 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           en: 'Your webhooks created, tested and replayed from Claude.',
         },
         lien: { doc: 'webhook-endpoints' },
+        outils: ['create_webhook_endpoint', 'send_test_event', 'replay_webhook_delivery'],
+      },
+      {
+        texte: {
+          fr: 'Votre agent IA qui déclenche votre code quand un client demande une démo, une résiliation ou un rappel.',
+          en: 'Your AI agent triggering your code when a customer asks for a demo, a cancellation or a callback.',
+        },
+        lien: { doc: 'webhooks' },
+        outils: ['set_agent_action'],
+      },
+      {
+        texte: {
+          fr: 'La clé d’API de votre application, créée par Claude et rangée dans votre .env.',
+          en: 'Your application’s API key, created by Claude and put in your .env.',
+        },
+        lien: { doc: 'reference' },
+        outils: ['create_api_key'],
       },
       {
         texte: {
@@ -166,10 +225,65 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
       },
       {
         texte: {
-          fr: 'Vos contacts et leur consentement, tenus à jour depuis votre app.',
-          en: 'Your contacts and their consent, kept up to date from your app.',
+          fr: 'Vos contacts et leur consentement tenus à jour depuis votre app, et les champs de vos fiches créés par Claude.',
+          en: 'Your contacts and their consent kept up to date from your app, and your record fields created by Claude.',
         },
         lien: { doc: 'contacts' },
+        outils: ['create_field'],
+      },
+    ],
+  },
+  {
+    titre: { fr: 'Piloter depuis Claude', en: 'Run it from Claude' },
+    icone: 'graphique',
+    capacites: [
+      {
+        texte: {
+          fr: 'Vos modèles envoyés, livrés, lus ou en échec : il suffit de demander à Claude.',
+          en: 'Your templates sent, delivered, read or failed: just ask Claude.',
+        },
+        lien: { doc: 'mcp' },
+        outils: ['get_message_stats'],
+      },
+      {
+        texte: {
+          fr: 'Le coût estimé et les clics de vos campagnes, et les erreurs de Meta.',
+          en: 'The estimated cost and clicks of your campaigns, and Meta’s errors.',
+        },
+        lien: { page: { fr: '/fonctionnalites/pilotage-des-couts/', en: '/en/features/cost-control/' } },
+        outils: ['get_campaign_stats'],
+      },
+      {
+        texte: {
+          fr: 'Le coût de votre agent IA, ses messages et les demandes ouvertes pour votre équipe.',
+          en: 'Your AI agent’s cost, its messages and the requests opened for your team.',
+        },
+        lien: { doc: 'mcp' },
+        outils: ['get_ai_stats'],
+      },
+      {
+        texte: {
+          fr: 'Ce que disent vos conversations : sentiment, intentions, sujets, urgence.',
+          en: 'What your conversations say: sentiment, intents, topics, urgency.',
+        },
+        lien: { page: { fr: '/fonctionnalites/conversations-en-actions/', en: '/en/features/conversations-into-actions/' } },
+        outils: ['get_conversation_insights'],
+      },
+      {
+        texte: {
+          fr: 'Vos contacts en trop supprimés en masse avec votre accord, et un contact bloqué d’une phrase.',
+          en: 'Your surplus contacts deleted in bulk with your agreement, and a contact blocked in one sentence.',
+        },
+        lien: { doc: 'mcp' },
+        outils: ['prepare_contacts_deletion', 'delete_contacts', 'block_contact'],
+      },
+      {
+        texte: {
+          fr: 'La formule Pro, le crédit IA et l’abonnement du numéro fourni, réglés depuis Claude.',
+          en: 'The Pro plan, AI credit and the provided number’s subscription, handled from Claude.',
+        },
+        lien: { page: { fr: '/tarifs/', en: '/en/pricing/' } },
+        outils: ['get_plan', 'buy_credit', 'subscribe_pro', 'manage_number_subscription'],
       },
     ],
   },

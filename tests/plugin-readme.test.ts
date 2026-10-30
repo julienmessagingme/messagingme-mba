@@ -38,6 +38,13 @@ describe('la source', () => {
     }
   });
 
+  it('chaque famille d’outils du serveur MCP a au moins une ligne qui en cite un (Julien, 2026-10-30)', () => {
+    // La section avait vieilli en silence : ni l'agent qui déclenche votre code, ni les heures d'ouverture, ni les
+    // chiffres n'y étaient. Une famille d'outils ajoutée sans ligne rend désormais la CI rouge.
+    const cites = new Set(CONSTRUIRE.flatMap((f) => f.capacites.flatMap((c) => c.outils ?? [])));
+    for (const f of FAMILLES_OUTILS) expect(f.outils.some((o) => cites.has(o)), f.titre).toBe(true);
+  });
+
   it('chaque outil du catalogue est rangé dans une famille, et une seule', () => {
     const ranges = FAMILLES_OUTILS.flatMap((f) => f.outils);
     expect(ranges.length).toBe(new Set(ranges).size);

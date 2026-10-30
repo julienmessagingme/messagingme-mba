@@ -228,7 +228,6 @@
       <p class="chapeau">Votre numéro WhatsApp, un agent IA qui répond à vos clients et une bulle sur votre site&nbsp;: Claude Code branche tout depuis votre terminal.</p>
       <div class="appels">
         <a class="bouton bouton-plein" href="#demarrer">Installer le plugin</a>
-        <a class="bouton bouton-texte" href="https://github.com/julienmessagingme/messagingme-plugin"><svg class="ic" aria-hidden="true"><use href="#i-github"/></svg>Le plugin sur GitHub</a>
       </div>
       <ul class="dev-sans">
         <li><strong>Aucun compte à créer</strong></li>
@@ -263,6 +262,18 @@
         <div class="cc-bas"><span class="l cc-spin">✻ Cogitating… <span class="cc-g">(esc to interrupt)</span></span><span class="cc-trait"></span><span class="l">&gt; <span class="cc-curseur"></span></span><span class="cc-trait"></span><span class="l"><span class="cc-mode">  ⏵⏵ accept edits on</span> <span class="cc-g">(shift+tab to cycle)</span></span></div>
       </div>
     </figure>
+    <!-- La porte du code (Julien, 2026-10-30) : sous la séance Claude Code, la doc de l'API, la doc MCP, les deux dépôts
+         et le contrat, d'un clic, sur le premier écran. -->
+    <nav class="dev-portes" aria-label="Documentation et dépôts">
+      <p class="dev-portes-titre">Plutôt le code&nbsp;? La doc et les dépôts, sans compte.</p>
+      <ul>
+        <li><a href="https://console.messagingme.app/developers/api"><span class="dev-porte-ic" aria-hidden="true"><svg class="ic"><use href="#i-file-text"/></svg></span><span><strong>Doc de l’API</strong><small>Démarrage, référence, webhooks, erreurs</small></span></a></li>
+        <li><a href="https://console.messagingme.app/developers/mcp"><span class="dev-porte-ic" aria-hidden="true"><svg class="ic"><use href="#i-chat-circle-dots"/></svg></span><span><strong>Doc MCP</strong><small>Les outils, l’adresse, l’autorisation</small></span></a></li>
+        <li><a href="https://github.com/julienmessagingme/messagingme-plugin"><span class="dev-porte-ic" aria-hidden="true"><svg class="ic"><use href="#i-github"/></svg></span><span><strong>Plugin Claude Code</strong><small>Son dépôt public sur GitHub</small></span></a></li>
+        <li><a href="https://github.com/julienmessagingme/messagingme-sdk"><span class="dev-porte-ic" aria-hidden="true"><svg class="ic"><use href="#i-github"/></svg></span><span><strong>SDK TypeScript</strong><small>Son dépôt public sur GitHub</small></span></a></li>
+        <li><a href="https://api.messagingme.app/openapi.json"><span class="dev-porte-ic" aria-hidden="true"><svg class="ic"><use href="#i-code"/></svg></span><span><strong>Contrat OpenAPI</strong><small>Pour générer votre propre client</small></span></a></li>
+      </ul>
+    </nav>
   </section>
 
   <section class="f-bloc dev-etapes bande-claire" id="demarrer">
@@ -301,17 +312,20 @@
   <section class="f-bloc dev-construire-bloc" id="construire">
     <div class="cadre">
       <h2 class="f-titre">Ce que vous pouvez construire.</h2>
-      <p class="f-texte">Chaque ligne mène à sa page&nbsp;: le cas d’usage avec son film et son code, ou la documentation.</p>
+      <p class="f-texte">Chaque ligne mène à sa page&nbsp;: le cas d’usage avec son film et son code, ou la documentation. Sous chaque ligne que Claude fait seul, les outils qu’il appelle pour vous.</p>
       <!-- construire:debut, généré par npm run plugin:generer depuis scripts/plugin/construire.ts : ne pas modifier à la main -->
 <div class="dev-construire">
   <div>
     <span class="dev-ic dev-ic-chats" aria-hidden="true"><svg viewBox="0 0 256 256"><path class="dev-ic-fond" d="M231.66,213.73a8,8,0,0,1-9.93,9.93L194,215.5A72.05,72.05,0,0,1,92.06,175.89h0c1.31.07,2.62.11,3.94.11a72,72,0,0,0,67.93-95.88h0A72,72,0,0,1,223.5,186Z"/><path d="M232.07,186.76a80,80,0,0,0-62.5-114.17A80,80,0,1,0,23.93,138.76l-7.27,24.71a16,16,0,0,0,19.87,19.87l24.71-7.27a80.39,80.39,0,0,0,25.18,7.35,80,80,0,0,0,108.34,40.65l24.71,7.27a16,16,0,0,0,19.87-19.86ZM62,159.5a8.28,8.28,0,0,0-2.26.32L32,168l8.17-27.76a8,8,0,0,0-.63-6,64,64,0,1,1,26.26,26.26A8,8,0,0,0,62,159.5Zm153.79,28.73L224,216l-27.76-8.17a8,8,0,0,0-6,.63,64.05,64.05,0,0,1-85.87-24.88A79.93,79.93,0,0,0,174.7,89.71a64,64,0,0,1,41.75,92.48A8,8,0,0,0,215.82,188.23Z"/></svg></span>
     <h3>Répondre à vos clients</h3>
     <ul>
-      <li><a href="/cas-d-usage/support-ia-relais-humain/">Un agent IA qui répond jour et nuit avec votre site ou votre documentation, et passe la main à votre équipe quand il faut.</a></li>
-      <li><a href="/cas-d-usage/bulle-whatsapp-site-lovable/">La bulle WhatsApp sur votre site, Lovable compris : le visiteur écrit, l’agent répond.</a></li>
-      <li><a href="/cas-d-usage/prise-de-rendez-vous/">La prise de rendez-vous dans la conversation : l’agent note le motif, votre app propose les créneaux.</a></li>
-      <li><a href="/developpeurs/repondre-a-une-conversation/">Vos conversations lues et répondues depuis Claude, dans la fenêtre de 24 heures ou par un modèle.</a></li>
+      <li><a href="/cas-d-usage/support-ia-relais-humain/">Un agent IA qui répond jour et nuit avec votre site ou votre documentation, et passe la main à votre équipe quand il faut.</a><span class="bt-avec">Avec <code>create_agent</code>, <code>import_site</code>, <code>import_document_text</code>, <code>activate_agent</code></span></li>
+      <li><a href="/cas-d-usage/bulle-whatsapp-site-lovable/">La bulle WhatsApp sur votre site, Lovable compris : le visiteur écrit, l’agent répond.</a><span class="bt-avec">Avec <code>create_widget</code></span></li>
+      <li><a href="/cas-d-usage/prise-de-rendez-vous/">La prise de rendez-vous dans la conversation : l’agent note le motif, votre app propose les créneaux.</a><span class="bt-avec">Avec <code>set_agent_action</code></span></li>
+      <li><a href="https://console.messagingme.app/developers/mcp">Vos heures d’ouverture, et ce que l’agent promet quand il passe la main à votre équipe.</a><span class="bt-avec">Avec <code>set_business_hours</code>, <code>set_transfer_mode</code></span></li>
+      <li><a href="https://console.messagingme.app/developers/mcp">L’agent essayé sur une conversation fictive avant vos clients, et ses limites par conversation : réponses, actions, crédit.</a><span class="bt-avec">Avec <code>test_agent</code>, <code>set_agent_limits</code></span></li>
+      <li><a href="/developpeurs/repondre-a-une-conversation/">Vos conversations lues et répondues depuis Claude, dans la fenêtre de 24 heures ou par un modèle, puis la main rendue au répondeur automatique.</a><span class="bt-avec">Avec <code>get_conversation</code>, <code>reply_in_open_window</code>, <code>control_conversation</code></span></li>
+      <li><a href="https://console.messagingme.app/developers/mcp">Votre équipe dans l’Inbox de la console : Claude lui confie et étiquette les conversations.</a> <span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-avec">Avec <code>assign_conversation</code>, <code>tag_conversation</code></span></li>
     </ul>
   </div>
   <div>
@@ -319,12 +333,12 @@
     <h3>Leur écrire au bon moment</h3>
     <ul>
       <li><a href="/cas-d-usage/notifications-de-commande/">Le suivi de commande quand elle part, et l’agent IA si le client répond.</a></li>
-      <li><a href="/solutions/shopify/">Votre boutique Shopify branchée par Claude : confirmation de commande, avis d’expédition, relance de panier.</a></li>
+      <li><a href="/solutions/shopify/">Votre boutique Shopify branchée par Claude : confirmation de commande, avis d’expédition, relance de panier, et vos clients abonnés importés.</a><span class="bt-avec">Avec <code>connect_shopify</code>, <code>set_shopify_message</code>, <code>import_shopify_customers</code></span></li>
       <li><a href="/cas-d-usage/rappels-rendez-vous/">Le rappel la veille du rendez-vous : le client confirme ou décale d’un bouton.</a></li>
       <li><a href="/cas-d-usage/accueil-activation-saas/">Le message de bienvenue à l’inscription, avec un bouton vers le premier usage de votre produit.</a></li>
       <li><a href="/cas-d-usage/relance-paiement-echoue/">La relance d’un paiement échoué, avec le lien pour mettre à jour la carte.</a></li>
-      <li><a href="/developpeurs/preparer-une-campagne/">Une campagne vers vos contacts, préparée par Claude et lancée avec votre oui (offre Pro).</a></li>
-      <li><a href="https://console.messagingme.app/developers/api/templates">Vos modèles écrits par Claude et soumis à Meta, et le motif d’un refus.</a></li>
+      <li><a href="/developpeurs/preparer-une-campagne/">Une campagne vers vos contacts, préparée par Claude et lancée avec votre oui.</a> <span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-avec">Avec <code>find_contacts</code>, <code>prepare_campaign</code>, <code>launch_campaign</code></span></li>
+      <li><a href="https://console.messagingme.app/developers/api/templates">Vos modèles écrits par Claude et soumis à Meta, et le motif d’un refus.</a><span class="bt-avec">Avec <code>create_template</code>, <code>get_template_status</code></span></li>
     </ul>
   </div>
   <div>
@@ -332,13 +346,28 @@
     <h3>Brancher à votre app</h3>
     <ul>
       <li><a href="https://console.messagingme.app/developers/api/webhooks">Chaque message reçu, livré, lu ou en échec, poussé vers votre app par un webhook signé.</a></li>
-      <li><a href="https://console.messagingme.app/developers/api/webhook-endpoints">Vos webhooks créés, testés et rejoués depuis Claude.</a></li>
+      <li><a href="https://console.messagingme.app/developers/api/webhook-endpoints">Vos webhooks créés, testés et rejoués depuis Claude.</a><span class="bt-avec">Avec <code>create_webhook_endpoint</code>, <code>send_test_event</code>, <code>replay_webhook_delivery</code></span></li>
+      <li><a href="https://console.messagingme.app/developers/api/webhooks">Votre agent IA qui déclenche votre code quand un client demande une démo, une résiliation ou un rappel.</a><span class="bt-avec">Avec <code>set_agent_action</code></span></li>
+      <li><a href="https://console.messagingme.app/developers/api/reference">La clé d’API de votre application, créée par Claude et rangée dans votre .env.</a><span class="bt-avec">Avec <code>create_api_key</code></span></li>
       <li><a href="https://console.messagingme.app/developers/api/sdk">Vos envois par l’API ou le SDK TypeScript, rejouables sans doublon grâce à la clé d’idempotence.</a></li>
-      <li><a href="https://console.messagingme.app/developers/api/contacts">Vos contacts et leur consentement, tenus à jour depuis votre app.</a></li>
+      <li><a href="https://console.messagingme.app/developers/api/contacts">Vos contacts et leur consentement tenus à jour depuis votre app, et les champs de vos fiches créés par Claude.</a><span class="bt-avec">Avec <code>create_field</code></span></li>
+    </ul>
+  </div>
+  <div>
+    <span class="dev-ic dev-ic-graphique" aria-hidden="true"><svg viewBox="0 0 256 256"><path class="dev-ic-fond" d="M224,64V208H32V48H208A16,16,0,0,1,224,64Z"/><path d="M232,208a8,8,0,0,1-8,8H32a8,8,0,0,1-8-8V48a8,8,0,0,1,16,0V156.69l50.34-50.35a8,8,0,0,1,11.32,0L128,132.69,180.69,80H160a8,8,0,0,1,0-16h40a8,8,0,0,1,8,8v40a8,8,0,0,1-16,0V91.31l-58.34,58.35a8,8,0,0,1-11.32,0L96,123.31l-56,56V200H224A8,8,0,0,1,232,208Z"/></svg></span>
+    <h3>Piloter depuis Claude</h3>
+    <ul>
+      <li><a href="https://console.messagingme.app/developers/mcp">Vos modèles envoyés, livrés, lus ou en échec : il suffit de demander à Claude.</a><span class="bt-avec">Avec <code>get_message_stats</code></span></li>
+      <li><a href="/fonctionnalites/pilotage-des-couts/">Le coût estimé et les clics de vos campagnes, et les erreurs de Meta.</a> <span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-avec">Avec <code>get_campaign_stats</code></span></li>
+      <li><a href="https://console.messagingme.app/developers/mcp">Le coût de votre agent IA, ses messages et les demandes ouvertes pour votre équipe.</a> <span class="bt-offre" data-etiquette="pro">Offre Pro</span><span class="bt-avec">Avec <code>get_ai_stats</code></span></li>
+      <li><a href="/fonctionnalites/conversations-en-actions/">Ce que disent vos conversations : sentiment, intentions, sujets, urgence.</a> <span class="bt-offre" data-etiquette="entreprise">Offre Entreprise</span><span class="bt-avec">Avec <code>get_conversation_insights</code></span></li>
+      <li><a href="https://console.messagingme.app/developers/mcp">Vos contacts en trop supprimés en masse avec votre accord, et un contact bloqué d’une phrase.</a><span class="bt-avec">Avec <code>prepare_contacts_deletion</code>, <code>delete_contacts</code>, <code>block_contact</code></span></li>
+      <li><a href="/tarifs/">La formule Pro, le crédit IA et l’abonnement du numéro fourni, réglés depuis Claude.</a><span class="bt-avec">Avec <code>get_plan</code>, <code>buy_credit</code>, <code>subscribe_pro</code>, <code>manage_number_subscription</code></span></li>
     </ul>
   </div>
 </div>
 <!-- construire:fin -->
+      <p class="cas-voisins"><a href="https://console.messagingme.app/developers/mcp">Tous les outils du serveur MCP</a></p>
     </div>
   </section>
 
