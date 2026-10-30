@@ -1015,7 +1015,8 @@ describe('les champs de fiche de l’action transaction, par le vrai cycle d’e
     expect(cap.champsFiche).toEqual([{ tx: TX_FACTICE, tenant: 't1', contactId: C1, champs: CHAMPS }]);
   });
 
-  it('🔴 un rejeu (même corps) ou une autre transaction du même contact dans les 24 h : rien n’est réécrit', async () => {
+  it('🔴 un corps rejoué (une autre transaction au même corps, 24 h) : `envoye` rejoué, rien n’est réécrit', async () => {
+    // Le `deja_envoye` de l'historique vient alors du connecteur (le `sendId` déjà rendu à une autre exécution).
     const { sends, cap } = app();
     await envoyerPourWorkflow(branche(sends), lancement(), libre);
     const autre: ChampsFiche = { poser: { hubspot_conseiller: 'Cédric Weiss' }, retirer: [] };
@@ -1023,6 +1024,14 @@ describe('les champs de fiche de l’action transaction, par le vrai cycle d’e
     expect(rejeu.issue).toBe('envoye');
     expect(cap.champsFiche).toHaveLength(1);
     expect(cap.champsFiche[0]?.champs).toEqual(CHAMPS);
+  });
+
+  it('🔴 une autre transaction au corps différent dans les 24 h (le prénom a changé) : `deja_envoye`, rien n’est réécrit', async () => {
+    const { sends, cap } = app({}, { modele: { statut: 'approuve', categorie: 'utility', variables: 1 } });
+    expect((await envoyerPourWorkflow(branche(sends), lancement({ valeurs: ['Claire'] }), libre)).issue).toBe('envoye');
+    const autre: ChampsFiche = { poser: { hubspot_conseiller: 'Cédric Weiss' }, retirer: [] };
+    expect(await envoyerPourWorkflow(branche(sends), lancement({ valeurs: ['Clara'], champsFiche: autre }), libre)).toEqual({ issue: 'deja_envoye' });
+    expect(cap.champsFiche.map((e) => e.champs)).toEqual([CHAMPS]);
   });
 
   it('🔴 un destinataire écarté (STOP) : aucune campagne, aucun champ écrit', async () => {

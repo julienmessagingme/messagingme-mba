@@ -63,10 +63,14 @@ Depuis une **transaction**, l'action « Lancer un scénario Messaging Me (transa
 quand votre workflow HubSpot de transactions le décide (par exemple au passage à une étape). Elle écrit au seul contact
 associé à la transaction : avec plusieurs contacts associés, rien ne part. Elle pose sur sa fiche Messaging Me trois
 champs, déclarés quand vous allumez la ligne : **Prénom (HubSpot)**, **Conseiller (HubSpot)** (le propriétaire de la
-transaction) et **Lien d'agenda (HubSpot)** (sa page de réservation, si vous avez autorisé leur lecture). Les variables
+transaction) et **Lien d'agenda (HubSpot)** (sa page de réservation, quand Messaging Me peut la lire). Les variables
 de son modèle d'ouverture viennent des sources posées sur le modèle (par exemple « {{1}} » = Prénom (HubSpot)), et les
-messages du scénario peuvent écrire « {{hubspot_conseiller}} » ou « {{hubspot_lien_agenda}} ». Ne branchez pas en plus
-une automatisation de la console sur la même étape : le contact recevrait deux scénarios.
+messages du scénario peuvent écrire « {{hubspot_conseiller}} » ou « {{hubspot_lien_agenda}} ». Dans le modèle
+d'ouverture, ne posez que ce qui est toujours rempli, comme le prénom : une variable vide arrête l'envoi. Le conseiller
+et son lien vont dans les messages qui suivent, et ces trois champs ne servent qu'aux scénarios lancés par cette action.
+Placez l'action juste après le déclencheur, et activez la réinscription pour qu'une proposition révisée reparte (elle
+est refusée dans les 24 heures). Ne branchez pas en plus une automatisation de la console sur la même étape : le contact
+recevrait deux scénarios.
 
 Sans portail relié, l'Accueil n'affiche qu'une ligne qui vous y renvoie. Pour délier HubSpot, faites la déconnexion complète depuis le bloc HubSpot (sans
 numéro, c'est un bouton du bloc, sans l'option de pause).

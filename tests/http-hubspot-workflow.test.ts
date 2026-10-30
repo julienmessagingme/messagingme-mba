@@ -582,6 +582,23 @@ describe('l’action « Lancer un scénario (transaction) »', () => {
     await server.close();
   });
 
+  it('la vue de fiche garde les champs du client (une source sur « ville »), et un lead inconnu résout son numéro', async () => {
+    const villeEtNumero = { suivi_devis: [
+      { position: 1, source: { type: 'field' as const, key: 'ville' } },
+      { position: 2, source: { type: 'attribute' as const, key: 'phone' as const } },
+    ] };
+    const fiche: ResolvableContact = { phone_e164: '+33612345678', fields: { ville: 'Lyon' } };
+    const { server, envois } = appT({ fiche, sources: villeEtNumero });
+    expect((await server.inject(appel('transaction', LANCEMENT))).json().issue).toBe('envoye');
+    expect(envois[0]!.corps).toMatchObject({ params: [{ source: { value: 'Lyon' } }, { source: { value: '+33612345678' } }] });
+    const numeroSeul = { suivi_devis: [villeEtNumero.suivi_devis[1]!, { position: 2, source: { type: 'field' as const, key: 'hubspot_prenom' } }] };
+    const { server: s2, envois: e2 } = appT({ fiche: null, sources: { suivi_devis: numeroSeul.suivi_devis.map((s, i) => ({ ...s, position: i + 1 })) } });
+    expect((await s2.inject(appel('transaction', LANCEMENT))).json().issue).toBe('envoye');
+    expect(e2[0]!.corps).toMatchObject({ params: [{ source: { value: '+33612345678' } }, { source: { value: 'Claire' } }] });
+    await server.close();
+    await s2.close();
+  });
+
   it('🔴 les gardes de l’action scénario valent : conseiller en main, scénario Marketing, avant toute source ou fiche lue', async () => {
     const { server, envois, lus } = appT({ conseiller: true, sources: SOURCES });
     expect((await server.inject(appel('transaction', LANCEMENT))).json()).toEqual({ issue: 'conseiller_en_main' });

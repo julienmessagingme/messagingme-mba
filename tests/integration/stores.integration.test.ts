@@ -2611,6 +2611,55 @@ describe.skipIf(!url)('adaptateurs Postgres (Supabase)', () => {
     expect(await store.claim(tenantId, k3, 'empreinte-c')).toEqual({ claimed: false, pending: true });
   });
 
+  it('🔴 PgCampaignRepo.ecrireChampsFiche : par le tx de la création, annulée avec elle ; retire puis pose ; jamais une autre fiche', async () => {
+    // L'option `champsFiche` de l'envoi public (action transaction, cadrage du 2026-10-29, décision 7). Prouvé par la BASE :
+    // un double qui écrit par le tx qu'on lui passe ne dit rien de l'implémentation réelle.
+    const repo = new PgCampaignRepo(pool);
+    const entree = {
+      tenantId, phoneNumberId: 'pn-champs', name: '[API] champs', category: 'utility' as const,
+      templateName: '', templateLanguage: '', paramMapping: [],
+    };
+    const fiche = async (t: string, fields: Record<string, string>, supprimee = false): Promise<string> => (await pool.query<{ id: string }>(
+      `insert into contacts (tenant_id, phone_e164, fields, deleted_at) values ($1, $2, $3::jsonb, $4) returning id`,
+      [t, `+3361${String(Date.now()).slice(-6)}${Math.floor(Math.random() * 90 + 10)}`, JSON.stringify(fields), supprimee ? new Date() : null],
+    )).rows[0]!.id;
+    const champs = async (id: string) => (await pool.query<{ fields: Record<string, string> }>('select fields from contacts where id = $1', [id])).rows[0]!.fields;
+    const autre = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-champs-autre') returning id`)).rows[0]!.id;
+    try {
+      const ANCIENS = { hubspot_conseiller: 'Carole Arnal', hubspot_lien_agenda: 'https://meetings-eu1.hubspot.com/carole', ville: 'Lyon' };
+      const c1 = await fiche(tenantId, ANCIENS);
+      const ecrire = { poser: { hubspot_conseiller: 'Cédric Weiss' }, retirer: ['hubspot_lien_agenda', 'hubspot_conseiller'] };
+
+      // Confirmation REFUSÉE (la clé n'est plus à nous) : la création est annulée, et les champs avec elle.
+      const refusee = await repo.createWithRecipientsSiConfirme(entree, [], async (tx) => {
+        await repo.ecrireChampsFiche(tx, tenantId, c1, ecrire);
+        return false;
+      });
+      expect(refusee).toBeNull();
+      expect(await champs(c1)).toEqual(ANCIENS);
+
+      // Confirmée : retirées puis posées (une clé à la fois retirée et posée garde la valeur posée), le reste intact.
+      const cree = await repo.createWithRecipientsSiConfirme(entree, [], async (tx) => {
+        await repo.ecrireChampsFiche(tx, tenantId, c1, ecrire);
+        return true;
+      });
+      expect(cree).not.toBeNull();
+      expect(await champs(c1)).toEqual({ hubspot_conseiller: 'Cédric Weiss', ville: 'Lyon' });
+
+      // Jamais la fiche d'un autre espace, ni une fiche effacée.
+      const ailleurs = await fiche(autre, ANCIENS);
+      const effacee = await fiche(tenantId, ANCIENS, true);
+      await repo.createWithRecipientsSiConfirme(entree, [], async (tx) => {
+        await repo.ecrireChampsFiche(tx, tenantId, ailleurs, ecrire);
+        await repo.ecrireChampsFiche(tx, tenantId, effacee, ecrire);
+        return true;
+      });
+      expect([await champs(ailleurs), await champs(effacee)]).toEqual([ANCIENS, ANCIENS]);
+    } finally {
+      await pool.query('delete from tenants where id = $1', [autre]);
+    }
+  });
+
   it('resolveScenario (Postgres réel) : par code scn_, par nom, nom AMBIGU -> ambiguous', async () => {
     const wf = new PgWorkflowStore(pool);
     const t = (await pool.query<{ id: string }>(`insert into tenants (name) values ('itest-resolve') returning id`)).rows[0]!.id;

@@ -67,6 +67,14 @@ describe('POST /tenants/:t/hubspot/install-link', () => {
     await server.close();
   });
 
+  it('grant=agenda -> admis (les pages de réservation, action transaction du 2026-10-29)', async () => {
+    const server = app();
+    const res = await server.inject({ method: 'POST', url: '/tenants/t1/hubspot/install-link', ...h(adminTok), payload: JSON.stringify({ grant: 'agenda' }) });
+    expect(res.statusCode).toBe(200);
+    expect(new URL((res.json() as { installUrl: string }).installUrl).searchParams.get('t')).toBeTruthy();
+    await server.close();
+  });
+
   it('grant hors whitelist -> 400', async () => {
     const server = app();
     const res = await server.inject({ method: 'POST', url: '/tenants/t1/hubspot/install-link', ...h(adminTok), payload: JSON.stringify({ grant: 'contacts' }) });

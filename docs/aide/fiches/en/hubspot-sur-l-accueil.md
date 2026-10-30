@@ -1,6 +1,6 @@
 ---
 slug: hubspot-on-the-home-screen
-traduit_de: 5d2f32
+traduit_de: 4009b2
 description: Connect HubSpot to Messaging Me: link it in Tools > Integrations, choose what syncs, reply from HubSpot, pause it or cut it off.
 ---
 # HubSpot on the Home screen: connect it, follow it, cut it off
@@ -55,10 +55,13 @@ From a **deal**, the “Launch a Messaging Me scenario (deal)” action launches
 deal workflow decides so (for instance when a deal reaches a stage). It writes only to the one contact associated with
 the deal: with several associated contacts, nothing is sent. It sets three fields on their Messaging Me record, declared
 when you turn the line on: **Prénom (HubSpot)** (first name), **Conseiller (HubSpot)** (the deal owner, their advisor)
-and **Lien d’agenda (HubSpot)** (the advisor's booking page, if you allowed reading it). The variables of its opening
+and **Lien d’agenda (HubSpot)** (the advisor's booking page, when Messaging Me can read it). The variables of its opening
 template come from the sources set on the template (for instance “{{1}}” = Prénom (HubSpot)), and the scenario's messages
-can write “{{hubspot_conseiller}}” or “{{hubspot_lien_agenda}}”. Do not also connect a console automation to the same
-stage: the contact would receive two scenarios.
+can write “{{hubspot_conseiller}}” or “{{hubspot_lien_agenda}}”. In the opening template, only set what is always
+filled in, such as the first name: an empty variable stops the send. The advisor and their link go in the messages that
+follow, and these three fields only serve the scenarios launched by this action. Place the action right after the
+trigger, and turn re-enrollment on so that a revised proposal goes out again (it is refused within 24 hours). Do not also
+connect a console automation to the same stage: the contact would receive two scenarios.
 
 With no portal linked, the Home screen only shows a line that sends you there. To unlink HubSpot, do the full disconnection from the HubSpot block (with no number,
 it is a button of the block, without the pause option).
