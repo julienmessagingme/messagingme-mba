@@ -216,6 +216,17 @@ export function navPourOffre(items: NavEntree[], ouvertes: ReadonlySet<FonctionO
   });
 }
 
+/**
+ * Quantitatif > Shopify n'a de sens qu'avec une boutique (plan 2026-10-30, lot 2) : sans elle, l'entrée disparaît, à
+ * toute profondeur. `boutique` vient de la lecture de la carte Shopify ; une panne de cette lecture la cache aussi.
+ */
+export function navSansShopify(items: NavEntree[], boutique: boolean): NavEntree[] {
+  if (boutique) return items;
+  return items
+    .filter((item) => item.key !== 'quanti-shopify')
+    .map((item) => (item.children ? { ...item, children: navSansShopify(item.children, false) } : item));
+}
+
 /** La première adresse ouverte d'un arbre, dans l'ordre de la barre : la destination d'un onglet. `null` si aucune. */
 export function premiereDestination(items: NavEntree[]): string | null {
   for (const item of items) {
@@ -505,6 +516,11 @@ export function arbresNav(t: Traducteur, badgeInbox = 0): ListesNav {
        * à `/dashboard/performance`, comme ses voisines.
        */
       { key: 'quanti-performance', href: '/dashboard/performance', label: t('Performance', 'Performance'), fonction: 'statistiques' },
+      /**
+       * Le chiffre d'affaires attribué aux envois WhatsApp (plan 2026-10-30, lot 2). 🔴 PRÉSENT SEULEMENT QUAND L'ESPACE A
+       * UNE BOUTIQUE (décision de Julien) : `navSansShopify` le retire sinon, sur ce que `AppShell` lit de la boutique.
+       */
+      { key: 'quanti-shopify', href: '/dashboard/shopify', label: t('Shopify', 'Shopify'), fonction: 'statistiques' },
       /**
        * ⚠️ IL Y AVAIT UNE AUTRE ENTRÉE ICI, « Erreurs », ET ELLE EST PARTIE DANS LE CENTRE DE SÉCURITÉ
        * le 2026-09-17 (Julien : « l'onglet erreur dans quantitatif n'a plus rien à faire là »). Sa carte

@@ -603,6 +603,14 @@ export function getPerformance(tenantId: string, range?: StatsRange): Promise<un
 }
 
 /**
+ * Quantitatif > Shopify : le chiffre d'affaires attribué (plan 2026-10-30, lot 2). `unknown` comme `getPerformance` : la
+ * réponse ne se lit que par `lireVentes` (`@/lib/ventes`), et un 404 (console publiée avant l'API) remonte en `ApiError`.
+ */
+export function getVentes(tenantId: string, range?: StatsRange): Promise<unknown> {
+  return request<unknown>(`/tenants/${tenantId}/stats/ventes${rangeQuery(range)}`);
+}
+
+/**
  * Le damier « satisfaction x urgence » (lot F du 2026-09-08, migration 0121).
  *
  * Un point par CASE occupee du damier (les deux notes sont des entiers de 0 a 10 : 121 positions au plus),

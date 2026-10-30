@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
-import { accesAutorise, arbresNav, cheminDeNav, contientLaCle, fonctionDeLaPage, groupesAOuvrir, navPourOffre, navPourRole, ongletDeLaPage, premiereDestination, ECRANS_FREE, ONGLETS, type NavEntree, type Onglet } from './nav';
+import { accesAutorise, arbresNav, cheminDeNav, contientLaCle, fonctionDeLaPage, groupesAOuvrir, navPourOffre, navPourRole, navSansShopify, ongletDeLaPage, premiereDestination, ECRANS_FREE, ONGLETS, type NavEntree, type Onglet } from './nav';
 
 /**
  * La chaîne d'ancêtres d'une page dans la barre de navigation.
@@ -151,6 +151,7 @@ describe('Quantitatif > Performance', () => {
       ['quanti-couts', '/dashboard/couts', 'Coûts'],
       ['quanti-funnel', '/dashboard/funnel', 'Funnel'],
       ['quanti-performance', '/dashboard/performance', 'Performance'],
+      ['quanti-shopify', '/dashboard/shopify', 'Shopify'],
     ]);
   });
 
@@ -162,6 +163,32 @@ describe('Quantitatif > Performance', () => {
     expect(accesAutorise('quanti-performance', 'admin')).toBe(true);
     expect(accesAutorise('quanti-performance', 'manager')).toBe(false);
     expect(accesAutorise('quanti-performance', 'agent')).toBe(false);
+  });
+});
+
+/**
+ * 🔴 QUANTITATIF > SHOPIFY (plan 2026-10-30, lot 2) : le chiffre d'affaires attribué, présent dans la barre SEULEMENT
+ * quand l'espace a une boutique (décision de Julien : une section Shopify des KPI quantitatifs, quand l'app est installée).
+ */
+describe('Quantitatif > Shopify', () => {
+  const t = (fr: string) => fr;
+
+  it('🔴 la fonction statistiques, sous l’onglet Performance, réservée aux admins comme ses voisines', () => {
+    const arbres = arbresNav(t);
+    expect(fonctionDeLaPage(arbres.perf, 'quanti-shopify')).toBe('statistiques');
+    expect(cheminDeNav(arbres.perf, 'quanti-shopify')).toEqual(['quantitatif']);
+    expect(accesAutorise('quanti-shopify', 'admin')).toBe(true);
+    expect(accesAutorise('quanti-shopify', 'manager')).toBe(false);
+  });
+
+  it('🔴 navSansShopify retire l’entrée sans boutique, à toute profondeur, et ne touche à rien d’autre', () => {
+    const perf = arbresNav(t).perf;
+    const cles = (items: NavEntree[]): string[] => items.flatMap((e) => [e.key, ...cles(e.children ?? [])]);
+    expect(cles(navSansShopify(perf, true))).toEqual(cles(perf));
+    expect(cles(navSansShopify(perf, false))).toEqual(cles(perf).filter((k) => k !== 'quanti-shopify'));
+    // Le reste de l'arbre est rendu tel quel : mêmes entrées, mêmes adresses.
+    const quanti = navSansShopify(perf, false).find((e) => e.key === 'quantitatif');
+    expect(quanti?.children?.map((e) => e.href)).toEqual(['/dashboard', '/dashboard/couts', '/dashboard/funnel', '/dashboard/performance']);
   });
 });
 
