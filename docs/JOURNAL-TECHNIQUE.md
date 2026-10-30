@@ -4,6 +4,35 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-30 (soir) : la refonte de /ops, lot 4 (les seuils réglables et les alertes Telegram de Santé)
+
+`d86a1fba`, run 41093312013, migration 0262 en `avant`. Le déploiement emporte aussi le lot HubSpot d'une session
+voisine (`51a8dfd6`, `201d27c8`, lancer un scénario depuis une transaction HubSpot, sans migration) : son propre run
+(41034456895) attendait l'approbation depuis 10 h 34 et aurait bloqué le mien. Annulé avec l'accord de Julien (« Un seul
+déploiement »), un seul déploiement approuvé pour les deux. Épinglé sur `d86a1fba` : la Médiathèque (`f12d10b3`),
+poussée entre-temps, n'y est pas.
+- **Écart au plan** : la veille qui alerte tourne dans l'API, pas dans la veille de charge du worker, parce que le
+  processeur de la base et de la machine viennent de Cockpit, dont le jeton n'est que dans le conteneur de l'API.
+- **Relecture indépendante** (une) : aucun rouge. Jaunes corrigés avant le push : une aggravation (orange vers rouge)
+  attendait la demi-heure ; chaque déploiement des workers aurait envoyé « passe ROUGE » puis « revient au vert » sur le
+  retard des files (le p95 du quart d'heure contient le redémarrage) ; une 500 isolée la nuit (1 sur 20 requêtes) faisait
+  5 %, donc un rouge ; les sept lectures étaient recopiées dans deux câblages (`sourcesSante` les construit une fois) ;
+  la latence se relisait sur toutes les files (bornée aux deux jugées) ; deux passages pouvaient s'empiler ; des seuils
+  illisibles étaient remplacés par les défauts pour alerter (le passage saute désormais) ; des alertes illisibles
+  s'affichaient « aucune » ; l'auteur affiché après un enregistrement était l'ancien. Les quatre gardes de la veille
+  vérifiées dans les deux sens. Restent la veille aveugle sous saturation et le doublon avec les alertes du worker
+  (`todo.md`).
+- **Migration 0262** (`seuils_capacite`, une ligne ; `alertes_capacite` et son index `(signal, envoye_le desc)`) : deux
+  tables neuves que l'API et la purge du worker lisent, d'où `avant`. `-> 0262_seuils_capacite.sql ... ok`, seule
+  appliquée. Relue en base point par point : colonnes, défauts, `CHECK (id)`, le `CHECK` de `etat` (vert, orange,
+  rouge), l'index ; tables vides.
+- **Après**, par le vrai code dans `mba-worker` (révision `d86a1fba`), en lecture seule : seuils jamais réglés (les
+  défauts), aucune alerte ; toutes les lectures de la veille lisibles ; tous les signaux verts (API 425 requêtes sur
+  l'heure, aucune erreur ; base 11,6 % ; mémoire des workers 13,3 %). La latence bornée aux deux files rend sur 24 h
+  exactement les lignes de la lecture complète, en 5 ms chacune. `/ops/seuils` et `/ops/sante` rendent 401 sans
+  session. En local, `api-usage-guard` a dépassé ses 5 s une fois sous la charge de la suite entière (3,7 s seul), hors
+  du lot. Essai réel 197.
+
 ## 2026-10-30 : le tunnel du numéro WhatsApp, générique, sur une page « Démarrer » et partout où il sert
 
 Vitrine seule, aucune migration. Plan `docs/superpowers/plans/2026-10-30-tunnel-numero-generique.md`. Le guide du
