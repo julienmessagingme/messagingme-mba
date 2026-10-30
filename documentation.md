@@ -5290,7 +5290,12 @@ Ajouté par le lot 4 de l'API publique :
     numéro seulement, sous leur nom complet `mcp__plugin_messagingme_messagingme__<outil>`). La FAQ s'écrit dans
     `scripts/plugin/faq.ts`, chaque réponse avec sa source et les chiffres de nos offres tirés du code, aucun prix de
     Meta ; `npm run plugin:generer` l'écrit dans la skill `faq` (et dans la vitrine quand ses pages portent les marques),
-    et `tests/plugin-faq.test.ts` exige l'égalité. ⚠️ Un push des seuls `.md` de `plugin/` ne lance pas la CI
+    et `tests/plugin-faq.test.ts` exige l'égalité. « Ce que vous pouvez construire » s'écrit de même dans
+    `scripts/plugin/construire.ts`, publié dans les deux pages développeurs et le README du plugin : chaque ligne que
+    Claude fait seul cite ses outils, et l'étiquette d'offre s'en dérive (`offreDeLaCarte`, qui lit la `fonction` de
+    l'outil ; elle ne voit pas ce qu'un outil ouvert en Free y rend en moins, `get_message_stats` sans coût ni détail,
+    donc sa ligne ne le promet pas) ; `tests/plugin-readme.test.ts` exige chaque famille d'outils citée par une ligne.
+    ⚠️ Un push des seuls `.md` de `plugin/` ne lance pas la CI
     (`paths-ignore`) : `plugin.yml` rejoue ces tests avant toute publication. 🔴 **Ce que la console et la vitrine font
     taper vient d'une seule constante** (`COMMANDES_PLUGIN`, `COMMANDE_DEMARRAGE`, `SERVEUR_PLUGIN_MCP`,
     `web/lib/demarrer.ts`), que `tests/plugin.test.ts` dérive des manifestes et du README du plugin : la page `/demarrer`,

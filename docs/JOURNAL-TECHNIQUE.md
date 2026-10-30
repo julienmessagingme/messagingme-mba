@@ -4,6 +4,31 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-30 (nuit) : la page développeurs en deux, et ce qu'on construit avec les outils MCP (plugin 0.3.18)
+
+Vitrine et plugin seulement, aucune migration ni déploiement d'API. Julien voulait la doc de l'API, la doc MCP et le
+dépôt GitHub plus près, et « Ce que vous pouvez construire » à jour des outils MCP ajoutés depuis le 2026-10-21.
+- **La une en deux** : la séance Claude Code rejouée garde le haut, avec « Installer le plugin » seul ; dessous, la bande
+  « Plutôt le code ? » (`nav.dev-portes`) mène à la doc de l'API, à la doc MCP, aux dépôts GitHub du plugin et du SDK et
+  au contrat OpenAPI. Au premier écran à 1530 × 955, juste sous la ligne de flottaison à 1141 × 800 ; au téléphone,
+  avant la séance, en deux colonnes sans sous-titre.
+- **« Ce que vous pouvez construire »** (`scripts/plugin/construire.ts`, les deux pages et le README) : une quatrième
+  famille « Piloter depuis Claude », et des lignes pour les heures d'ouverture et le passage de main, l'essai et les
+  limites de l'agent, l'Inbox de l'équipe, l'action d'agent qui déclenche votre code, la clé d'API, l'import des
+  clients Shopify, les chiffres, l'analyse, la suppression en masse, la formule Pro et le crédit. Sous chaque ligne que
+  Claude fait seul, ses outils ; l'étiquette d'offre dérivée (`offreDeLaCarte`) ne s'affiche qu'au-delà de Free.
+  `tests/plugin-readme.test.ts` exige chaque famille d'outils citée par une ligne (vérifié dans les deux sens).
+- **Relecture indépendante** : un rouge, corrigé avant le push. La ligne des chiffres promettait un coût estimé que
+  `get_message_stats` ne rend pas en Free : l'outil est ouvert à toutes les offres et n'y rend que « l'essentiel », ce
+  que l'étiquette dérivée ne voit pas, puisqu'elle ne lit que la `fonction` de l'outil. Jaunes repris : la phrase
+  d'introduction, la main « rendue au répondeur automatique », la ligne de l'offre, la bande au téléphone et entre
+  1000 et 1200 px. Restes au `todo.md`.
+- Les 39 outils cités étaient dans l'API en production (`f12d10b3`) avant le push.
+- **En service** : `fa4bd76f`, CI verte (unit, integration, securite), la vitrine publiée par Vercel au push, le plugin
+  0.3.18 publié (run 41126609652). Une autre session avait publié 0.3.17 entre-temps, et le `--3way` du patch avait
+  gardé 0.3.17 sans conflit, le même changement venant des deux côtés : la version se relit sur origin au commit. Le
+  commit a été reposé trois fois sur une nouvelle tête, chaque fois après la CI du pair. Essai réel : 202.
+
 ## 2026-10-30 (nuit) : Free et Pro sans article, partout
 
 Textes seulement, aucune migration. Julien a tranché le relevé laissé par le lot de la vitrine : « oui, partout ». La

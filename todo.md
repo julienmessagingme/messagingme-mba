@@ -1,5 +1,13 @@
 # todo.md : backlog
 
+## 🟡 La page développeurs : ce que la relecture laisse (2026-10-30)
+
+- **La doc MCP de la console n'a aucune ancre par outil** (`PAGES_DOC`, `mcp`, `ancres: []`) : huit lignes de « Ce que
+  vous pouvez construire » (`scripts/plugin/construire.ts`) mènent au haut de `/developers/mcp`. Une ancre par outil,
+  déclarée dans `PAGES_DOC`, laisserait `LienCapacite` mener à l'outil lui-même.
+- **La ligne « L'agent essayé sur une conversation fictive »** ne dit pas que chaque essai (`test_agent`) est débité du
+  crédit IA, et refusé à solde épuisé.
+
 ## 🟡 Le numéro sans QR code : ce que l'alignement de la console et du plugin laisse (2026-10-30)
 
 La console, le plugin 0.3.17, la FAQ, la doc MCP et la description de `start_whatsapp_connection` ne proposent plus la
