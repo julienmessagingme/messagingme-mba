@@ -135,7 +135,7 @@ const fr = (): TexteBoutique => {
     claude: {
       surtitre: 'Avec Claude Code',
       titre: ['Tout ce que Claude fait', 'pour votre boutique.'],
-      chapeau: 'Votre boutique branchée, vous demandez, Claude le fait. Chaque carte dit l’offre qui l’ouvre : la Free couvre déjà l’essentiel, le Pro ajoute vos campagnes et leurs chiffres, votre équipe et le bilan de votre agent IA.',
+      chapeau: 'Votre boutique branchée, vous demandez, Claude le fait. Chaque carte dit la formule qui l’ouvre : Free couvre déjà l’essentiel, Pro ajoute vos campagnes et leurs chiffres, votre équipe et le bilan de votre agent IA.',
       lienUne: 'Tout ce que Claude fait',
       avec: 'Avec', console: 'Dans la console',
       besoins: [
@@ -168,7 +168,7 @@ const fr = (): TexteBoutique => {
         },
       ],
       pro: {
-        titre: 'Ce que le Pro ajoute',
+        titre: 'Ce que la formule Pro ajoute',
         liste: [
           'Vos promotions en campagne, à vos clients ciblés par étiquette',
           'La console : l’Inbox de votre équipe et la carte de votre boutique',
@@ -178,7 +178,7 @@ const fr = (): TexteBoutique => {
           `Envois illimités, ${milliers(limite('pro', 'contacts'), 'fr')} contacts créés et les contacts entrants illimités, ${limite('pro', 'utilisateurs')}&nbsp;utilisateurs`,
         ],
         prix: `${euros(PRIX_PRO_HT_CENTIMES.mois, 'fr')} HT par mois, ${ESSAI_PRO_JOURS}&nbsp;jours d’essai la première fois, carte demandée.`,
-        bouton: `Essayer le Pro ${ESSAI_PRO_JOURS}&nbsp;jours`,
+        bouton: `Essayer Pro ${ESSAI_PRO_JOURS}&nbsp;jours`,
       },
       versOutils: 'Tous les outils de Claude, un par un',
       outils: {
@@ -232,9 +232,9 @@ const fr = (): TexteBoutique => {
         { id: 'faq-prix', q: 'Combien coûte la relance des paniers abandonnés ?', r: `0&nbsp;€ d’abonnement avec l’offre Free, en la branchant depuis Claude Code. Meta facture chaque message envoyé à votre boutique, sans supplément de notre part. Il vous faut un numéro relié par Meta (le vôtre, ou un numéro fourni à ${numero} HT par mois), et votre agent IA consomme un crédit prépayé.` },
         { id: 'faq-app', q: 'Faut-il installer une app de l’App Store de Shopify ?', r: 'Non. Claude crée l’app dans votre propre organisation Shopify, sans validation de Shopify : vous n’avez qu’à cliquer « Installer ».' },
         { id: 'faq-reponse', q: 'Qui répond quand le client répond à la relance ?', r: 'Celui que vous avez choisi : votre agent IA, avec ce qu’il sait de votre boutique, ou votre équipe. L’agent n’a pas accès à vos commandes : pour un colis précis, il passe la main.' },
-        { id: 'faq-promotion', q: 'Puis-je envoyer une promotion à mes clients ?', r: 'Oui, avec l’offre Pro : Claude prépare la campagne, vous montre qui la recevra, et ne la lance qu’avec votre oui. Elle ne part qu’à ceux qui ont accepté WhatsApp, depuis un numéro API, et un STOP est toujours respecté. Avec la Free, Claude envoie un message à un client à la fois.' },
-        { id: 'faq-repondre', q: 'Puis-je répondre moi-même à mes clients ?', r: 'Oui, en le demandant à Claude : il vous montre qui vous a écrit, vous répondez dans les 24&nbsp;heures qui suivent leur message, et vous reprenez la main sur votre agent IA quand vous le voulez. Avec le Pro, votre équipe répond aussi depuis l’Inbox de la console.' },
-        { id: 'faq-numero', q: 'Quel numéro WhatsApp utiliser ?', r: `Celui que le guide ci-dessus vous donne, en trois questions au plus. Les messages de votre boutique partent d’un numéro API, relié par Meta : votre numéro libre, un numéro fourni à ${numero} HT par mois (inclus dans le Pro), ou le numéro de votre application WhatsApp Business, que vous gardez. Pas de compte Meta Business ? La fenêtre de Meta le crée en chemin.` },
+        { id: 'faq-promotion', q: 'Puis-je envoyer une promotion à mes clients ?', r: 'Oui, avec l’offre Pro : Claude prépare la campagne, vous montre qui la recevra, et ne la lance qu’avec votre oui. Elle ne part qu’à ceux qui ont accepté WhatsApp, depuis un numéro API, et un STOP est toujours respecté. En formule Free, Claude envoie un message à un client à la fois.' },
+        { id: 'faq-repondre', q: 'Puis-je répondre moi-même à mes clients ?', r: 'Oui, en le demandant à Claude : il vous montre qui vous a écrit, vous répondez dans les 24&nbsp;heures qui suivent leur message, et vous reprenez la main sur votre agent IA quand vous le voulez. En formule Pro, votre équipe répond aussi depuis l’Inbox de la console.' },
+        { id: 'faq-numero', q: 'Quel numéro WhatsApp utiliser ?', r: `Celui que le guide ci-dessus vous donne, en trois questions au plus. Les messages de votre boutique partent d’un numéro API, relié par Meta : votre numéro libre, un numéro fourni à ${numero} HT par mois (inclus en formule Pro), ou le numéro de votre application WhatsApp Business, que vous gardez. Pas de compte Meta Business ? La fenêtre de Meta le crée en chemin.` },
         { id: 'faq-stop', q: 'Que devient le client qui répond STOP ?', r: 'Il ne reçoit plus rien de votre boutique. La relance porte en bas la mention « Répondez STOP pour ne plus recevoir ces messages ».' },
       ],
     },
@@ -423,14 +423,27 @@ const en = (): TexteBoutique => {
  * 2026-10-29) : écrite sans offre, elle nommait à côté d'une étiquette « Offre Free » l'agent de Meta, les scénarios,
  * l'analyse ou l'attribution, qui ne le sont pas, et parlait « du marchand » à qui la lit. 🔴 Une ligne Free qui nomme
  * une fonction payante dit son offre (`tests/vitrine-boutique.test.ts`). Les autres outils gardent la phrase de la doc.
+ * Depuis le 2026-10-30, la vitrine dit aussi « Free » et « Pro » sans article (Julien) quand la doc MCP dit encore « le Pro ».
  */
 export const PHRASES_OUTILS: Readonly<Partial<Record<NomOutilMcp, Readonly<Record<Langue, string>>>>> = {
+  get_plan: {
+    fr: 'L’offre de l’espace, ses limites et ce qui en est consommé, avec le lien pour passer en formule Pro.',
+    en: 'The workspace plan, its limits and current usage, with the link to upgrade.',
+  },
+  subscribe_pro: {
+    fr: 'Ouvrir le paiement de la formule Pro, au mois ou à l’année, montant hors taxe.',
+    en: 'Open the Pro plan payment, monthly or yearly, amount before tax.',
+  },
+  return_number_at_plan_end: {
+    fr: `Choisir de rendre le numéro fourni à la fin de la formule Pro, ou de le garder à ${euros(PRIX_NUMERO_AFFICHE_HT_CENTIMES, 'fr')} HT par mois sur la même carte.`,
+    en: `Choose to give back the provided number when Pro ends, or keep it at ${euros(PRIX_NUMERO_AFFICHE_HT_CENTIMES, 'en')} excl. VAT a month on the same card.`,
+  },
   set_default_responder: {
-    fr: 'Choisir qui répond au client (un nouveau contact, et tout message que personne ne tient)&nbsp;: un agent IA actif, l’équipe ou votre application, et avec le Pro un scénario publié, avec le Business l’agent de Meta.',
+    fr: 'Choisir qui répond au client (un nouveau contact, et tout message que personne ne tient)&nbsp;: un agent IA actif, l’équipe ou votre application, et en formule Pro un scénario publié, en formule Business l’agent de Meta.',
     en: 'Choose who answers the customer (a new contact, and every message nobody handles): an active AI agent, the team or your app, plus a published scenario with Pro and Meta’s agent with Business.',
   },
   list_scenarios: {
-    fr: 'Les scénarios de l’espace, et lesquels sont publiés&nbsp;: ils se construisent dans la console, avec le Pro.',
+    fr: 'Les scénarios de l’espace, et lesquels sont publiés&nbsp;: ils se construisent dans la console, en formule Pro.',
     en: 'The workspace’s scenarios, and which are published: they are built in the console, with Pro.',
   },
   search_contacts: {
@@ -442,7 +455,7 @@ export const PHRASES_OUTILS: Readonly<Partial<Record<NomOutilMcp, Readonly<Recor
     en: 'A contact record from its number, with their latest analysis and its summary on the Enterprise plan.',
   },
   list_members: {
-    fr: 'Les membres de l’espace&nbsp;; avec le Pro, vous leur confiez des fils.',
+    fr: 'Les membres de l’espace&nbsp;; en formule Pro, vous leur confiez des fils.',
     en: 'The workspace members; with Pro, you assign threads to them.',
   },
   create_field: {

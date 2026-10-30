@@ -4,6 +4,22 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-30 (soir) : le tunnel plus lisible d'une question à l'autre, et Free et Pro sans article
+
+Vitrine seule, aucune migration. Trois retouches de Julien sur le tunnel livré le jour même. Une question répondue ne se
+replie plus en une ligne : elle reste affichée, la carte choisie encadrée (les autres estompées, repliées au téléphone
+pour que la suite reste proche), la question suivante apparaît dessous et glisse en vue, et une autre réponse cliquée
+change le chemin ; « Modifier » disparaît, la carte entière se clique. « Je ne sais pas » dit que Free ne marche qu'avec
+un agent IA comme Claude Code ou Codex, et sinon Pro. Et « la Free », « le Pro » et leurs dérivés sortent de toute la
+vitrine française, fiches d'aide publiques comprises (`traduit_de` recalculé, l'anglais disait déjà « Free » et
+« Pro ») ; `tests/vitrine-tunnel.test.ts` le tient sur chaque page, sauf la FAQ du plugin et les libellés de la console
+cités entre guillemets, laissés à Julien avec le relevé du reste (console, FAQ du plugin, outils MCP, fiches non
+publiques). Trois phrases d'outils MCP de la page Shopify passent par `PHRASES_OUTILS`. `aide:charger` attend le
+prochain déploiement de l'API. Deux demandes de plus le même soir : Business et Entreprise dans la première question
+(leurs cartes reprennent la page Tarifs ; ils mènent à la démo et au contact, sans questions sur le numéro, et les
+boutons de la page Tarifs restent directs vers le formulaire, le tunnel n'y ajoutant qu'un clic), et le lexique refait
+en liste dépliable, un mot par ligne, avec les liens de Meta, de l'App Store et de Google Play (adresses vérifiées).
+
 ## 2026-10-30 (soir) : le guide HubSpot dit tout ce que fait l'app, sans Sales Hub
 
 Vitrine, aide et un texte de la console, aucune migration. Demande de Julien : l'app HubSpot ne fait plus seulement

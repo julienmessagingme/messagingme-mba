@@ -16,6 +16,13 @@ fois pour toutes l'option QR code », Julien, 2026-10-30).
   `docs/prive/ESSAIS-REELS.md`), pour savoir ce que Meta renvoie et à quelle étape.
 - La fiche d'aide `garder-mon-application-whatsapp-business` et le centre d'aide ne parlent pas encore de la voie
   « télécharger l'application » : y ajouter le cas du numéro neuf.
+- **Free et Pro sans article** (Julien, 2026-10-30 : « Free », « Pro », « formule Free », « formule Pro », jamais « la
+  Free » ni « le Pro ») : la vitrine est faite. Restent, à sa décision : la console (une trentaine de lignes, la page
+  Offre en tête, et ses boutons « Passer en Pro », « Rendre mon numéro à la fin du Pro » que la fiche publique cite tels
+  quels), la FAQ du plugin (`scripts/plugin/faq.ts`), les descriptions des outils MCP (`src/mcp`) et quatre fiches
+  d'aide non publiques. Le relevé ligne à ligne a été remis à Julien le 2026-10-30.
+- La fiche publique « Choisir mon offre » a changé : `aide:charger` au prochain déploiement de l'API, pour que le bot
+  d'aide de la console dise aussi « formule Pro ».
 
 ## 🟡 Les alertes de Santé : ce que le lot 4 de la refonte de /ops laisse (relecture du 2026-10-30)
 

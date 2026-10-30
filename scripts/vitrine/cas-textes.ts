@@ -92,9 +92,9 @@ export const TEXTES_CARREFOUR: Record<Langue, TexteChapeau> = {
     },
     claude: {
       titre: 'Et depuis Claude, sans écrire de code.',
-      texte: 'Ce que vous demandez à Claude Code, ou à votre assistant IA, une fois votre espace relié&nbsp;: ce que la Free fait déjà, et ce que le Pro y ajoute.',
+      texte: 'Ce que vous demandez à Claude Code, ou à votre assistant IA, une fois votre espace relié&nbsp;: ce que Free fait déjà, et ce que Pro y ajoute.',
       avec: 'Avec', doc: 'Tous les outils du serveur MCP',
-      free: 'Avec la Free', pro: 'Et en plus, avec le Pro',
+      free: 'En formule Free', pro: 'Et en plus, en formule Pro',
       colonnes: [
         {
           titre: 'Vos utilisateurs', icone: 'chats',
@@ -357,7 +357,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'La route, telle que Claude Code l’écrit', partie: 'webhook' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, la formule Pro.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
@@ -365,7 +365,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { question: 'Faut-il un modèle approuvé par Meta&nbsp;?', reponse: 'Non&nbsp;: le client écrit le premier, et votre application lui répond dans la fenêtre de 24&nbsp;heures que son message ouvre.' },
         { question: 'Le même créneau peut-il être réservé deux fois&nbsp;?', reponse: 'C’est votre agenda qui tranche&nbsp;: il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, sinon il propose d’autres créneaux et un lien pour réserver. Le même événement reçu deux fois ne réserve qu’une fois.' },
         { question: 'Et si le client redemande le même jour&nbsp;?', reponse: 'Chaque action part une fois par jour au plus, par client et par action&nbsp;: une seconde demande le même jour n’atteint pas votre application, l’agent répond seul.' },
-        { question: 'Combien ça coûte&nbsp;?', reponse: 'La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client.' },
+        { question: 'Combien ça coûte&nbsp;?', reponse: 'Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client.' },
       ],
       appel: { titre: 'Ouvrez la prise de rendez-vous aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
       liens: [['/developpeurs/', 'Démarrer avec Claude Code'], ['/tarifs/', 'Les tarifs'], ['/solutions/saas-et-app-builders/', 'SaaS et app builders']],
@@ -441,14 +441,14 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'La tâche de la veille, telle que Claude Code l’écrit', partie: 'tache' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, la formule Pro.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
       faq: [
         { question: 'Le client doit-il avoir accepté de recevoir des messages&nbsp;?', reponse: 'Meta demande que la personne ait accepté d’être contactée sur WhatsApp, par exemple en donnant son numéro à la prise de rendez-vous. Un client qui répond STOP ne reçoit plus rien.' },
         { question: 'Que se passe-t-il si le client ne répond pas&nbsp;?', reponse: 'Rien&nbsp;: le rendez-vous reste tel quel, et votre agenda montre qui a confirmé.' },
-        { question: 'Combien coûte un rappel&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.' },
+        { question: 'Combien coûte un rappel&nbsp;?', reponse: 'Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.' },
         { question: 'Le client peut-il décaler plusieurs fois&nbsp;?', reponse: 'Une demande de report part une fois par jour au plus, par client et par action&nbsp;: l’agent propose des créneaux, le client en choisit un, votre application le réserve.' },
       ],
       appel: { titre: 'Branchez vos rappels aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
@@ -609,7 +609,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'La balise que Claude Code colle dans votre page', partie: 'balise' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris, avec la mention «&nbsp;Propulsé par Messaging Me&nbsp;» sous la bulle&nbsp;; le Pro la retire.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris, avec la mention «&nbsp;Propulsé par Messaging Me&nbsp;» sous la bulle&nbsp;; la formule Pro la retire.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du visiteur.',
       ],
@@ -693,13 +693,13 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'Le welcome message, tel que Claude Code l’écrit', partie: 'inscription' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, la formule Pro.',
         '<strong>Meta facture directement</strong> chaque modèle marketing à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.',
       ],
       faq: [
         { question: 'Pourquoi en marketing, et pas en utilitaire&nbsp;?', reponse: 'Meta classe en marketing tout modèle qui invite à utiliser le produit, et en utilitaire une alerte sur le compte, comme un paiement échoué. Un modèle déclaré utilitaire avec un texte marketing est reclassé par Meta.' },
         { question: 'Et l’utilisateur qui n’a pas coché la case&nbsp;?', reponse: 'Il ne reçoit rien&nbsp;: votre code ne l’envoie pas, et l’API l’écarterait de toute façon, un modèle marketing ne partant qu’à qui a consenti.' },
-        { question: 'Combien coûte un welcome message&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle marketing à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
+        { question: 'Combien coûte un welcome message&nbsp;?', reponse: 'Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle marketing à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
         { question: 'Peut-il ne plus rien recevoir&nbsp;?', reponse: 'Oui&nbsp;: un utilisateur qui répond STOP ne reçoit plus rien, et son refus est noté sur le contact.' },
       ],
       appel: { titre: 'Accueillez vos utilisateurs sur WhatsApp.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },
@@ -775,13 +775,13 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'Le webhook Stripe, tel que Claude Code l’écrit', partie: 'stripe' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, la formule Pro.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays de l’utilisateur.',
       ],
       faq: [
         { question: 'Faut-il une adresse de webhook Messaging Me&nbsp;?', reponse: 'Non&nbsp;: tout part du webhook Stripe que votre application a déjà, et rien ne revient vers elle.' },
         { question: 'Et si Meta reclasse le modèle en marketing&nbsp;?', reponse: 'Il ne partirait plus qu’aux contacts qui ont consenti. Gardez un texte factuel&nbsp;: le paiement, la carte, l’accès.' },
-        { question: 'Combien coûte une relance&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
+        { question: 'Combien coûte une relance&nbsp;?', reponse: 'Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays de l’utilisateur.' },
         { question: 'Stripe peut-il envoyer deux fois le même événement&nbsp;?', reponse: 'Oui, et la clé d’idempotence tirée de la facture le couvre&nbsp;: dans les 24&nbsp;heures, un seul message part. Et un échec de l’envoi WhatsApp ne fait jamais échouer votre webhook Stripe.' },
         { question: 'L’utilisateur doit-il avoir accepté de recevoir des messages&nbsp;?', reponse: 'Meta demande que la personne ait accepté d’être contactée sur WhatsApp&nbsp;: demandez-le à l’inscription ou dans son compte. Un utilisateur qui répond STOP ne reçoit plus rien.' },
       ],
@@ -850,7 +850,7 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
         { titre: 'Le modèle d’expédition', texte: 'Claude Code le crée par <code>create_template</code>&nbsp;: catégorie utilitaire, le prénom et le numéro de commande, un bouton «&nbsp;Suivre mon colis&nbsp;» vers votre page de suivi. Meta l’approuve, souvent en quelques minutes, et <code>get_template_status</code> le confirme.' },
         { titre: 'L’envoi à l’expédition', texte: 'Quand une commande passe en expédiée, votre application envoie le modèle par <code>POST /v1/sends</code>, avec une clé d’idempotence tirée de la commande&nbsp;: rejoué dans les 24&nbsp;heures, il n’envoie pas deux fois. L’identifiant d’envoi rendu se range sur la commande.' },
         { titre: 'Livré, puis lu', texte: 'Votre route, déclarée par <code>create_webhook_endpoint</code>, reçoit <code>message.delivered</code> puis <code>message.read</code> (décochés par défaut, on les coche exprès)&nbsp;: elle retrouve la commande par l’identifiant d’envoi et l’affiche «&nbsp;Lu&nbsp;».' },
-        { titre: 'S’il répond', texte: 'Sa réponse ouvre une conversation, que prend l’agent IA qui répond pour l’espace (<code>set_default_responder</code>), avec votre politique de livraison dans sa connaissance. En Pro, votre équipe peut reprendre la main dans l’Inbox de la console.' },
+        { titre: 'S’il répond', texte: 'Sa réponse ouvre une conversation, que prend l’agent IA qui répond pour l’espace (<code>set_default_responder</code>), avec votre politique de livraison dans sa connaissance. En formule Pro, votre équipe peut reprendre la main dans l’Inbox de la console.' },
       ],
       invite: {
         titre: 'Ce que vous tapez dans Claude Code',
@@ -859,14 +859,14 @@ export const TEXTES_CAS: Readonly<Record<string, Record<Langue, TexteCas>>> = {
       },
       extrait: { titre: 'L’envoi à l’expédition, tel que Claude Code l’écrit', partie: 'commandes' },
       paie: [
-        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.',
+        '<strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, la formule Pro.',
         '<strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.',
         '<strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.',
       ],
       faq: [
         { question: 'Le client doit-il avoir accepté de recevoir des messages&nbsp;?', reponse: 'Meta demande que la personne ait accepté d’être contactée sur WhatsApp, par exemple en le cochant à la commande. Un client qui répond STOP ne reçoit plus rien.' },
         { question: 'Et si le client a désactivé les confirmations de lecture&nbsp;?', reponse: 'WhatsApp n’envoie alors jamais la lecture&nbsp;: la commande reste «&nbsp;Livrée&nbsp;» dans votre admin.' },
-        { question: 'Combien coûte une notification&nbsp;?', reponse: 'La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.' },
+        { question: 'Combien coûte une notification&nbsp;?', reponse: 'Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.' },
         { question: 'Que se passe-t-il si l’envoi est rejoué&nbsp;?', reponse: 'Dans les 24&nbsp;heures, la même clé d’idempotence, tirée de la commande, rend le même envoi&nbsp;: le client ne reçoit qu’un message.' },
       ],
       appel: { titre: 'Branchez vos notifications aujourd’hui.', texte: 'Le plugin en deux commandes, puis la phrase ci-dessus dans Claude Code. Aucun compte à créer.' },

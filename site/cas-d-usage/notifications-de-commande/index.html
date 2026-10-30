@@ -101,7 +101,7 @@
      "name": "Combien coûte une notification ?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "La Free inclut 1 000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client."
+      "text": "Free inclut 1 000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client."
      }
     },
     {
@@ -327,7 +327,7 @@
         <li><span class="f-num">1</span><div><h3>Le modèle d’expédition</h3><p>Claude Code le crée par <code>create_template</code>&nbsp;: catégorie utilitaire, le prénom et le numéro de commande, un bouton «&nbsp;Suivre mon colis&nbsp;» vers votre page de suivi. Meta l’approuve, souvent en quelques minutes, et <code>get_template_status</code> le confirme.</p></div></li>
         <li><span class="f-num">2</span><div><h3>L’envoi à l’expédition</h3><p>Quand une commande passe en expédiée, votre application envoie le modèle par <code>POST /v1/sends</code>, avec une clé d’idempotence tirée de la commande&nbsp;: rejoué dans les 24&nbsp;heures, il n’envoie pas deux fois. L’identifiant d’envoi rendu se range sur la commande.</p></div></li>
         <li><span class="f-num">3</span><div><h3>Livré, puis lu</h3><p>Votre route, déclarée par <code>create_webhook_endpoint</code>, reçoit <code>message.delivered</code> puis <code>message.read</code> (décochés par défaut, on les coche exprès)&nbsp;: elle retrouve la commande par l’identifiant d’envoi et l’affiche «&nbsp;Lu&nbsp;».</p></div></li>
-        <li><span class="f-num">4</span><div><h3>S’il répond</h3><p>Sa réponse ouvre une conversation, que prend l’agent IA qui répond pour l’espace (<code>set_default_responder</code>), avec votre politique de livraison dans sa connaissance. En Pro, votre équipe peut reprendre la main dans l’Inbox de la console.</p></div></li>
+        <li><span class="f-num">4</span><div><h3>S’il répond</h3><p>Sa réponse ouvre une conversation, que prend l’agent IA qui répond pour l’espace (<code>set_default_responder</code>), avec votre politique de livraison dans sa connaissance. En formule Pro, votre équipe peut reprendre la main dans l’Inbox de la console.</p></div></li>
       </ol>
       <h3 class="cas-sous-titre">Ce que vous tapez dans Claude Code</h3>
       <p class="f-texte">Le plugin installé, une phrase suffit&nbsp;: Claude Code crée le modèle, branche l’envoi et la route, et teste.</p>
@@ -371,7 +371,7 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
     <div class="cadre">
       <h2 class="f-titre">Combien coûte une notification de commande WhatsApp.</h2>
       <ul class="tarif-liste cas-liste">
-        <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
+        <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.envois-modeles-mois">1&nbsp;000</span> messages envoyés par mois et <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, la formule Pro.</li>
         <li><strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.</li>
         <li><strong>Meta facture directement</strong> chaque modèle utilitaire à votre entreprise, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.</li>
       </ul>
@@ -383,7 +383,7 @@ export async function notifyShipped(order: { id: string; phone: string; firstNam
       <div class="dev-faq">
         <details><summary>Le client doit-il avoir accepté de recevoir des messages&nbsp;?</summary><p>Meta demande que la personne ait accepté d’être contactée sur WhatsApp, par exemple en le cochant à la commande. Un client qui répond STOP ne reçoit plus rien.</p></details>
         <details><summary>Et si le client a désactivé les confirmations de lecture&nbsp;?</summary><p>WhatsApp n’envoie alors jamais la lecture&nbsp;: la commande reste «&nbsp;Livrée&nbsp;» dans votre admin.</p></details>
-        <details><summary>Combien coûte une notification&nbsp;?</summary><p>La Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.</p></details>
+        <details><summary>Combien coûte une notification&nbsp;?</summary><p>Free inclut 1&nbsp;000 messages envoyés par mois. Meta facture chaque modèle utilitaire à votre entreprise, selon sa grille et le pays du client.</p></details>
         <details><summary>Que se passe-t-il si l’envoi est rejoué&nbsp;?</summary><p>Dans les 24&nbsp;heures, la même clé d’idempotence, tirée de la commande, rend le même envoi&nbsp;: le client ne reçoit qu’un message.</p></details>
       </div>
     </div>

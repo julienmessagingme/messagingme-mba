@@ -7,11 +7,15 @@ import { DEPOT_PLUGIN } from '../../web/lib/demarrer';
 import { ACCUEIL, fichierDe, fil, page } from './cas';
 import type { Langue } from './cas-textes';
 import { insecables } from './guide-meta';
-import { TEXTES_TUNNEL, demandeDe, type Issue, type OffreTunnel, type Origine, type Question, type Reponse, type Voie } from './tunnel-textes';
+import {
+  TEXTES_TUNNEL, demandeDe, type Issue, type IssueBranchement, type Lien, type Mot, type OffreTunnel, type Origine, type Question, type Reponse, type Voie,
+} from './tunnel-textes';
 
 const CONSOLE = 'https://console.messagingme.app';
 const PLUGIN: Readonly<Record<Langue, string>> = { fr: '/developpeurs/installer-le-plugin/', en: '/en/developers/install-the-plugin/' };
-/** La page qui porte le tunnel seul ; `?offre=free` ou `?offre=pro` y répond à la première question (`site.js`). */
+/** La page Contact : son formulaire pour la démo (`#formulaire`), la page elle-même pour nous écrire. */
+const CONTACT: Readonly<Record<Langue, string>> = { fr: '/contact/', en: '/en/contact/' };
+/** La page qui porte le tunnel seul ; `?offre=` (free, pro, business, entreprise) y répond à la première question (`site.js`). */
 export const DEMARRER: Readonly<Record<Langue, string>> = { fr: '/demarrer/', en: '/en/get-started/' };
 /**
  * L'inscription qui mène à la souscription du Pro (`?offre=pro`, `arriveeDUnNouvelEspace`, `web/lib/session.ts`), jamais
@@ -34,9 +38,10 @@ export function profondeurTunnel(questions: readonly Question[]): number {
  * Le tunnel : une carte, la question en cours en grand et l'étape au-dessus, puis les mots qu'il emploie, repliés
  * dessous. Une question à cartes (`voies`) porte SOUS chaque carte la réponse de même rang. Sans script, les questions
  * restent cachées et les issues se lisent l'une sous l'autre, chacune précédée de sa situation et suivie des boutons de
- * chaque offre ; avec `site.js`, chaque réponse montre la question suivante (`data-vers`) ou une issue (`data-chemin`),
- * la question répondue se replie en une ligne que « Modifier » rouvre, l'offre choisie (`data-offre`) ne laisse que ses
- * boutons, et un lien d'issue (`data-vers-chemin`) en montre une autre.
+ * chaque offre ; avec `site.js`, chaque réponse montre la question suivante (`data-vers`) ou une issue (`data-chemin`)
+ * plus bas, la question répondue reste affichée, sa réponse en évidence (Julien, 2026-10-30 : « on garde le carré
+ * sélectionné et on passe à la question suivante plus bas »), et une autre réponse cliquée change le chemin ; l'offre
+ * choisie (`data-offre`) ne laisse que ses boutons, et un lien d'issue (`data-vers-chemin`) en montre une autre.
  */
 export function tunnel(langue: Langue, origine: Origine): string[] {
   const n = TEXTES_TUNNEL[langue];
@@ -64,47 +69,73 @@ export function tunnel(langue: Langue, origine: Origine): string[] {
     const menent = toutes.filter(({ r }) => r.vers);
     const autres = toutes.filter(({ r }) => !r.vers);
     if (menent.length !== q.voies.length) throw new Error(`tunnel : ${q.id} a ${q.voies.length} cartes et ${menent.length} réponses qui mènent quelque part`);
+    // Plus de deux cartes : un carrousel sur le bureau (Julien, 2026-10-30 : « un carousel sur ordi, pas 2 rangées »), ses
+    // flèches (`data-defiler`), et les cartes l'une sous l'autre au téléphone.
+    const carrousel = q.voies.length > 2;
+    const fleche = (sens: -1 | 1, libelle: string) =>
+      `<button type="button" class="bt-fleche" data-defiler="${sens}" aria-label="${libelle}"><svg class="ic" aria-hidden="true"><use href="#i-caret-left"/></svg></button>`;
     return [
-      `            <div class="bt-voies" id="voies-${q.id}">`,
+      `            <div class="bt-voies${carrousel ? ' bt-carrousel' : ''}" id="voies-${q.id}">`,
       ...q.voies.flatMap((v, i) => ['              <div class="bt-voie-choix">', ...voie(v), `                ${bouton(q, menent[i]!.r, menent[i]!.k)}`, '              </div>']),
       '            </div>',
+      ...(carrousel ? [`            <div class="bt-fleches">${fleche(-1, n.defiler.precedente)}${fleche(1, n.defiler.suivante)}</div>`] : []),
       ...(autres.length > 0 ? [`            <div class="bt-reponses">${autres.map(({ r, k }) => bouton(q, r, k)).join('')}</div>`] : []),
     ];
   };
   const question = (q: Question, i: number) => [
     `          <fieldset class="bt-question" data-question="${q.id}"${q.voies ? ` aria-describedby="voies-${q.id}"` : ''}${i > 0 ? ' hidden' : ''}>`,
     `            <legend${q.logo ? ' class="bt-avec-logo"' : ''}>${q.logo ? `<img class="bt-logo" src="${q.logo}" alt="" width="40" height="40">` : ''}${q.texte}${q.precision ? `<span class="bt-precision">${q.precision}</span>` : ''}</legend>`,
-    // Repliée, la question montre ici la réponse donnée, puis « Modifier ».
-    '            <span class="bt-resume" data-resume></span>',
     ...reponses(q),
-    `            <button type="button" class="bt-modifier" data-modifier>${n.modifier}</button>`,
     ...(q.aide ? [`            <p class="bt-aide" hidden>${q.aide}</p>`] : []),
     ...q.reponses.flatMap((r, k) => (r.note ? [`            <p class="bt-note-reponse" id="note-${q.id}-${k}" role="status" hidden>${r.note}</p>`] : [])),
     '          </fieldset>',
   ];
   // Le bout du tunnel, par offre : en Free, le plugin, son dépôt et la demande ; en Pro, l'espace, le pas-à-pas et la
   // même demande, à coller dans Claude Code ou Codex. La demande reprend les réponses et parle de la page d'origine.
-  const demande = (x: Issue, offre: OffreTunnel, titre: string) => [
+  const demande = (x: IssueBranchement, offre: OffreTunnel, titre: string) => [
     `            <p class="bt-demande-titre">${titre}</p>`,
     `            <div class="bt-demande"><p id="demande-${x.id}-${offre}">${demandeDe(n, x, offre, origine)}</p><button type="button" class="bouton bouton-trait" data-copier="demande-${x.id}-${offre}" data-copie="${a.copie}" hidden>${a.copier}</button></div>`,
   ];
+  const liens = (l: readonly Lien[], retrait: string) =>
+    [`${retrait}<p class="bt-liens">${l.map((x) => `<a class="bouton bouton-trait" href="${x.href}" rel="noopener">${x.libelle}</a>`).join('')}</p>`];
+  // Business et Entreprise : la démo et le contact, sans demande à coller (Julien, 2026-10-30) ; les autres issues, les
+  // boutons de Free et de Pro.
+  const fin = (x: Issue): string[] => (x.contact
+    ? [
+      '          <div class="bt-appels">',
+      `            <p class="bt-appels-titre">${a.equipe}</p>`,
+      `            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="${CONTACT[langue]}#formulaire">${a.demo}</a><a class="bouton bouton-trait" href="${CONTACT[langue]}">${a.contacter}</a></div>`,
+      '          </div>',
+    ]
+    : [
+      '          <div class="bt-appels" data-offre="free">',
+      `            <p class="bt-appels-titre">${a.free}</p>`,
+      `            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="${PLUGIN[langue]}">${a.plugin}</a><a class="bouton bouton-trait" href="${DEPOT_PLUGIN}" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#i-github"/></svg>${a.github}</a></div>`,
+      ...demande(x, 'free', a.demandeFree),
+      '          </div>',
+      '          <div class="bt-appels" data-offre="pro">',
+      `            <p class="bt-appels-titre">${a.pro}</p>`,
+      `            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="${inscriptionPro(langue)}">${a.compte}</a><a class="bouton bouton-trait" href="${x.pasAPas}">${a.pasAPas}</a></div>`,
+      ...demande(x, 'pro', a.demandePro),
+      '          </div>',
+    ]);
   const issue = (x: Issue) => [
     `        <article class="bt-chemin" data-chemin="${x.id}" id="numero-${x.id}">`,
     `          <p class="bt-situation">${x.situation}</p>`,
     `          <h3>${x.titre}</h3>`,
     ...x.textes.map((p) => `          <p>${p}</p>`),
+    ...(x.liens ? liens(x.liens, '          ') : []),
     ...(x.autre ? [`          <p class="bt-autre">${x.autre.question} <a href="#numero-${x.autre.vers}" data-vers-chemin="${x.autre.vers}">${x.autre.lien}</a></p>`] : []),
-    '          <div class="bt-appels" data-offre="free">',
-    `            <p class="bt-appels-titre">${a.free}</p>`,
-    `            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="${PLUGIN[langue]}">${a.plugin}</a><a class="bouton bouton-trait" href="${DEPOT_PLUGIN}" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#i-github"/></svg>${a.github}</a></div>`,
-    ...demande(x, 'free', a.demandeFree),
-    '          </div>',
-    '          <div class="bt-appels" data-offre="pro">',
-    `            <p class="bt-appels-titre">${a.pro}</p>`,
-    `            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="${inscriptionPro(langue)}">${a.compte}</a><a class="bouton bouton-trait" href="${x.pasAPas}">${a.pasAPas}</a></div>`,
-    ...demande(x, 'pro', a.demandePro),
-    '          </div>',
+    ...fin(x),
     '        </article>',
+  ];
+  // Un mot par ligne : le mot et sa phrase courte se lisent sans ouvrir, le détail et ses liens au clic.
+  const mot = (x: Mot) => [
+    '            <li><details class="bt-mot">',
+    `              <summary><strong>${x.terme}</strong><span>${x.court}</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>`,
+    `              <p>${x.detail}</p>`,
+    ...(x.liens ? liens(x.liens, '              ') : []),
+    '            </details></li>',
   ];
   const html = [
     '      <div class="bt-guide" data-guide-numero>',
@@ -123,9 +154,9 @@ export function tunnel(langue: Langue, origine: Origine): string[] {
     '        </div>',
     '        <details class="bt-lexique">',
     `          <summary>${n.lexique.titre}<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>`,
-    '          <dl>',
-    ...n.lexique.termes.map((x) => `            <div><dt>${x.terme}</dt><dd>${x.definition}</dd></div>`),
-    '          </dl>',
+    '          <ul class="bt-mots">',
+    ...n.lexique.termes.flatMap(mot),
+    '          </ul>',
     '        </details>',
     '      </div>',
   ];

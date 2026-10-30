@@ -115,8 +115,8 @@ describe('la page « SaaS et app builders » : ce que Claude fait sans code (pla
         const volets = [...colonnes[i]!.matchAll(/<details class="hub-offre" data-etiquette="([a-z]+)">\s*<summary>([^<]*)<span class="bt-nombre">(\d+)<\/span><\/summary>([\s\S]*?)<\/details>/g)];
         expect(volets.map((v) => [v[1], v[2]!.trim()]), col.titre).toEqual([['base', c.claude.free], ['pro', c.claude.pro]]);
         expect(colonnes[i], col.titre).not.toMatch(/<details[^>]*\sopen/);
-        expect(c.claude.free).toBe(langue === 'fr' ? 'Avec la Free' : 'With the Free plan');
-        expect(c.claude.pro).toBe(langue === 'fr' ? 'Et en plus, avec le Pro' : 'And on top, with the Pro plan');
+        expect(c.claude.free).toBe(langue === 'fr' ? 'En formule Free' : 'With the Free plan');
+        expect(c.claude.pro).toBe(langue === 'fr' ? 'Et en plus, en formule Pro' : 'And on top, with the Pro plan');
         for (const [, offre, , nombre, corps] of volets) {
           const attendues = col.lignes.filter((l) => offreDe(l.outils) === offre);
           const lignes = corps!.split('<li>').slice(1);

@@ -109,7 +109,7 @@
      "name": "Combien ça coûte ?",
      "acceptedAnswer": {
       "@type": "Answer",
-      "text": "La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24 heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client."
+      "text": "Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24 heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client."
      }
     }
    ]
@@ -367,7 +367,7 @@ export async function POST(req: Request) {
     <div class="cadre">
       <h2 class="f-titre">Combien coûte la prise de rendez-vous sur WhatsApp.</h2>
       <ul class="tarif-liste cas-liste">
-        <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, le Pro.</li>
+        <li><strong>L’offre Free suffit pour démarrer&nbsp;:</strong> <span data-offre="base.contacts">100</span> contacts (ceux qui vous écrivent comptent aussi), l’API et le serveur MCP compris&nbsp;; au-delà, la formule Pro.</li>
         <li><strong>L’agent IA</strong> se paie sur le crédit IA prépayé, à la réponse&nbsp;; 1&nbsp;€ est offert au premier numéro relié.</li>
         <li><strong>Meta facture directement</strong> chaque réponse envoyée dans la fenêtre de 24&nbsp;heures à votre entreprise, au-delà de sa franchise mensuelle, selon <a href="https://developers.facebook.com/docs/whatsapp/pricing">sa grille</a> et le pays du client.</li>
       </ul>
@@ -380,7 +380,7 @@ export async function POST(req: Request) {
         <details><summary>Faut-il un modèle approuvé par Meta&nbsp;?</summary><p>Non&nbsp;: le client écrit le premier, et votre application lui répond dans la fenêtre de 24&nbsp;heures que son message ouvre.</p></details>
         <details><summary>Le même créneau peut-il être réservé deux fois&nbsp;?</summary><p>C’est votre agenda qui tranche&nbsp;: il ne réserve qu’un créneau encore libre et proposé à ce client, deux clients pouvant choisir le même, sinon il propose d’autres créneaux et un lien pour réserver. Le même événement reçu deux fois ne réserve qu’une fois.</p></details>
         <details><summary>Et si le client redemande le même jour&nbsp;?</summary><p>Chaque action part une fois par jour au plus, par client et par action&nbsp;: une seconde demande le même jour n’atteint pas votre application, l’agent répond seul.</p></details>
-        <details><summary>Combien ça coûte&nbsp;?</summary><p>La Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client.</p></details>
+        <details><summary>Combien ça coûte&nbsp;?</summary><p>Free inclut l’API et le serveur MCP. L’agent IA se paie sur le crédit IA prépayé, et Meta facture chaque réponse envoyée dans la fenêtre de 24&nbsp;heures au-delà de sa franchise mensuelle, selon sa grille et le pays du client.</p></details>
       </div>
     </div>
   </section>

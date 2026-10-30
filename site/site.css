@@ -818,7 +818,7 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .bt-question .bouton{font-family:inherit;cursor:pointer}
 .bt-question .bouton-trait{min-width:9em;justify-content:center;padding:1em 1.8em;border-color:rgb(255 255 255 / .34);background:rgb(255 255 255 / .06);font-size:1.08rem;font-weight:700}
 .bt-question .bouton-trait:hover{border-color:var(--action-ink);background:var(--action-wash);color:var(--ink)}
-.bt-guide .bouton:focus-visible,.bt-modifier:focus-visible,.bt-recommencer:focus-visible{outline:3px solid var(--action-ink);outline-offset:3px}
+.bt-guide .bouton:focus-visible,.bt-recommencer:focus-visible{outline:3px solid var(--action-ink);outline-offset:3px}
 .bt-reponses .bouton-texte{margin-left:6px;background:none;border:0;font:inherit;font-weight:600;font-size:1rem;text-decoration:underline;color:var(--action-ink)}
 .bt-question [aria-pressed="true"]{background:var(--action);border-color:transparent;color:var(--on-action)}
 /* Une question à cartes : sous chaque carte, son bouton, à sa largeur ; les cartes d'une rangée gardent la même hauteur. */
@@ -826,16 +826,20 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .bt-voie-choix{display:grid;grid-template-rows:1fr auto;gap:12px}
 .bt-voie-choix .bouton-trait{width:100%;min-width:0}
 .bt-voies + .bt-reponses{margin-top:14px}
-.bt-resume{display:none}
-.bt-modifier{display:none;margin-left:auto;padding:0;border:0;background:none;color:var(--action-ink);font:inherit;font-size:.92rem;font-weight:600;text-decoration:underline;cursor:pointer}
-/* Une question répondue : une ligne, sa réponse en pastille, « Modifier » au bout, et la note de la réponse si elle en a une. */
-.bt-question.repondue{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:0 0 18px;padding:0 0 18px;border-bottom:1px solid var(--line)}
-.bt-question.repondue legend{float:none;width:auto;margin:0;font-size:1rem;font-weight:600;letter-spacing:0;color:var(--muted)}
-.bt-question.repondue legend.bt-avec-logo{padding-left:0;min-height:0}
-.bt-question.repondue :is(.bt-logo,.bt-precision,.bt-aide,.bt-voies,.bt-reponses){display:none}
-.bt-question.repondue .bt-resume{display:inline-flex;padding:.3em .95em;border-radius:999px;background:var(--action);color:var(--on-action);font-size:.9rem;font-weight:700}
-.bt-question.repondue .bt-modifier{display:inline}
-.bt-question.repondue .bt-note-reponse{flex-basis:100%;margin:2px 0 0}
+/* Une question répondue reste affichée, sa réponse en évidence, et la suivante vient dessous (Julien, 2026-10-30 : « on
+   garde le carré sélectionné et on passe à la question suivante plus bas ») : un clic sur une autre réponse change le chemin. */
+.bt-question.repondue{margin:0 0 28px;padding:0 0 28px;border-bottom:1px solid var(--line)}
+.bt-question.repondue legend{font-size:clamp(1.2rem,2.6vw,1.6rem)}
+.bt-question.repondue :is(.bt-precision,.bt-aide,[data-aide]){display:none}
+.js .bt-voie-choix{cursor:pointer}
+.bt-voie-choix .bt-voie{transition:border-color .15s,background-color .15s,box-shadow .15s}
+.bt-voie-choix:hover .bt-voie{border-color:var(--action-ink)}
+.bt-voie-choix:has([aria-pressed="true"]) .bt-voie{border-color:var(--action);background:var(--action-wash);box-shadow:inset 0 0 0 1px var(--action)}
+.bt-question.repondue :is(.bt-voie-choix:not(:has([aria-pressed="true"])),.bt-reponses [aria-pressed="false"]){opacity:.5;transition:opacity .2s}
+.bt-question.repondue :is(.bt-voie-choix,.bt-reponses [aria-pressed="false"]):hover{opacity:1}
+/* Au téléphone, où les cartes s'empilent, la carte non choisie ne garde que son titre et son bouton : la question suivante
+   reste proche. Au bureau, côte à côte, elle garde tout, estompée. */
+@media (max-width:720px){.bt-question.repondue .bt-voie-choix:not(:has([aria-pressed="true"])) .bt-voie ul{display:none}.bt-question.repondue .bt-voie-choix:not(:has([aria-pressed="true"])) .bt-voie h4{margin:0}}
 .bt-chemin .bt-autre{margin:14px 0 0;color:var(--ink);font-weight:600}
 .bt-autre a{color:var(--action-ink)}
 .bt-note-reponse a{color:var(--action-ink)}
@@ -865,13 +869,24 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 .js .bt-guide[data-pret] .bt-chemin.actif h3{margin:0 0 12px;font-size:clamp(1.35rem,2.8vw,1.8rem);font-weight:800;letter-spacing:-.02em}
 .js .bt-guide[data-pret] .bt-situation{display:none}
 .bt-lexique{margin:18px 0 0;border:1px solid var(--line);border-radius:18px;background:rgb(255 255 255 / .03)}
-.bt-lexique summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 22px;font-weight:700;cursor:pointer;list-style:none}
-.bt-lexique summary::-webkit-details-marker{display:none}
-.bt-lexique summary .ic{color:var(--action-ink);transition:transform .2s}
-.bt-lexique[open] summary .ic{transform:rotate(180deg)}
-.bt-lexique dl{margin:0;padding:0 22px 22px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px 24px}
-.bt-lexique dt{font-weight:700;color:var(--action-ink)}
-.bt-lexique dd{margin:4px 0 0;color:var(--muted);font-size:.95rem}
+.bt-lexique > summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 22px;font-weight:700;cursor:pointer;list-style:none}
+.bt-lexique > summary::-webkit-details-marker{display:none}
+.bt-lexique > summary .ic{color:var(--action-ink);transition:transform .2s}
+.bt-lexique[open] > summary .ic{transform:rotate(180deg)}
+/* Les mots du guide, un par ligne (Julien, 2026-10-30 : « ça donne pas envie de le lire ») : le mot et sa phrase courte
+   visibles, le détail et ses liens (Meta, les magasins d'applications) au clic. */
+.bt-mots{list-style:none;margin:0;padding:0 14px 14px;display:grid;gap:8px}
+.bt-mot{border:1px solid var(--line);border-radius:14px;background:rgb(255 255 255 / .03)}
+.bt-mot summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 14px;padding:14px 16px;cursor:pointer;list-style:none}
+.bt-mot summary::-webkit-details-marker{display:none}
+.bt-mot summary strong{color:var(--ink);font-size:1rem}
+.bt-mot summary span{grid-column:1;color:var(--muted);font-size:.93rem}
+.bt-mot summary .ic{grid-column:2;grid-row:1 / span 2;align-self:center;color:var(--action-ink);transition:transform .2s}
+.bt-mot[open] summary .ic{transform:rotate(180deg)}
+.bt-mot[open]{border-color:rgb(111 194 254 / .45)}
+.bt-mot > p{margin:0;padding:0 16px 12px;color:var(--muted);font-size:.95rem}
+.bt-liens{display:flex;flex-wrap:wrap;gap:10px;margin:0;padding:0 16px 16px}
+.bt-chemin .bt-liens{padding:4px 0 6px}
 .bt-precision{display:block;margin-top:10px;font-weight:400;font-size:1.02rem;letter-spacing:0;color:var(--muted)}
 .bt-aide{margin:16px 0 0;max-width:640px;padding:12px 16px;border-left:3px solid var(--action-ink);color:var(--muted);font-size:.95rem}
 .bt-note-reponse{margin:16px 0 0;max-width:640px;padding:12px 16px;border-left:3px solid #25d366;color:var(--muted);font-size:.95rem}
@@ -882,6 +897,26 @@ h1{grid-column:1 / -1;grid-row:1;position:relative;z-index:1;font-size:clamp(2.3
 @media (prefers-reduced-motion:reduce){.bt-jauge{transition:none}}
 @media (max-width:520px){.bt-reponses .bouton-trait{flex:1 1 40%;min-width:0;padding:.95em 1em}.bt-progression{gap:12px;margin-bottom:22px}.bt-demande{flex-direction:column}}
 .bt-voies{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin:12px 0 0}
+/* Les formules : un carrousel sur le bureau (Julien, 2026-10-30 : « un carousel sur ordi, pas 2 rangées »), deux cartes et
+   demie visibles et des flèches ; l'une sous l'autre au téléphone. */
+.bt-question .bt-voies{grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr))}
+.bt-fleches{display:none;justify-content:flex-end;gap:10px;margin:12px 0 0}
+.bt-fleche{display:grid;place-items:center;width:42px;height:42px;padding:0;border:1px solid rgb(255 255 255 / .28);border-radius:50%;background:transparent;color:var(--ink);font-size:1.1rem;cursor:pointer;transition:border-color .15s,background-color .15s}
+.bt-fleche:hover{border-color:var(--action-ink);background:var(--action-wash)}
+.bt-fleche:focus-visible{outline:3px solid var(--action-ink);outline-offset:3px}
+.bt-fleche[data-defiler="1"] .ic{transform:rotate(180deg)}
+@media (min-width:721px){
+  .bt-question .bt-voies.bt-carrousel{position:relative;grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:max(280px,calc((100% - 48px) / 3.3));overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scroll-behavior:smooth;padding-bottom:12px;scrollbar-width:thin;scrollbar-color:rgb(111 194 254 / .45) transparent}
+  .bt-carrousel > .bt-voie-choix{scroll-snap-align:start}
+  .js .bt-fleches{display:flex}
+}
+/* Sur le bureau, la carte du tunnel sort du cadre de la page et prend presque tout l'écran (Julien, 2026-10-30 : « élargis
+   au max de la taille de l'écran, mégote pas ») ; les textes des issues gardent une largeur de lecture. */
+@media (min-width:721px){
+  .bt-guide,.demarrer-une .bt-guide{max-width:none;width:min(calc(100vw - 64px),1600px);margin-left:calc(50% - min(50vw - 32px,800px))}
+  .bt-chemin > p,.bt-chemin .bt-demande,.bt-question .bt-note-reponse,.bt-question .bt-aide{max-width:860px}
+}
+@media (min-width:721px) and (prefers-reduced-motion:reduce){.bt-question .bt-voies.bt-carrousel{scroll-behavior:auto}}
 .bt-voie{padding:16px;border:1px solid var(--line);border-radius:14px}
 .bt-voie h4{margin:0 0 10px;font-size:1rem}
 .bt-voie ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}

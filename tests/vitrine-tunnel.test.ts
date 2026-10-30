@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PRIX_NUMERO_HT_CENTIMES } from '../src/stripe/abonnement';
-import { PRIX_NUMERO_AFFICHE_HT_CENTIMES, TEXTES_TUNNEL, demandeDe, type Origine } from '../scripts/vitrine/tunnel-textes';
+import { DROITS, PRIX_BUSINESS_HT_CENTIMES } from '../src/offres/offres';
+import { MAGASINS, PRIX_NUMERO_AFFICHE_HT_CENTIMES, TEXTES_TUNNEL, demandeDe, type Origine } from '../scripts/vitrine/tunnel-textes';
 import { DEMARRER, TEXTES_DEMARRER, profondeurTunnel } from '../scripts/vitrine/tunnel';
 import { TEXTES_CARREFOUR, type Langue } from '../scripts/vitrine/cas-textes';
 import { JUMELLES } from '../scripts/vitrine/anglais';
@@ -41,7 +42,7 @@ const affiche = (h: string): string => h.replace(/<[^>]+>/g, '').replace(/&nbsp;
 describe('le tunnel du numéro WhatsApp', () => {
   it('le numéro fourni cite le prix du code', () => {
     expect(PRIX_NUMERO_AFFICHE_HT_CENTIMES).toBe(PRIX_NUMERO_HT_CENTIMES);
-    expect(corps(lire(fichierDe(DEMARRER.fr)))).toContain('3,50 € HT par mois avec la Free, inclus dans le Pro');
+    expect(corps(lire(fichierDe(DEMARRER.fr)))).toContain('3,50 € HT par mois en formule Free, inclus en formule Pro');
     expect(corps(lire(fichierDe(DEMARRER.en)))).toContain('€3.50 excl. VAT a month with the Free plan, included in Pro');
   });
 
@@ -86,13 +87,39 @@ describe('le tunnel du numéro WhatsApp', () => {
       const q = (id: string) => questions.find((x) => x.id === id)!;
       expect(questions.map((x) => x.id), langue).toEqual(['offre', 'compte', 'application']);
       // Free ou Pro, les deux vers la même question : l'offre ne change pas le chemin du numéro, seulement le bout.
-      expect(q('offre').reponses.filter((r) => r.vers).map((r) => `${r.offre}>${r.vers}`), langue).toEqual(['free>compte', 'pro>compte']);
+      // Business et Entreprise mènent à la démo et au contact, jamais aux questions du numéro (Julien, 2026-10-30).
+      expect(q('offre').reponses.filter((r) => r.vers).map((r) => `${r.offre}>${r.vers}`), langue)
+        .toEqual(['free>compte', 'pro>compte', 'business>echange', 'entreprise>echange']);
       // Oui : le numéro API ; Non et « Je ne sais pas » : l'application, et « Je ne sais pas » dit où vérifier.
       expect(q('compte').reponses.map((r) => r.vers), langue).toEqual(['api', 'application', 'application']);
       expect(q('compte').reponses[2]!.note, langue).toContain('business.facebook.com');
       expect(q('compte').reponses[2]!.note, langue).toMatch(/Facebook ou Instagram|Facebook or Instagram/);
       expect(q('application').reponses.map((r) => r.vers), langue).toEqual(['garder', 'telecharger']);
     }
+  });
+
+  it('🔴 « Je ne sais pas » à la question de l’offre dit que Free ne marche qu’avec un agent IA, et sinon Pro (Julien, 2026-10-30)', () => {
+    for (const [langue, agent, sans] of [
+      ['fr', /uniquement depuis un agent IA comme Claude Code ou Codex/, /Sans agent IA, choisissez Pro/],
+      ['en', /only from an AI agent such as Claude Code or Codex/, /Without an AI agent, choose Pro/],
+    ] as const) {
+      const offre = TEXTES_TUNNEL[langue].questions.find((x) => x.id === 'offre')!;
+      expect(offre.reponses.some((r) => !r.vers), langue).toBe(true);
+      expect(offre.aide, langue).toMatch(agent);
+      expect(offre.aide, langue).toMatch(sans);
+    }
+  });
+
+  it('une question répondue reste affichée, sa réponse en évidence, et une autre réponse change le chemin (Julien, 2026-10-30)', () => {
+    const js = lire('site.js');
+    const css = lire('site.css');
+    // Plus de repli en une ligne ni de « Modifier » : on change d'avis en recliquant.
+    expect(js).not.toMatch(/data-modifier|data-resume/);
+    for (const p of PAGES) expect(lire(fichierDe(p.adresse)), p.adresse).not.toMatch(/data-modifier|data-resume/);
+    expect(js).toContain("b.getAttribute('aria-pressed') !== 'true'");
+    expect(css).toContain('.bt-voie-choix:has([aria-pressed="true"]) .bt-voie{');
+    // Les cartes et les réponses d'une question répondue ne se cachent plus.
+    expect(css).not.toMatch(/\.bt-question\.repondue :is\([^)]*\.bt-(voies|reponses)\b[^)]*\)\{display:none/);
   });
 
   it('🔴 le plus long parcours fait trois questions, et le chapeau, l’étape et la page « Démarrer » le disent', () => {
@@ -128,8 +155,8 @@ describe('le tunnel du numéro WhatsApp', () => {
       const tout = [
         t.chapeau, ...t.questions.flatMap((q) => [q.texte, q.precision ?? '', q.aide ?? '', ...q.reponses.map((r) => `${r.libelle} ${r.note ?? ''}`),
           ...(q.voies ?? []).flatMap((v) => [v.titre, ...v.plus, ...v.moins])]),
-        ...t.issues.flatMap((x) => [x.titre, x.situation, ...x.textes, ...Object.values(x.numero)]),
-        ...t.lexique.termes.flatMap((x) => [x.terme, x.definition]),
+        ...t.issues.flatMap((x) => [x.titre, x.situation, ...x.textes, ...Object.values(x.numero ?? {})]),
+        ...t.lexique.termes.flatMap((x) => [x.terme, x.court, x.detail]),
       ].join(' ');
       expect(tout, langue).not.toMatch(/boutique|shopify|\bstore\b|checkout/i);
     }
@@ -145,7 +172,7 @@ describe('le tunnel du numéro WhatsApp', () => {
       const telecharger = issues.find((x) => x.id === 'telecharger')!;
       expect(telecharger.textes.join(' '), langue).toMatch(neuf);
       // Meta ne publie aucun seuil : jamais un nombre de jours ni d'heures.
-      expect([...telecharger.textes, ...Object.values(telecharger.numero)].join(' '), langue).not.toMatch(/\d+\s*(jours?|days?|heures?|hours?|semaines?|weeks?)/i);
+      expect([...telecharger.textes, ...Object.values(telecharger.numero ?? {})].join(' '), langue).not.toMatch(/\d+\s*(jours?|days?|heures?|hours?|semaines?|weeks?)/i);
       // Le numéro API rappelle qu'on peut garder son application.
       expect(issues.find((x) => x.id === 'api')!.autre?.vers, langue).toBe('garder');
     }
@@ -203,6 +230,7 @@ describe('le tunnel du numéro WhatsApp', () => {
       const t = TEXTES_TUNNEL[p.langue];
       const plugin = p.langue === 'fr' ? '/developpeurs/installer-le-plugin/' : '/en/developers/install-the-plugin/';
       for (const x of t.issues) {
+        if (x.contact) continue;
         const article = html.match(new RegExp(`<article class="bt-chemin" data-chemin="${x.id}"[\\s\\S]*?</article>`))?.[0] ?? '';
         const blocs = new Map(article.split('<div class="bt-appels" data-offre="').slice(1).map((b) => [b.slice(0, b.indexOf('"')), b] as const));
         expect([...blocs.keys()], `${p.adresse} : ${x.id}`).toEqual(['free', 'pro']);
@@ -220,7 +248,7 @@ describe('le tunnel du numéro WhatsApp', () => {
           const demande = affiche(bloc.match(new RegExp(`<p id="${id}">([^]*?)</p>`))?.[1] ?? '');
           expect(demande, `${p.adresse} : ${id}`).toBe(affiche(demandeDe(t, x, offre, p.origine)).replace(/ ([:;?!])/g, p.langue === 'fr' ? ' $1' : ' $1'));
           // L'offre la première, la page d'origine ensuite.
-          expect(demande, `${p.adresse} : ${id}`).toMatch(offre === 'free' ? /(offre|the Messaging Me) Free/ : /(offre|the Messaging Me) Pro/);
+          expect(demande, `${p.adresse} : ${id}`).toMatch(offre === 'free' ? /(formule|the Messaging Me) Free/ : /(formule|the Messaging Me) Pro/);
           if (p.origine === 'shopify') expect(demande, `${p.adresse} : ${id}`).toMatch(/Shopify/);
           if (p.origine === 'saas') expect(demande, `${p.adresse} : ${id}`).toMatch(/mon app|my app/);
           if (p.origine === 'generique') expect(demande, `${p.adresse} : ${id}`).not.toMatch(/Shopify|boutique|store|mon app\b|my app\b/);
@@ -258,6 +286,76 @@ describe('le tunnel du numéro WhatsApp', () => {
     expect(lire('index.html').match(/<section class="cadre une">[\s\S]*?<div class="scene-cadre">/)?.[0]).toContain(`href="${DEMARRER.fr}"`);
     expect(lire('en/index.html').match(/<section class="cadre une">[\s\S]*?<div class="scene-cadre">/)?.[0]).toContain(`href="${DEMARRER.en}"`);
     // `site.js` ne répond qu'à `?offre=free` ou `?offre=pro`, les valeurs que les réponses portent.
-    expect(lire('site.js')).toContain('offre=(free|pro)');
+    expect(lire('site.js')).toContain('offre=(free|pro|business|entreprise)');
+  });
+});
+
+/**
+ * FREE ET PRO SANS ARTICLE (Julien, 2026-10-30 : « on arrête de dire en français la Free ou le Pro, c'est Free ou Pro, ou
+ * formule Free ou formule Pro »). Toute la vitrine française, tournures dérivées comprises. Restent, et leur sort est à
+ * Julien : les libellés de la console cités entre guillemets (« Passer en Pro »), que la console affiche encore, et la FAQ
+ * du plugin (`scripts/plugin/faq.ts`), publiée entre `faq:debut` et `faq:fin` sur les pages développeurs.
+ */
+describe('Free et Pro, sans article, sur la vitrine française', () => {
+  const ARTICLE = /(?<![\p{L}’'])(?:la|le|au|du|en)\s+(?:Free|Pro)\b/iu;
+  it('aucune page française ne dit « la Free », « le Pro », « en Free », « au Pro »', () => {
+    const francaises = pagesHtml().filter((p) => !p.startsWith('en/') && p !== '404.html');
+    expect(francaises.length).toBeGreaterThan(40);
+    for (const p of francaises) {
+      // Le texte affiché, sans la FAQ du plugin ni les libellés cités entre guillemets français.
+      const lu = corps(lire(p).replace(/<!-- faq:debut[\s\S]*?<!-- faq:fin -->/g, '')).replace(/«[^»]*»/g, '');
+      const m = lu.match(new RegExp(`.{0,40}${ARTICLE.source}.{0,40}`, 'iu'));
+      expect(m?.[0], p).toBeUndefined();
+    }
+  });
+});
+
+describe('Business et Entreprise, et les mots du guide (Julien, 2026-10-30)', () => {
+  it('🔴 Business et Entreprise ont leur carte, aux chiffres du code, et finissent sur la démo et le contact, sans demande', () => {
+    for (const [langue, business, utilisateurs, entreprise, contact] of [
+      ['fr', `Business, ${PRIX_BUSINESS_HT_CENTIMES.mois / 100}&nbsp;€ HT par mois`, `${DROITS.business.limites.utilisateurs}&nbsp;utilisateurs`, 'Entreprise, sur devis', '/contact/'],
+      ['en', `Business, €${PRIX_BUSINESS_HT_CENTIMES.mois / 100} excl. VAT a month`, `${DROITS.business.limites.utilisateurs} users`, 'Enterprise, on quote', '/en/contact/'],
+    ] as const) {
+      const offre = TEXTES_TUNNEL[langue].questions.find((x) => x.id === 'offre')!;
+      expect(offre.voies!.map((v) => v.titre.split(',')[0]), langue).toEqual(['Free', 'Pro', 'Business', langue === 'fr' ? 'Entreprise' : 'Enterprise']);
+      expect(offre.voies![2]!.titre, langue).toBe(business);
+      expect(offre.voies![2]!.plus.join(' '), langue).toContain(utilisateurs);
+      expect(offre.voies![3]!.titre, langue).toBe(entreprise);
+      const echange = TEXTES_TUNNEL[langue].issues.find((x) => x.id === 'echange')!;
+      expect(echange.contact, langue).toBe(true);
+      for (const p of PAGES.filter((x) => x.langue === langue)) {
+        const article = lire(fichierDe(p.adresse)).match(/<article class="bt-chemin" data-chemin="echange"[\s\S]*?<\/article>/)?.[0] ?? '';
+        expect(article, p.adresse).toContain(`href="${contact}#formulaire"`);
+        expect(article, p.adresse).toContain(`href="${contact}"`);
+        expect(article, p.adresse).not.toMatch(/data-copier|installer-le-plugin|install-the-plugin|signup/);
+        expect(article, p.adresse).not.toContain('data-offre=');
+      }
+    }
+  });
+
+  it('les formules forment un carrousel sur le bureau, avec ses flèches (Julien, 2026-10-30 : « pas 2 rangées »)', () => {
+    for (const p of PAGES) {
+      const html = lire(fichierDe(p.adresse));
+      expect(html, p.adresse).toContain('<div class="bt-voies bt-carrousel" id="voies-offre">');
+      expect(html.match(/<button type="button" class="bt-fleche" data-defiler="(-1|1)"/g)?.length, p.adresse).toBe(2);
+    }
+    expect(lire('site.js')).toContain("closest('[data-defiler]')");
+    expect(lire('site.css')).toMatch(/\.bt-voies\.bt-carrousel\{[^}]*grid-auto-flow:column[^}]*overflow-x:auto/);
+  });
+
+  it('les mots du guide se déplient un à un, sans nombre au titre, avec les liens de Meta et des magasins', () => {
+    for (const langue of ['fr', 'en'] as const) {
+      const { lexique, issues } = TEXTES_TUNNEL[langue];
+      expect(lexique.titre, langue).not.toMatch(/\d|\b(deux|trois|quatre|cinq|two|three|four|five)\b/i);
+      const liens = lexique.termes.flatMap((x) => x.liens ?? []).map((l) => l.href);
+      expect(liens, langue).toEqual(expect.arrayContaining([MAGASINS.metaBusiness, MAGASINS.appStore, MAGASINS.googlePlay]));
+      // La voie « je n'ai pas l'application » porte les mêmes magasins.
+      expect(issues.find((x) => x.id === 'telecharger')!.liens?.map((l) => l.href), langue).toEqual([MAGASINS.appStore, MAGASINS.googlePlay]);
+    }
+    for (const p of PAGES) {
+      const html = lire(fichierDe(p.adresse));
+      expect(html.match(/<details class="bt-mot">/g)?.length, p.adresse).toBe(TEXTES_TUNNEL[p.langue].lexique.termes.length);
+      for (const href of Object.values(MAGASINS)) expect(html, p.adresse).toContain(`href="${href}" rel="noopener"`);
+    }
   });
 });

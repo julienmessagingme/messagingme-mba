@@ -301,12 +301,14 @@
 // Le tunnel du numéro WhatsApp (la page « Démarrer », Boutiques Shopify, SaaS) : l'arbre de Julien (2026-10-30). Sans script,
 // les questions restent cachées et toutes les issues se lisent en liste, chacune avec la situation qu'elle sert et les
 // boutons de chaque offre. Avec lui, la question en cours s'affiche en grand sous l'étape et sa jauge ; chaque réponse
-// (`data-vers`) replie sa question en une ligne (sa réponse dans `data-resume`) et montre la suivante ou une issue ; la
-// réponse qui choisit l'offre (`data-offre`) ne laisse aux issues que les boutons de cette offre ; « Modifier » rouvre une
-// question et efface tout ce qui la suivait ; une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa
-// question ; « Copier » met la demande à coller dans Claude Code dans le presse-papiers ; un lien d'issue
-// (`data-vers-chemin`) montre une autre issue ; `?offre=free` ou `?offre=pro` dans l'adresse (les offres de la page Tarifs)
-// répond à la première question à l'ouverture, sans prendre le focus.
+// (`data-vers`, ou la carte qui la porte) reste affichée, mise en évidence, et la suivante ou une issue apparaît plus bas
+// (Julien, 2026-10-30 : « on garde le carré sélectionné et on passe à la question suivante plus bas ») ; une autre réponse
+// cliquée sur une question déjà répondue efface tout ce qui la suivait et ouvre son chemin ; la réponse qui choisit
+// l'offre (`data-offre`) ne laisse aux issues que les boutons de cette offre ; une réponse sans `data-vers` (« Je ne sais
+// pas ») déplie l'aide de sa question ; « Copier » met la demande à coller dans Claude Code dans le presse-papiers ; un lien d'issue
+// (`data-vers-chemin`) montre une autre issue ; `?offre=` dans l'adresse (free, pro, business, entreprise : les offres de la page Tarifs)
+// répond à la première question à l'ouverture, sans prendre le focus ; sur le bureau, les flèches (`data-defiler`) font défiler
+// le carrousel des formules.
 (function () {
   [].slice.call(document.querySelectorAll('[data-guide-numero]')).forEach(function (g) {
     var questions = g.querySelector('.bt-questions');
@@ -332,9 +334,7 @@
     };
     var effacer = function (q) {
       q.classList.remove('repondue');
-      var resume = q.querySelector('[data-resume]');
-      if (resume) resume.textContent = '';
-      // La question de l'offre rouverte : plus d'offre choisie, les issues retrouvent les boutons des deux.
+      // La question de l'offre effacée : plus d'offre choisie, les issues retrouvent les boutons des deux.
       if (q.querySelector('[data-offre]')) g.removeAttribute('data-offre');
       [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
       var aide = q.querySelector('.bt-aide');
@@ -360,8 +360,10 @@
       choix.removeAllRanges();
       choix.addRange(plage);
     };
-    // Une réponse donnée : sa question se replie, la suivante (ou l'issue) s'affiche. `focus` vaut faux à l'ouverture de la
-    // page, quand l'adresse choisit l'offre : le focus et le défilement restent au visiteur.
+    var doux = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    // Une réponse donnée : sa question reste affichée, la réponse en évidence, et la suivante (ou l'issue) apparaît
+    // dessous. `focus` vaut faux à l'ouverture de la page, quand l'adresse choisit l'offre : le focus et le défilement
+    // restent au visiteur.
     var repondre = function (b, q, focus) {
       var vers = b.getAttribute('data-vers');
       couper(q);
@@ -369,10 +371,14 @@
       // Une réponse peut porter une note (où vérifier son compte Meta Business) : seule la sienne s'affiche.
       [].slice.call(q.querySelectorAll('.bt-note-reponse')).forEach(function (n) { n.hidden = n.id !== b.getAttribute('data-note'); });
       if (b.hasAttribute('data-offre')) g.setAttribute('data-offre', b.getAttribute('data-offre'));
-      // La question répondue se replie en une ligne (la question, la réponse, « Modifier ») : la suivante prend la place.
       q.classList.add('repondue');
-      var resume = q.querySelector('[data-resume]');
-      if (resume) resume.textContent = b.textContent;
+      // Dans le carrousel, la carte choisie se met en vue (une formule choisie par l'adresse peut être hors champ).
+      var choisieCarte = b.closest('.bt-carrousel .bt-voie-choix');
+      var rangeeChoix = choisieCarte && choisieCarte.parentNode;
+      if (rangeeChoix && (choisieCarte.offsetLeft < rangeeChoix.scrollLeft
+        || choisieCarte.offsetLeft + choisieCarte.offsetWidth > rangeeChoix.scrollLeft + rangeeChoix.clientWidth)) {
+        rangeeChoix.scrollTo({ left: choisieCarte.offsetLeft, behavior: focus && doux ? 'smooth' : 'auto' });
+      }
       var aideOuverte = q.querySelector('.bt-aide');
       if (aideOuverte) aideOuverte.hidden = true;
       recommencer.hidden = false;
@@ -384,8 +390,11 @@
         suivante.hidden = false;
         parcours.push(suivante);
         avancer(false);
-        // La question suivante apparaît : le focus va à sa première réponse, qu'un lecteur d'écran l'entende.
-        if (focus) suivante.querySelector('[data-vers]').focus();
+        // La question suivante apparaît plus bas : le focus va à sa première réponse, qu'un lecteur d'écran l'entende, et
+        // elle glisse en vue.
+        if (!focus) return;
+        suivante.querySelector('[data-vers]').focus({ preventScroll: true });
+        suivante.scrollIntoView({ block: 'center', behavior: doux ? 'smooth' : 'auto' });
       } else {
         montrer(vers);
         avancer(true);
@@ -394,7 +403,6 @@
         var issue = g.querySelector('[data-chemin="' + vers + '"]');
         var bouton = issue && issue.querySelector('.bt-appels[data-offre="' + g.getAttribute('data-offre') + '"] a');
         if (bouton) bouton.focus({ preventScroll: true });
-        var doux = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
         if (issue) issue.scrollIntoView({ block: 'nearest', behavior: doux ? 'smooth' : 'auto' });
       }
     };
@@ -412,15 +420,12 @@
         }
         return;
       }
-      // « Modifier » rouvre une réponse donnée : tout ce qui la suivait s'efface, le tunnel revient à cette question.
-      var modifier = e.target.closest && e.target.closest('[data-modifier]');
-      if (modifier) {
-        var rouverte = modifier.closest('[data-question]');
-        couper(rouverte);
-        effacer(rouverte);
-        if (rouverte === premiere) recommencer.hidden = true;
-        avancer(false);
-        rouverte.querySelector('[data-vers]').focus();
+      // Les flèches du carrousel des formules (bureau) : une carte de plus ou de moins.
+      var defiler = e.target.closest && e.target.closest('[data-defiler]');
+      if (defiler) {
+        var rangee = defiler.closest('[data-question]').querySelector('.bt-carrousel');
+        var une = rangee && rangee.querySelector('.bt-voie-choix');
+        if (une) rangee.scrollBy({ left: Number(defiler.getAttribute('data-defiler')) * (une.getBoundingClientRect().width + 16), behavior: doux ? 'smooth' : 'auto' });
         return;
       }
       var aide = e.target.closest && e.target.closest('[data-aide]');
@@ -430,11 +435,13 @@
         aide.setAttribute('aria-expanded', String(Boolean(texte) && !texte.hidden));
         return;
       }
-      var b = e.target.closest && e.target.closest('[data-vers]');
+      // Une carte se choisit d'un clic n'importe où sur elle, comme son bouton (le texte reste sélectionnable au clavier).
+      var carte = e.target.closest && e.target.closest('.bt-voie-choix');
+      var b = (e.target.closest && e.target.closest('[data-vers]')) || (carte && carte.querySelector('[data-vers]'));
       if (b) {
         var q = b.closest('[data-question]');
-        // Une question répondue ne se rouvre que par « Modifier » : sa réponse repliée est inerte, au clavier aussi.
-        if (!q.classList.contains('repondue')) repondre(b, q, true);
+        // La réponse déjà choisie ne refait rien ; une autre change le chemin à partir de cette question.
+        if (b.getAttribute('aria-pressed') !== 'true') repondre(b, q, true);
         return;
       }
       // Un lien d'issue vers une autre (« Vous pouvez la garder ») : l'autre issue prend sa place, son premier bouton le focus.
@@ -458,7 +465,7 @@
         premiere.querySelector('[data-vers]').focus();
       }
     });
-    var offre = (location.search.match(/[?&]offre=(free|pro)(?:&|$)/) || [])[1];
+    var offre = (location.search.match(/[?&]offre=(free|pro|business|entreprise)(?:&|$)/) || [])[1];
     var choisie = offre && premiere.querySelector('[data-vers][data-offre="' + offre + '"]');
     if (choisie) repondre(choisie, premiere, false);
   });

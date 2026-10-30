@@ -1,7 +1,7 @@
 ---
 description: Connect a WhatsApp number to Messaging Me from Meta's window, get one if needed, have it verified, then read its status on the Home screen.
 slug: connect-my-whatsapp-number
-traduit_de: 4ecd95
+traduit_de: 875975
 ---
 # Connect my WhatsApp number, and read its status
 

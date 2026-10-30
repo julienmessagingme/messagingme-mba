@@ -234,19 +234,18 @@
           <div class="bt-questions" hidden>
           <fieldset class="bt-question" data-question="offre" aria-describedby="voies-offre">
             <legend>Which plan do you want?<span class="bt-precision">You can change it later.</span></legend>
-            <span class="bt-resume" data-resume></span>
-            <div class="bt-voies" id="voies-offre">
+            <div class="bt-voies bt-carrousel" id="voies-offre">
               <div class="bt-voie-choix">
                 <section class="bt-voie">
                   <h4>Free, €0 a month</h4>
                   <ul>
                     <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Everything happens by talking to Claude Code or Codex: your number, your AI agent, your messages.</li>
                     <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>With no time limit.</li>
-                    <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>No console: you drive everything from your AI assistant.</li>
+                    <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>No console: you need an AI agent such as Claude Code or Codex.</li>
                     <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>100 contacts and 1,000 messages sent a month.</li>
                   </ul>
                 </section>
-                <button type="button" class="bouton bouton-trait" data-vers="compte" data-offre="free" aria-pressed="false">The Free plan</button>
+                <button type="button" class="bouton bouton-trait" data-vers="compte" data-offre="free" aria-pressed="false">Free</button>
               </div>
               <div class="bt-voie-choix">
                 <section class="bt-voie">
@@ -258,26 +257,44 @@
                     <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>A card required from the trial.</li>
                   </ul>
                 </section>
-                <button type="button" class="bouton bouton-trait" data-vers="compte" data-offre="pro" aria-pressed="false">The Pro plan</button>
+                <button type="button" class="bouton bouton-trait" data-vers="compte" data-offre="pro" aria-pressed="false">Pro</button>
+              </div>
+              <div class="bt-voie-choix">
+                <section class="bt-voie">
+                  <h4>Business, €349 excl. VAT a month</h4>
+                  <ul>
+                    <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Everything in Pro, plus the Meta Business Agent and HubSpot.</li>
+                    <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>5 users and dedicated support for the first two months.</li>
+                    <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>Invoiced, after a conversation with us.</li>
+                  </ul>
+                </section>
+                <button type="button" class="bouton bouton-trait" data-vers="echange" data-offre="business" aria-pressed="false">Business</button>
+              </div>
+              <div class="bt-voie-choix">
+                <section class="bt-voie">
+                  <h4>Enterprise, on quote</h4>
+                  <ul>
+                    <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Everything in Business, plus RCS, Salesforce, conversation analysis and Click-to-WhatsApp ads.</li>
+                    <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">For: </span>Contacts, users and webhooks sized for you.</li>
+                    <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Against: </span>A quote based on your volume.</li>
+                  </ul>
+                </section>
+                <button type="button" class="bouton bouton-trait" data-vers="echange" data-offre="entreprise" aria-pressed="false">Enterprise</button>
               </div>
             </div>
+            <div class="bt-fleches"><button type="button" class="bt-fleche" data-defiler="-1" aria-label="Previous plans"><svg class="ic" aria-hidden="true"><use href="#i-caret-left"/></svg></button><button type="button" class="bt-fleche" data-defiler="1" aria-label="Next plans"><svg class="ic" aria-hidden="true"><use href="#i-caret-left"/></svg></button></div>
             <div class="bt-reponses"><button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">I don’t know</button></div>
-            <button type="button" class="bt-modifier" data-modifier>Change</button>
-            <p class="bt-aide" hidden>The Free plan is enough to start: you drive everything from Claude Code or Codex, and your AI agent answers your customers. Pro adds the console, for you and your team, and a provided number.</p>
+            <p class="bt-aide" hidden>Free is driven only from an AI agent such as Claude Code or Codex: without one, Free does not work. Without an AI agent, choose Pro: the console, for you and your team, with a provided number.</p>
           </fieldset>
           <fieldset class="bt-question" data-question="compte" hidden>
             <legend>Do you have a Meta Business account?<span class="bt-precision">Formerly Business Manager: your business’s account at Meta.</span></legend>
-            <span class="bt-resume" data-resume></span>
             <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="api" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="application" data-note="note-compte-1" aria-pressed="false">No</button><button type="button" class="bouton bouton-trait" data-vers="application" data-note="note-compte-2" aria-pressed="false">I don’t know</button></div>
-            <button type="button" class="bt-modifier" data-modifier>Change</button>
             <p class="bt-note-reponse" id="note-compte-1" role="status" hidden>Nothing to prepare: Meta’s window will have you create it along the way.</p>
             <p class="bt-note-reponse" id="note-compte-2" role="status" hidden>To check: <a href="https://business.facebook.com/" rel="noopener">business.facebook.com</a>. If you advertise on Facebook or Instagram, you probably have one. Otherwise, Meta’s window will have you create it along the way.</p>
           </fieldset>
           <fieldset class="bt-question" data-question="application" hidden>
             <legend class="bt-avec-logo"><img class="bt-logo" src="/img/logos/whatsapp-business.png" alt="" width="40" height="40">Do you already have the WhatsApp Business app?<span class="bt-precision">The app for businesses, separate from WhatsApp.</span></legend>
-            <span class="bt-resume" data-resume></span>
             <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="garder" aria-pressed="false">Yes</button><button type="button" class="bouton bouton-trait" data-vers="telecharger" aria-pressed="false">No</button></div>
-            <button type="button" class="bt-modifier" data-modifier>Change</button>
           </fieldset>
             <button type="button" class="bt-recommencer" data-recommencer hidden>Start again</button>
           </div>
@@ -327,6 +344,7 @@
           <p>Install the WhatsApp Business app on a phone, with your business’s number, then connect it right away while keeping the app: your number stays on your phone and also sends from Messaging Me.</p>
           <p>No Meta Business account? Meta’s window creates it along the way, with your Facebook profile, then offers a payment method.</p>
           <p>Meta sometimes refuses a number that is too new: then use the app for a few days, and come back to connect it.</p>
+          <p class="bt-liens"><a class="bouton bouton-trait" href="https://apps.apple.com/app/whatsapp-business/id1386412985" rel="noopener">App Store (iPhone)</a><a class="bouton bouton-trait" href="https://play.google.com/store/apps/details?id=com.whatsapp.w4b" rel="noopener">Google Play (Android)</a></p>
           <div class="bt-appels" data-offre="free">
             <p class="bt-appels-titre">With the Free plan, from your AI assistant</p>
             <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="/en/developers/install-the-plugin/">Install the plugin</a><a class="bouton bouton-trait" href="https://github.com/julienmessagingme/messagingme-plugin" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#i-github"/></svg>The GitHub repository</a></div>
@@ -340,16 +358,40 @@
             <div class="bt-demande"><p id="demande-telecharger-pro">Set up WhatsApp with the Messaging Me Pro plan. I just installed the WhatsApp Business app with my number and I want to keep it: connect it through Meta so it also sends from Messaging Me, walk me through creating my Meta Business account along the way, and if Meta refuses a number that is too new, tell me: I will come back in a few days. Then create my AI agent from my website, so it answers my customers.</p><button type="button" class="bouton bouton-trait" data-copier="demande-telecharger-pro" data-copie="Copied" hidden>Copy</button></div>
           </div>
         </article>
+        <article class="bt-chemin" data-chemin="echange" id="numero-echange">
+          <p class="bt-situation">With the Business or Enterprise plan</p>
+          <h3>Let’s talk about your project</h3>
+          <p>Business and Enterprise are set up after a conversation with us: we put the plan on your workspace, invoiced, with no online payment, and we support you through the setup.</p>
+          <p>A 14-day Business trial is possible on request. Enterprise is priced on quote, based on your volume.</p>
+          <div class="bt-appels">
+            <p class="bt-appels-titre">With our team</p>
+            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="/en/contact/#formulaire">Request a demo</a><a class="bouton bouton-trait" href="/en/contact/">Contact us</a></div>
+          </div>
+        </article>
           </div>
         </div>
         <details class="bt-lexique">
-          <summary>The four words used here<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
-          <dl>
-            <div><dt>The Meta Business account</dt><dd>Your business’s account at Meta (a “portfolio”, formerly Business Manager), on <a href="https://business.facebook.com/" rel="noopener">business.facebook.com</a>. If you advertise on Facebook or Instagram, you probably have one. Otherwise, nothing to prepare: it is free, and Meta’s window has you create it along the way, with your Facebook profile.</dd></div>
-            <div><dt>The WhatsApp Business app</dt><dd>The app for businesses, separate from WhatsApp, to download on a phone, with your business’s number.</dd></div>
-            <div><dt>The API number</dt><dd>A number connected through Meta to the official WhatsApp API, driven by Messaging Me: it sends your messages (confirmations, reminders, follow-ups), and Meta bills its messages.</dd></div>
-            <div><dt>Keeping your app</dt><dd>Your WhatsApp Business app number also becomes an API number, without leaving the app: you still reply from your phone, and your messages also go out from Messaging Me.</dd></div>
-          </dl>
+          <summary>The words of this guide, explained<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+          <ul class="bt-mots">
+            <li><details class="bt-mot">
+              <summary><strong>The Meta Business account</strong><span>Your business’s account at Meta, formerly Business Manager.</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+              <p>If you advertise on Facebook or Instagram, you probably have one. Otherwise, nothing to prepare: it is free, and Meta’s window has you create it along the way, with your Facebook profile.</p>
+              <p class="bt-liens"><a class="bouton bouton-trait" href="https://business.facebook.com/" rel="noopener">See my Meta Business account</a></p>
+            </details></li>
+            <li><details class="bt-mot">
+              <summary><strong>The WhatsApp Business app</strong><span>The app for businesses, separate from WhatsApp.</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+              <p>It installs on a phone, with your business’s number. Kept, it keeps serving you while Messaging Me sends your messages.</p>
+              <p class="bt-liens"><a class="bouton bouton-trait" href="https://apps.apple.com/app/whatsapp-business/id1386412985" rel="noopener">App Store (iPhone)</a><a class="bouton bouton-trait" href="https://play.google.com/store/apps/details?id=com.whatsapp.w4b" rel="noopener">Google Play (Android)</a></p>
+            </details></li>
+            <li><details class="bt-mot">
+              <summary><strong>The API number</strong><span>The number connected through Meta to the official WhatsApp API.</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+              <p>It sends your messages (confirmations, reminders, follow-ups), driven by Messaging Me. Meta bills its messages.</p>
+            </details></li>
+            <li><details class="bt-mot">
+              <summary><strong>Keeping your app</strong><span>Your number stays in the app and also sends from Messaging Me.</span><svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+              <p>It also becomes an API number: you still reply from your phone, and your confirmations, reminders and follow-ups go out from Messaging Me.</p>
+            </details></li>
+          </ul>
         </details>
       </div>
   </section>
