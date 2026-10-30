@@ -274,8 +274,8 @@ describe('le CHECK des motifs de pause, à sa DERNIÈRE définition', () => {
   const migrations = readdirSync(new URL('../db/migrations/', import.meta.url)).filter((f) => f.endsWith('.sql')).sort();
   const derniere = [...migrations].reverse().find((f) => lire(`../db/migrations/${f}`).includes('add constraint campaigns_pause_reason_check'));
 
-  it('🔴 la dernière migration qui le pose porte EXACTEMENT les motifs du code (0215 aujourd’hui)', () => {
-    expect(derniere).toBe('0215_numero_impaye.sql');
+  it('🔴 la dernière migration qui le pose porte EXACTEMENT les motifs du code (0264 aujourd’hui)', () => {
+    expect(derniere).toBe('0264_credit_whatsapp.sql');
     const instructions = decouperInstructions(lire(`../db/migrations/${derniere!}`)).map(sansCommentaires).map((i) => i.trim());
     const pose = instructions.find((x) => x.includes('add constraint campaigns_pause_reason_check'))!;
     const codes = [...pose.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1]!);
@@ -290,6 +290,14 @@ describe('le CHECK des motifs de pause, à sa DERNIÈRE définition', () => {
     const requete = store.slice(store.indexOf('async reprendreCampagnesDues'), store.indexOf('returning id, tenant_id', store.indexOf('async reprendreCampagnesDues')));
     expect(requete).not.toContain('numero_suspendu');
     expect(sansCommentaires(lire('../db/migrations/0215_numero_impaye.sql'))).not.toContain('campaigns_reprise_idx');
+  });
+
+  it('🔴 ni le crédit épuisé ni la ligne inactive : seuls un crédit ou l’option les lèvent', () => {
+    const store = lire('../src/campaign/store.pg.ts');
+    const requete = store.slice(store.indexOf('async reprendreCampagnesDues'), store.indexOf('returning id, tenant_id', store.indexOf('async reprendreCampagnesDues')));
+    expect(requete).not.toContain('credit_whatsapp_epuise');
+    expect(requete).not.toContain('ligne_credit_inactive');
+    expect(sansCommentaires(lire('../db/migrations/0264_credit_whatsapp.sql'))).not.toContain('campaigns_reprise_idx');
   });
 });
 

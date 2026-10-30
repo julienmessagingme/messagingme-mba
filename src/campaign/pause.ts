@@ -8,14 +8,22 @@ import type { RaisonDePause } from '../meta/errors';
  * Les nôtres n'entrent pas dans `RaisonDePause`, qui se dérive d'une erreur Meta (`raisonDePause(err)`).
  * `numero_delie` n'a jamais d'échéance : seul le geste « Relier » le lève, le balayage de reprise ne le voit
  * pas (`reprendreCampagnesDues`, index `campaigns_reprise_idx`).
+ *
+ * Le Crédit WhatsApp (migration 0264) en ajoute deux, sans échéance non plus : `credit_whatsapp_epuise` (le solde
+ * prépayé ne couvre plus l'envoi suivant, levé par un crédit) et `ligne_credit_inactive` (le numéro n'est plus payé
+ * par la ligne, levé quand l'option revient).
  */
-export type MotifDePause = RaisonDePause | 'hors_horaires' | 'numero_delie' | 'numero_suspendu';
+export type MotifDePause =
+  | RaisonDePause | 'hors_horaires' | 'numero_delie' | 'numero_suspendu' | 'credit_whatsapp_epuise' | 'ligne_credit_inactive';
 
 /**
  * Tous les motifs, tenus par le compilateur. Le CHECK `campaigns_pause_reason_check` doit les porter tous
  * (un test le vérifie) : un motif refusé par la base ferait échouer la mise en pause en pleine campagne.
  */
-const MOTIFS: Record<MotifDePause, true> = { debit: true, qualite: true, hors_horaires: true, numero_delie: true, numero_suspendu: true };
+const MOTIFS: Record<MotifDePause, true> = {
+  debit: true, qualite: true, hors_horaires: true, numero_delie: true, numero_suspendu: true,
+  credit_whatsapp_epuise: true, ligne_credit_inactive: true,
+};
 export const MOTIFS_DE_PAUSE = Object.keys(MOTIFS) as MotifDePause[];
 
 /**
@@ -61,6 +69,15 @@ export function messageDePause(raison: MotifDePause, reprise: Date | null, code:
     // Lot 4 : la campagne reprend d'elle-même au paiement, personne n'a à la relancer.
     return 'Abonnement du numéro WhatsApp impayé ou terminé : campagne mise en pause. Les destinataires qui n’avaient encore '
       + 'rien reçu restent en attente, et elle reprendra d’elle-même dès que l’abonnement sera renouvelé.';
+  }
+  if (raison === 'credit_whatsapp_epuise') {
+    // Le crédit la lève : un achat, une recharge automatique. Le partenaire n'est jamais nommé.
+    return 'Crédit WhatsApp épuisé : campagne mise en pause. Les destinataires qui n’avaient encore rien reçu restent en '
+      + 'attente, et elle reprendra d’elle-même dès que le crédit sera rechargé.';
+  }
+  if (raison === 'ligne_credit_inactive') {
+    return 'Le Crédit WhatsApp n’est plus actif sur ce numéro : campagne mise en pause. Les destinataires qui n’avaient '
+      + 'encore rien reçu restent en attente, et elle reprendra quand l’option Crédit WhatsApp sera rétablie.';
   }
   if (raison === 'hors_horaires') {
     // Le client l'a demandé : le dire, sinon la pause ressemble à une panne et l'opérateur relance contre sa
