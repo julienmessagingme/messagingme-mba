@@ -124,8 +124,9 @@ Meta, le détail des Tarifs, les publicités de Pilotage des coûts.
 
 ✅ **La vitrine a sa page Intégrations** (2026-10-24) : `app.messagingme.fr/integrations/`, jumelle `/en/integrations/`,
 au menu « Ressources ». Shopify, HubSpot, Salesforce, Claude Code, Codex et « vos autres outils » (API, webhooks, MCP),
-un logo et une ligne chacun, sans offre ni état. Shopify mène à la page « Boutiques Shopify », HubSpot et Salesforce à
-« Analyse de conversations », Claude Code et Codex aux pages développeurs. Après « Ils nous font confiance », l'accueil porte la rangée « Se branche à vos
+un logo et une ligne chacun, sans offre ni état. Shopify mène à la page « Boutiques Shopify », HubSpot à son guide
+« Intégrer WhatsApp à HubSpot, sans Sales Hub » (depuis le 2026-10-30 : répondre depuis la fiche contact, les actions
+de workflow, l'analyse), Salesforce à « Analyse de conversations », Claude Code et Codex aux pages développeurs. Après « Ils nous font confiance », l'accueil porte la rangée « Se branche à vos
 outils », dont chaque logo mène à sa carte ; les tarifs citent Shopify, par Claude Code dans la Free et depuis la console
 dans le Pro. Shopify n'y apparaît qu'en compatibilité (Messaging Me n'est pas Partner) : son logo noir, jamais
 « partenaire », « officiel » ni « certifié ».

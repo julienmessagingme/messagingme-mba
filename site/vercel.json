@@ -36,6 +36,16 @@
       "permanent": true
     },
     {
+      "source": "/aide/hubspot-sur-l-accueil/",
+      "destination": "/aide/integrer-whatsapp-a-hubspot/",
+      "permanent": true
+    },
+    {
+      "source": "/en/help/hubspot-on-the-home-screen/",
+      "destination": "/en/help/integrate-whatsapp-with-hubspot/",
+      "permanent": true
+    },
+    {
       "source": "/index.html",
       "destination": "/",
       "permanent": true

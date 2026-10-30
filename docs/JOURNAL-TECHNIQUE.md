@@ -4,6 +4,25 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-30 (soir) : le guide HubSpot dit tout ce que fait l'app, sans Sales Hub
+
+Vitrine, aide et un texte de la console, aucune migration. Demande de Julien : l'app HubSpot ne fait plus seulement
+l'analyse (réponse depuis la fiche contact, page « Messaging Me », trois actions de workflow, tâche de reprise), et
+l'argument à porter est qu'elle ne demande ni Sales Hub ni Data Hub, la seule offre HubSpot dont les workflows ont
+l'action webhook (vérifié dans l'aide de HubSpot ce jour-là).
+- La fiche publique `hubspot-sur-l-accueil` devient `integrer-whatsapp-a-hubspot` (« Intégrer WhatsApp à HubSpot, sans
+  Sales Hub », anglais `integrate-whatsapp-with-hubspot`) : ce que fait l'app, ce qu'il faut côté HubSpot, puis la mise
+  en place en huit étapes (dont l'ajout de la carte sur la fiche contact, qui n'était que dans le tuto de la console).
+  Écran `integrations` et ancre `integration-hubspot` au lieu de l'Accueil. Les deux anciennes adresses redirigent
+  (`site/vercel.json`). L'argument s'appuie sur le cadrage du connecteur (`~/mm-hubspot`, 2026-10-23 : la carte et la
+  page d'une app publique valent sur toutes les offres HubSpot ; les webhooks d'app ne demandent aucun abonnement) ;
+  seules les actions de workflow demandent des workflows HubSpot, donc un abonnement Pro.
+- La carte HubSpot de la page Intégrations mène au guide (et plus à « Analyse de conversations ») ; la question HubSpot
+  de la FAQ d'accueil dit la réponse depuis HubSpot et les workflows ; `/tuto-hubspot` (console) se branche dans Tools >
+  Intégrations, dit que la carte montre la conversation, et renvoie au guide public.
+- Reste : `aide:charger` après le prochain déploiement de l'API (la clé de la fiche change), et `curl -I` des deux
+  anciennes adresses après la publication.
+
 ## 2026-10-30 (soir) : l'essai réel du chiffre d'affaires attribué (essai 182, lots 0 et 1)
 
 Espace « Messaging Me demo », boutique de dev `messaging-me-essai`. Julien sur le téléphone, Claude en lecture seule

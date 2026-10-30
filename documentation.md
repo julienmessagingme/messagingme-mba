@@ -2827,7 +2827,7 @@ modifiés dans `/ops` (rétablir supprime la ligne), `emails_produit_interrupteu
   numéro délié aussi), jamais un rejeu ni un `deja_envoye`. Le jour plein l'emporte sur la minute et rend
   `plafond_jour`. La route du choix écrit le réglage (champ `workflows` facultatif, fonction `crm`) et `GET /settings`
   le rend (`hubspotWorkflows`) ; la console l'affiche dans Tools > Intégrations > HubSpot (« Workflows HubSpot : envoyer
-  des modèles et lancer des scénarios », fonction `crm`, indépendante de la réponse) et la fiche `hubspot-sur-l-accueil`
+  des modèles et lancer des scénarios », fonction `crm`, indépendante de la réponse) et la fiche `integrer-whatsapp-a-hubspot`
   l'explique. L'action elle-même vit dans le connecteur (`~/mm-hubspot`, `src/workflow/action.ts`). Le câblage est tenu
   par `tests/hubspot-workflow-cablage.test.ts`.
 - **L'action « Lancer un scénario Messaging Me »** (cadrage `~/mm-hubspot/docs/2026-10-29-action-workflow-scenario-cadrage.md`,

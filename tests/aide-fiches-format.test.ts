@@ -193,7 +193,7 @@ describe('les fiches publiques', () => {
     'lancer-une-campagne': ['parler-aux-clients', 5],
     'brancher-ma-boutique-shopify': ['parler-aux-clients', 6],
     // Quatre fiches choisies par Julien le 2026-10-26 (plan SEO, C6, D5), publiées sans capture.
-    'hubspot-sur-l-accueil': ['demarrer', 6],
+    'integrer-whatsapp-a-hubspot': ['demarrer', 6],
     'poser-une-bulle-whatsapp-sur-mon-site': ['parler-aux-clients', 7],
     'publier-sur-ma-chaine-whatsapp': ['parler-aux-clients', 8],
     'envoyer-un-message-rcs': ['parler-aux-clients', 9],
@@ -240,7 +240,7 @@ describe('les fiches publiques', () => {
   it('les pages sans capture et sans mention d’offre sont celles prévues', () => {
     expect(publiques.filter((f) => !f.publication.captures).map((f) => f.cle).sort())
       .toEqual(['ce-qu-il-faut-chez-meta', 'construire-un-agent-ia', 'creer-une-publicite', 'envoyer-un-message-rcs',
-        'hubspot-sur-l-accueil', 'la-fenetre-de-24-heures', 'le-repondeur-de-meta', 'poser-une-bulle-whatsapp-sur-mon-site',
+        'integrer-whatsapp-a-hubspot', 'la-fenetre-de-24-heures', 'le-repondeur-de-meta', 'poser-une-bulle-whatsapp-sur-mon-site',
         'publier-sur-ma-chaine-whatsapp']);
     // Connecter son numéro et garder son application se font depuis Claude Code (Free) ou l'Accueil, ouvert à la
     // Free (`ECRANS_FREE`, `MODULES_OUVERTS_AU_FREE`) : aucune offre à dire.
@@ -260,7 +260,7 @@ describe('les fiches publiques', () => {
     }
     // HubSpot dit le Business, comme la vitrine (décision de Julien, 2026-10-28), alors que la grille le ferme encore sous
     // `crm`, à l'Entreprise : le lot 2 scinde `crm` (spec, § HubSpot seul), et ce cas redevient alors dérivé de `DROITS`.
-    expect(publiques.find((f) => f.cle === 'hubspot-sur-l-accueil')?.publication.offre).toBe('business');
+    expect(publiques.find((f) => f.cle === 'integrer-whatsapp-a-hubspot')?.publication.offre).toBe('business');
     expect(() => publicationDe('---\npublique: oui\nrubrique: demarrer\nrang: 1\noffre: oui\n---\n# T')).toThrow(/offre/);
   });
 
