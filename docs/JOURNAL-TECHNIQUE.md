@@ -37,6 +37,10 @@ Aucune migration. Plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-
 - `tests/questions-numero-vitrine.test.ts` tient la console et la skill égales aux questions de la vitrine, au mot près.
 - Le message de Meta pour un numéro trop neuf n'est toujours PAS mesuré chez nous (celui de la fiche vient de
   revendeurs) : essai 198, la console du navigateur ouverte. Restes au `todo.md`.
+- **En service** : poussé en `653f115c` (CI verte), déployé le 2026-10-30 à 20:22 UTC (run 41120444496, `migration=avant`,
+  qui a appliqué la 0263 de la session Répondeur à sa demande, seule migration du journal). Plugin 0.3.17 publié
+  (étiquette `f29c3b88`, 17 fichiers égaux à `plugin/` de `main`), la FAQ « formule Free / formule Pro » de `0bf18bfa`
+  comprise. `aide:charger` reste à Julien : le garde-fou refuse cette écriture en production depuis le poste.
 
 ## 2026-10-30 (soir) : le tunnel plus lisible d'une question à l'autre, et Free et Pro sans article
 
