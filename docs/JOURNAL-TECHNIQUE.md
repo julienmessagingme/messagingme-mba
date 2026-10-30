@@ -4,6 +4,23 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-30 (soir) : l'essai réel du chiffre d'affaires attribué (essai 182, lots 0 et 1)
+
+Espace « Messaging Me demo », boutique de dev `messaging-me-essai`. Julien sur le téléphone, Claude en lecture seule
+(base par `begin read only`, parcours client par l'API GraphQL de la boutique, le vrai code dans `mba-worker`).
+- **Ce qui a marché** : le modèle `essai_ca_boutique` (bouton de lien) tracé à la création, la campagne « essai » lue,
+  trois clics rattachés à la fiche ; la redirection rend `302` vers la boutique avec les trois UTM. #1006, panier
+  relancé puis payé : `relance_panier`, preuve `panier`. #1008 et #1009 : `relance_panier` à la réception (la relance
+  était le dernier envoi), puis `campagne`, preuve `utm`, à la relecture de 30 minutes. #1005 : `campagne` sans preuve.
+  Compteur des relances du jour : 1.
+- **Ce qui a trompé l'essai, rien dans le code** : la page de mot de passe d'une boutique de dev renvoie un navigateur
+  sans son cookie sur `/password`, où Shopify enregistre la visite SANS les UTM (#1004, une seconde après le clic) ; le
+  parcours d'une commande repart à zéro après chaque commande (#1005, venue de la page de remerciement de #1004) ; le
+  navigateur ouvert par le bouton ne remplit pas le téléphone (#1004 et #1007 sans numéro, donc sans vente).
+- **Le diagnostic** a rejoué la relecture à la main (jeton, parcours, dernière touche du modèle), faute d'issue
+  journalisée. Suites au `todo.md` : journaliser l'issue, et faire rendre le téléphone obligatoire au paiement par le
+  guide du marchand.
+
 ## 2026-10-30 (soir) : la refonte de /ops, lot 4 (les seuils réglables et les alertes Telegram de Santé)
 
 `d86a1fba`, run 41093312013, migration 0262 en `avant`. Le déploiement emporte aussi le lot HubSpot d'une session

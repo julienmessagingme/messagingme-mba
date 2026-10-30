@@ -55,7 +55,9 @@ Spec `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`, section «
     espace), et un 429 du point de jeton tombe en `identifiants`, donc en abandon silencieux (le traiter en passager) ;
   - chaque livraison d'`orders/paid` (doublon, réessai après un 503) relance une chaîne de relecture, bornée et
     idempotente : ne pas programmer quand `enregistrer` rend `deja` ;
-  - aucune issue de la relecture n'est journalisée (abandon faute de jeton, boutique coupée, sans preuve) ;
+  - aucune issue de la relecture n'est journalisée (abandon faute de jeton, boutique coupée, sans preuve) : à l'essai
+    réel du 2026-10-30, il a fallu rejouer la relecture à la main dans le conteneur pour savoir pourquoi #1005 restait
+    sans preuve ;
   - un enfilement en échec se journalise sous `shopify_attribution_en_echec` alors que la vente est enregistrée ; au-delà
     du budget de 1,5 s, l'attribution continue détachée, sans suivi par `enVol` ;
   - le corps d'une réponse non 200 de Shopify n'est pas annulé (`res.body?.cancel()`) ;
@@ -63,6 +65,11 @@ Spec `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`, section «
   - le job porte l'identifiant de commande et de fiche, gardé 7 jours dans les tables de pg-boss (comme les jobs
     `webhook`) : ni la purge ni `customers/redact` n'y touchent ;
   - un `?redirect=` de Shopify (lien de remise) garde-t-il nos UTM ? Non mesuré.
+- 🟡 **Le téléphone obligatoire au paiement, dans le guide du marchand (essai réel du 2026-10-30)** : une commande sans
+  téléphone ne s'attribue jamais et ne reçoit aucune confirmation WhatsApp (`sans_telephone`). À l'essai, les deux
+  commandes passées dans la page ouverte par le bouton n'en avaient pas : ce navigateur ne le remplit pas. La skill
+  `shopify` du plugin et la fiche d'aide doivent faire régler Paiement > « Numéro de téléphone de l'adresse de
+  livraison » sur Obligatoire. À poser avec le lot 2.
 - 🟡 **Hors lot, vu par la relecture du lot 6** : une destination de lien tracé qui porte un caractère hors latin-1 (`€`,
   un emoji) fait lever `ERR_INVALID_CHAR` sur l'en-tête `location`, donc une 500, pour un espace SANS boutique branchée
   (avec boutique, le passage par `URL` l'encode).
