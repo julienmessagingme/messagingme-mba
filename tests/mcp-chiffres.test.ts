@@ -262,6 +262,67 @@ describe('get_ai_stats', () => {
   });
 });
 
+describe('get_revenue_stats (plan 2026-10-30, lot 2)', () => {
+  const CHIFFRE = {
+    periode: { from: '2026-10-01', to: '2026-10-30' },
+    reel: {
+      totaux: [{ devise: 'EUR', brut: '170.5', prouve: '100.5', commandes: 3 }, { devise: 'USD', brut: '30', prouve: '0', commandes: 1 }],
+      sources: [
+        { source: 'campagne' as const, campaignId: 'k1', nom: 'Soldes', devise: 'EUR', brut: '150.5', prouve: '100.5', commandes: 2 },
+        { source: 'agent' as const, campaignId: null, nom: null, devise: 'USD', brut: '30', prouve: '0', commandes: 1 },
+        { source: 'campagne' as const, campaignId: null, nom: null, devise: 'EUR', brut: '20', prouve: '0', commandes: 1 },
+      ],
+    },
+    test: {
+      totaux: [{ devise: 'USD', brut: '2148.85', prouve: '1548.85', commandes: 4 }],
+      sources: [{ source: 'relance_panier' as const, campaignId: null, nom: null, devise: 'USD', brut: '785.95', prouve: '785.95', commandes: 1 }],
+    },
+    paniers: { relances: 7, recuperes: 2, montants: [{ devise: 'EUR', montant: '40' }], recuperesTest: 1 },
+  };
+
+  it('🔴 le chiffre par devise, la part prouvée, chaque source, les paniers, et les tests à part, montants rendus tels quels', async () => {
+    const vus: unknown[] = [];
+    const appeler = appelerOutil('get_revenue_stats', { chiffreVentes: async (_t, range) => { vus.push(range); return CHIFFRE; } });
+    const r = await appeler({ du: '2026-10-01', au: '2026-10-30' });
+    expect(vus).toEqual([{ from: '2026-10-01', to: '2026-10-30' }]);
+    expect(r.periode).toEqual({ du: '2026-10-01', au: '2026-10-30', fuseau: 'Europe/Paris' });
+    expect(r.chiffre).toEqual([{ devise: 'EUR', brut: '170.5', prouve: '100.5', commandes: 3 }, { devise: 'USD', brut: '30', prouve: '0', commandes: 1 }]);
+    expect(r.par_source).toEqual([
+      { source: 'campagne', campagne_id: 'k1', campagne: 'Soldes', devise: 'EUR', brut: '150.5', prouve: '100.5', commandes: 2 },
+      { source: 'agent', campagne_id: null, campagne: null, devise: 'USD', brut: '30', prouve: '0', commandes: 1 },
+      { source: 'campagne', campagne_id: null, campagne: null, devise: 'EUR', brut: '20', prouve: '0', commandes: 1 },
+    ]);
+    expect(r.paniers).toEqual({ relances: 7, recuperes: 2, montant_recupere: [{ devise: 'EUR', montant: '40' }] });
+    expect(r.commandes_de_test).toEqual({
+      chiffre: [{ devise: 'USD', brut: '2148.85', prouve: '1548.85', commandes: 4 }],
+      par_source: [{ source: 'relance_panier', campagne_id: null, campagne: null, devise: 'USD', brut: '785.95', prouve: '785.95', commandes: 1 }],
+      paniers_recuperes: 1,
+    });
+    // La règle, dite pour que l'assistant ne présente jamais une concordance comme une cause.
+    expect(r.regle).toMatch(/5 jours/);
+    expect(r.a_savoir.join(' ')).toMatch(/brut/i);
+    expect(r.a_savoir.join(' ')).toMatch(/concordance/);
+  });
+
+  it('par défaut les 30 derniers jours ; une période illisible est refusée', async () => {
+    const vus: Array<{ from: string; to: string }> = [];
+    const appeler = appelerOutil('get_revenue_stats', { chiffreVentes: async (_t, range) => { vus.push(range); return { ...CHIFFRE, periode: range }; } });
+    await appeler({});
+    expect(vus).toEqual([{ from: addDays(todayParis(), -29), to: todayParis() }]);
+    await expect(appeler({ du: '2026-10-30', au: '2026-10-01' })).rejects.toBeInstanceOf(RefusOutil);
+  });
+
+  it('🔴 ouvert à toutes les offres, Free comprise : aucune fonction, en lecture, sans personne requise', async () => {
+    const o = OUTILS_CHIFFRES.find((x) => x.nom === 'get_revenue_stats')!;
+    expect(o.fonction).toBeNull();
+    expect(o.scope).toBe('mcp:read');
+    expect(o.exigePersonne).toBeUndefined();
+    expect(o.annotations.readOnlyHint).toBe(true);
+    const r = await appelerOutil('get_revenue_stats', { chiffreVentes: async () => CHIFFRE }, 'base')({});
+    expect(r.chiffre).toHaveLength(2);
+  });
+});
+
 describe('le catalogue', () => {
   it('🔴 les trois outils du Pro sont réservés à leur fonction de l’offre, en lecture, sans personne requise', () => {
     // Spec offres v2 : ce que l'analyse a compris suit la fonction `analyse` (l'Entreprise seule, à la livraison 5), pas

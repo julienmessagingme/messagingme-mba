@@ -10,6 +10,8 @@ export const CATALOGUE_MCP = {
   get_campaign_stats: { scope: 'mcp:read' },
   get_conversation_insights: { scope: 'mcp:read' },
   get_ai_stats: { scope: 'mcp:read' },
+  /** Le chiffre d'affaires attribué aux envois WhatsApp (Shopify, plan 2026-10-30) : des agrégats, toutes offres. */
+  get_revenue_stats: { scope: 'mcp:read' },
   search_contacts: { scope: 'mcp:read' },
   get_contact: { scope: 'mcp:read' },
   /** Bloquer un contact (2026-10-22) : une décision qui coupe la relation avec un client, signée d'une personne. */

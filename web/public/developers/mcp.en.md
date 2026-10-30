@@ -70,6 +70,7 @@ Tools marked "OAuth connection required" act on behalf of a person: an API key d
 | get_campaign_stats | mcp:read | The period’s campaigns with their estimated cost, clicks and Meta errors, or one campaign’s funnel. |
 | get_conversation_insights | mcp:read | What the analysis understood of conversations: sentiment, intents, resolution, topics, and satisfaction and urgency over time. |
 | get_ai_stats | mcp:read | AI agent figures: cost of agent turns on the credit, messages written by AI, requests opened for the team and actions triggered. |
+| get_revenue_stats | mcp:read | What WhatsApp sends brought in on the Shopify store: gross revenue per currency and its proven part, each source (campaign, checkout reminder, scenarios, agents), the checkouts reminded and recovered; test orders apart. |
 | get_messages | mcp:read | The last 50 messages of a thread, oldest first, and before to go further back. |
 | find_contacts | mcp:read | The contacts of a target, like the contact list filters: tags, consent and, on the Enterprise plan, the latest analysis. The total, and up to 100 contacts. |
 | tag_contacts | mcp:write OAuth connection required | Tag the contacts of a target or of a list of conversations: a segment is a tag. Through the console’s bulk action, without starting any automation. |

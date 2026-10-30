@@ -751,6 +751,7 @@ export const mcpChiffresInertes: Pick<DepsMcp, 'chiffres'> = {
       templates: { marketing: 0, utility: 0 }, service: { envoyes: 0, factures: 0, cout: 0, parMois: [] },
       rcs: { simple: 0, conversationnel: 0, cout: 0 }, total: 0, currency: null, nonChiffrables: 0, sansCategorie: 0, sansTarif: 0,
     }),
+    chiffreVentes: neDevraitPasEtreAppelee('chiffres.chiffreVentes'),
   },
 };
 

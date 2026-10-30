@@ -12,6 +12,7 @@ import type { ConversationAnalysisSummary, JourAnalyse } from '../stats/conversa
 import { eurosDepuisMicro } from '../agent/devise';
 import { estUuid } from '../http/scope';
 import { adresseOffre } from '../offres/refus';
+import type { BlocVentes, ChiffreVentes } from '../shopify/chiffre';
 
 /**
  * LES CHIFFRES DE L'ESPACE POUR CLAUDE CODE (plan `docs/superpowers/plans/2026-10-13-donnees-graphiques-mcp.md`).
@@ -47,6 +48,8 @@ export interface DepsChiffresMcp {
   getCoutMessages(tenantId: string, range: DateRange): Promise<CoutMessages>;
   getCoutParCampagne(tenantId: string, range: DateRange, opts: { inclureArchivees: boolean }): Promise<CoutParCampagne>;
   getCoutIa(tenantId: string, range: DateRange): Promise<CoutIa>;
+  /** Le chiffre d'affaires attribué (`chiffreVentes`), la MÊME lecture que Quantitatif > Shopify (plan 2026-10-30). */
+  chiffreVentes(tenantId: string, range: DateRange): Promise<ChiffreVentes>;
 }
 
 export const MAILLES = ['jour', 'semaine', 'mois'] as const;
@@ -446,6 +449,51 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
             + 'de son offre. La traduction des conversations et les essais « Tester » sont débités du même crédit sans '
             + 'être comptés ici : l’historique du crédit, dans la console (Crédit IA), les montre.',
           'Une conversation effacée par la conservation emporte ses passages et ses actions.',
+        ],
+      };
+    },
+  },
+  {
+    ...ficheOutilMcp('get_revenue_stats'),
+    // Toutes les offres, Free comprise (décision de Julien du 2026-10-28) : la Free n'a pas de console, elle l'a ici.
+    fonction: null,
+    description:
+      'The revenue that WhatsApp sends brought in over the period (default: the last 30 days), from the connected Shopify '
+      + 'store: orders paid within 5 days after a delivered message from a campaign (each by its name), an abandoned checkout '
+      + 'reminder, a scenario, an AI agent or the Meta Business Agent, each order credited to the last one. Per currency '
+      + '(never add two currencies), gross (refunds and cancellations are not deducted), with the proven part: the reminded '
+      + 'checkout itself paid, or a visit that Shopify ties to a WhatsApp link by its UTM parameters. The rest is a match in '
+      + 'time, not a proven cause: present it as such. Also the abandoned checkouts reminded and recovered, and the amount '
+      + 'recovered, by reminder date. Orders from the Shopify test gateway are returned apart and never counted. Only orders '
+      + 'paid since the store was connected, from contacts already in the workspace; order confirmations, shipping updates, '
+      + 'team replies and API sends are never a source.',
+    annotations: { title: 'Read the revenue from WhatsApp sends', readOnlyHint: true, openWorldHint: false },
+    entree: { type: 'object', properties: { du: ENTREE_PERIODE.du!, au: ENTREE_PERIODE.au! }, additionalProperties: false },
+    async executer(deps, tenantId, args) {
+      const { range } = lirePeriode(args);
+      const c = await deps.chiffres.chiffreVentes(tenantId, range);
+      const sources = (b: BlocVentes) => b.sources.map((s) => ({
+        source: s.source, campagne_id: s.campaignId, campagne: s.nom, devise: s.devise, brut: s.brut, prouve: s.prouve, commandes: s.commandes,
+      }));
+      return {
+        periode: { du: range.from, au: range.to, fuseau: STATS_TZ },
+        regle: 'Commandes Shopify payées dans les 5 jours après un message WhatsApp reçu, attribuées au dernier envoi ; '
+          + 'prouvé : le panier relancé lui-même payé, ou une visite venue d’un lien WhatsApp ; remboursements non déduits.',
+        chiffre: c.reel.totaux,
+        par_source: sources(c.reel),
+        paniers: { relances: c.paniers.relances, recuperes: c.paniers.recuperes, montant_recupere: c.paniers.montants },
+        commandes_de_test: { chiffre: c.test.totaux, par_source: sources(c.test), paniers_recuperes: c.paniers.recuperesTest },
+        a_savoir: [
+          'Montants BRUTS en texte décimal, dans la devise de la boutique : le total payé, livraison comprise. Jamais '
+            + 'additionner deux devises.',
+          'prouve : la part dont la preuve existe. Le reste est une concordance dans le temps (un message reçu dans les 5 '
+            + 'jours), à présenter comme telle, jamais comme une cause.',
+          'source : campagne (campagne null : supprimée depuis), relance_panier (la relance des paniers abandonnés de '
+            + 'Shopify), scenario (les scénarios, en bloc), agent (l’agent IA), agent_meta (l’agent de Meta).',
+          'paniers : relancés, récupérés et montant récupéré se comptent à la date de la RELANCE ; la source relance_panier, '
+            + 'elle, à la date du paiement : à la lisière de la période, les deux peuvent différer.',
+          'Une commande prouvée par ses UTM peut encore changer de source dans ses trois premières heures, jamais après.',
+          'commandes_de_test : la passerelle de test de Shopify, jamais comptée dans le chiffre.',
         ],
       };
     },

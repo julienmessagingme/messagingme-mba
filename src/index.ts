@@ -3412,6 +3412,8 @@ async function main(): Promise<void> {
           stats: statsStore, conversationStats: conversationStatsStore,
           getCostSeries: chiffrage.getCostSeries, getCoutMessages: chiffrage.getCoutMessages,
           getCoutParCampagne: chiffrage.getCoutParCampagne, getCoutIa: chiffrage.getCoutIa,
+          // Le chiffre d'affaires attribué : la lecture de Quantitatif > Shopify (plan 2026-10-30).
+          chiffreVentes: lireChiffreVentes,
         },
         // L'agent IA et le crédit : les MÊMES objets que leurs routes. Seul le journal des suppressions de
         // connaissance change, pour signer l'origine `mcp`.

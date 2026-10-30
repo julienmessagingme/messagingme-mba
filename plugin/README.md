@@ -134,7 +134,7 @@ The tools of the MCP server, by family:
 - **Chat bubble**: `list_widgets`, `create_widget`, `update_widget`
 - **Shopify store**: `connect_shopify`, `set_shopify_message`, `get_shopify_state`, `preview_shopify_customers`, `import_shopify_customers`, `disconnect_shopify`
 - **Webhooks**: `create_webhook_endpoint`, `list_webhook_endpoints`, `update_webhook_endpoint`, `delete_webhook_endpoint`, `send_test_event`, `get_webhook_deliveries`, `replay_webhook_delivery`
-- **Statistics**: `get_message_stats`, `get_campaign_stats`, `get_ai_stats`
+- **Statistics**: `get_message_stats`, `get_campaign_stats`, `get_ai_stats`, `get_revenue_stats`
 <!-- outils:fin -->
 
 ## Update
