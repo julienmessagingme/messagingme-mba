@@ -465,8 +465,8 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
       + 'checkout itself paid, or a visit that Shopify ties to a WhatsApp link by its UTM parameters. The rest is a match in '
       + 'time, not a proven cause: present it as such. Also the abandoned checkouts reminded and recovered, and the amount '
       + 'recovered, by reminder date. Orders from the Shopify test gateway are returned apart and never counted. Only orders '
-      + 'paid since the store was connected, from contacts already in the workspace; order confirmations, shipping updates, '
-      + 'team replies and API sends are never a source.',
+      + 'paid since the store was connected: from a contact already in the workspace, or, without one, through a campaign '
+      + 'link (proven by UTM); order confirmations, shipping updates, team replies and API sends are never a source.',
     annotations: { title: 'Read the revenue from WhatsApp sends', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: { du: ENTREE_PERIODE.du!, au: ENTREE_PERIODE.au! }, additionalProperties: false },
     async executer(deps, tenantId, args) {

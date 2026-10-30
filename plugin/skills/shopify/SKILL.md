@@ -138,7 +138,8 @@ record counts toward the plan's contact limit, and managing that limit is the us
   time. Never add two currencies. Refunds are not deducted.
 - Test orders (Shopify's test gateway) come apart, in their own block, and never count: mention them separately, they
   are how a development store is tried.
-- Only orders paid since the store was connected count, from customers already in the workspace.
+- Only orders paid since the store was connected count: from customers already in the workspace, or, without one,
+  through a campaign link (proven by UTM).
 
 ## Check or cut
 
