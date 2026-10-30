@@ -210,21 +210,24 @@ describe('le démarrage passe par le plugin, sans créer d’espace avant (Julie
     });
   }
   for (const page of ['tarifs/index.html', 'en/pricing/index.html']) {
-    it(`${page} : la Free se démarre par le plugin`, () => {
+    // Depuis le 2026-10-30, chaque offre ouvre le tunnel du numéro, l'offre déjà choisie (`tests/vitrine-tunnel.test.ts`) :
+    // son bout mène la Free au plugin et le Pro à sa souscription, jamais l'une à l'inscription de l'autre.
+    it(`${page} : la Free se démarre par le tunnel, qui mène au plugin, jamais par l’inscription`, () => {
       const html = lire(page);
       const free = html.slice(html.indexOf('<h2 class="tarif-nom">Free</h2>'), html.indexOf('<h2 class="tarif-nom">Pro</h2>'));
       expect(free.length).toBeGreaterThan(0);
-      expect(free).toMatch(/href="\/(en\/developers|developpeurs)\/#demarrer"/);
+      expect(free).toMatch(/href="\/(en\/get-started|demarrer)\/\?offre=free"/);
       expect(free).not.toContain('signup');
     });
 
-    it(`${page} : le Pro s'ouvre sur sa souscription, pas sur le tunnel de la Free (Julien, 2026-10-28)`, () => {
+    it(`${page} : le Pro s'ouvre sur le tunnel, l’offre Pro choisie, jamais sur l’inscription de la Free (Julien, 2026-10-28)`, () => {
       const html = lire(page);
       const debut = html.indexOf('<h2 class="tarif-nom">Pro</h2>');
       const pro = html.slice(debut, html.indexOf('<h2 class="tarif-nom">', debut + 1));
       expect(pro.length).toBeGreaterThan(0);
-      // `?offre=pro` : l'inscription mène à la page de l'offre (`arriveeDUnNouvelEspace`, `web/lib/session.ts`).
-      expect(pro).toMatch(/href="https:\/\/console\.messagingme\.app\/signup\?offre=pro(&(amp;)?lang=en)?"/);
+      // Le tunnel répond « Le Pro » à l'ouverture ; son bout mène à `signup?offre=pro` (`arriveeDUnNouvelEspace`).
+      expect(pro).toMatch(/href="\/(en\/get-started|demarrer)\/\?offre=pro"/);
+      expect(pro).not.toMatch(/signup(?!\?offre=pro)/);
     });
   }
 });

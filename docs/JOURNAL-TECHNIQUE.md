@@ -4,6 +4,26 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-30 : le tunnel du numéro WhatsApp, générique, sur une page « Démarrer » et partout où il sert
+
+Vitrine seule, aucune migration. Plan `docs/superpowers/plans/2026-10-30-tunnel-numero-generique.md`. Le guide du
+numéro de la page Shopify (l'offre, puis en Free le numéro relié par code ou le numéro API, cinq questions au plus)
+restait incompréhensible pour les visiteurs et ne servait qu'aux boutiques. Julien a dessiné le même jour un arbre en
+trois questions (l'offre, le compte Meta Business, l'application WhatsApp Business) et retiré la voie par QR code « une
+bonne fois pour toutes » ; puis, pendant le lot, précisé la voie « pas d'application » : on branche tout de suite, et
+seulement si Meta refuse un numéro trop neuf, on revient quelques jours plus tard.
+
+Le tunnel sort de `boutique.ts` dans un module commun (`tunnel.ts`, `tunnel-textes.ts`), posé sur la nouvelle page
+« Démarrer » (`/demarrer/`, `/en/get-started/`), sur Boutiques Shopify et sur SaaS et app builders ; seule la demande
+à coller dit la page d'origine. Un bouton « Démarrer » dans l'en-tête de chaque page (et, juste au-dessus du burger,
+entre 1 141 et 1 300 px, une barre resserrée : sans elle, « Se connecter » débordait de 100 px en français, mesuré à
+1 150 px). Sur Tarifs, « Démarrer gratuitement » et « Essayer le Pro 14 jours » (libellé choisi par Julien) ouvrent le
+tunnel avec l'offre déjà choisie (`?offre=`), que `site.js` répond sans prendre le focus. Rendu montré à Julien au bureau
+et au téléphone, dans les deux langues, et approuvé avant le push. `tests/vitrine-tunnel.test.ts` reprend les tests du
+guide de la page Shopify et les étend à chaque page qui porte le tunnel ; vérifié dans les deux sens (une phrase « QR
+code » remise dans une carte le rend rouge). Restent la console et le plugin, qui posent encore l'ancien arbre
+(`todo.md`).
+
 ## 2026-10-29 (soir) : l'action « Lancer un scénario » des workflows HubSpot en production
 
 `f47e512f` puis `be6e9e40`, run 40905140935, sans migration ; le déploiement emporte aussi `9bb2f43d` (journal) et

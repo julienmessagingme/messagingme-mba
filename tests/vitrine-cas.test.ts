@@ -28,12 +28,12 @@ describe('les pages de cas d’usage', () => {
   it('🔴 chaque page est égale à sa génération (npm run vitrine:cas), et llms.txt porte la section des cas', () => {
     expect(enLigne.length).toBeGreaterThan(0);
     // Deux pages par cas, par secteur et par boutique en ligne, plus la page chapeau et la page Solutions (plan SEO,
-    // lot 5) dans chaque langue : une génération vide ne passe pas.
+    // lot 5) dans chaque langue, et la page « Démarrer » (le tunnel du numéro, 2026-10-30) : une génération vide ne passe pas.
     const secteurs = ENTREES.filter((e) => e.enLigne && e.nature === 'secteur');
     const boutiques = ENTREES.filter((e) => e.enLigne && e.nature === 'boutique');
     expect(secteurs.length).toBeGreaterThan(0);
     expect(boutiques.length).toBeGreaterThan(0);
-    expect(pagesGenerees().length).toBe(enLigne.length * 2 + secteurs.length * 2 + boutiques.length * 2 + 2 + 2);
+    expect(pagesGenerees().length).toBe(enLigne.length * 2 + secteurs.length * 2 + boutiques.length * 2 + 2 + 2 + 2);
     for (const { chemin, contenu } of pagesGenerees()) expect(lire(chemin), chemin).toBe(contenu);
     expect(llmsAvecCas(lire('llms.txt'))).toBe(lire('llms.txt'));
   });

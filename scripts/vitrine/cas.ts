@@ -21,6 +21,7 @@ import { pageAvecEntete } from './entete';
 import { LOGOS_ASSISTANTS, type LogoAssistant } from './logos-assistants';
 import { pagesBoutiques } from './boutique';
 import { TEXTES_BOUTIQUES } from './boutique-textes';
+import { pagesDemarrer, sectionTunnel } from './tunnel';
 
 const ORIGINE = 'https://app.messagingme.fr';
 const CONSOLE = 'https://console.messagingme.app';
@@ -425,6 +426,9 @@ export function pagesCarrefour(): Array<{ chemin: string; contenu: string }> {
       `      <p class="cas-voisins"><a href="${demarrer}">${c.etapes.lien}</a></p>`,
       '    </div>',
       '  </section>',
+      '',
+      // Le tunnel du numéro (2026-10-30), le même que sur la page « Démarrer », avec la demande d'une app.
+      ...sectionTunnel(langue, 'saas'),
       '</main>',
     ].join('\n');
     const texte = (h: string) => h.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
@@ -574,7 +578,7 @@ export function pagesSolutions(): Array<{ chemin: string; contenu: string }> {
 
 /** Tout ce que `npm run vitrine:cas` écrit. */
 export function pagesGenerees(): Array<{ chemin: string; contenu: string }> {
-  return [...pagesSolutions(), ...pagesCarrefour(), ...ENTREES.filter((e) => e.enLigne && e.nature === 'cas').flatMap(pagesCas), ...pagesSecteurs(), ...pagesBoutiques()];
+  return [...pagesSolutions(), ...pagesCarrefour(), ...ENTREES.filter((e) => e.enLigne && e.nature === 'cas').flatMap(pagesCas), ...pagesSecteurs(), ...pagesBoutiques(), ...pagesDemarrer()];
 }
 
 /**

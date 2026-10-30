@@ -30,6 +30,8 @@ export const JUMELLES: Readonly<Record<string, string>> = {
   '/fonctionnalites/pilotage-des-couts/': '/en/features/cost-control/',
   '/solutions/': '/en/solutions/',
   '/tarifs/': '/en/pricing/',
+  // Le tunnel du numéro WhatsApp (2026-10-30) : ses deux langues viennent de `tunnel-textes.ts` (npm run vitrine:cas).
+  '/demarrer/': '/en/get-started/',
   '/integrations/': '/en/integrations/',
   '/developpeurs/': '/en/developers/',
   '/developpeurs/compte-meta-business/': '/en/developers/meta-business-account/',
@@ -65,10 +67,11 @@ export const JUMELLES: Readonly<Record<string, string>> = {
  */
 const ECRITES_A_LA_MAIN = new Set(['/developpeurs/', '/developpeurs/compte-meta-business/']);
 /**
- * Les pages de cas et leur carrefour ont leurs deux langues dans `scripts/vitrine/cas-textes.ts` (npm run vitrine:cas) ;
+ * Les pages de cas et leur carrefour ont leurs deux langues dans `scripts/vitrine/cas-textes.ts`, la page « Démarrer »
+ * dans `tunnel-textes.ts` (npm run vitrine:cas) ;
  * le centre d'aide, dans les fiches et leur version anglaise (npm run vitrine:aide).
  */
-const hors = (p: string): boolean => ECRITES_A_LA_MAIN.has(p) || p.startsWith('/cas-d-usage/') || p.startsWith('/solutions/')
+const hors = (p: string): boolean => ECRITES_A_LA_MAIN.has(p) || p === '/demarrer/' || p.startsWith('/cas-d-usage/') || p.startsWith('/solutions/')
   || p.startsWith('/aide/') || ADRESSES_CLAUDE_FR.has(p);
 export const GENEREES: readonly string[] = Object.keys(JUMELLES).filter((p) => !hors(p));
 

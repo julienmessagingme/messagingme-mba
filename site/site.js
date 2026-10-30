@@ -298,13 +298,15 @@
   });
 })();
 
-// Le guide du numéro de la page Boutiques Shopify : l'arbre de questions de Julien, en tunnel (2026-10-27). Sans script,
+// Le tunnel du numéro WhatsApp (la page « Démarrer », Boutiques Shopify, SaaS) : l'arbre de Julien (2026-10-30). Sans script,
 // les questions restent cachées et toutes les issues se lisent en liste, chacune avec la situation qu'elle sert et les
 // boutons de chaque offre. Avec lui, la question en cours s'affiche en grand sous l'étape et sa jauge ; chaque réponse
 // (`data-vers`) replie sa question en une ligne (sa réponse dans `data-resume`) et montre la suivante ou une issue ; la
 // réponse qui choisit l'offre (`data-offre`) ne laisse aux issues que les boutons de cette offre ; « Modifier » rouvre une
 // question et efface tout ce qui la suivait ; une réponse sans `data-vers` (« Je ne sais pas ») déplie l'aide de sa
-// question ; « Copier » met la demande à coller dans Claude Code dans le presse-papiers.
+// question ; « Copier » met la demande à coller dans Claude Code dans le presse-papiers ; un lien d'issue
+// (`data-vers-chemin`) montre une autre issue ; `?offre=free` ou `?offre=pro` dans l'adresse (les offres de la page Tarifs)
+// répond à la première question à l'ouverture, sans prendre le focus.
 (function () {
   [].slice.call(document.querySelectorAll('[data-guide-numero]')).forEach(function (g) {
     var questions = g.querySelector('.bt-questions');
@@ -358,6 +360,44 @@
       choix.removeAllRanges();
       choix.addRange(plage);
     };
+    // Une réponse donnée : sa question se replie, la suivante (ou l'issue) s'affiche. `focus` vaut faux à l'ouverture de la
+    // page, quand l'adresse choisit l'offre : le focus et le défilement restent au visiteur.
+    var repondre = function (b, q, focus) {
+      var vers = b.getAttribute('data-vers');
+      couper(q);
+      [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      // Une réponse peut porter une note (où vérifier son compte Meta Business) : seule la sienne s'affiche.
+      [].slice.call(q.querySelectorAll('.bt-note-reponse')).forEach(function (n) { n.hidden = n.id !== b.getAttribute('data-note'); });
+      if (b.hasAttribute('data-offre')) g.setAttribute('data-offre', b.getAttribute('data-offre'));
+      // La question répondue se replie en une ligne (la question, la réponse, « Modifier ») : la suivante prend la place.
+      q.classList.add('repondue');
+      var resume = q.querySelector('[data-resume]');
+      if (resume) resume.textContent = b.textContent;
+      var aideOuverte = q.querySelector('.bt-aide');
+      if (aideOuverte) aideOuverte.hidden = true;
+      recommencer.hidden = false;
+      var suivante = g.querySelector('[data-question="' + vers + '"]');
+      if (suivante) {
+        // Une question partagée par deux branches suit celle qui y mène : on l'affiche à la suite du parcours, avant
+        // « Recommencer », quel que soit son rang dans la page.
+        questions.insertBefore(suivante, recommencer);
+        suivante.hidden = false;
+        parcours.push(suivante);
+        avancer(false);
+        // La question suivante apparaît : le focus va à sa première réponse, qu'un lecteur d'écran l'entende.
+        if (focus) suivante.querySelector('[data-vers]').focus();
+      } else {
+        montrer(vers);
+        avancer(true);
+        if (!focus) return;
+        // L'issue est la fin du tunnel : le focus va au premier bouton de l'offre choisie, et elle se montre en entier.
+        var issue = g.querySelector('[data-chemin="' + vers + '"]');
+        var bouton = issue && issue.querySelector('.bt-appels[data-offre="' + g.getAttribute('data-offre') + '"] a');
+        if (bouton) bouton.focus({ preventScroll: true });
+        var doux = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+        if (issue) issue.scrollIntoView({ block: 'nearest', behavior: doux ? 'smooth' : 'auto' });
+      }
+    };
     g.addEventListener('click', function (e) {
       var copier = e.target.closest && e.target.closest('[data-copier]');
       if (copier) {
@@ -394,41 +434,19 @@
       if (b) {
         var q = b.closest('[data-question]');
         // Une question répondue ne se rouvre que par « Modifier » : sa réponse repliée est inerte, au clavier aussi.
-        if (q.classList.contains('repondue')) return;
-        var vers = b.getAttribute('data-vers');
-        couper(q);
-        [].slice.call(q.querySelectorAll('[data-vers]')).forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
-        // Une réponse peut porter une note (le Pro dit que le compte Meta Business se crée en chemin) : seule la sienne
-        // s'affiche.
-        [].slice.call(q.querySelectorAll('.bt-note-reponse')).forEach(function (n) { n.hidden = n.id !== b.getAttribute('data-note'); });
-        if (b.hasAttribute('data-offre')) g.setAttribute('data-offre', b.getAttribute('data-offre'));
-        // La question répondue se replie en une ligne (la question, la réponse, « Modifier ») : la suivante prend la place.
-        q.classList.add('repondue');
-        var resume = q.querySelector('[data-resume]');
-        if (resume) resume.textContent = b.textContent;
-        var aideOuverte = q.querySelector('.bt-aide');
-        if (aideOuverte) aideOuverte.hidden = true;
-        recommencer.hidden = false;
-        var suivante = g.querySelector('[data-question="' + vers + '"]');
-        if (suivante) {
-          // Une question partagée par deux branches suit celle qui y mène : on l'affiche à la suite du parcours, avant
-          // « Recommencer », quel que soit son rang dans la page.
-          questions.insertBefore(suivante, recommencer);
-          suivante.hidden = false;
-          parcours.push(suivante);
-          avancer(false);
-          // La question suivante apparaît : le focus va à sa première réponse, qu'un lecteur d'écran l'entende.
-          suivante.querySelector('[data-vers]').focus();
-        } else {
-          montrer(vers);
-          avancer(true);
-          // L'issue est la fin du tunnel : le focus va au premier bouton de l'offre choisie, et elle se montre en entier.
-          var issue = g.querySelector('[data-chemin="' + vers + '"]');
-          var bouton = issue && issue.querySelector('.bt-appels[data-offre="' + g.getAttribute('data-offre') + '"] a');
-          if (bouton) bouton.focus({ preventScroll: true });
-          var doux = !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-          if (issue) issue.scrollIntoView({ block: 'nearest', behavior: doux ? 'smooth' : 'auto' });
-        }
+        if (!q.classList.contains('repondue')) repondre(b, q, true);
+        return;
+      }
+      // Un lien d'issue vers une autre (« Vous pouvez la garder ») : l'autre issue prend sa place, son premier bouton le focus.
+      var lien = e.target.closest && e.target.closest('[data-vers-chemin]');
+      if (lien) {
+        e.preventDefault();
+        var cle = lien.getAttribute('data-vers-chemin');
+        montrer(cle);
+        var autre = g.querySelector('[data-chemin="' + cle + '"]');
+        var premier = autre && autre.querySelector('.bt-appels[data-offre="' + g.getAttribute('data-offre') + '"] a');
+        if (premier) premier.focus({ preventScroll: true });
+        if (autre) autre.scrollIntoView({ block: 'nearest' });
         return;
       }
       if (e.target.closest && e.target.closest('[data-recommencer]')) {
@@ -440,5 +458,8 @@
         premiere.querySelector('[data-vers]').focus();
       }
     });
+    var offre = (location.search.match(/[?&]offre=(free|pro)(?:&|$)/) || [])[1];
+    var choisie = offre && premiere.querySelector('[data-vers][data-offre="' + offre + '"]');
+    if (choisie) repondre(choisie, premiere, false);
   });
 })();

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://app.messagingme.fr/</loc><lastmod>2026-10-24</lastmod></url>
+  <url><loc>https://app.messagingme.fr/</loc><lastmod>2026-10-30</lastmod></url>
   <url><loc>https://app.messagingme.fr/fonctionnalites/campagnes-et-scenarios/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/fonctionnalites/publicites-click-to-whatsapp/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/fonctionnalites/chaines-whatsapp/</loc><lastmod>2026-10-20</lastmod></url>
@@ -9,10 +9,11 @@
   <url><loc>https://app.messagingme.fr/fonctionnalites/pilotage-des-couts/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/developpeurs/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/developpeurs/compte-meta-business/</loc><lastmod>2026-10-20</lastmod></url>
-  <url><loc>https://app.messagingme.fr/tarifs/</loc><lastmod>2026-10-24</lastmod></url>
+  <url><loc>https://app.messagingme.fr/demarrer/</loc><lastmod>2026-10-30</lastmod></url>
+  <url><loc>https://app.messagingme.fr/tarifs/</loc><lastmod>2026-10-30</lastmod></url>
   <url><loc>https://app.messagingme.fr/integrations/</loc><lastmod>2026-10-24</lastmod></url>
   <url><loc>https://app.messagingme.fr/contact/</loc><lastmod>2026-10-20</lastmod></url>
-  <url><loc>https://app.messagingme.fr/en/</loc><lastmod>2026-10-24</lastmod></url>
+  <url><loc>https://app.messagingme.fr/en/</loc><lastmod>2026-10-30</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/features/campaigns-and-scenarios/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/features/click-to-whatsapp-ads/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/features/whatsapp-channels/</loc><lastmod>2026-10-20</lastmod></url>
@@ -21,14 +22,15 @@
   <url><loc>https://app.messagingme.fr/en/features/cost-control/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/developers/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/developers/meta-business-account/</loc><lastmod>2026-10-20</lastmod></url>
-  <url><loc>https://app.messagingme.fr/en/pricing/</loc><lastmod>2026-10-24</lastmod></url>
+  <url><loc>https://app.messagingme.fr/en/get-started/</loc><lastmod>2026-10-30</lastmod></url>
+  <url><loc>https://app.messagingme.fr/en/pricing/</loc><lastmod>2026-10-30</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/integrations/</loc><lastmod>2026-10-24</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/contact/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/solutions/</loc><lastmod>2026-10-26</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/solutions/</loc><lastmod>2026-10-26</lastmod></url>
-  <url><loc>https://app.messagingme.fr/solutions/saas-et-app-builders/</loc><lastmod>2026-10-20</lastmod></url>
+  <url><loc>https://app.messagingme.fr/solutions/saas-et-app-builders/</loc><lastmod>2026-10-30</lastmod></url>
   <url><loc>https://app.messagingme.fr/cas-d-usage/rappels-rendez-vous/</loc><lastmod>2026-10-20</lastmod></url>
-  <url><loc>https://app.messagingme.fr/en/solutions/saas-and-app-builders/</loc><lastmod>2026-10-20</lastmod></url>
+  <url><loc>https://app.messagingme.fr/en/solutions/saas-and-app-builders/</loc><lastmod>2026-10-30</lastmod></url>
   <url><loc>https://app.messagingme.fr/solutions/transport-et-mobilites/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/solutions/transport-and-mobility/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/solutions/enseignement-superieur/</loc><lastmod>2026-10-28</lastmod></url>
@@ -39,8 +41,8 @@
   <url><loc>https://app.messagingme.fr/en/solutions/insurance/</loc><lastmod>2026-10-21</lastmod></url>
   <url><loc>https://app.messagingme.fr/solutions/voyage-et-tourisme/</loc><lastmod>2026-10-22</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/solutions/travel-and-tourism/</loc><lastmod>2026-10-22</lastmod></url>
-  <url><loc>https://app.messagingme.fr/solutions/shopify/</loc><lastmod>2026-10-24</lastmod></url>
-  <url><loc>https://app.messagingme.fr/en/solutions/shopify-stores/</loc><lastmod>2026-10-24</lastmod></url>
+  <url><loc>https://app.messagingme.fr/solutions/shopify/</loc><lastmod>2026-10-30</lastmod></url>
+  <url><loc>https://app.messagingme.fr/en/solutions/shopify-stores/</loc><lastmod>2026-10-30</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/use-cases/appointment-reminders/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/cas-d-usage/notifications-de-commande/</loc><lastmod>2026-10-20</lastmod></url>
   <url><loc>https://app.messagingme.fr/en/use-cases/order-notifications/</loc><lastmod>2026-10-20</lastmod></url>

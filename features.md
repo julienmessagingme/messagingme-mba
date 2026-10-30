@@ -140,25 +140,29 @@ Claude fait pour votre boutique » (2026-10-29) : trois besoins (répondre, vend
 avec les outils MCP qui la font et l'étiquette de l'offre qui l'ouvre, calculée depuis le serveur MCP (« Offre Free »,
 « Offre Pro », « Offre Entreprise »), les cartes au-delà de la Free mises en avant, et sous les besoins « Ce que le Pro
 ajoute » et son bouton « Essayer le Pro 14 jours ». Viennent ensuite tous les outils de Claude, un volet replié par
-famille, chacun avec sa phrase et son offre, et le lien de la doc MCP. Puis le guide du numéro, en tunnel depuis le 2026-10-27 :
-« Votre branchement commence ici. », et une carte qui pose une question à la fois, en grand, sous l'étape (« Question 1
-sur 5 au plus ») et sa jauge. Une réponse donnée se replie en une ligne que « Modifier » rouvre. L'arbre de Julien du
-2026-10-27 part de l'offre : deux cartes, Free (0 €, depuis Claude Code, sans console) et Pro (49 € HT par mois, la
-console, un numéro fourni, 14 jours d'essai), chacune avec son bouton dessous. Le Pro demande un numéro API, donc un
-compte Meta Business, que la fenêtre de Meta fait créer en chemin. La Free fait choisir, sur deux cartes, entre le
-numéro WhatsApp Business (l'application à télécharger, reliée comme un appareil : elle ne fait que répondre, et le mot
-« QR code », que personne ne comprenait, n'est plus employé) et le numéro API. Le numéro API, en Free comme en Pro,
-mène à l'application WhatsApp Business sur le numéro de l'entreprise (la garder, et il devient aussi un numéro API, ou
-un numéro à part), puis à un numéro libre ou à un numéro fourni. Chaque issue finit sur les boutons de l'offre
-choisie : en Free, le plugin, son dépôt GitHub et la demande à coller dans Claude Code, qui reprend les réponses
-données (« Copier ») ; en Pro, « Créer mon compte » (`/signup?offre=pro`, qui mène à la souscription du Pro et non
-au tunnel de la Free, comme les deux boutons « Tout faire depuis la console » de la page) et le pas-à-pas de ce chemin.
-Les quatre mots employés (compte Meta
-Business, numéro WhatsApp Business, numéro API, garder son application) se déplient sous la carte. Le mot
-« coexistence » n'y apparaît jamais : face au client, c'est « garder votre application WhatsApp Business ». Suivent les
-quatre étapes depuis Claude Code, le prix et une FAQ. ⚠️ Le plugin (la skill `mise-en-service`, son README, sa FAQ) suit
-encore l'arbre du 2026-10-25 et dit « QR code » : il reprendra celui-ci dans un lot à part, avec une nouvelle version.
-Le film viendra plus tard.
+famille, chacun avec sa phrase et son offre, et le lien de la doc MCP. Puis le tunnel du numéro WhatsApp, le même que
+sur la page « Démarrer » (voir ci-dessous), dont la demande à coller parle de la boutique. Suivent les quatre étapes
+depuis Claude Code, le prix et une FAQ.
+
+✅ **La vitrine a sa page « Démarrer » et un tunnel du numéro commun** (2026-10-30) : `app.messagingme.fr/demarrer/`,
+jumelle `/en/get-started/`, au bouton « Démarrer » de l'en-tête de chaque page (à droite sur le bureau, à côté du menu
+au téléphone). L'arbre de Julien du 2026-10-30, en trois questions au plus, une à la fois dans une carte, sous l'étape
+et sa jauge, chaque réponse repliée en une ligne que « Modifier » rouvre : **l'offre** (deux cartes, Free et Pro, chacune
+avec son bouton dessous), **le compte Meta Business** (Oui mène au numéro API, son numéro libre ou un numéro fourni,
+3,50 € HT par mois en Free et inclus dans le Pro, avec la ligne « Votre numéro est déjà dans l'application WhatsApp
+Business ? Vous pouvez la garder » ; Non et « Je ne sais pas » mènent à la question suivante, « Je ne sais pas » avec où
+le vérifier), puis **l'application WhatsApp Business** (Oui : la garder, le numéro y reste et envoie aussi depuis
+Messaging Me ; Non : la télécharger, y mettre son numéro et le brancher tout de suite en la gardant, et revenir quelques
+jours plus tard si Meta refuse un numéro trop neuf). La voie de l'application dit que la fenêtre de Meta crée le
+compte Meta Business en chemin. Chaque issue finit sur les boutons de l'offre choisie : en Free, le plugin, son dépôt
+GitHub et la demande à coller dans Claude Code ou Codex ; en Pro, « Créer mon espace » (`/signup?offre=pro`), le
+pas-à-pas et la même demande. La demande reprend l'offre et les réponses, et la page d'origine : générique sur
+« Démarrer », la boutique sur « Boutiques Shopify », l'app sur « SaaS et app builders », qui portent le même tunnel. Les
+quatre mots employés se déplient sous la carte. Plus aucune voie ne fait seulement répondre : le numéro relié par code
+(« on supprime une bonne fois pour toutes l'option QR code », Julien), et jamais « coexistence » face au visiteur. Sur
+Tarifs, « Démarrer gratuitement » (Free) et « Essayer le Pro 14 jours » (Pro) ouvrent le tunnel l'offre déjà choisie
+(`?offre=free`, `?offre=pro`) ; la une de l'accueil y mène aussi. ⚠️ L'écran « Connecter WhatsApp » de la console et la
+skill `mise-en-service` du plugin posent encore l'ancien arbre (et le QR code) : leur alignement est au `todo.md`.
 
 ✅ **Les tentatives d'accès à `/ops` alertent** (2026-09-03). Au 5e refus en 5 minutes, un message Telegram
 part, une fois par demi-heure au plus. Chaque refus est journalisé même quand l'alerte est étouffée. Le jeton

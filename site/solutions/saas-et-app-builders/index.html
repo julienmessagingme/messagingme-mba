@@ -126,6 +126,7 @@
 <div class="barre">
 <header class="cadre entete">
   <a class="marque" href="/" aria-label="Messaging Me, accueil"><img src="/messagingme-logo-blanc.png" alt="Messaging Me" width="185" height="22"></a>
+  <a class="bouton bouton-plein entete-demarrer" href="/demarrer/">Démarrer</a>
   <details class="burger">
     <summary aria-label="Menu"><svg class="ic burger-ouvrir" aria-hidden="true"><use href="#i-list"/></svg><svg class="ic burger-fermer" aria-hidden="true"><use href="#i-x"/></svg></summary>
     <div class="burger-panneau">
@@ -224,6 +225,7 @@
         <span class="langue" aria-current="true" title="Français"><svg aria-hidden="true"><use href="#drapeau-fr"/></svg><span class="masque">Français, langue du site</span></span>
         <a class="langue" href="/en/solutions/saas-and-app-builders/" hreflang="en" lang="en" title="English version"><svg aria-hidden="true"><use href="#drapeau-uk"/></svg><span class="masque">English version of this page</span></a>
       </div>
+      <a class="bouton bouton-plein nav-demarrer" href="/demarrer/">Démarrer</a>
       <a class="bouton bouton-vert" href="https://console.messagingme.app/login">Se connecter<span class="bouton-rond" aria-hidden="true"><svg class="ic"><use href="#i-sign-in"/></svg></span></a>
     </div>
   </nav>
@@ -347,6 +349,141 @@
         <li><span class="f-num">3</span><div><h3>Vous reliez votre numéro</h3><p>Il vous faut un compte Meta Business, gratuit, que la fenêtre de Meta vous fait créer en chemin s’il vous manque. Pas de numéro&nbsp;? On vous en fournit un.</p></div></li>
       </ol>
       <p class="cas-voisins"><a href="/developpeurs/#demarrer">Les trois étapes en détail</a></p>
+    </div>
+  </section>
+
+  <section class="f-bloc bt-numero" id="numero">
+    <div class="cadre">
+      <p class="f-surtitre">Votre numéro WhatsApp</p>
+      <h2 class="f-titre">Votre branchement <span class="sec-accent">commence ici.</span></h2>
+      <p class="f-texte">En trois questions au plus, sur votre offre, votre compte Meta Business et votre application WhatsApp Business, vous savez quoi faire.</p>
+      <div class="bt-guide" data-guide-numero>
+        <div class="bt-tunnel">
+          <div class="bt-progression" data-progression="Question {n} sur 3 au plus" data-max="3" data-fin="Votre chemin" hidden>
+            <p class="bt-etape" data-etape>Question 1 sur 3 au plus</p>
+            <div class="bt-piste" aria-hidden="true"><span class="bt-jauge" data-jauge></span></div>
+          </div>
+          <div class="bt-questions" hidden>
+          <fieldset class="bt-question" data-question="offre" aria-describedby="voies-offre">
+            <legend>Quelle offre voulez-vous&nbsp;?<span class="bt-precision">Vous pourrez en changer plus tard.</span></legend>
+            <span class="bt-resume" data-resume></span>
+            <div class="bt-voies" id="voies-offre">
+              <div class="bt-voie-choix">
+                <section class="bt-voie">
+                  <h4>Free, 0&nbsp;€ d’abonnement</h4>
+                  <ul>
+                    <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">Pour&nbsp;: </span>Tout se fait en parlant à Claude Code ou Codex&nbsp;: votre numéro, votre agent IA, vos messages.</li>
+                    <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">Pour&nbsp;: </span>Sans limite de durée.</li>
+                    <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Contre&nbsp;: </span>Pas de console&nbsp;: vous pilotez depuis votre assistant IA.</li>
+                    <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Contre&nbsp;: </span>100 contacts et 1&nbsp;000 messages envoyés par mois.</li>
+                  </ul>
+                </section>
+                <button type="button" class="bouton bouton-trait" data-vers="compte" data-offre="free" aria-pressed="false">La Free</button>
+              </div>
+              <div class="bt-voie-choix">
+                <section class="bt-voie">
+                  <h4>Pro, 49&nbsp;€ HT par mois</h4>
+                  <ul>
+                    <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">Pour&nbsp;: </span>La console&nbsp;: l’Inbox de l’équipe, les campagnes, les tableaux de bord.</li>
+                    <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">Pour&nbsp;: </span>Un numéro fourni, inclus.</li>
+                    <li class="bt-plus"><svg class="ic" aria-hidden="true"><use href="#i-check"/></svg><span class="bt-sr">Pour&nbsp;: </span>14&nbsp;jours d’essai la première fois.</li>
+                    <li class="bt-moins"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg><span class="bt-sr">Contre&nbsp;: </span>Une carte demandée dès l’essai.</li>
+                  </ul>
+                </section>
+                <button type="button" class="bouton bouton-trait" data-vers="compte" data-offre="pro" aria-pressed="false">Le Pro</button>
+              </div>
+            </div>
+            <div class="bt-reponses"><button type="button" class="bouton bouton-texte" data-aide aria-expanded="false">Je ne sais pas</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
+            <p class="bt-aide" hidden>La Free suffit pour commencer&nbsp;: vous pilotez tout depuis Claude Code ou Codex, et votre agent IA répond à vos clients. Le Pro ajoute la console, pour vous et votre équipe, et un numéro fourni.</p>
+          </fieldset>
+          <fieldset class="bt-question" data-question="compte" hidden>
+            <legend>Avez-vous un compte Meta Business&nbsp;?<span class="bt-precision">L’ancien Business Manager&nbsp;: le compte de votre entreprise chez Meta.</span></legend>
+            <span class="bt-resume" data-resume></span>
+            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="api" aria-pressed="false">Oui</button><button type="button" class="bouton bouton-trait" data-vers="application" data-note="note-compte-1" aria-pressed="false">Non</button><button type="button" class="bouton bouton-trait" data-vers="application" data-note="note-compte-2" aria-pressed="false">Je ne sais pas</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
+            <p class="bt-note-reponse" id="note-compte-1" role="status" hidden>Rien à préparer&nbsp;: la fenêtre de Meta vous le fera créer en chemin.</p>
+            <p class="bt-note-reponse" id="note-compte-2" role="status" hidden>Pour le vérifier&nbsp;: <a href="https://business.facebook.com/" rel="noopener">business.facebook.com</a>. Si vous faites de la publicité sur Facebook ou Instagram, vous en avez sans doute un. Sinon, la fenêtre de Meta vous le fera créer en chemin.</p>
+          </fieldset>
+          <fieldset class="bt-question" data-question="application" hidden>
+            <legend class="bt-avec-logo"><img class="bt-logo" src="/img/logos/whatsapp-business.png" alt="" width="40" height="40">Avez-vous déjà l’application WhatsApp Business&nbsp;?<span class="bt-precision">L’application des professionnels, distincte de WhatsApp.</span></legend>
+            <span class="bt-resume" data-resume></span>
+            <div class="bt-reponses"><button type="button" class="bouton bouton-trait" data-vers="garder" aria-pressed="false">Oui</button><button type="button" class="bouton bouton-trait" data-vers="telecharger" aria-pressed="false">Non</button></div>
+            <button type="button" class="bt-modifier" data-modifier>Modifier</button>
+          </fieldset>
+            <button type="button" class="bt-recommencer" data-recommencer hidden>Recommencer</button>
+          </div>
+          <div class="bt-chemins" aria-live="polite">
+        <article class="bt-chemin" data-chemin="api" id="numero-api">
+          <p class="bt-situation">Avec un compte Meta Business</p>
+          <h3>Votre numéro API</h3>
+          <p>La fenêtre de Meta prend votre compte Meta Business et relie votre numéro à l’API officielle de WhatsApp&nbsp;: il envoie vos messages, et votre agent IA répond.</p>
+          <p>Un numéro libre, qui ne sert ni dans WhatsApp ni dans l’application WhatsApp Business, devient votre numéro API. Sans numéro libre, prenez un numéro fourni&nbsp;: 3,50&nbsp;€ HT par mois avec la Free, inclus dans le Pro.</p>
+          <p>Meta facture vos messages, et les réponses au-delà d’une franchise mensuelle&nbsp;: un moyen de paiement s’ajoute chez Meta.</p>
+          <p class="bt-autre">Votre numéro est déjà dans l’application WhatsApp Business&nbsp;? <a href="#numero-garder" data-vers-chemin="garder">Vous pouvez la garder</a></p>
+          <div class="bt-appels" data-offre="free">
+            <p class="bt-appels-titre">Avec la Free, depuis votre assistant IA</p>
+            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="/developpeurs/installer-le-plugin/">Installer le plugin</a><a class="bouton bouton-trait" href="https://github.com/julienmessagingme/messagingme-plugin" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#i-github"/></svg>Le dépôt GitHub</a></div>
+            <p class="bt-demande-titre">Votre demande, à coller dans Claude Code ou Codex une fois Messaging Me installé&nbsp;:</p>
+            <div class="bt-demande"><p id="demande-api-free">Branche WhatsApp à mon app avec l’offre Free de Messaging Me. J’ai un compte Meta Business&nbsp;: relie mon numéro libre par Meta en numéro API, ou, si je n’en ai pas, fournis-m’en un (3,50&nbsp;€ HT par mois). Puis crée la clé d’API de mon app, et mon agent IA à partir de mon site.</p><button type="button" class="bouton bouton-trait" data-copier="demande-api-free" data-copie="Copié" hidden>Copier</button></div>
+          </div>
+          <div class="bt-appels" data-offre="pro">
+            <p class="bt-appels-titre">Avec le Pro</p>
+            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="https://console.messagingme.app/signup?offre=pro">Créer mon espace</a><a class="bouton bouton-trait" href="/aide/connecter-mon-numero-whatsapp/">Le pas-à-pas</a></div>
+            <p class="bt-demande-titre">Ou votre demande, à coller dans Claude Code ou Codex&nbsp;:</p>
+            <div class="bt-demande"><p id="demande-api-pro">Branche WhatsApp à mon app avec l’offre Pro de Messaging Me. J’ai un compte Meta Business&nbsp;: relie mon numéro libre par Meta en numéro API, ou, si je n’en ai pas, fournis-m’en un (inclus dans le Pro). Puis crée la clé d’API de mon app, et mon agent IA à partir de mon site.</p><button type="button" class="bouton bouton-trait" data-copier="demande-api-pro" data-copie="Copié" hidden>Copier</button></div>
+          </div>
+        </article>
+        <article class="bt-chemin" data-chemin="garder" id="numero-garder">
+          <p class="bt-situation">Avec l’application WhatsApp Business</p>
+          <h3>Gardez votre application WhatsApp Business</h3>
+          <p>Votre numéro reste dans l’application et envoie aussi depuis Messaging Me&nbsp;: vous répondez toujours depuis votre téléphone, et vos confirmations, rappels et relances partent de Messaging Me.</p>
+          <p>Pas de compte Meta Business&nbsp;? La fenêtre de Meta le crée en chemin, avec votre profil Facebook, puis vous propose un moyen de paiement. Meta facture les messages partis de Messaging Me, réponses comprises au-delà d’une franchise mensuelle&nbsp;; ceux que vous tapez dans l’application restent gratuits.</p>
+          <p>Quelques fonctions de l’application s’arrêtent, comme les listes de diffusion et le message d’absence, et il faut l’ouvrir au moins toutes les deux semaines. Ce que vous y tapez n’apparaît pas dans Messaging Me&nbsp;: votre agent IA ne voit pas vos réponses.</p>
+          <div class="bt-appels" data-offre="free">
+            <p class="bt-appels-titre">Avec la Free, depuis votre assistant IA</p>
+            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="/developpeurs/installer-le-plugin/">Installer le plugin</a><a class="bouton bouton-trait" href="https://github.com/julienmessagingme/messagingme-plugin" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#i-github"/></svg>Le dépôt GitHub</a></div>
+            <p class="bt-demande-titre">Votre demande, à coller dans Claude Code ou Codex une fois Messaging Me installé&nbsp;:</p>
+            <div class="bt-demande"><p id="demande-garder-free">Branche WhatsApp à mon app avec l’offre Free de Messaging Me. Mon numéro est dans l’application WhatsApp Business et je veux la garder&nbsp;: relie-le par Meta pour qu’il envoie aussi depuis Messaging Me, et s’il me manque un compte Meta Business, guide-moi pour le créer en chemin. Puis crée la clé d’API de mon app, et mon agent IA à partir de mon site.</p><button type="button" class="bouton bouton-trait" data-copier="demande-garder-free" data-copie="Copié" hidden>Copier</button></div>
+          </div>
+          <div class="bt-appels" data-offre="pro">
+            <p class="bt-appels-titre">Avec le Pro</p>
+            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="https://console.messagingme.app/signup?offre=pro">Créer mon espace</a><a class="bouton bouton-trait" href="/aide/garder-mon-application-whatsapp-business/">Le pas-à-pas</a></div>
+            <p class="bt-demande-titre">Ou votre demande, à coller dans Claude Code ou Codex&nbsp;:</p>
+            <div class="bt-demande"><p id="demande-garder-pro">Branche WhatsApp à mon app avec l’offre Pro de Messaging Me. Mon numéro est dans l’application WhatsApp Business et je veux la garder&nbsp;: relie-le par Meta pour qu’il envoie aussi depuis Messaging Me, et s’il me manque un compte Meta Business, guide-moi pour le créer en chemin. Puis crée la clé d’API de mon app, et mon agent IA à partir de mon site.</p><button type="button" class="bouton bouton-trait" data-copier="demande-garder-pro" data-copie="Copié" hidden>Copier</button></div>
+          </div>
+        </article>
+        <article class="bt-chemin" data-chemin="telecharger" id="numero-telecharger">
+          <p class="bt-situation">Sans l’application WhatsApp Business</p>
+          <h3>Téléchargez l’application WhatsApp Business</h3>
+          <p>Installez l’application WhatsApp Business sur un téléphone, avec le numéro de votre entreprise, puis branchez-le tout de suite en gardant l’application&nbsp;: votre numéro reste sur votre téléphone et envoie aussi depuis Messaging Me.</p>
+          <p>Pas de compte Meta Business&nbsp;? La fenêtre de Meta le crée en chemin, avec votre profil Facebook, puis vous propose un moyen de paiement.</p>
+          <p>Meta refuse parfois un numéro trop neuf&nbsp;: servez-vous alors de l’application quelques jours, puis revenez le brancher.</p>
+          <div class="bt-appels" data-offre="free">
+            <p class="bt-appels-titre">Avec la Free, depuis votre assistant IA</p>
+            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="/developpeurs/installer-le-plugin/">Installer le plugin</a><a class="bouton bouton-trait" href="https://github.com/julienmessagingme/messagingme-plugin" rel="noopener"><svg class="ic" aria-hidden="true"><use href="#i-github"/></svg>Le dépôt GitHub</a></div>
+            <p class="bt-demande-titre">Votre demande, à coller dans Claude Code ou Codex une fois Messaging Me installé&nbsp;:</p>
+            <div class="bt-demande"><p id="demande-telecharger-free">Branche WhatsApp à mon app avec l’offre Free de Messaging Me. Je viens d’installer l’application WhatsApp Business avec mon numéro et je veux la garder&nbsp;: relie-le par Meta pour qu’il envoie aussi depuis Messaging Me, guide-moi pour créer mon compte Meta Business en chemin, et si Meta refuse un numéro trop neuf, dis-le-moi&nbsp;: je reviendrai dans quelques jours. Puis crée la clé d’API de mon app, et mon agent IA à partir de mon site.</p><button type="button" class="bouton bouton-trait" data-copier="demande-telecharger-free" data-copie="Copié" hidden>Copier</button></div>
+          </div>
+          <div class="bt-appels" data-offre="pro">
+            <p class="bt-appels-titre">Avec le Pro</p>
+            <div class="bt-appels-boutons"><a class="bouton bouton-plein" href="https://console.messagingme.app/signup?offre=pro">Créer mon espace</a><a class="bouton bouton-trait" href="/aide/garder-mon-application-whatsapp-business/">Le pas-à-pas</a></div>
+            <p class="bt-demande-titre">Ou votre demande, à coller dans Claude Code ou Codex&nbsp;:</p>
+            <div class="bt-demande"><p id="demande-telecharger-pro">Branche WhatsApp à mon app avec l’offre Pro de Messaging Me. Je viens d’installer l’application WhatsApp Business avec mon numéro et je veux la garder&nbsp;: relie-le par Meta pour qu’il envoie aussi depuis Messaging Me, guide-moi pour créer mon compte Meta Business en chemin, et si Meta refuse un numéro trop neuf, dis-le-moi&nbsp;: je reviendrai dans quelques jours. Puis crée la clé d’API de mon app, et mon agent IA à partir de mon site.</p><button type="button" class="bouton bouton-trait" data-copier="demande-telecharger-pro" data-copie="Copié" hidden>Copier</button></div>
+          </div>
+        </article>
+          </div>
+        </div>
+        <details class="bt-lexique">
+          <summary>Les quatre mots employés ici<svg class="ic" aria-hidden="true"><use href="#i-caret-down"/></svg></summary>
+          <dl>
+            <div><dt>Le compte Meta Business</dt><dd>Le compte de votre entreprise chez Meta (un «&nbsp;portefeuille&nbsp;», l’ancien Business Manager), sur <a href="https://business.facebook.com/" rel="noopener">business.facebook.com</a>. Si vous faites de la publicité sur Facebook ou Instagram, vous en avez sans doute un. Sinon, rien à préparer&nbsp;: il est gratuit, et la fenêtre de Meta vous le fait créer en chemin, avec votre profil Facebook.</dd></div>
+            <div><dt>L’application WhatsApp Business</dt><dd>L’application des professionnels, distincte de WhatsApp, à télécharger sur un téléphone, avec le numéro de votre entreprise.</dd></div>
+            <div><dt>Le numéro API</dt><dd>Un numéro relié par Meta à l’API officielle de WhatsApp, que pilote Messaging Me&nbsp;: c’est lui qui envoie vos messages (confirmations, rappels, relances), et Meta facture ses messages.</dd></div>
+            <div><dt>Garder votre application</dt><dd>Le numéro de votre application WhatsApp Business devient aussi un numéro API, sans la quitter&nbsp;: vous répondez toujours depuis votre téléphone, et vos messages partent aussi de Messaging Me.</dd></div>
+          </dl>
+        </details>
+      </div>
     </div>
   </section>
 </main>

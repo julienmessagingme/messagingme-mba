@@ -1,5 +1,22 @@
 # todo.md : backlog
 
+## Aligner la console et le plugin sur le tunnel du numéro de la vitrine (arbre de Julien du 2026-10-30)
+
+La vitrine pose désormais trois questions (`scripts/vitrine/tunnel-textes.ts`, plan
+`docs/superpowers/plans/2026-10-30-tunnel-numero-generique.md`) : l'offre, le compte Meta Business (Oui : numéro API,
+libre ou fourni ; Non ou « Je ne sais pas » : question suivante, avec où vérifier), l'application WhatsApp Business
+(Oui : la garder ; Non : la télécharger et brancher tout de suite). Plus aucune voie par QR code (« on supprime une bonne
+fois pour toutes l'option QR code », Julien, 2026-10-30).
+- **L'écran « Connecter WhatsApp » de la console** doit poser les mêmes questions, dans le même ordre, sans la voie QR.
+- **La skill `mise-en-service` du plugin** aussi (elle offre encore le QR code sans compte Meta Business), avec sa FAQ
+  (`scripts/plugin/faq.ts`, publiée sur les pages développeurs) et son README ; nouvelle version du plugin.
+- 🔴 **Le numéro trop neuf** (Julien) : sur la voie « télécharger l'application », on branche tout de suite ; si Meta
+  refuse le numéro, la skill doit le reconnaître, le dire simplement et proposer de revenir quelques jours plus tard,
+  sans chiffre (Meta n'en publie aucun). Le refus se mesure d'abord par un essai réel avec un numéro neuf (liste
+  `docs/prive/ESSAIS-REELS.md`), pour savoir ce que Meta renvoie et à quelle étape.
+- La fiche d'aide `garder-mon-application-whatsapp-business` et le centre d'aide ne parlent pas encore de la voie
+  « télécharger l'application » : y ajouter le cas du numéro neuf.
+
 ## 🟡 Le chiffre d'affaires attribué : ce que la v1 laisse (spec du 2026-10-28)
 
 Spec `docs/superpowers/specs/2026-10-28-revenus-attribues-design.md`, section « Hors du chantier ».

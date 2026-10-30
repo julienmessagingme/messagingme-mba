@@ -113,6 +113,11 @@
 - [Les intégrations](https://app.messagingme.fr/integrations/) : Messaging Me se branche à votre boutique Shopify, à HubSpot, à Salesforce, à Claude Code et à Codex ; l’API, les webhooks et le serveur MCP relient le reste.
 - [Integrations](https://app.messagingme.fr/en/integrations/) : the same page in English.
 
+## Démarrer
+
+- [Démarrer](https://app.messagingme.fr/demarrer/) : votre numéro WhatsApp en trois questions (Free ou Pro, compte Meta Business, application WhatsApp Business), puis la demande à coller dans Claude Code ou Codex.
+- [Get started](https://app.messagingme.fr/en/get-started/) : the same page in English.
+
 ## Tarifs
 
 - [Les tarifs](https://app.messagingme.fr/tarifs/) : la Free gratuite, pilotée depuis votre application ou votre assistant IA ; le Pro pour une équipe dans la console ; le Business pour une équipe qui grandit, à 349 € HT par mois ; l’Entreprise sur devis. Ce que chaque offre comprend, le crédit IA et ce que Meta facture.
