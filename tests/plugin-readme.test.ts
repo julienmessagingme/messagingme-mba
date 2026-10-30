@@ -33,6 +33,8 @@ describe('la source', () => {
           expect(url.origin).toBe('https://console.messagingme.app');
           expect(PAGES_DOC.map((p) => p.href)).toContain(url.pathname);
           expect(url.searchParams.get('lang')).toBe(langue === 'en' ? 'en' : null);
+          // Une ancre visée est déclarée par sa page, que l'e2e de la console ouvre et vérifie.
+          if (url.hash) expect(PAGES_DOC.find((p) => p.href === url.pathname)!.ancres as readonly string[], href).toContain(url.hash.slice(1));
         }
       }
     }
@@ -43,6 +45,12 @@ describe('la source', () => {
     // chiffres n'y étaient. Une famille d'outils ajoutée sans ligne rend désormais la CI rouge.
     const cites = new Set(CONSTRUIRE.flatMap((f) => f.capacites.flatMap((c) => c.outils ?? [])));
     for (const f of FAMILLES_OUTILS) expect(f.outils.some((o) => cites.has(o)), f.titre).toBe(true);
+  });
+
+  it('une ligne qui mène à un outil le cite parmi les siens', () => {
+    for (const c of CONSTRUIRE.flatMap((f) => f.capacites)) {
+      if ('outil' in c.lien) expect(c.outils ?? [], c.texte.fr).toContain(c.lien.outil);
+    }
   });
 
   it('chaque outil du catalogue est rangé dans une famille, et une seule', () => {

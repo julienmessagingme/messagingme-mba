@@ -20,7 +20,9 @@ type Bilingue = { readonly fr: string; readonly en: string };
 export type LienCapacite =
   | { readonly cas: string }
   | { readonly page: Bilingue }
-  | { readonly doc: CleDePage };
+  | { readonly doc: CleDePage }
+  /** L'outil lui-même, à son ancre dans la doc MCP de la console (une ancre par outil, `PAGES_DOC`). */
+  | { readonly outil: NomOutilMcp };
 
 export interface Capacite {
   readonly texte: Bilingue;
@@ -94,7 +96,7 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           fr: 'Vos heures d’ouverture, et ce que l’agent promet quand il passe la main à votre équipe.',
           en: 'Your opening hours, and what the agent promises when it hands over to your team.',
         },
-        lien: { doc: 'mcp' },
+        lien: { outil: 'set_business_hours' },
         outils: ['set_business_hours', 'set_transfer_mode'],
       },
       {
@@ -102,7 +104,7 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           fr: 'L’agent essayé sur une conversation fictive avant vos clients, et ses limites par conversation : réponses, actions, crédit.',
           en: 'The agent tried on a mock conversation before your customers, and its limits per conversation: answers, actions, credit.',
         },
-        lien: { doc: 'mcp' },
+        lien: { outil: 'test_agent' },
         outils: ['test_agent', 'set_agent_limits'],
       },
       {
@@ -118,7 +120,7 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           fr: 'Votre équipe dans l’Inbox de la console : Claude lui confie et étiquette les conversations.',
           en: 'Your team in the console Inbox: Claude assigns and tags conversations for it.',
         },
-        lien: { doc: 'mcp' },
+        lien: { outil: 'assign_conversation' },
         outils: ['assign_conversation', 'tag_conversation'],
       },
     ],
@@ -242,7 +244,7 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           fr: 'Vos modèles envoyés, livrés, lus ou en échec : il suffit de demander à Claude.',
           en: 'Your templates sent, delivered, read or failed: just ask Claude.',
         },
-        lien: { doc: 'mcp' },
+        lien: { outil: 'get_message_stats' },
         outils: ['get_message_stats'],
       },
       {
@@ -258,7 +260,7 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           fr: 'Le coût de votre agent IA, ses messages et les demandes ouvertes pour votre équipe.',
           en: 'Your AI agent’s cost, its messages and the requests opened for your team.',
         },
-        lien: { doc: 'mcp' },
+        lien: { outil: 'get_ai_stats' },
         outils: ['get_ai_stats'],
       },
       {
@@ -274,7 +276,7 @@ export const CONSTRUIRE: readonly FamilleCapacites[] = [
           fr: 'Vos contacts en trop supprimés en masse avec votre accord, et un contact bloqué d’une phrase.',
           en: 'Your surplus contacts deleted in bulk with your agreement, and a contact blocked in one sentence.',
         },
-        lien: { doc: 'mcp' },
+        lien: { outil: 'prepare_contacts_deletion' },
         outils: ['prepare_contacts_deletion', 'delete_contacts', 'block_contact'],
       },
       {

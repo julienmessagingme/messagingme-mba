@@ -1,5 +1,6 @@
 // web/lib/doc-api-pages.ts
 import type { Bilingue } from './api-exemples';
+import { CATALOGUE_MCP, type NomOutilMcp } from './partage/catalogue-mcp';
 
 /**
  * LA CARTE DE LA DOCUMENTATION PUBLIQUE : ses pages, leur place dans la navigation, leurs ancres, et la liste
@@ -181,7 +182,9 @@ export const PAGES_DOC = [
   {
     cle: 'mcp', href: '/developers/mcp', fichier: 'web/app/developers/mcp/page.tsx', groupe: 'plateforme',
     nav: ['Serveur MCP', 'MCP server'], titre: ['Serveur MCP', 'MCP server'],
-    ancres: [],
+    // Une ancre par outil, son nom (Julien, 2026-10-31) : « Ce que vous pouvez construire », sur la vitrine, mène
+    // chaque capacité à son outil. Dérivée du catalogue : un outil ajouté a son ancre sans qu'on y pense.
+    ancres: Object.keys(CATALOGUE_MCP) as NomOutilMcp[],
   },
 ] as const satisfies readonly PageDoc[];
 

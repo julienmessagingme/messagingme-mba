@@ -178,6 +178,7 @@ export function hrefCapacite(lien: LienCapacite, langue: Langue): string {
     return e[langue].adresse;
   }
   if ('page' in lien) return lien.page[langue];
+  if ('outil' in lien) return `https://console.messagingme.app${pageDoc('mcp').href}${langue === 'en' ? '?lang=en' : ''}#${lien.outil}`;
   return `https://console.messagingme.app${pageDoc(lien.doc).href}${langue === 'en' ? '?lang=en' : ''}`;
 }
 

@@ -4,6 +4,17 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-31 : une ancre par outil dans la doc MCP, et la vitrine qui y mène
+
+Suite de la page développeurs (`fa4bd76f`), le premier jaune de sa relecture. La page `/developers/mcp` de la console
+porte une ancre par outil, son nom (`id` sur le nom de l'outil, `scroll-mt-20`, surligné quand il est visé) ; ses
+ancres se dérivent du catalogue dans `PAGES_DOC` (`Object.keys(CATALOGUE_MCP)`), donc un outil ajouté a la sienne, et
+l'e2e de la console vérifie chacune. « Ce que vous pouvez construire » gagne le lien `{ outil }` : six lignes qui
+menaient au haut de la page mènent à leur outil (`?lang=en` avant l'ancre en anglais). `tests/plugin-readme.test.ts`
+exige l'ancre déclarée par sa page et l'outil visé cité par la ligne (vérifié dans les deux sens). Le README du plugin
+change avec : il part dans la 0.3.19, déjà montée sur `main` par le lot du chiffre d'affaires attribué et pas encore
+publiée.
+
 ## 2026-10-30 (nuit) : deux agents de Messaging Me ne se répondent plus en boucle
 
 Vers 20 h 28, la bulle de l'espace « Messaging Me demo » touchée depuis le téléphone de Julien, dont le WhatsApp est
