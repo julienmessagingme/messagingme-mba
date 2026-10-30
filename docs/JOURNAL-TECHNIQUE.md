@@ -33,6 +33,31 @@ poussée entre-temps, n'y est pas.
   session. En local, `api-usage-guard` a dépassé ses 5 s une fois sous la charge de la suite entière (3,7 s seul), hors
   du lot. Essai réel 197.
 
+## 2026-10-30 : l'action « Lancer un scénario (transaction) » des workflows HubSpot en production
+
+`51a8dfd6` et `201d27c8`, sans migration de ce lot. Ils sont partis avec le run 41093312013 (`f12d10b3`), lancé par une
+autre session pour son propre lot, qui les contenait. Mon run 41034456895, épinglé sur `201d27c8`, avait été annulé en
+attente d'approbation. Cadrage (13 décisions validées par Julien) et plan :
+`~/mm-hubspot/docs/2026-10-29-action-workflow-transaction-*`. Le besoin vient de MUTAC : relancer par WhatsApp au passage
+d'une transaction en « Proposition tarifaire », avec le conseiller et son lien de réservation.
+
+Le cadrage a été relu par trois relecteurs AVANT d'être soumis. Trois de ses réutilisations étaient vraies au niveau de la
+fonction et fausses sur le chemin réel, et elles ont été corrigées avant la validation :
+- les sources du modèle ne sont pas lues à l'envoi d'une campagne ;
+- la fiche d'un lead neuf naît dans le cœur d'envoi ;
+- une écriture placée avant la clé aurait envoyé le devis d'une autre transaction.
+
+Le lot a été relu par trois relecteurs : aucun rouge, et les jaunes utiles corrigés, dont un test d'intégration qui
+prouve en base l'écriture des champs par le `tx` de la création. Après le déploiement :
+`/hubspot/workflow/transaction` rend 401 sans signature, la fumée est verte, les fiches OAuth sont conformes. Puis le
+connecteur (`c5b01a7`, run 41094840202) et l'app HubSpot (build #20).
+
+Restent :
+- `aide:charger` (la fiche `hubspot-sur-l-accueil` a changé) ;
+- réenregistrer le choix HubSpot de SANDBOX, pour y déclarer les trois champs ;
+- le lien de la console qui demande la portée `agenda` (un petit lot, `~/mm-hubspot/todo.md`) ;
+- l'essai réel.
+
 ## 2026-10-30 : le tunnel du numéro WhatsApp, générique, sur une page « Démarrer » et partout où il sert
 
 Vitrine seule, aucune migration. Plan `docs/superpowers/plans/2026-10-30-tunnel-numero-generique.md`. Le guide du
