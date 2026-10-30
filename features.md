@@ -908,6 +908,11 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   fois), et leur suppression. Un fichier qu'utilise encore un scénario, un message RCS, une campagne en cours ou
   un brouillon de campagne ne se supprime pas : l'écran dit ce qui l'utilise. Un fichier supprimé reste lisible
   30 jours par les messages déjà partis. Le Pro peut désormais déposer une image dans un bloc « message rapide ».
+  **On y ajoute ses fichiers directement** (2026-10-30, bouton « Ajouter des fichiers », réservé aux admins) :
+  plusieurs à la fois, images JPEG, PNG ou GIF, vidéos MP4 ou PDF, chaque refus nommé avec son fichier. Et **chaque
+  champ d'image de la console propose deux sources** : « Choisir une image » (ou « un fichier ») depuis l'ordinateur,
+  et « Depuis la médiathèque », qui ouvre la liste des fichiers déjà déposés. Elle ne montre que ce que ce champ peut
+  envoyer : un GIF n'est pas proposé au bloc « message rapide », que WhatsApp refuserait.
 - ✅ **Le bloc « message rapide » accepte une image** (2026-08-25). Même champ et même téléversement que le
   bloc RCS : un seul visuel, qui sert aux DEUX canaux. En WhatsApp il part en en-tête du message, au-dessus du
   texte et des boutons ; sur un parcours RCS, le message devient une carte qui porte l'image. Sans aucune

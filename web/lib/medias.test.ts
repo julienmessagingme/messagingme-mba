@@ -1,7 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { poids, phraseUtilisations, utilisationsDuRefus } from './medias';
+import { poids, phraseUtilisations, phrasesDuDepot, utilisationsDuRefus } from './medias';
 
 const fr = (texte: string) => texte;
+
+describe('le bilan du bouton « Ajouter des fichiers » (2026-10-30)', () => {
+  it('dit ce qui est entré, au singulier comme au pluriel, et ce qui était déjà là', () => {
+    expect(phrasesDuDepot({ ajoutes: 1, dejaLa: 0, refus: [] }, fr)).toEqual({ info: '1 fichier ajouté.', erreur: null });
+    expect(phrasesDuDepot({ ajoutes: 3, dejaLa: 2, refus: [] }, fr).info)
+      .toBe('3 fichiers ajoutés. 2 fichiers étaient déjà dans la médiathèque.');
+  });
+
+  it('🔴 nomme chaque refus avec son fichier, et ne dit rien de ce qui n’est pas arrivé', () => {
+    expect(phrasesDuDepot({ ajoutes: 0, dejaLa: 0, refus: [{ nom: 'film.mov', raison: 'Format MOV.' }, { nom: 'gros.png', raison: 'Trop lourd.' }] }, fr))
+      .toEqual({ info: null, erreur: '« film.mov » : Format MOV. « gros.png » : Trop lourd.' });
+  });
+});
 
 describe('la médiathèque côté console (spec médias, lot B)', () => {
   it('dit un poids en Ko sous le mégaoctet, en Mo au-delà, avec une décimale utile', () => {

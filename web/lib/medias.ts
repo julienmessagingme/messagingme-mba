@@ -1,9 +1,37 @@
 /**
  * LA MÉDIATHÈQUE CÔTÉ CONSOLE (spec `docs/superpowers/specs/2026-10-14-medias-message-rapide-design.md`, lot B) : le poids
- * des fichiers tel qu'on le lit, et ce qui empêche d'en supprimer un.
+ * des fichiers tel qu'on le lit, ce qui empêche d'en supprimer un, et ce qu'un dépôt depuis la page a donné.
  */
 
 type Traduire = (fr: string, en?: string) => string;
+
+/** Ce que le bouton « Ajouter un fichier » a donné, fichier par fichier (2026-10-30). */
+export interface BilanDepot {
+  ajoutes: number;
+  /** Le même fichier était déjà là : le serveur rend sa fiche, rien n'est compté deux fois dans le quota. */
+  dejaLa: number;
+  refus: Array<{ nom: string; raison: string }>;
+}
+
+/**
+ * Le bilan dit à l'écran : ce qui est entré, et chaque refus NOMMÉ avec son fichier. Sur plusieurs fichiers, un refus sans
+ * nom laisserait chercher lequel est parti.
+ */
+export function phrasesDuDepot(b: BilanDepot, t: Traduire): { info: string | null; erreur: string | null } {
+  const morceaux: string[] = [];
+  if (b.ajoutes > 0) {
+    morceaux.push(b.ajoutes === 1 ? t('1 fichier ajouté.', '1 file added.') : t(`${b.ajoutes} fichiers ajoutés.`, `${b.ajoutes} files added.`));
+  }
+  if (b.dejaLa > 0) {
+    morceaux.push(b.dejaLa === 1
+      ? t('1 fichier était déjà dans la médiathèque.', '1 file was already in the media library.')
+      : t(`${b.dejaLa} fichiers étaient déjà dans la médiathèque.`, `${b.dejaLa} files were already in the media library.`));
+  }
+  return {
+    info: morceaux.length > 0 ? morceaux.join(' ') : null,
+    erreur: b.refus.length > 0 ? b.refus.map((r) => `« ${r.nom} » : ${r.raison}`).join(' ') : null,
+  };
+}
 
 /** Ce qui cite encore un fichier (`UtilisationMedia`, `src/rcs/media-store.pg.ts`). Le lieu reste une chaîne : un serveur
  *  plus récent peut en ajouter un, qui se nomme alors sans article plutôt que de faire échouer le refus. */

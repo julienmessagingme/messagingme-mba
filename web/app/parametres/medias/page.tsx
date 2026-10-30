@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import Link from 'next/link';
 import { AppShell } from '@/components/AppShell';
 import type { Session } from '@/lib/session';
@@ -9,14 +9,17 @@ import { useT } from '@/lib/i18n';
 import { IntroPage, TitrePage } from '@/components/TitrePage';
 import { useConfirmation } from '@/components/Confirmation';
 import { Squelette } from '@/components/Squelette';
+import { Bouton } from '@/components/Bouton';
 import { ApiError } from '@/lib/http';
-import { poids, phraseUtilisations, utilisationsDuRefus } from '@/lib/medias';
+import { poids, phraseUtilisations, phrasesDuDepot, utilisationsDuRefus, type BilanDepot } from '@/lib/medias';
+import { refusAvantEnvoi, typesAcceptes } from '@/lib/champ-fichier';
+import { deposerDansLaMediatheque } from '@/lib/depot-mediatheque';
 import { useChargement } from '@/lib/use-chargement';
 
 /**
  * LA MÉDIATHÈQUE (spec `docs/superpowers/specs/2026-10-14-medias-message-rapide-design.md`, lot B) : ce que pèsent les
- * fichiers de l'espace face au quota de son offre, et leur suppression. Un fichier qu'un contenu cite encore ne se
- * supprime pas : le serveur refuse en 409 et dit ce qui l'utilise.
+ * fichiers de l'espace face au quota de son offre, leur dépôt, et leur suppression. Un fichier qu'un contenu cite encore
+ * ne se supprime pas : le serveur refuse en 409 et dit ce qui l'utilise.
  */
 export default function MediasPage() {
   return <AppShell active="parametres-medias" fonction="scenarios">{(session) => <MediasInner session={session} />}</AppShell>;
@@ -36,6 +39,49 @@ function MediasInner({ session }: { session: Session }) {
     setQuota(m.quota);
   }, [session.tenantId]);
   const { chargement: loading, erreur: error, setErreur: setError, recharger: load } = useChargement(charger);
+  const fichierRef = useRef<HTMLInputElement>(null);
+  const [depot, setDepot] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
+
+  /**
+   * AJOUTER DES FICHIERS DEPUIS LA MÉDIATHÈQUE ELLE-MÊME (Julien, 2026-10-30), pour les choisir ensuite dans un bloc de
+   * scénario ou un message (« Depuis la médiathèque », `ChoixMediatheque`). Même route et mêmes règles que le champ
+   * d'image (`refusAvantEnvoi`, `deposerDansLaMediatheque`), avec les cinq types que la route accepte.
+   *
+   * ⚠️ UN PAR UN, DANS L'ORDRE : la route est sous le plafond des routes coûteuses (10 dépôts par minute et par espace), et
+   * des envois en parallèle s'y disputeraient. Un refus n'arrête pas les suivants : chaque fichier a son verdict.
+   */
+  async function ajouter(liste: File[]) {
+    setError(null);
+    setInfo(null);
+    setDepot(true);
+    const bilan: BilanDepot = { ajoutes: 0, dejaLa: 0, refus: [] };
+    try {
+      for (const f of liste) {
+        const avant = refusAvantEnvoi(f, 'tout', t);
+        if (avant) { bilan.refus.push({ nom: f.name, raison: avant }); continue; }
+        try {
+          if ((await deposerDansLaMediatheque(session.tenantId, f)).existant === true) bilan.dejaLa += 1;
+          else bilan.ajoutes += 1;
+        } catch (err) {
+          bilan.refus.push({ nom: f.name, raison: err instanceof Error ? err.message : t('Dépôt impossible.', 'Upload failed.') });
+        }
+      }
+    } finally {
+      setDepot(false);
+      // Remis à zéro : sans ça, re-choisir LE MÊME fichier après un refus n'émet aucun événement.
+      if (fichierRef.current) fichierRef.current.value = '';
+    }
+    // La liste d'abord : son rechargement efface le bandeau d'erreur, le bilan se pose donc après lui.
+    if (bilan.ajoutes > 0 || bilan.dejaLa > 0) await load();
+    const phrases = phrasesDuDepot(bilan, t);
+    setInfo(phrases.info);
+    if (phrases.erreur) setError(phrases.erreur);
+  }
+
+  // Le dépôt est réservé aux admins côté serveur, et une offre sans stockage (quota 0) le refuserait : le bouton ne se
+  // montre qu'à qui peut s'en servir, une fois le quota lu.
+  const peutAjouter = session.role === 'admin' && !loading && quota !== 0;
 
   /**
    * Une vidéo ou un PDF n'ont pas d'adresse publique : la console les télécharge sous session, puis les ENREGISTRE.
@@ -66,6 +112,7 @@ function MediasInner({ session }: { session: Session }) {
       confirmer: t('Supprimer', 'Delete'),
     }))) return;
     setError(null);
+    setInfo(null);
     try {
       await supprimerDeLaMediatheque(session.tenantId, f.code);
       await load();
@@ -87,6 +134,7 @@ function MediasInner({ session }: { session: Session }) {
         )}</IntroPage>
       </div>
       {error && <p className="rounded-controle bg-danger-50 px-3 py-2 text-sm text-danger-700" data-testid="medias-erreur">{error}</p>}
+      {info && <p className="rounded-controle bg-succes-50 px-3 py-2 text-sm text-succes-700" data-testid="medias-info">{info}</p>}
 
       <div className="rounded-carte border border-ink-200 bg-white px-5 py-4" data-testid="medias-jauge">
         {loading ? (
@@ -109,11 +157,35 @@ function MediasInner({ session }: { session: Session }) {
       </div>
 
       <div className="overflow-hidden rounded-carte border border-ink-200 bg-white">
-        <div className="border-b border-ink-100 px-5 py-3 text-sm font-semibold text-ink-900">{t('Fichiers', 'Files')} ({fichiers.length})</div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-100 px-5 py-3">
+          <span className="text-sm font-semibold text-ink-900">{t('Fichiers', 'Files')} ({fichiers.length})</span>
+          {peutAjouter && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-ink-500">{t('Image JPEG, PNG ou GIF (2 Mo), vidéo MP4 ou PDF (16 Mo)', 'JPEG, PNG or GIF image (2 MB), MP4 video or PDF (16 MB)')}</span>
+              <Bouton variante="secondaire" enCours={depot}
+                type="button"
+                onClick={() => fichierRef.current?.click()}
+                disabled={depot}
+                data-testid="medias-ajouter"
+              >
+                {depot ? t('Envoi…', 'Uploading…') : t('Ajouter des fichiers', 'Add files')}
+              </Bouton>
+              <input
+                ref={fichierRef}
+                type="file"
+                multiple
+                accept={typesAcceptes('tout')}
+                data-testid="medias-ajouter-fichier"
+                className="hidden"
+                onChange={(e) => { const liste = Array.from(e.target.files ?? []); if (liste.length > 0) void ajouter(liste); }}
+              />
+            </div>
+          )}
+        </div>
         {loading ? (
           <Squelette forme="lignes" className="px-5 py-6" />
         ) : fichiers.length === 0 ? (
-          <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun fichier. Ils arrivent quand vous ajoutez une image à un message ou à un bloc de scénario.', 'No files yet. They arrive when you add an image to a message or a scenario block.')}</p>
+          <p className="px-5 py-6 text-sm text-ink-500">{t('Aucun fichier pour l’instant. Ils arrivent quand vous en ajoutez ici, ou quand vous déposez une image dans un message ou un bloc de scénario.', 'No files yet. They arrive when you add some here, or when you upload an image to a message or a scenario block.')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>

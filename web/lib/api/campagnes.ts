@@ -330,10 +330,11 @@ export interface RcsMedia {
 
 /**
  * Téléverse un visuel et rend son adresse publique. Le serveur relit la SIGNATURE du fichier : un fichier
- * renommé en `.png` est refusé, et c'est le type réel qui décide de l'extension de l'URL.
+ * renommé en `.png` est refusé, et c'est le type réel qui décide de l'extension de l'URL. `existant` : le même fichier
+ * était déjà dans la médiathèque, le serveur rend sa fiche au lieu d'en créer une seconde (`src/http/rcs-media.ts`).
  */
-export function uploadRcsMedia(tenantId: string, dataUrl: string, nom: string | null): Promise<{ media: RcsMedia; url: string }> {
-  return request<{ media: RcsMedia; url: string }>(`/tenants/${tenantId}/rcs/media`, {
+export function uploadRcsMedia(tenantId: string, dataUrl: string, nom: string | null): Promise<{ media: RcsMedia; url: string; existant?: boolean }> {
+  return request<{ media: RcsMedia; url: string; existant?: boolean }>(`/tenants/${tenantId}/rcs/media`, {
     method: 'POST',
     body: JSON.stringify({ dataUrl, nom }),
   });

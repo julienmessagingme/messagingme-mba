@@ -16,6 +16,8 @@ const fichier = (code: string, nom: string, taille: number) => ({
 
 async function monter(page: Page) {
   const supprimes: string[] = [];
+  /** Les noms des fichiers reçus par le dépôt, dans l'ordre d'arrivée. */
+  const deposes: string[] = [];
   let fichiers = [fichier(UTILISE, 'banniere.png', MO), fichier(LIBRE, 'ancien.png', MO / 2)];
   // Les vignettes ne sont jamais jointes : une réponse vide suffit.
   await page.route('https://api.e2e.test/m/**', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: '' }));
@@ -36,12 +38,43 @@ async function monter(page: Page) {
       fichiers = fichiers.filter((f) => f.code !== code);
       return route.fulfill({ status: 204, body: '' });
     }
+    if (req.method() === 'POST' && chemin.endsWith('/rcs/media')) {
+      const corps = (req.postDataJSON() ?? {}) as { nom?: string; dataUrl?: string };
+      deposes.push(corps.nom ?? '');
+      // Le vrai serveur relit la signature du fichier ; le faux range tout en PNG, l'écran ne lit que la liste.
+      const code = `c${String(deposes.length).padStart(25, '0')}`;
+      const neuf = fichier(code, corps.nom ?? code, 1000);
+      fichiers = [neuf, ...fichiers];
+      return json({ media: neuf, url: neuf.url, existant: false }, 201);
+    }
     return json({});
   });
-  return { supprimes };
+  return { supprimes, deposes };
 }
 
 test.describe('la médiathèque', () => {
+  /**
+   * 🔴 ON AJOUTE DEPUIS LA MÉDIATHÈQUE ELLE-MÊME (Julien, 2026-10-30). Plusieurs fichiers d'un coup : ceux qui passent les
+   * règles du champ partent, un par un, et celui qui ne les passe pas est refusé AVANT l'envoi, avec son nom.
+   */
+  test('🔴 ajoute des fichiers depuis la page, et nomme celui qui est refusé avant l’envoi', async ({ page }) => {
+    const { deposes } = await monter(page);
+    await page.goto('/parametres/medias');
+    await expect(page.getByTestId('medias-ligne')).toHaveCount(2);
+    await expect(page.getByTestId('medias-ajouter')).toBeVisible();
+
+    await page.getByTestId('medias-ajouter-fichier').setInputFiles([
+      { name: 'visuel.png', mimeType: 'image/png', buffer: Buffer.from('png') },
+      { name: 'film.mov', mimeType: 'video/quicktime', buffer: Buffer.from('mov') },
+      { name: 'brochure.pdf', mimeType: 'application/pdf', buffer: Buffer.from('pdf') },
+    ]);
+
+    await expect(page.getByTestId('medias-ligne')).toHaveCount(4);
+    await expect(page.getByTestId('medias-info')).toHaveText('2 fichiers ajoutés.');
+    await expect(page.getByTestId('medias-erreur')).toContainText('« film.mov » : Cette vidéo est au format MOV');
+    expect(deposes).toEqual(['visuel.png', 'brochure.pdf']);
+  });
+
   test('montre le poids face au quota, et la liste des fichiers', async ({ page }) => {
     await monter(page);
     await page.goto('/parametres/medias');

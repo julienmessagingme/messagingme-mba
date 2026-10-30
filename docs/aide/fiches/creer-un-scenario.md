@@ -1,7 +1,7 @@
 ---
 ecran: workflows
 source_section: Automatisations (menu « Scénario », ex-« Flow »)
-source_empreinte: 5c5526
+source_empreinte: e83be9
 ---
 # Créer un scénario
 
@@ -15,8 +15,10 @@ Les blocs que vous utiliserez le plus :
 - **Message rapide** : un texte, avec jusqu'à trois boutons de réponse ou un bouton qui ouvre une page. Il ne
   part que dans une conversation déjà ouverte. Il peut porter une image, une vidéo MP4 ou un PDF ; la vidéo et le
   PDF ne partent qu'en WhatsApp, et le texte qui les accompagne est limité à 1 024 caractères. Une vidéo d'iPhone
-  (MOV, ou HEVC) est refusée au dépôt : convertissez-la en MP4 H.264. Vos fichiers et le quota de votre offre se gèrent dans
-  Paramètres > Médiathèque.
+  (MOV, ou HEVC) est refusée au dépôt : convertissez-la en MP4 H.264. Le fichier vient de votre ordinateur
+  (« Choisir un fichier ») ou de ceux que vous avez déjà déposés (« Depuis la médiathèque », qui ne propose que ce que
+  le bloc peut envoyer). Vos fichiers et le quota de votre offre se gèrent dans Paramètres > Médiathèque, où vous
+  pouvez aussi en ajouter directement.
 - **Question** : une question avec un menu de réponses, ou une question ouverte. Le scénario attend la
   réponse avant de continuer.
 - **Formulaire** : envoie un formulaire WhatsApp et attend. Il a deux sorties : « Formulaire rempli » quand le

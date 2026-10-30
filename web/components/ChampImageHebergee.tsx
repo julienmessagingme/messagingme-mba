@@ -1,12 +1,13 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { uploadRcsMedia } from '@/lib/api';
 import { imageDessinable } from '@/lib/image-dessinable';
-import { typesAcceptes, plafondPour, extensionDouteuse, genreDeLAdresse, estMov, type Accepte } from '@/lib/champ-fichier';
+import { typesAcceptes, extensionDouteuse, genreDeLAdresse, refusAvantEnvoi, type Accepte } from '@/lib/champ-fichier';
+import { deposerDansLaMediatheque } from '@/lib/depot-mediatheque';
 import { useT } from '@/lib/i18n';
 import { inputCls } from '@/lib/ui';
 import { Bouton } from '@/components/Bouton';
+import { ChoixMediatheque } from '@/components/ChoixMediatheque';
 
 /**
  * Une image que la console HÉBERGE : on choisit un fichier, et l'adresse publique se remplit toute seule.
@@ -61,40 +62,22 @@ export function ChampImageHebergee({
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
+  /** La fenêtre « Choisir dans la médiathèque » (Julien, 2026-10-30) : le fichier vient du poste OU de la médiathèque. */
+  const [mediatheque, setMediatheque] = useState(false);
   const fichierRef = useRef<HTMLInputElement>(null);
   const cls = compact ? `${inputCls} bg-white` : inputCls;
 
   async function televerser(file: File) {
     setErreur(null);
-    // Type et poids vérifiés AVANT la lecture : inutile d'encoder 16 Mo en base64 pour se les faire refuser ensuite.
-    const plafond = plafondPour(file.type, accepte);
-    if (plafond === 0 && accepte !== 'image' && estMov(file.type)) {
-      setErreur(t(
-        'Cette vidéo est au format MOV (celui de l’iPhone), que WhatsApp n’accepte pas. Convertissez-la en MP4 H.264 (profil Main) avec votre logiciel de montage ou un convertisseur, puis déposez le fichier .mp4.',
-        'This video is in MOV format (the iPhone one), which WhatsApp does not accept. Convert it to H.264 MP4 (Main profile) with your editing software or a converter, then upload the .mp4 file.',
-      ));
-      return;
-    }
-    if (plafond === 0) {
-      setErreur(accepte === 'image'
-        ? t('Format non accepté : JPEG, PNG ou GIF.', 'Format not accepted: JPEG, PNG or GIF.')
-        : t('Format non accepté : image JPEG ou PNG, vidéo MP4 ou PDF.', 'Format not accepted: JPEG or PNG image, MP4 video or PDF.'));
-      return;
-    }
-    if (file.size > plafond) {
-      const mo = Math.round(plafond / (1024 * 1024));
-      setErreur(t(`Fichier trop lourd : ${mo} Mo maximum.`, `File too large: ${mo} MB maximum.`));
+    // Type et poids vérifiés AVANT la lecture, par la règle que partage le bouton « Ajouter » de la Médiathèque.
+    const refus = refusAvantEnvoi(file, accepte, t);
+    if (refus) {
+      setErreur(refus);
       return;
     }
     setBusy(true);
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const lecteur = new FileReader();
-        lecteur.onload = () => resolve(String(lecteur.result ?? ''));
-        lecteur.onerror = () => reject(new Error('lecture impossible'));
-        lecteur.readAsDataURL(file);
-      });
-      const r = await uploadRcsMedia(tenantId, dataUrl, file.name);
+      const r = await deposerDansLaMediatheque(tenantId, file);
       onChange(r.url);
     } catch (e) {
       // Le message vient du serveur et NOMME la cause (format refusé, trop lourd) : on l'affiche tel quel.
@@ -113,6 +96,21 @@ export function ChampImageHebergee({
   // La vignette ne se dessine que pour une adresse https (`imageDessinable`) ; une autre garde son bouton « Retirer ».
   const vignette = genre === 'image' ? imageDessinable(valeur) : null;
   const choisir = accepte === 'image' ? t('Choisir une image', 'Choose an image') : t('Choisir un fichier', 'Choose a file');
+  /**
+   * 🔴 LE SECOND CHOIX DE LA SOURCE : « Choisir une image » ouvre le poste, ce bouton-ci la médiathèque. Le premier garde
+   * son libellé, que la fiche d'aide publique de la Chaîne cite mot pour mot (« publier sur ma chaîne WhatsApp »).
+   */
+  const depuisLaMediatheque = (
+    <Bouton variante="secondaire"
+      type="button"
+      onClick={() => setMediatheque(true)}
+      disabled={busy}
+      data-testid={`${testIdPrefix}-image-mediatheque`}
+      className="shrink-0"
+    >
+      {t('Depuis la médiathèque', 'From the media library')}
+    </Bouton>
+  );
 
   const retirer = (
     <button
@@ -153,7 +151,9 @@ export function ChampImageHebergee({
           ) : choisir}
         </button>
       ) : (
-        <div className="flex items-center gap-2">
+        // ⚠️ `flex-wrap` : dans le panneau d'un bloc de scénario (~300 px), les deux boutons, la vignette et « Retirer »
+        // ne tiennent pas sur une ligne ; sans retour à la ligne, le dernier sortirait du panneau.
+        <div className="flex flex-wrap items-center gap-2">
           <Bouton variante="secondaire" enCours={busy}
             type="button"
             onClick={() => fichierRef.current?.click()}
@@ -163,6 +163,7 @@ export function ChampImageHebergee({
           >
             {busy ? t('Envoi…', 'Uploading…') : choisir}
           </Bouton>
+          {depuisLaMediatheque}
           {aUneImage && (
             <>
               {genre !== 'image' && (
@@ -194,11 +195,33 @@ export function ChampImageHebergee({
       />
 
       {apparence === 'tuile' ? (
-        <div className="mt-1.5 flex items-center gap-2">
-          {champAdresse(cls)}
-          {aUneImage && retirer}
-        </div>
+        <>
+          {/* La tuile entière ouvre le poste ; la médiathèque est un lien dessous, la carte étant trop étroite pour un bouton. */}
+          <button
+            type="button"
+            onClick={() => setMediatheque(true)}
+            disabled={busy}
+            data-testid={`${testIdPrefix}-image-mediatheque`}
+            className="mt-1 text-xs text-brand-600 hover:underline disabled:cursor-not-allowed"
+          >
+            {t('ou choisir dans la médiathèque', 'or pick from the media library')}
+          </button>
+          <div className="mt-1.5 flex items-center gap-2">
+            {champAdresse(cls)}
+            {aUneImage && retirer}
+          </div>
+        </>
       ) : champAdresse(`${cls} mt-1.5`)}
+
+      {mediatheque && (
+        <ChoixMediatheque
+          tenantId={tenantId}
+          accepte={accepte}
+          testIdPrefix={testIdPrefix}
+          onChoisir={(url) => { setErreur(null); onChange(url); }}
+          onClose={() => setMediatheque(false)}
+        />
+      )}
 
       {erreur && <p className="mt-1 text-xs text-danger-700" data-testid={`${testIdPrefix}-image-error`}>{erreur}</p>}
       {douteuse && (

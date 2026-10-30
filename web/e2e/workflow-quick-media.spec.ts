@@ -79,6 +79,50 @@ test.describe('Bloc message rapide : le visuel', () => {
     await page.locator('.react-flow__node').first().click();
     await expect(page.getByTestId('quick-node-image')).toHaveValue('');
   });
+
+  /**
+   * 🔴 LE FICHIER VIENT DU POSTE OU DE LA MÉDIATHÈQUE (Julien, 2026-10-30). Choisi dans la médiathèque, il écrit la MÊME
+   * adresse qu'un dépôt ; et la fenêtre ne propose que ce que le bloc peut envoyer : le GIF n'y est pas, WhatsApp le
+   * refuserait.
+   */
+  test('🔴 un fichier se choisit dans la médiathèque, qui ne propose que ce que le bloc peut envoyer', async ({ page }) => {
+    const saved: Graph[] = [];
+    await mockBuilder(page, saved);
+    const media = (code: string, nom: string, mime: string, ext: string) => ({
+      id: code, code, nom, mime, taille: 1000, createdAt: '2026-10-30T09:00:00.000Z', url: `https://api.e2e.test/m/${code}.${ext}`,
+    });
+    // Enregistrée APRÈS celle de `mockBuilder`, cette route passe devant elle.
+    await page.route('**/api/backend/**/rcs/media', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        fichiers: [
+          media('aaaaaaaaaaaaaaaaaaaaaaaaaa', 'banniere.png', 'image/png', 'png'),
+          media('bbbbbbbbbbbbbbbbbbbbbbbbbb', 'anime.gif', 'image/gif', 'gif'),
+          media('cccccccccccccccccccccccccc', 'brochure.pdf', 'application/pdf', 'pdf'),
+        ],
+        occupation: 3000,
+        quota: 100 * 1024 * 1024,
+      }),
+    }));
+    await page.route('https://api.e2e.test/m/**', (route) => route.fulfill({ status: 200, contentType: 'image/png', body: '' }));
+    await page.goto('/workflows?open=wf1');
+    await page.locator('.react-flow__node').first().click();
+
+    await page.getByTestId('quick-node-image-mediatheque').click();
+    const fenetre = page.getByTestId('quick-node-mediatheque');
+    await expect(fenetre).toBeVisible();
+    await expect(fenetre.getByTestId('quick-node-mediatheque-fichier')).toHaveCount(2);
+    await expect(fenetre).not.toContainText('anime.gif');
+
+    await fenetre.getByTestId('quick-node-mediatheque-fichier').filter({ hasText: 'banniere.png' }).click();
+    await expect(fenetre).toHaveCount(0);
+    await expect(page.getByTestId('quick-node-image')).toHaveValue('https://api.e2e.test/m/aaaaaaaaaaaaaaaaaaaaaaaaaa.png');
+    await expect.poll(
+      () => saved.some((g) => g.nodes.some((n) => (n.data as { imageUrl?: string }).imageUrl === 'https://api.e2e.test/m/aaaaaaaaaaaaaaaaaaaaaaaaaa.png')),
+      { timeout: 10_000 },
+    ).toBe(true);
+  });
 });
 
 /**
