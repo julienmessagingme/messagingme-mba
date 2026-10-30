@@ -75,12 +75,15 @@ export interface EtatShopify {
   messages: MessageBranche[];
   compteurs: Record<string, number>;
   /**
-   * Les paniers des 7 derniers jours : relancés (par issue), fermés à temps (une commande en est née), en attente ; et les
-   * RÉCUPÉRÉS (plan 2026-10-30) : relancés puis payés, par date de relance, leur montant par devise, les tests à part.
+   * Les paniers des 7 derniers jours : relancés (par issue), fermés à temps (une commande en est née), en attente, comptés
+   * sur les paniers ouverts dans ces 7 jours ; et, sur la date de RELANCE (plan 2026-10-30) : les relances parties et les
+   * RÉCUPÉRÉS (relancés puis payés), leur montant par devise, les tests à part. 🔴 Récupérés et relances parties se lisent
+   * ensemble : rapportés aux relances par panier, un panier ouvert il y a plus de 7 jours mais relancé dedans ferait
+   * compter plus de récupérés que de relances (relecture du lot A).
    */
   paniers: {
     relances: Record<string, number>; fermesATemps: number; enAttente: number;
-    recuperes: number; montantsRecuperes: Montant[]; recuperesTest: number;
+    relancesParties: number; recuperes: number; montantsRecuperes: Montant[]; recuperesTest: number;
   };
   /** La page des apps de la boutique, d'où le marchand désinstalle l'app (aucune API ne le fait). */
   pageApps: string | null;
@@ -93,7 +96,7 @@ export async function etatShopify(deps: DepsGestionShopify, tenantId: string): P
   if (boutique === null) {
     return {
       boutique: null, messages: [], compteurs: {}, pageApps: null, attentes: [],
-      paniers: { relances: {}, fermesATemps: 0, enAttente: 0, recuperes: 0, montantsRecuperes: [], recuperesTest: 0 },
+      paniers: { relances: {}, fermesATemps: 0, enAttente: 0, relancesParties: 0, recuperes: 0, montantsRecuperes: [], recuperesTest: 0 },
     };
   }
   // Les 7 mêmes jours, en dates de Paris (aujourd'hui compris) : la lecture du chiffre compte par jour civil.
@@ -106,7 +109,8 @@ export async function etatShopify(deps: DepsGestionShopify, tenantId: string): P
     // Sept jours : un panier ne vit pas plus (purge), compter au-delà ne compterait rien de plus.
     paniers: {
       ...await deps.store.compteursPaniers(tenantId, JOURS_PANIERS),
-      recuperes: recuperes.recuperes, montantsRecuperes: recuperes.montants, recuperesTest: recuperes.recuperesTest,
+      relancesParties: recuperes.relances, recuperes: recuperes.recuperes, montantsRecuperes: recuperes.montants,
+      recuperesTest: recuperes.recuperesTest,
     },
     pageApps: pageApps(boutique.domaine),
     attentes: await deps.store.attentes(tenantId),

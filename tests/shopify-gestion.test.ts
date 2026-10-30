@@ -338,7 +338,7 @@ describe('l’état et la coupure', () => {
     expect(e.pageApps).toBe('https://admin.shopify.com/store/b/settings/apps');
     expect(await etatShopify(monter({ boutique: null }).deps, T)).toEqual({
       boutique: null, messages: [], compteurs: {}, pageApps: null, attentes: [],
-      paniers: { relances: {}, fermesATemps: 0, enAttente: 0, recuperes: 0, montantsRecuperes: [], recuperesTest: 0 },
+      paniers: { relances: {}, fermesATemps: 0, enAttente: 0, relancesParties: 0, recuperes: 0, montantsRecuperes: [], recuperesTest: 0 },
     });
   });
 
@@ -346,8 +346,11 @@ describe('l’état et la coupure', () => {
     const { deps, journal } = monter();
     const e = await etatShopify(deps, T);
     expect(journal.chiffres).toEqual([{ from: addDays(todayParis(), -6), to: todayParis() }]);
+    // 🔴 Relancées et récupérés sur la MÊME date (celle de la relance), sinon la carte peut montrer plus de récupérés que de
+    // relances parties (relecture du lot A) : `relancesParties` vient de la même lecture que les récupérés.
     expect(e.paniers).toEqual({
-      relances: { envoye: 1 }, fermesATemps: 2, enAttente: 3, recuperes: 2, montantsRecuperes: [{ devise: 'EUR', montant: '59.9' }], recuperesTest: 1,
+      relances: { envoye: 1 }, fermesATemps: 2, enAttente: 3,
+      relancesParties: 4, recuperes: 2, montantsRecuperes: [{ devise: 'EUR', montant: '59.9' }], recuperesTest: 1,
     });
     // Sans boutique, rien n'est lu.
     const sans = monter({ boutique: null });
@@ -360,7 +363,9 @@ describe('l’état et la coupure', () => {
     const mcp = { shopify: deps } as unknown as DepsMcp;
     const etat = await OUTILS.find((x) => x.nom === 'get_shopify_state')!.executer(mcp, T, {}, { userId: 'u1' } as never);
     expect(etat).toMatchObject({
-      checkouts: { recovered_last_7_days: 2, recovered_amount_last_7_days: [{ currency: 'EUR', amount: '59.9' }] },
+      checkouts: {
+        sent_reminders_last_7_days: 4, recovered_last_7_days: 2, recovered_amount_last_7_days: [{ currency: 'EUR', amount: '59.9' }],
+      },
     });
   });
 

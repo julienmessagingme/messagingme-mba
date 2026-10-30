@@ -302,6 +302,16 @@ describe('get_revenue_stats (plan 2026-10-30, lot 2)', () => {
     expect(r.regle).toMatch(/5 jours/);
     expect(r.a_savoir.join(' ')).toMatch(/brut/i);
     expect(r.a_savoir.join(' ')).toMatch(/concordance/);
+    // Un espace sans boutique lit zéro : l'assistant doit pouvoir vérifier qu'une boutique est branchée (relecture du lot A).
+    expect(r.a_savoir.join(' ')).toMatch(/get_shopify_state/);
+    // Une commande peut changer de source OU apparaître quand sa preuve arrive, jamais après (relecture du lot A).
+    expect(r.a_savoir.join(' ')).toMatch(/apparaître/);
+  });
+
+  it('la période seule : une maille, que l’outil ne déclare pas, n’est pas lue', async () => {
+    const appeler = appelerOutil('get_revenue_stats', { chiffreVentes: async () => CHIFFRE });
+    const r = await appeler({ du: '2026-06-01', au: '2026-10-30', maille: 'jour' });
+    expect(r.periode).toEqual({ du: '2026-06-01', au: '2026-10-30', fuseau: 'Europe/Paris' });
   });
 
   it('par défaut les 30 derniers jours ; une période illisible est refusée', async () => {

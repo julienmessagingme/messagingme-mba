@@ -470,7 +470,8 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
     annotations: { title: 'Read the revenue from WhatsApp sends', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: { du: ENTREE_PERIODE.du!, au: ENTREE_PERIODE.au! }, additionalProperties: false },
     async executer(deps, tenantId, args) {
-      const { range } = lirePeriode(args);
+      // La période seule : l'outil ne déclare aucune maille, et le serveur ne valide pas les arguments contre le schéma.
+      const { range } = lirePeriode({ du: args.du, au: args.au });
       const c = await deps.chiffres.chiffreVentes(tenantId, range);
       const sources = (b: BlocVentes) => b.sources.map((s) => ({
         source: s.source, campagne_id: s.campaignId, campagne: s.nom, devise: s.devise, brut: s.brut, prouve: s.prouve, commandes: s.commandes,
@@ -492,8 +493,11 @@ export const OUTILS_CHIFFRES: OutilMcp[] = [
             + 'Shopify), scenario (les scénarios, en bloc), agent (l’agent IA), agent_meta (l’agent de Meta).',
           'paniers : relancés, récupérés et montant récupéré se comptent à la date de la RELANCE ; la source relance_panier, '
             + 'elle, à la date du paiement : à la lisière de la période, les deux peuvent différer.',
-          'Une commande prouvée par ses UTM peut encore changer de source dans ses trois premières heures, jamais après.',
+          'Le chiffre des trois dernières heures peut encore bouger : une commande peut changer de source, ou apparaître, '
+            + 'quand sa preuve par UTM arrive ; jamais après.',
           'commandes_de_test : la passerelle de test de Shopify, jamais comptée dans le chiffre.',
+          'Sans boutique Shopify branchée, rien ne s’enregistre : avant de conclure à un chiffre nul, get_shopify_state dit si '
+            + 'une boutique l’est.',
         ],
       };
     },

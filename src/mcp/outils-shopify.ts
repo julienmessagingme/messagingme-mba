@@ -127,8 +127,9 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
       + 'also premier_contact: such a number never writes first, so its Shopify messages cannot go out; and for a message '
       + 'queued before that rule, en_file, pas_sur_whatsapp, gele, numero_coupe, refuse_whatsapp, filiere_differente), and '
       + 'the abandoned checkouts: '
-      + 'their delay and, over the last 7 days, the reminders sent, those closed in time by an order, those waiting, and '
-      + 'those recovered (reminded then paid, by reminder date, test orders excluded) with their amount per currency. '
+      + 'their delay and, over the last 7 days, the reminders sent, those closed in time by an order, those waiting (all '
+      + 'three counted on the checkouts opened in those days), and, by reminder date, the reminders that went out and those '
+      + 'recovered (reminded then paid, test orders excluded) with their amount per currency: compare these two together. '
       + 'The revenue attributed to WhatsApp over any period: get_revenue_stats.',
     annotations: { title: 'Get the Shopify connection', readOnlyHint: true, openWorldHint: false },
     entree: { type: 'object', properties: {} },
@@ -144,6 +145,7 @@ export const OUTILS_SHOPIFY: OutilMcp[] = [
         checkouts: {
           delay_minutes: e.boutique.delaiPanierMinutes, reminders_last_7_days: e.paniers.relances,
           closed_in_time: e.paniers.fermesATemps, waiting: e.paniers.enAttente,
+          sent_reminders_last_7_days: e.paniers.relancesParties,
           recovered_last_7_days: e.paniers.recuperes,
           recovered_amount_last_7_days: e.paniers.montantsRecuperes.map((m) => ({ currency: m.devise, amount: m.montant })),
         },
