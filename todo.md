@@ -24,13 +24,6 @@ voie par QR code (plan `docs/superpowers/plans/2026-10-30-tunnel-numero-console-
   de numéro ne voit que « Téléchargez l'application ». À trancher avec Julien : retirer ces phrases, ou offrir le numéro
   fourni aussi sous « Non ».
 
-## 🟡 Free et Pro sans article : ce qui reste (2026-10-30)
-
-- **Free et Pro sans article, ce qui n'est pas encore en production** (2026-10-30) : les réponses des outils MCP et les
-  refus de l'API attendent le prochain déploiement de l'API ; la FAQ du plugin, sa prochaine version publiée ; les fiches
-  d'aide modifiées (« Choisir mon offre », « Brancher ma boutique Shopify » et quatre fiches non publiques),
-  `aide:charger` après ce déploiement. La console et la vitrine, elles, partent au push.
-
 ## 🟡 Les alertes de Santé : ce que le lot 4 de la refonte de /ops laisse (relecture du 2026-10-30)
 
 - **La veille est aveugle quand elle serait la plus utile** : un signal illisible ne s'alerte pas (Cockpit muet n'est

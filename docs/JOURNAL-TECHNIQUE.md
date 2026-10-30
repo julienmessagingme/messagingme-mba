@@ -15,6 +15,9 @@ Free » (gardés par Julien) et les alertes Telegram internes. La fiche « Branc
 phrase sur le consentement que Shopify ne recueille pas. Le test de la vitrine n'exclut plus la FAQ du plugin. En
 production en trois temps : la console et la vitrine au push, les textes de l'API au prochain déploiement, la FAQ du
 plugin à sa prochaine version, puis `aide:charger`.
+Tout est en production le soir même : le commit `0bf18bfa` part avec le déploiement de `aa1b6f7c` (le sien, en file, a été
+remplacé par ce déploiement plus récent, qui le contient), la FAQ avec le plugin 0.3.17, puis Julien lance
+`aide:charger` sur l'image `aa1b6f7c`.
 
 ## 2026-10-30 (soir) : la console et le plugin posent les questions du tunnel, plus aucune voie par QR code
 
