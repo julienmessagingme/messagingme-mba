@@ -13,7 +13,8 @@
  *
  * 🔴 ALLUMÉ N'EST PLUS RÉPONDEUR. L'agent de Meta allumé (`mba_enabled`) est DISPONIBLE : hors du mode `mba`, il est en
  * veille, et ni une remise, ni une fin de parcours, ni le balayage ne lui confie rien. Il ne prend un contact que par
- * le bloc « Envoyer au MBA » d'un scénario. La contrainte « une seule voix » de 0209 est levée (0217).
+ * le bloc « Envoyer au MBA » d'un scénario, ou par la campagne dont l'étage le désigne pour sa première réponse (0263,
+ * `remettreSiPersonneNeSuit`). La contrainte « une seule voix » de 0209 est levée (0217).
  *
  * 🔴 LA LISTE DES MODES EST LA SEULE DU DÉPÔT, dans `web/lib/partage/repondeur-modes.ts` (partagée avec la console), miroir
  * du CHECK `tenant_settings_repondeur_mode_chk` (reposé par 0224, tenu par `tests/migration-0224.test.ts`). Un mode

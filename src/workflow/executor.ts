@@ -339,8 +339,8 @@ export interface WorkflowExecutorDeps {
   /**
    * L'agent de Meta est-il le RÉPONDEUR de ce tenant (mode `mba`, `leMbaRepond`, RC6) ? Il décide qu'une étape sans
    * choix cesse de bloquer le parcours, et qu'on rende le fil à Meta en fin de chaîne. 🔴 Allumé en veille (un autre
-   * mode), il vaut `false` : aucune fin de parcours ne lui confie un contact, seul le bloc « Envoyer au MBA » le fait
-   * (`confierAuMbaParLeBloc`). Fixtures : `agentDeMetaEteint`.
+   * mode), il vaut `false` : aucune fin de parcours ne lui confie un contact : le bloc « Envoyer au MBA » le fait
+   * (`confierAuMbaParLeBloc`), et hors de l'exécuteur la campagne dont l'étage le désigne (0263, la remise). Fixtures : `agentDeMetaEteint`.
    */
   mbaActifPour(tenantId: string): Promise<boolean>;
   /**

@@ -7,6 +7,7 @@ import type { LectureModele } from '../src/api/modele-envoi';
 import type { BulkTarget, ContactFilters } from '../src/crm/contact-store.pg';
 import type { CreateCampaignInput } from '../src/campaign/store.pg';
 import type { BuildContact, BuiltRecipient } from '../src/campaign/build';
+import { REPONDEURS_ETAGE } from '../src/campaign/etages';
 
 /**
  * `prepare_campaign` (plan « Campagnes depuis Claude », tâche 7) : la campagne complète NON lancée, par le chemin de la
@@ -244,5 +245,90 @@ describe('prepare_campaign', () => {
     const { d, supprimes } = deps({ ancien: { tenant: T, confirme: true, status: 'draft' }, modele: { statut: 'approuve', categorie: 'marketing', variables: 1 } });
     await expect(outil.executer(d, T, { ...BASE, tags: undefined, contact_ids: [C2], replaces: ANCIEN }, PERSONNE)).rejects.toThrow(RefusOutil);
     expect(supprimes).toEqual([NEUF]);
+  });
+});
+
+/**
+ * QUI RÉPOND AUX RÉPONSES (plan docs/superpowers/plans/2026-10-30-repondeur-par-etage.md, tâche 5) : le couple de la
+ * console, `responder` et `responder_agent_id` : ce que l'écran sait dire, Claude doit pouvoir le dire. 🔴 Validé par la MÊME
+ * fonction (`preparerCampagne`, donc `problemeDeRepondeur` et la lecture scopée de l'agent), jamais par une copie.
+ */
+describe('prepare_campaign : qui répond quand un contact répond', () => {
+  const AGENT = '66666666-6666-4666-8666-666666666666';
+  const AGENT_AILLEURS = '77777777-7777-4777-8777-777777777777';
+  const BROUILLON = '88888888-8888-4888-8888-888888888888';
+  /** Le magasin des agents, scopé comme `PgAgentStore.byId` : un agent d'un autre espace n'existe pas. */
+  const avecAgents = (d: DepsMcp, lus: Array<[string, string]> = []): DepsMcp => {
+    const fiches = [{ t: T, id: AGENT, status: 'active' }, { t: AUTRE, id: AGENT_AILLEURS, status: 'active' }, { t: T, id: BROUILLON, status: 'draft' }];
+    (d as unknown as { campagnes: { route: { agents: unknown } } }).campagnes.route.agents = {
+      byId: async (t: string, id: string) => { lus.push([t, id]); const f = fiches.find((x) => x.t === t && x.id === id); return f ? { id: f.id, status: f.status } : null; },
+    };
+    return d;
+  };
+
+  it('sans responder : ni devenir ni répondeur, le répondeur de l’espace comme avant ; le récapitulatif le dit', async () => {
+    const { d, crees } = deps();
+    const r = (await outil.executer(avecAgents(d), T, BASE, PERSONNE)) as Record<string, unknown>;
+    expect(crees[0]).not.toHaveProperty('devenir');
+    expect(crees[0]).not.toHaveProperty('repondeur');
+    expect(r.responder).toBeNull();
+  });
+
+  it('🔴 responder « agent » : un agent ACTIF de l’espace, lu scopé ; la campagne le porte avec « le répondeur automatique prend la main »', async () => {
+    const lus: Array<[string, string]> = [];
+    const { d, crees } = deps();
+    const r = (await outil.executer(avecAgents(d, lus), T, { ...BASE, responder: 'agent', responder_agent_id: AGENT }, PERSONNE)) as Record<string, unknown>;
+    expect(crees[0]).toMatchObject({ devenir: 'mba', repondeur: 'agent', repondeurAgentId: AGENT });
+    expect(lus).toEqual([[T, AGENT]]);
+    expect(r).toMatchObject({ responder: 'agent', responder_agent_id: AGENT });
+  });
+
+  it('🔴 un agent d’un AUTRE espace, un brouillon, ou « agent » sans identifiant : refusé, rien n’est créé', async () => {
+    for (const args of [
+      { responder: 'agent', responder_agent_id: AGENT_AILLEURS },
+      { responder: 'agent', responder_agent_id: BROUILLON },
+      { responder: 'agent' },
+      { responder: 'agent', responder_agent_id: 'pas-un-uuid' },
+    ]) {
+      const { d, crees } = deps();
+      await expect(outil.executer(avecAgents(d), T, { ...BASE, ...args }, PERSONNE), JSON.stringify(args)).rejects.toThrow(RefusOutil);
+      expect(crees, JSON.stringify(args)).toHaveLength(0);
+    }
+  });
+
+  /** Une offre qui comprend l'agent de Meta (le Business) : la fixture de base est un Pro, qui ne le comprend pas. */
+  const enBusiness = (d: DepsMcp): DepsMcp => {
+    (d as unknown as { campagnes: { route: { offres: unknown } } }).campagnes.route.offres = { offreDe: async () => ({ droits: { fonctions: DROITS.business.fonctions } }) };
+    return d;
+  };
+
+  it('responder « mba » : l’agent de Meta, sans lecture d’agent ; un identifiant sans « agent », ou une valeur inconnue : refusés', async () => {
+    const lus: Array<[string, string]> = [];
+    const { d, crees } = deps();
+    const r = (await outil.executer(enBusiness(avecAgents(d, lus)), T, { ...BASE, responder: 'mba' }, PERSONNE)) as Record<string, unknown>;
+    expect(crees[0]).toMatchObject({ devenir: 'mba', repondeur: 'mba' });
+    expect(crees[0]).not.toHaveProperty('repondeurAgentId');
+    expect(r.responder).toBe('mba');
+    expect(lus).toEqual([]);
+    for (const args of [{ responder: 'mba', responder_agent_id: AGENT }, { responder_agent_id: AGENT }, { responder: 'humain' }]) {
+      const autre = deps();
+      await expect(outil.executer(enBusiness(avecAgents(autre.d)), T, { ...BASE, ...args }, PERSONNE), JSON.stringify(args)).rejects.toThrow(RefusOutil);
+      expect(autre.crees, JSON.stringify(args)).toHaveLength(0);
+    }
+  });
+
+  it('🔴 responder « mba » quand l’offre ne comprend pas l’agent de Meta (Pro) : refusé avec le lien de l’offre, rien n’est créé', async () => {
+    const { d, crees } = deps();
+    await expect(outil.executer(avecAgents(d), T, { ...BASE, responder: 'mba' }, PERSONNE)).rejects.toThrow(/agent de Meta/);
+    expect(crees).toHaveLength(0);
+  });
+
+  it('le schéma annonce le couple, en anglais, avec les valeurs que la validation accepte', () => {
+    const p = outil.entree.properties;
+    expect(p.responder?.enum).toEqual([...REPONDEURS_ETAGE, null]);
+    expect(p.responder?.description).toMatch(/set_default_responder/);
+    expect(p.responder?.description).toMatch(/ACTIVE AI agent/);
+    expect(p.responder_agent_id?.format).toBe('uuid');
+    expect(outil.entree.required).toEqual(['template_name', 'template_language']);
   });
 });

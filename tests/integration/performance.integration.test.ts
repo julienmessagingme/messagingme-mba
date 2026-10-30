@@ -8,7 +8,7 @@ import { addDays, todayParis } from '../../src/stats/range';
 import type { DemandeBrute } from '../../src/stats/performance';
 import { CAUSE_REOUVERTURE, creerControleDuFil } from '../../src/inbox/fil';
 import { creerListeDeLAgent } from '../../src/mba/liste';
-import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, listeEnMemoire, metaFactice } from '../banc-du-fil';
+import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, aucuneCampagneNeDesigne, listeEnMemoire, metaFactice } from '../banc-du-fil';
 import { jamaisBloque, jamaisDesabonne, numeroJamaisBloque } from '../consentement';
 import { offresToutOuvert } from '../gardes';
 
@@ -405,6 +405,7 @@ describe.skipIf(!url)('les demandes du Quantitatif > Performance', () => {
       consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
       meta: faux.meta,
       offres: offresToutOuvert,
+      campagnes: aucuneCampagneNeDesigne,
     });
     /** Le contact réécrit, puis la remise « personne ne suit » décide, dans l'ordre du job webhook. */
     const reecrit = async (waId: string): Promise<boolean> => {

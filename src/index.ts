@@ -1477,6 +1477,9 @@ async function main(): Promise<void> {
     // numéro Meta et l'agent RCS, sur la troisième porte d'entrée des destinataires.
     webhookUsableByTenant: (id, tenant) => webhookStore.usableByTenant(tenant, id),
     getWorkflowGraph: async (wfId, tenant) => (await workflowStore.getById(wfId, tenant))?.graph ?? null,
+    // L'agent qu'un étage désigne comme répondeur (0263) : le magasin lui-même, dont `byId` est scopée à l'espace. Pas de
+    // flèche : l'ordre (espace, agent) est celui du magasin, et une méthode détachée perdrait son `this`.
+    agents: agentStore,
     defaultRatePerMinute: config.CAMPAIGN_DEFAULT_RATE_PER_MINUTE,
     // Borne sûre pour l'estimation de durée : ces deux routes enfilent sans savoir le canal, et une
     // estimation trop optimiste fait expirer le job en plein envoi (pg-boss le rejoue, le débit double).

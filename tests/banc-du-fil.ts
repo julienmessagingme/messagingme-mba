@@ -7,6 +7,7 @@ import type { IssueRepondeur } from '../src/repondeur/demarrer';
 import type { IssueLancementScenario, IssueReclamation } from '../src/repondeur/scenario';
 import type { ModeRepondeur } from '../src/repondeur/mode';
 import { DROITS, type Offre } from '../src/offres/offres';
+import type { RepondeurDeLaReponse } from '../src/campaign/etages';
 
 /**
  * LE BANC DU CONTRÔLE DU FIL : le VRAI module (`src/inbox/fil.ts`) et la VRAIE liste de l'agent de Meta
@@ -133,6 +134,13 @@ export const aucunRepondeur: DepsControleDuFil['repondeur'] = {
   reclamerScenario: async () => { throw new Error('aucunRepondeur : le scénario répondeur ne devrait pas être réclamé'); },
   lancerScenario: async () => { throw new Error('aucunRepondeur : le scénario répondeur ne devrait pas être lancé'); },
 };
+
+/**
+ * Aucune campagne ne désigne le répondeur du message (plan du 2026-10-30, migration 0263) : le mode de l'espace décide,
+ * le comportement d'avant. La dépendance est REQUISE (`DepsControleDuFil.campagnes`) : une fixture qui ne parle pas de
+ * campagne DIT cette hypothèse avec lui, au lieu de la cacher dans un objet vide.
+ */
+export const aucuneCampagneNeDesigne: DepsControleDuFil['campagnes'] = { repondeurDeLaReponse: async () => null };
 
 /** L'identifiant que le faux Meta donne à l'entrée d'un contact : on retrouve le contact en le lisant. */
 export const entreeDe = (waId: string): string => `entree-${waId}`;
@@ -290,6 +298,13 @@ export interface OptionsBanc {
   appels?: string[];
   /** Appelé à chaque geste reçu par le faux Meta, avant sa réponse. */
   auMeta?: (acte: ActeMeta, waId: string) => void;
+  /**
+   * Le répondeur que désigne la campagne à laquelle le message répond (plan du 2026-10-30), comme
+   * `PgCampaignRepo.repondeurDeLaReponse` le rendrait : une valeur pour chaque lecture, ou une fonction du rang de la
+   * lecture (0, 1, ...) pour une suite de messages. Défaut : aucune campagne ne désigne. Les lectures sont notées dans
+   * `lecturesCampagne`.
+   */
+  campagne?: RepondeurDeLaReponse | null | ((lecture: number) => RepondeurDeLaReponse | null);
 }
 
 /** Le module réel et la liste réelle, sur le dépôt et la table en mémoire et le faux Meta. */
@@ -316,6 +331,8 @@ export function bancDuFil(o: OptionsBanc = {}): {
   demandesApplication: Array<{ waId: string; adresseId: string; messageDeclencheur: string | null; contenu: string }>;
   /** Les lignes `mba_indisponible` de la frise (RC6). */
   indisponibles: Array<{ waId: string; cause: string }>;
+  /** Les lectures du répondeur de campagne, par `waId`, dans l'ordre : vide = la remise n'a pas atteint la lecture. */
+  lecturesCampagne: string[];
 } {
   const memoire = depotEnMemoire(o.conversations);
   const table = listeEnMemoire(o.surLaListe, { poserEchoue: o.poserEchoue === true });
@@ -336,6 +353,7 @@ export function bancDuFil(o: OptionsBanc = {}): {
   const reclamations: Array<{ waId: string; workflowId: string; delaiS: number }> = [];
   const lancementsScenario: Array<{ waId: string; workflowId: string; messageDeclencheur: string | null }> = [];
   const demandesApplication: Array<{ waId: string; adresseId: string; messageDeclencheur: string | null; contenu: string }> = [];
+  const lecturesCampagne: string[] = [];
   const mbaEnabled = o.mbaEnabled ?? true;
   const repondeurAgentId = o.repondeurAgentId ?? null;
   const mode: ModeRepondeur = o.mode ?? (repondeurAgentId !== null ? 'agent' : (mbaEnabled ? 'mba' : 'equipe'));
@@ -388,10 +406,17 @@ export function bancDuFil(o: OptionsBanc = {}): {
         return o.demandeApplication ?? 'demande';
       },
     },
+    campagnes: {
+      repondeurDeLaReponse: async (_t, waId) => {
+        const lecture = lecturesCampagne.length;
+        lecturesCampagne.push(waId);
+        return typeof o.campagne === 'function' ? o.campagne(lecture) : o.campagne ?? null;
+      },
+    },
   });
   return {
     fil, liste, etat: memoire.etat, lignes: memoire.lignes, table: table.lignes, ecritures: memoire.ecritures, demandes: memoire.demandes,
     appels: faux.appels, evenements: faux.evenements, attentes, client: faux.client, demarrages,
-    reclamations, lancementsScenario, demandesApplication, indisponibles: memoire.indisponibles,
+    reclamations, lancementsScenario, demandesApplication, indisponibles: memoire.indisponibles, lecturesCampagne,
   };
 }

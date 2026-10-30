@@ -538,6 +538,9 @@ export function construireSocle({ pool, queue, config }: DepsSocle) {
       creerEnvoiNeuf: (ligne) => envoisEvenements.creerNeuf(ligne),
       enfiler: (job, priority) => queue.enqueue(FILE_EVENEMENTS_ENVOI, job, { groupId: job.tenantId, priority }),
     }),
+    // Le répondeur qu'une campagne désigne pour sa première réponse (0263) : le magasin lui-même, jamais une méthode
+    // détachée, qui perdrait son `this.pool` (`tests/socle.test.ts` passe par le vrai magasin sur un faux pool).
+    campagnes: repo,
   });
 
   /**

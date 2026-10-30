@@ -121,7 +121,9 @@ export class PgAgentStore implements AgentStore {
    * Supprime un agent, et le consentement qu'il portait sur les outils de l'espace.
    *
    * Ses sessions, appels, fiches de connaissance et actions (`agent_id` renseigné) partent par cascade. Un
-   * bloc qui le désignait devient un passe-plat. Un connecteur HTTP dont il était le seul utilisateur part
+   * bloc qui le désignait devient un passe-plat. Un étage de campagne qui le désignait comme répondeur (0263) retombe sur
+   * le répondeur de l'espace : la clé étrangère remet `repondeur_agent_id` à nul, et aucun CHECK ne l'en empêche (il
+   * ferait échouer cette suppression en 23514). Un connecteur HTTP dont il était le seul utilisateur part
    * aussi (même règle que `PgToolCatalog.detacher`) ; un connecteur encore utilisé et un outil MCP restent.
    * Son consentement, aucune cascade ne le retire (`consommateur` est un texte, `agent:<uuid>`) : c'est fait
    * ici, en code.

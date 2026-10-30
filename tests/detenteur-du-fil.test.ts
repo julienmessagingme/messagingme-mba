@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { processInbound, type DepsEntrants, type InboxStore, type InboundMessage } from '../src/webhooks/inbound';
 import { creerControleDuFil } from '../src/inbox/fil';
 import { creerListeDeLAgent } from '../src/mba/liste';
-import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, bancDuFil, depotEnMemoire, entreeDe, listeEnMemoire } from './banc-du-fil';
+import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, aucuneCampagneNeDesigne, bancDuFil, depotEnMemoire, entreeDe, listeEnMemoire } from './banc-du-fil';
 import { aucuneCorrectionDuDetenteur, entrantsDe } from './webhook-fixtures';
 import { aucunStop, jamaisBloque, jamaisDesabonne, numeroJamaisBloque } from './consentement';
 import { offresToutOuvert } from './gardes';
@@ -180,6 +180,7 @@ function monterBouton(o: {
     consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
     meta: { mbaClientForTenant: async () => { clientDemande = true; return client; } },
     offres: offresToutOuvert,
+    campagnes: aucuneCampagneNeDesigne,
   });
   return { fil, appels, clientDemande: () => clientDemande, etat: memoire.etat, table: table.lignes };
 }

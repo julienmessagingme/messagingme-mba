@@ -24,9 +24,10 @@ export function prochainAssigne(membres: string[], rang: number): string | null 
 }
 
 /**
- * Ce qui se passe quand le contact répond. Deux valeurs exclusives, pas de « agent IA » : un agent IA n'existe
- * pas hors d'un scénario (`agent_sessions.run_id` est NOT NULL), il reprend une campagne par « modèle +
- * scénario ».
+ * Ce qui se passe quand le contact répond. Deux valeurs exclusives : l'équipe, ou « le répondeur automatique prend la
+ * main ». QUI répond dans le second cas n'est pas un devenir : l'étage peut le désigner (`campaign_etages.repondeur`,
+ * migration 0263, un agent IA ou l'agent de Meta), et c'est la remise « personne ne suit » qui le lit
+ * (`ControleDuFil.remettreSiPersonneNeSuit`), seul module qui confie un contact ; ce fichier n'en sait rien.
  */
 export type Devenir = 'mba' | 'inbox';
 
@@ -74,7 +75,8 @@ export interface DecisionDevenir {
 
 /**
  * Ce qui doit se passer, déduit de ce que la campagne porte. Pure. Le choix de l'opérateur est exclusif :
- *  - `mba`   : on ne prend rien, l'agent de Meta, répondeur primaire du numéro, répond ;
+ *  - `mba`   : on ne prend rien, le répondeur automatique répond (celui que l'étage désigne, sinon celui de l'espace,
+ *    décidé par la remise « personne ne suit ») ;
  *  - `inbox` : on prend le fil et personne ne répond automatiquement, un humain reprend.
  */
 export function devenirEffectif(c: CampagneAssignante): DecisionDevenir {
@@ -144,7 +146,8 @@ export async function assignerReponse(
     return null;
   }
 
-  // L'agent de Meta : ne rien prendre suffit à ce qu'il réponde.
+  // Le répondeur automatique : ne rien prendre suffit, la remise « personne ne suit » du même job le choisit (celui que
+  // l'étage désigne, sinon celui de l'espace).
   if (decision.devenir === 'mba') return null;
 
   // Reste `inbox` : le fil est à nous, personne ne répond automatiquement, on répartit.

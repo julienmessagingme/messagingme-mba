@@ -13,6 +13,7 @@ import { preparerCampagne } from './preparation-campagne';
 import type { BulkTarget } from '../crm/contact-store.pg';
 import { LimiteOffreError, STATUT_REFUS_OFFRE, corpsRefusLimite } from '../offres/refus';
 import type { SourceOffres } from '../offres/offre.pg';
+import type { AgentStore } from '../agent/agent-store';
 
 /**
  * Ce que les routes lisent et écrivent des campagnes, en plus de ce que la création en a besoin
@@ -110,6 +111,12 @@ export interface CampaignRouteDeps {
    * bloc d'entrée est bien un envoi de template.
    */
   getWorkflowGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
+  /**
+   * 🔴 Les agents IA de l'espace (le magasin entier, `byId` scopée `tenant_id = $1`) : l'agent qu'un étage désigne comme
+   * répondeur (migration 0263) doit être un agent ACTIF de CET espace, et la clé étrangère ne scope pas l'espace.
+   * Même garde que `rcs.belongsToTenant` et `getWorkflowGraph`, sur la quatrième chose qu'un étage peut nommer.
+   */
+  agents: Pick<AgentStore, 'byId'>;
   /**
    * L'offre de l'espace (lot 6, B2a) : sans `scenarios`, une campagne (ou un étage) qui démarre un scénario est refusée
    * à la création (402) ; sinon elle partirait, et chaque destinataire finirait « Scénario non démarré ».

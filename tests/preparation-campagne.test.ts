@@ -26,6 +26,7 @@ function lecteurs(options: {
     webhookUsableByTenant: async () => true,
     getWorkflowGraph: async () => null,
     offres: campagnesInertes.offres,
+    agents: campagnesInertes.agents,
   };
 }
 

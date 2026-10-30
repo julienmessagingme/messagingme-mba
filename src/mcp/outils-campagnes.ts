@@ -16,6 +16,7 @@ import { modeleEnvoyable, numeroDEnvoi, type DepsModeleEnvoyable } from '../api/
 import { validateParamMapping } from '../crm/template';
 import type { PhoneNumberRow } from '../campaign/store.pg';
 import { messageDePause, type MotifDePause } from '../campaign/pause';
+import { REPONDEURS_ETAGE } from '../campaign/etages';
 
 /**
  * Ce que les outils de campagne lisent et écrivent, en plus des contacts et de l'Inbox du MCP. 🔴 Les MÊMES objets que
@@ -231,7 +232,8 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
     description:
       'Prepares a WhatsApp template campaign WITHOUT sending anything: it creates a draft, visible in the console '
       + '(Campaigns), for a target (tags, consent, analysis on the Enterprise plan, or a list of contacts or '
-      + 'conversations), an APPROVED template and its variables, now or at a date. Same checks as the console: a '
+      + 'conversations), an APPROVED template and its variables, now or at a date. The replies go to the workspace\'s '
+      + 'automatic responder, unless responder picks the Meta Business Agent or one active AI agent for them. Same checks as the console: a '
       + 'marketing template only reaches contacts who opted in, contacts who replied STOP are left out, and the '
       + 'category is the template\'s own at Meta. Returns a summary (targeted, sent, left out and why, five names, the '
       + 'billable volume) and a confirmation code valid 30 minutes. SHOW THIS SUMMARY TO THE PERSON AND WAIT FOR AN '
@@ -267,6 +269,23 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
         name: { type: 'string', minLength: 1, maxLength: LONGUEUR_MAX_NOM_CAMPAGNE, description: 'The campaign name in the console. Default: the template name.' },
         phone_number_id: { type: 'string', description: 'Required when the workspace has several WhatsApp numbers (the refusal lists them); otherwise its number.' },
         replaces: { type: 'string', format: 'uuid', description: 'A draft prepared here before and never launched: it is deleted once the new one exists.' },
+        // Le couple de la console (plan du 2026-10-30) : ce que l'écran sait dire, Claude doit pouvoir le dire. Les valeurs
+        // sont celles que la validation accepte (`REPONDEURS_ETAGE`), jamais recopiées.
+        responder: {
+          type: ['string', 'null'], enum: [...REPONDEURS_ETAGE, null],
+          description: 'Who answers when a contact replies to this campaign. Omitted or null (default): the workspace\'s '
+            + 'automatic responder, the one set_default_responder chose. "mba": the Meta Business Agent, refused when the '
+            + 'workspace\'s plan does not include it; if it is off when the contact replies, the conversation goes to the team. '
+            + '"agent": an ACTIVE AI agent of this workspace, given by responder_agent_id (list_agents). Only the contact\'s '
+            + 'FIRST reply after the send is routed this way. An AI agent keeps the conversation until it ends it, then the '
+            + 'next messages go to the workspace\'s responder again; the Meta Business Agent keeps answering the contact until '
+            + 'it hands the conversation over to the team or the team takes it back. The team keeps a conversation that a '
+            + 'team member handled recently, or in which the contact is still waiting for the team\'s answer.',
+        },
+        responder_agent_id: {
+          type: ['string', 'null'], format: 'uuid',
+          description: 'With responder "agent" only: the id of an ACTIVE AI agent of this workspace (list_agents).',
+        },
         ...CHAMPS_CIBLE_FILTRES,
         ...CHAMPS_CIBLE_IDENTIFIANTS,
       },
@@ -308,11 +327,22 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
       const numero = await numeroDEnvoi(c.modeles, tenantId, demande);
       if ('refus' in numero) refusDe(numero);
 
+      /**
+       * Qui répond aux réponses (plan du 2026-10-30) : passé tel quel à `preparerCampagne`, qui le juge par la règle de la
+       * console (`problemeDeRepondeur`) et lit l'agent scopé. Un répondeur désigné veut dire que le répondeur automatique
+       * prend la main : `devenir: 'mba'` voyage avec lui. Sans lui, rien ne change : un devenir absent se lit déjà ainsi
+       * (`devenirEffectif`), ce que faisait toute campagne de l'assistant.
+       */
+      const repondeur = args.responder ?? undefined;
+      const repondeurAgentId = args.responder_agent_id ?? undefined;
+
       // Le chemin de la console, mot pour mot : la même validation, la même résolution de cible, le même plafond.
       // La catégorie est celle du modèle chez Meta (spec, choix 4) : l'assistant ne la choisit pas.
       const prepare = await preparerCampagne({
         phoneNumberId: numero.phoneNumberId, name: nom, category: modele.categorie, templateName, templateLanguage, paramMapping,
         contactTarget: cible,
+        ...(repondeur !== undefined ? { devenir: 'mba', repondeur } : {}),
+        ...(repondeurAgentId !== undefined ? { repondeurAgentId } : {}),
       }, tenantId, c.route);
       if (!prepare.ok) refusDe(prepare);
       const cree = await createCampaignWithRecipients({ ...prepare.input, prevueLe }, c.route.repo);
@@ -350,6 +380,9 @@ export const OUTILS_CAMPAGNES: OutilMcp[] = [
         will_send: partiront,
         excluded: { not_opted_in: ecartes('not_opted_in'), missing_variable: ecartes('missing_variable'), unsubscribed: desabonnes, other: autres },
         phone_number: numeros.find((n) => n.id === numero.phoneNumberId)?.displayPhoneNumber ?? numero.phoneNumberId,
+        // Qui répondra : `null` = le répondeur de l'espace. Ce que la campagne porte, relu dans l'entrée validée.
+        responder: prepare.input.repondeur ?? null,
+        ...(prepare.input.repondeurAgentId ? { responder_agent_id: prepare.input.repondeurAgentId } : {}),
         ...(modelesDuMois ? { monthly_templates: { limit: modelesDuMois.max, remaining: modelesDuMois.reste, needed: modelesDuMois.demandes } } : {}),
         sample: apercu,
         // Un volume, jamais un montant : un prix affiché à côté du bouton qui envoie serait cru (`EtapeRecap.tsx`).

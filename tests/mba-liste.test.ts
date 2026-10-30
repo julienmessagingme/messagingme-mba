@@ -7,7 +7,7 @@ import {
 import { creerControleDuFil } from '../src/inbox/fil';
 import { MetaApiError, classify, estPlafondNumero } from '../src/meta/errors';
 import { decouperInstructions, veutHorsTransaction } from '../src/db/migration-directives';
-import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, depotEnMemoire, listeEnMemoire } from './banc-du-fil';
+import { DELAI_REPRISE_DEFAUT_MS, aucunRepondeur, aucuneCampagneNeDesigne, depotEnMemoire, listeEnMemoire } from './banc-du-fil';
 import { jamaisBloque, jamaisDesabonne, numeroJamaisBloque } from './consentement';
 import { offresToutOuvert } from './gardes';
 
@@ -426,6 +426,7 @@ describe('confier et reprendre, dans l’ordre (`src/inbox/fil.ts` sur `src/mba/
       consentement: { estDesabonne: jamaisDesabonne, estBloque: jamaisBloque },
       meta: { mbaClientForTenant: async () => client },
       offres: offresToutOuvert,
+      campagnes: aucuneCampagneNeDesigne,
     });
     return { fil, journal };
   }

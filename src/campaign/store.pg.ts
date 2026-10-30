@@ -10,7 +10,10 @@ import { MATCH_BY_WAID_SQL } from '../crm/contact-store.pg';
 import type { EtatConfirme } from './confirmation';
 import { RECIPIENT_FAILED_SQL } from './echecs-sql';
 import type { CampagneAssignante } from '../inbox/assignation-campagne';
-import { RANG_INITIAL, normaliserChaine, type CanalEtage, type DevenirEtage, type Etage, type EtageEntrant } from './etages';
+import {
+  RANG_INITIAL, normaliserChaine, type CanalEtage, type DevenirEtage, type Etage, type EtageEntrant, type RepondeurDeLaReponse,
+  type RepondeurEtage,
+} from './etages';
 import type { EntreeDeDecision } from './bascule';
 import type { DeliveryStore, DeliveryStatus } from '../webhooks/delivery';
 import { lancementDeCampagne } from '../hubspot-workflow/ligne';
@@ -23,6 +26,14 @@ export interface CreateCampaignInput {
    * et doit pourtant dire ce que devient sa réponse.
    */
   devenir?: DevenirEtage;
+  /**
+   * Qui prend la main quand le répondeur automatique la prend au premier étage (`devenir: 'mba'`, migration 0263) :
+   * l'agent de Meta, ou l'agent IA `repondeurAgentId`. Ici et pas dans `chaine`, pour la même raison que `devenir`.
+   * Absent = le répondeur de l'espace. Jugé par `preparerCampagne` (`problemeDeRepondeur`, puis l'agent lu scopé).
+   */
+  repondeur?: RepondeurEtage;
+  /** L'agent IA, quand `repondeur` vaut `agent` ; ignoré sinon (le CHECK 0263 refuserait un identifiant orphelin). */
+  repondeurAgentId?: string;
   /** '' pour une campagne RCS : il n'y a pas de numéro Meta (colonne nullable). */
   phoneNumberId: string;
   name: string;
@@ -408,10 +419,13 @@ export class PgCampaignRepo {
       workflow_id: string | null;
       workflow_name: string | null;
       devenir: 'mba' | 'inbox' | null;
+      repondeur: RepondeurEtage | null;
+      repondeur_agent_id: string | null;
     }>(
       // Jointure externe : un scénario supprimé depuis ne doit pas faire disparaître l'étage de l'écran.
       `select e.campaign_id, e.rang, e.canal, e.template_name, e.template_language, e.rcs_message,
-              e.email_template_id, e.email_champ, e.workflow_id, w.name as workflow_name, e.devenir
+              e.email_template_id, e.email_champ, e.workflow_id, w.name as workflow_name, e.devenir,
+              e.repondeur, e.repondeur_agent_id
          from campaign_etages e
          left join workflows w on w.id = e.workflow_id
         where e.campaign_id = any($1::uuid[]) order by e.campaign_id, e.rang`,
@@ -429,6 +443,9 @@ export class PgCampaignRepo {
         ...(e.workflow_id !== null ? { workflowId: e.workflow_id } : {}),
         ...(e.workflow_name !== null ? { workflowName: e.workflow_name } : {}),
         ...(e.devenir !== null ? { devenir: e.devenir } : {}),
+        // Absents quand ils sont nuls, comme le reste : un étage sans répondeur se relit exactement comme avant 0263.
+        ...(e.repondeur !== null ? { repondeur: e.repondeur } : {}),
+        ...(e.repondeur_agent_id !== null ? { repondeurAgentId: e.repondeur_agent_id } : {}),
       };
       const deja = parCampagne.get(e.campaign_id);
       if (deja) deja.push(etage); else parCampagne.set(e.campaign_id, [etage]);
@@ -980,6 +997,72 @@ export class PgCampaignRepo {
         premiereReponse: row.premiere_reponse,
       }
       : null;
+  }
+
+  /**
+   * Le répondeur que DÉSIGNE l'étage de la campagne à laquelle ce message répond (plan
+   * `docs/superpowers/plans/2026-10-30-repondeur-par-etage.md`, migration 0263), ou `null` : le répondeur de l'espace
+   * répond. Lue par la remise « personne ne suit » (`ControleDuFil.remettreSiPersonneNeSuit`), APRÈS ses gardes, sur le
+   * chemin de chaque entrant qu'elle reçoit : `null` est le cas très majoritaire, et doit rester bon marché.
+   *
+   * 🔴 LE MÊME CHOIX DE LIGNE QUE `campagneAssignanteDuContact` (lire son commentaire) : la campagne la PLUS RÉCENTE
+   * servie à ce contact, choisie dans la sous-requête (`order by ... limit 1`) AVANT le filtre `repondeur is not null`,
+   * sans quoi l'agent d'une campagne d'août répondrait à la réponse de celle de septembre ; et `c.tenant_id = $1` y reste,
+   * AVANT le `limit` : un filtre d'isolation se pose avant de choisir la ligne. SANS `cv.assigned_to is null`, et c'est
+   * voulu : ce filtre-là protège le rang du tour de rôle, que rien ne consomme ici, et une conversation déjà affectée à un
+   * collaborateur doit pouvoir recevoir le répondeur de la campagne suivante.
+   *
+   * 🔴 SEULE LA PREMIÈRE RÉPONSE DEPUIS L'ENVOI DÉCIDE (`premiere_reponse`, la règle de la prise du fil des campagnes
+   * « Inbox ») : c'est ce qui rend « jusqu'à ce que l'agent la close » vrai sans état de plus. Tant que le parcours de
+   * l'agent attend le contact, la remise ne lit rien (sa garde du parcours en attente passe avant) ; après lui, le message
+   * suivant n'est plus le premier, et l'espace décide de nouveau. Une différence, voulue : une RÉACTION ne compte pas. La
+   * prise du fil pour l'équipe peut se faire sur un pouce levé ; un robot, non (`reactionsSeules` : aucun ne démarre), et
+   * compter le pouce ferait passer le vrai premier message pour le second, donc l'agent choisi ne répondrait jamais.
+   * `is distinct from` : `type` est nullable (0009), un type inconnu compte comme une réponse. ⚠️ Plusieurs messages du
+   * même contact dans UN lot de Meta sont tous enregistrés avant la remise (`processInbound`, puis la remise) : ils se
+   * comptent l'un l'autre et la campagne ne décide pas, le répondeur de l'espace répond. Limite assumée et non réparée
+   * ici : Meta livre un message par appel dans l'immense majorité des cas.
+   *
+   * Un agent supprimé depuis (`on delete set null`) laisse `repondeur = 'agent'` sans identifiant : rien de désigné.
+   *
+   * Index : ceux de `campagneAssignanteDuContact`, l'unique `(tenant_id, wa_id)`, `campaign_recipients_contact_idx`
+   * (`contact_id, sent_at desc`), les clés primaires de `campaigns` et de `campaign_etages`, puis l'index partiel
+   * `conversation_messages_unread_idx` (`where direction = 'in'`, le prédicat de la sous-requête ; le type se filtre sur
+   * ses lignes). Le compte ne part que pour une ligne qui désigne un répondeur (le `where` filtre avant que la liste de
+   * sélection ne s'évalue), et s'arrête à deux.
+   */
+  async repondeurDeLaReponse(tenantId: string, waId: string): Promise<RepondeurDeLaReponse | null> {
+    const res = await this.pool.query<{
+      nom: string;
+      repondeur: RepondeurEtage;
+      repondeur_agent_id: string | null;
+      premiere_reponse: boolean;
+    }>(
+      `select d.nom, e.repondeur, e.repondeur_agent_id,
+              (select count(*) from (
+                 select 1 from conversation_messages m
+                  where m.conversation_id = d.conversation_id and m.direction = 'in' and m.created_at > d.sent_at
+                    and m.type is distinct from 'reaction'
+                  limit 2
+               ) entrants) <= 1 as premiere_reponse
+         from (
+           select c.id, c.name as nom, r.etage_courant, r.sent_at, cv.id as conversation_id
+             from conversations cv
+             join campaign_recipients r on r.contact_id = cv.contact_id
+             join campaigns c on c.id = r.campaign_id
+            where cv.tenant_id = $1 and cv.wa_id = $2
+              and c.tenant_id = $1 and r.sent_at is not null
+            order by r.sent_at desc
+            limit 1
+         ) d
+         join campaign_etages e on e.campaign_id = d.id and e.rang = d.etage_courant
+        where e.repondeur is not null`,
+      [tenantId, waId],
+    );
+    const row = res.rows[0];
+    if (!row || !row.premiere_reponse) return null;
+    if (row.repondeur === 'mba') return { nom: row.nom, cible: 'mba' };
+    return row.repondeur_agent_id === null ? null : { nom: row.nom, cible: 'agent', agentId: row.repondeur_agent_id };
   }
 
   /**
@@ -1537,29 +1620,32 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
    *
    * `on conflict do nothing` garde la ligne idempotente si la fonction est rejouée. Les deux écritures sont dans
    * la même transaction sur les deux chemins : une campagne sans ses étages ne peut être servie par aucun run.
+   *
+   * L'étage 1 s'écrit en UN endroit pour les deux formes (avec ou sans chaîne) : deux copies du même littéral avaient
+   * chacune leur liste de champs à tenir alignée, et le répondeur de 0263 en aurait fait deux de plus.
    */
+  const premier: Etage = {
+    rang: RANG_INITIAL, canal,
+    ...(templateName !== null && templateName !== undefined ? { templateName } : {}),
+    ...(templateLanguage !== null && templateLanguage !== undefined ? { templateLanguage } : {}),
+    ...(input.rcsMessage !== undefined ? { rcsMessage: input.rcsMessage } : {}),
+    ...(input.workflowId ? { workflowId: input.workflowId } : {}),
+    ...(input.devenir ? { devenir: input.devenir } : {}),
+    // Le répondeur seulement avec « le répondeur automatique prend la main », et l'identifiant seulement avec le répondeur
+    // « agent » (le motif de `assignationUserId`) : les CHECK de 0263 refuseraient le reste en 23514, donc en 500, pour un
+    // appelant qui ne passerait pas par `preparerCampagne`.
+    ...(input.repondeur && input.devenir === 'mba' ? { repondeur: input.repondeur } : {}),
+    ...(input.repondeur === 'agent' && input.devenir === 'mba' && input.repondeurAgentId ? { repondeurAgentId: input.repondeurAgentId } : {}),
+  };
   const etages: Etage[] = input.chaine && input.chaine.length > 0
-    ? normaliserChaine(input.chaine).map((e) => (e.rang === RANG_INITIAL
-      ? { rang: RANG_INITIAL, canal, ...(templateName !== null && templateName !== undefined ? { templateName } : {}),
-          ...(templateLanguage !== null && templateLanguage !== undefined ? { templateLanguage } : {}),
-          ...(input.rcsMessage !== undefined ? { rcsMessage: input.rcsMessage } : {}),
-          ...(input.workflowId ? { workflowId: input.workflowId } : {}),
-          ...(input.devenir ? { devenir: input.devenir } : {}) }
-      : e))
-    : [{
-      rang: RANG_INITIAL, canal,
-      ...(templateName !== null && templateName !== undefined ? { templateName } : {}),
-      ...(templateLanguage !== null && templateLanguage !== undefined ? { templateLanguage } : {}),
-      ...(input.rcsMessage !== undefined ? { rcsMessage: input.rcsMessage } : {}),
-      ...(input.workflowId ? { workflowId: input.workflowId } : {}),
-      ...(input.devenir ? { devenir: input.devenir } : {}),
-    }];
+    ? normaliserChaine(input.chaine).map((e) => (e.rang === RANG_INITIAL ? premier : e))
+    : [premier];
   // Une seule requête pour toute la chaîne (`unnest`), comme `bulkInsertRecipients` : pas d'allers-retours au
   // milieu d'une transaction.
   await q.query(
-    `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id, devenir)
-     select $1, r, c, tn, tl, rm::jsonb, et::uuid, ec, wf::uuid, dv
-     from unnest($2::smallint[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::text[]) as u(r, c, tn, tl, rm, et, ec, wf, dv)
+    `insert into campaign_etages (campaign_id, rang, canal, template_name, template_language, rcs_message, email_template_id, email_champ, workflow_id, devenir, repondeur, repondeur_agent_id)
+     select $1, r, c, tn, tl, rm::jsonb, et::uuid, ec, wf::uuid, dv, rp, ra::uuid
+     from unnest($2::smallint[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::text[], $10::text[], $11::text[], $12::text[]) as u(r, c, tn, tl, rm, et, ec, wf, dv, rp, ra)
      on conflict (campaign_id, rang) do nothing`,
     [
       id,
@@ -1574,6 +1660,9 @@ async function insertCampaignRow(q: Pool | PoolClient, input: CreateCampaignInpu
       etages.map((e) => e.emailChamp ?? null),
       etages.map((e) => e.workflowId ?? null),
       etages.map((e) => e.devenir ?? null),
+      // Même défense que pour le premier étage : rien sans « prend la main », jamais un 23514 du CHECK.
+      etages.map((e) => (e.devenir === 'mba' ? e.repondeur ?? null : null)),
+      etages.map((e) => (e.devenir === 'mba' && e.repondeur === 'agent' ? e.repondeurAgentId ?? null : null)),
     ],
   );
   return id;

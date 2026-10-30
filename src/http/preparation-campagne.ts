@@ -6,11 +6,14 @@ import { refusDePlafond } from '../campaign/plafond';
 import { scanOpening } from '../workflow/engine';
 import type { WorkflowGraph } from '../workflow/graph';
 import { nonEmpty, estUuid } from './scope';
-import { normaliserChaine, problemeDeChaine, RANG_INITIAL, type DevenirEtage, type EtageEntrant } from '../campaign/etages';
+import {
+  normaliserChaine, problemeDeChaine, problemeDeRepondeur, RANG_INITIAL, type DevenirEtage, type EtageEntrant, type RepondeurEtage,
+} from '../campaign/etages';
 import { parseBulkTarget } from './contacts';
 import type { BulkTarget } from '../crm/contact-store.pg';
 import { STATUT_REFUS_OFFRE, corpsRefusFonction } from '../offres/refus';
 import type { SourceOffres } from '../offres/offre.pg';
+import type { AgentStore } from '../agent/agent-store';
 
 /** Lectures requises pour préparer une campagne, toutes scopées à l'espace. Aucune écriture. */
 export interface PreparationCampagneDeps {
@@ -23,6 +26,22 @@ export interface PreparationCampagneDeps {
   webhookUsableByTenant(webhookId: string, tenantId: string): Promise<boolean>;
   getWorkflowGraph(workflowId: string, tenantId: string): Promise<WorkflowGraph | null>;
   offres: Pick<SourceOffres, 'offreDe'>;
+  /**
+   * Les agents IA, pour l'agent qu'un étage désigne comme répondeur (migration 0263) : le magasin entier
+   * (`PgAgentStore`), dont `byId` est scopée `tenant_id = $1`. 🔴 La clé étrangère de 0263 ne scope pas l'espace : sans
+   * cette lecture, un identifiant recopié d'un autre espace serait accepté, et son agent répondrait aux clients de
+   * celui-ci.
+   */
+  agents: Pick<AgentStore, 'byId'>;
+}
+
+/**
+ * L'agent désigné est-il un agent ACTIF de CET espace ? Par la lecture scopée du magasin, l'espace de la requête en
+ * premier argument. Actif : un brouillon n'a été relu par personne, et un agent désactivé ne répond plus (le démarreur le
+ * refuserait à chaque réponse, et l'équipe recevrait tout sans que la campagne l'ait dit).
+ */
+async function agentActifDeLEspace(deps: PreparationCampagneDeps, tenantId: string, agentId: string): Promise<boolean> {
+  return (await deps.agents.byId(tenantId, agentId))?.status === 'active';
 }
 
 export type PreparationCampagne =
@@ -66,6 +85,8 @@ export async function preparerCampagne(body: unknown, tenantId: string, deps: Pr
     assignation: unknown;
     assignationUserId: unknown;
     devenir: unknown;
+    repondeur: unknown;
+    repondeurAgentId: unknown;
   }>;
 
   if (!isCategory(b.category)) return refuser(400, { error: 'category invalide (marketing|utility)' });
@@ -293,6 +314,11 @@ export async function preparerCampagne(body: unknown, tenantId: string, deps: Pr
           return refuser(422, { error: `L'étage ${e.rang} vise un scénario inconnu de cet espace.` });
         }
       }
+      // 🔴 La garde du répondeur du premier étage, sur l'agent de cet étage (sa forme est déjà jugée par
+      // `problemeDeChaine`) : un agent recopié d'un autre espace, un brouillon ou un agent désactivé sont refusés.
+      if (e.repondeur === 'agent' && e.repondeurAgentId !== undefined && !(await agentActifDeLEspace(deps, tenantId, e.repondeurAgentId))) {
+        return refuser(422, { error: `L'étage ${e.rang} confie ses réponses à un agent IA qui n'est pas un agent actif de cet espace.` });
+      }
     }
     /**
      * Un étage RCS exige un agent, même sur une campagne WhatsApp : sans lui, `senderForCampaign` rend `null` et le
@@ -337,9 +363,36 @@ export async function preparerCampagne(body: unknown, tenantId: string, deps: Pr
     devenir = b.devenir;
   }
 
+  /**
+   * Qui prend la main quand le répondeur automatique la prend au premier étage (plan du 2026-10-30, migration 0263) :
+   * l'agent de Meta, ou un agent IA de l'espace. Au niveau de la campagne, pour la même raison que `devenir` (le rang 1
+   * EST la campagne). La règle est celle de chaque étage de la chaîne et de l'outil MCP (`problemeDeRepondeur`), puis
+   * l'agent est lu scopé ; la forme de son identifiant est jugée avant, la lecture ne lève donc jamais 22P02.
+   */
+  const problemeDuRepondeur = problemeDeRepondeur({ devenir, repondeur: b.repondeur, repondeurAgentId: b.repondeurAgentId, canal: channel });
+  if (problemeDuRepondeur) return refuser(422, { error: problemeDuRepondeur });
+  const repondeur = (b.repondeur ?? undefined) as RepondeurEtage | undefined;
+  const repondeurAgentId = repondeur === 'agent' ? (b.repondeurAgentId as string) : undefined;
+  if (repondeurAgentId !== undefined && !(await agentActifDeLEspace(deps, tenantId, repondeurAgentId))) {
+    return refuser(422, { error: "Cette campagne confie ses réponses à un agent IA qui n'est pas un agent actif de cet espace." });
+  }
+  /**
+   * L'agent de Meta désigné alors que l'OFFRE ne le comprend pas (relecture de la livraison A) : refusé ici en 402, comme
+   * un scénario hors de l'offre, plutôt qu'accepté puis replié à chaque réponse (frise `mba_indisponible`, puis l'équipe).
+   * La console le grise déjà ; l'API et l'outil MCP n'avaient pas cette garde. Le rang 1 de la chaîne ne compte pas : son
+   * contenu est réécrit depuis la campagne. L'agent de Meta éteint, lui, reste accepté : il peut être rallumé avant les
+   * réponses, et le repli à la réponse le dit.
+   */
+  const veutLAgentDeMeta = repondeur === 'mba' || (chaine ?? []).some((e) => e.rang !== RANG_INITIAL && e.repondeur === 'mba');
+  if (veutLAgentDeMeta && !(await deps.offres.offreDe(tenantId)).droits.fonctions.has('agent_meta')) {
+    return refuser(STATUT_REFUS_OFFRE, corpsRefusFonction('agent_meta'));
+  }
+
   const input: CreateCampaignInput = {
     tenantId: tenantId,
     ...(devenir ? { devenir } : {}),
+    ...(repondeur ? { repondeur } : {}),
+    ...(repondeurAgentId ? { repondeurAgentId } : {}),
     phoneNumberId: isRcs ? '' : (b.phoneNumberId as string),
     name: b.name,
     category: b.category,

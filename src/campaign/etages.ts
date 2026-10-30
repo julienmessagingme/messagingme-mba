@@ -1,3 +1,5 @@
+import { estUuid } from '../http/scope';
+
 /**
  * La chaîne d'étages d'une campagne : une suite de tentatives, chacune sur son canal, qu'on parcourt tant que
  * la précédente n'a pas abouti. Le balayage fait avancer un destinataire d'étage (`bascule.ts`), le run sert le
@@ -54,10 +56,20 @@ export interface Etage {
   workflowName?: string;
   /**
    * Ce qui se passe quand le contact répond à cet étage, propre à l'étage (un modèle WhatsApp peut renvoyer à
-   * l'équipe, un scénario RCS décider lui-même). Absent = comportement d'avant. Deux valeurs seulement : un agent
-   * IA n'existe pas hors d'un scénario (`agent_sessions.run_id` est NOT NULL).
+   * l'équipe, un scénario RCS décider lui-même). Absent = comportement d'avant. Deux valeurs : l'équipe (`inbox`), ou
+   * « le répondeur automatique prend la main » (`mba`), dont `repondeur` dit lequel.
    */
   devenir?: DevenirEtage;
+  /**
+   * Qui prend la main quand le répondeur automatique la prend (`devenir: 'mba'`), propre à l'étage (migration 0263) :
+   * l'agent de Meta, ou l'agent IA `repondeurAgentId`. Absent = le répondeur de l'espace. Lu par la remise, à la
+   * première réponse depuis l'envoi seulement (`PgCampaignRepo.repondeurDeLaReponse`). Un agent IA peut désormais
+   * répondre hors d'un scénario du client : le démarreur du répondeur le lance dans le scénario système caché de
+   * l'espace (`src/repondeur/demarrer.ts`), ce qui manquait en 0145 (`agent_sessions.run_id` est NOT NULL).
+   */
+  repondeur?: RepondeurEtage;
+  /** L'agent IA, quand `repondeur` vaut `agent`. Absent : un autre répondeur, ou l'agent supprimé depuis (`on delete set null`). */
+  repondeurAgentId?: string;
 }
 
 /** L'étage d'un rang donné, ou `null` s'il n'y en a pas (« la chaîne s'arrête ici »). */
@@ -100,11 +112,60 @@ export interface EtageEntrant {
    * que `problemeDeChaine` vérifie en rendant un 4xx lisible.
    */
   devenir?: string;
+  /** Cf. `Etage.repondeur`. Entrée non validée, comme `devenir` : `problemeDeRepondeur` la juge. */
+  repondeur?: string;
+  /** Cf. `Etage.repondeurAgentId`. Sa forme est jugée par `problemeDeRepondeur`, son espace par `preparerCampagne`. */
+  repondeurAgentId?: string;
 }
 
 /** Miroir du CHECK `campaign_etages_devenir_chk`, pas une supposition. */
 export type DevenirEtage = 'mba' | 'inbox';
 export const DEVENIRS: readonly string[] = ['mba', 'inbox'];
+
+/**
+ * Miroir du CHECK `campaign_etages_repondeur_chk` (migration 0263), que `tests/migration-0263.test.ts` lit dans le fichier
+ * pour l'égaler à cette liste.
+ */
+export type RepondeurEtage = 'mba' | 'agent';
+export const REPONDEURS_ETAGE: readonly string[] = ['mba', 'agent'];
+
+/**
+ * Ce que la remise lit d'une réponse de campagne (`PgCampaignRepo.repondeurDeLaReponse`) : le répondeur que désigne
+ * l'étage, et le nom de la campagne, que la frise du panneau Détail cite (« automatique : campagne Rentrée »).
+ */
+export type RepondeurDeLaReponse =
+  | { nom: string; cible: 'mba' }
+  | { nom: string; cible: 'agent'; agentId: string };
+
+/** Le même message pour les deux façons de nommer un agent hors du répondeur « agent » (le CHECK 0263 le refuserait). */
+const AGENT_SANS_REPONDEUR_AGENT = "Un agent IA ne se désigne que comme répondeur « agent » de l'étage.";
+
+/**
+ * Ce qui interdit le répondeur proposé pour un étage, en français, ou `null`. 🔴 UNE règle pour le premier étage (les
+ * champs de la campagne), chaque étage de la chaîne (`problemeDeChaine`) et l'outil MCP `prepare_campaign` (qui passe
+ * par `preparerCampagne`) : trois copies finiraient par diverger. Elle refuse ce que les CHECK de 0263 trancheraient en
+ * 500, derrière une page Cloudflare, et la forme de l'identifiant, qui ferait lever Postgres (22P02) à la lecture de
+ * l'agent. Elle ne lit rien : qu'un agent soit ACTIF et de CET espace se juge à part, par une lecture scopée
+ * (`preparerCampagne`), la clé étrangère ne scopant pas l'espace. `null` vaut absent, comme le schéma MCP l'annonce.
+ */
+export function problemeDeRepondeur(e: { devenir?: unknown; repondeur?: unknown; repondeurAgentId?: unknown; canal?: unknown }): string | null {
+  const repondeur = e.repondeur ?? undefined;
+  const agentId = e.repondeurAgentId ?? undefined;
+  if (repondeur === undefined) return agentId === undefined ? null : AGENT_SANS_REPONDEUR_AGENT;
+  if (typeof repondeur !== 'string' || !REPONDEURS_ETAGE.includes(repondeur)) {
+    return `Répondeur d'étage inconnu : les valeurs possibles sont ${REPONDEURS_ETAGE.join(', ')}.`;
+  }
+  /**
+   * 🔴 WHATSAPP SEULEMENT (relecture de la livraison B, 2026-10-30) : une réponse RCS ou e-mail ne passe jamais par la
+   * remise « personne ne suit » (`src/rcs/message-entrant.ts` écrit l'Inbox sans l'appeler), donc le répondeur désigné
+   * sur un tel étage ne répondrait jamais, alors que l'étage l'aurait promis. Refusé ici plutôt qu'enregistré pour rien.
+   */
+  if (e.canal !== undefined && e.canal !== 'whatsapp') return 'Un répondeur ne se désigne que sur un étage WhatsApp.';
+  // Le piège du NULL de 0263, côté code : un étage sans devenir n'a pas de répondeur automatique à désigner.
+  if (e.devenir !== 'mba') return 'Un répondeur ne se choisit que si le répondeur automatique prend la main.';
+  if (repondeur === 'mba') return agentId === undefined ? null : AGENT_SANS_REPONDEUR_AGENT;
+  return estUuid(agentId) ? null : 'Ce répondeur est un agent IA : il faut le choisir.';
+}
 
 /** Les trois canaux que le CHECK de `campaign_etages.canal` accepte. Miroir du SQL, pas une supposition. */
 const CANAUX: readonly string[] = ['whatsapp', 'rcs', 'email'];
@@ -153,6 +214,9 @@ export function problemeDeChaine(entrants: EtageEntrant[], canalCampagne: CanalE
     if (e.devenir !== undefined && (typeof e.devenir !== 'string' || !DEVENIRS.includes(e.devenir))) {
       return `Devenir d'étage inconnu : les valeurs possibles sont ${DEVENIRS.join(', ')}.`;
     }
+    // Le rang 1 aussi, bien que son contenu vienne des colonnes de la campagne : un corps mal formé sort en 4xx partout.
+    const repondeur = problemeDeRepondeur(e);
+    if (repondeur) return repondeur;
   }
   // Deux étages sur le même canal ne sont pas un repli (c'est un réessai déguisé), et le funnel par canal
   // (`funnelParCanal`) les confondrait en une seule ligne.

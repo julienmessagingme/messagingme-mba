@@ -170,7 +170,7 @@ export const agentsInertes: Pick<AgentsRouteDeps, 'credits' | 'sessions' | 'etat
 export const campagnesInertes: Pick<CampaignRouteDeps,
   'getMessagingLimitTier' | 'drafts' | 'contacts' | 'identifiantsDeTousLesContacts' | 'plafondDestinataires'
   | 'rcs' | 'emailTemplateBelongsToTenant' | 'webhookUsableByTenant' | 'defaultRatePerMinute' | 'plafondLePlusBas'
-  | 'modelesDuLancement' | 'offres'> = {
+  | 'modelesDuLancement' | 'offres' | 'agents'> = {
   // Absent : aucun palier connu, donc aucun avertissement.
   getMessagingLimitTier: async () => null,
   // Tout ouvert : une campagne à scénario est permise (lot 6, B2a).
@@ -190,6 +190,9 @@ export const campagnesInertes: Pick<CampaignRouteDeps,
   rcs: { belongsToTenant: async () => false, listForTenant: async () => [] },
   emailTemplateBelongsToTenant: async () => false,
   webhookUsableByTenant: async () => false,
+  // Absent : aucun étage ne désignait d'agent IA comme répondeur (avant 0263). Aucun agent trouvé dit la même chose : la
+  // désignation est refusée.
+  agents: { byId: async () => null },
   defaultRatePerMinute: 0,
   plafondLePlusBas: SANS_PLAFOND,
   // Les modèles du mois sans limite (lot 6) : un espace Pro, l'hypothèse des tests qui ne parlent pas d'offre.

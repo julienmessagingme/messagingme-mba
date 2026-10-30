@@ -228,7 +228,7 @@ comme un message ordinaire, et la correction du détenteur n'écrit pas `mba`. L
 `standby`, et la garde `field !== 'messages'` (automations, avance, jeton de test) le fait taire, l'agent lui
 parlant. 🔴 C'est le MODE de l'espace qui décide si un `standby` d'un contact absent est pour nous
 (`standbyPourNous`, `src/repondeur/mode.ts`, RC6), et dans les cinq modes il l'est : l'agent de Meta répondeur ne
-parle qu'à sa liste, en veille il ne répond qu'aux contacts qu'un bloc lui a confiés, éteint Meta peut croire encore
+parle qu'à sa liste, en veille il ne répond qu'aux contacts qu'un bloc ou une campagne qui le désigne lui a confiés, éteint Meta peut croire encore
 tenir le fil d'un contact qu'il servait, en mode « Équipe » l'équipe doit voir le message dans « À traiter », et en
 mode « Application » l'application du client doit le recevoir. ⚠️ Avant RC6, un espace sans répondeur ne requalifiait
 rien (« une autre application tient le fil »).
@@ -2074,6 +2074,21 @@ Les colonnes citées sont celles dont le comportement dépend. La forme complèt
   à l'équipe avec une demande. Hors du mode `mba`, « Rendre la main », la fin de parcours et le balayage laissent le
   fil à `app_workflow`, et le prochain message relance le répondeur du mode ; le message « à côté » d'un parcours qui
   finit va à ce répondeur (`WorkflowExecutorDeps.confierAuRepondeur`, par cette même remise).
+- 🔴 **UNE CAMPAGNE PEUT DÉSIGNER LE RÉPONDEUR DE SA PREMIÈRE RÉPONSE** (2026-10-30, migration 0263,
+  `campaign_etages.repondeur` et `repondeur_agent_id`, plan `docs/superpowers/plans/2026-10-30-repondeur-par-etage.md`).
+  Sous « le répondeur automatique prend la main » (`devenir: 'mba'`), un étage WHATSAPP désigne l'agent de Meta ou un agent
+  IA actif (une réponse RCS ou e-mail ne passe jamais par la remise : refusé ailleurs) ; nul = le répondeur de l'espace. La remise lit `PgCampaignRepo.repondeurDeLaReponse` (la campagne la plus
+  récente servie au contact, choisie avant le filtre, l'étage de `etage_courant`, la PREMIÈRE réponse depuis l'envoi,
+  réactions non comptées) et, après ses gardes, le répondeur désigné REMPLACE le mode pour ce seul message : un agent IA
+  par la branche `agent` (son lancement retire le contact de la liste de Meta avant de parler, jamais deux voix),
+  l'agent de Meta par la branche `mba` s'il est allumé sous l'offre, sinon frise `mba_indisponible` et l'équipe. Une
+  seule garde lit la campagne avant : en mode `equipe`, un fil de l'équipe au délai écoulé revient au répondeur désigné,
+  comme le balayage le rendrait à son passage (un opérateur dans son délai, une escalade sans réponse gardent l'équipe).
+  L'agent de Meta désigné ne prend ni redélivrance ni réaction seule. À la création, l'agent IA est lu scopé à l'espace et
+  doit être actif, et l'agent de Meta hors de l'offre est refusé en 402 (`preparerCampagne`). Les messages suivants
+  suivent de nouveau le mode : un agent IA clos rend la main au répondeur de l'espace, l'agent de Meta garde le contact
+  tant qu'il est sur sa liste. ⚠️ Aucune fenêtre de temps, comme pour le devenir « Inbox » : une campagne ancienne décide
+  du premier message d'un contact qui ne lui a jamais répondu.
 - 🔴 **L'AGENT DE META EST TOUJOURS EN MODE LISTE, ET C'EST LA PLATEFORME QUI TIENT LA LISTE** (mesuré le
   2026-09-29). Un contact absent de la liste n'entend jamais l'agent, même quand Meta lui a rendu le fil : c'est
   le seul interrupteur par contact que Meta nous donne. L'action `take` de `thread_control` ne nous rendait rien

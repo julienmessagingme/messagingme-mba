@@ -319,16 +319,19 @@ const CAMPAGNE_SUITE: WorkflowGraph = {
 
 /**
  * Le fil, l'exécuteur, les lancements et le VRAI démarreur, branchés comme le socle le fait (liaison tardive : le fil
- * est construit avant l'exécuteur). Le contact écrit dans un espace sans scénario, l'agent IA répond.
+ * est construit avant l'exécuteur). Le contact écrit dans un espace sans scénario, l'agent IA répond. `o` : l'espace
+ * autrement monté (le mode, la liste de l'agent de Meta, la campagne) ; `o.appels`, s'il est donné, reçoit aussi chaque
+ * tour enfilé (`tour:<raison>`), entrelacé avec les gestes du faux Meta.
  */
-function bout() {
+function bout(o: OptionsBanc = {}) {
   const mo = moteur();
   const jobs: AgentTurnJob[] = [];
   let branche: DemarreurRepondeur | null = null;
   const b = repondeur({
     conversations: { [WA]: { owner: 'app_workflow' } },
     parcours: { findWaitingByWaId: (t, w) => mo.runs.findWaitingByWaId(t, w) },
-    repondeur: { ...aucunRepondeur, demarrer: (t, w, o) => { if (!branche) throw new Error('non branché'); return branche.demarrer(t, w, o); } },
+    repondeur: { ...aucunRepondeur, demarrer: (t, w, d) => { if (!branche) throw new Error('non branché'); return branche.demarrer(t, w, d); } },
+    ...o,
   });
   const deps: WorkflowExecutorDeps = {
     ...depsInertes,
@@ -339,7 +342,7 @@ function bout() {
     applyTag: async () => true, setField: async () => {}, removeTag: async () => {}, clearField: async () => {},
     sendTemplate: async () => {}, sendQuickMessage: async () => {}, sendFlow: async () => {}, sendQuestion: async () => {},
     agentSessions: mo.agentSessions,
-    enqueueAgentTurn: async (j) => { jobs.push(j); },
+    enqueueAgentTurn: async (j) => { o.appels?.push(`tour:${j.raison}`); jobs.push(j); },
     mayAct: b.fil.peutAgir,
     reclaimControl: b.fil.reprendrePourLApp,
     // Le câblage réel (`src/workflow/wiring.ts`).
@@ -550,6 +553,44 @@ describe('🔴 de bout en bout : un espace sans scénario, l’agent IA répond'
 /**
  * 🔴 RELECTURE DU LOT 5, J4 : DES TROUS DE TESTS SUR DES CHEMINS JUSTES, dont chacun protège d'une double réponse.
  */
+/**
+ * 🔴 JAMAIS DEUX VOIX (plan `docs/superpowers/plans/2026-10-30-repondeur-par-etage.md`) : l'agent IA qu'une campagne
+ * choisit, dans un espace où l'agent de Meta est le RÉPONDEUR et tient ce contact (sur sa liste, et `mba` chez nous). Le
+ * VRAI démarreur, les VRAIS lancements et le VRAI exécuteur : le lancement `repondeur` reprend le fil
+ * (`reprise: 'sauf_operateur'`, donc `ControleDuFil.reprendrePourLApp`), qui RETIRE le contact de la liste de l'agent de
+ * Meta AVANT que le parcours de l'agent IA ne démarre et n'enfile son premier tour. Sans ce retrait, l'agent de Meta,
+ * qui a le contact sur sa liste, lui parlerait aussi. Meta refuse le retrait : rien ne démarre, aucun tour, et l'équipe
+ * prend la conversation (elle ne reste pas à l'agent de Meta chez nous).
+ */
+describe('🔴 jamais deux voix : l’agent IA d’une campagne, là où l’agent de Meta tient le contact', () => {
+  const tientLeContact: OptionsBanc = {
+    mode: 'mba', mbaEnabled: true, repondeurAgentId: null, surLaListe: [WA], conversations: { [WA]: { owner: 'mba' } },
+    campagne: { nom: 'Rentrée', cible: 'agent', agentId: AGENT },
+  };
+
+  it('🔴 le contact quitte la liste de l’agent de Meta AVANT le premier tour de l’agent IA, et l’agent de Meta n’est jamais prévenu', async () => {
+    const journal: string[] = [];
+    const m = bout({ ...tientLeContact, appels: journal });
+    await m.job([{ id: 'wamid.1', body: 'Oui, je suis intéressé' }]);
+    expect(journal).toEqual([`retrait:${WA}`, 'tour:demarrage']);
+    expect(m.b.table.has(WA), 'notre table ne le garde plus sur la liste').toBe(false);
+    expect(m.b.evenements, 'l’agent de Meta n’est pas prévenu').toEqual([]);
+    expect(m.b.etat(WA)?.owner).toBe('app_workflow');
+    expect(m.mo.lignes).toHaveLength(1);
+  });
+
+  it('🔴 Meta refuse le retrait : l’agent IA ne démarre pas (aucun parcours, aucun tour), la conversation va à l’équipe', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const journal: string[] = [];
+    const m = bout({ ...tientLeContact, appels: journal, retrait: ['refuse'] });
+    await m.job([{ id: 'wamid.1', body: 'Oui, je suis intéressé' }]);
+    expect(journal.filter((a) => a.startsWith('tour:'))).toEqual([]);
+    expect(m.mo.lignes).toHaveLength(0);
+    expect(m.b.etat(WA)?.owner).toBe('app_human');
+  });
+});
+
 describe('J4 : ce que rien ne tenait', () => {
   it('🔴 agent de Meta allumé, la réponse « à côté » lui est transmise, et JAMAIS confiée au répondeur IA', async () => {
     // Les deux voix ne coexistent pas (CHECK de 0209), mais l'exécuteur ne doit pas compter sur le réglage pour se taire :

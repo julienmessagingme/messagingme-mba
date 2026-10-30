@@ -163,6 +163,33 @@ describe('le socle commun aux deux processus', () => {
     expect(requetes.some((q) => /from workflows where id = \$1/.test(q)), 'le scénario a été lu').toBe(true);
     expect(requetes.some((q) => /update conversations/.test(q)), 'la conversation passe à l’équipe').toBe(true);
   });
+
+  /**
+   * 🔴 LE SOCLE PASSE LE MAGASIN DES CAMPAGNES À LA REMISE (plan du 2026-10-30, migration 0263). Un espace en mode
+   * « Équipe » ; la réponse à une campagne dont l'étage désigne un agent IA atteint le démarreur du répondeur. Le VRAI
+   * `PgCampaignRepo` sur un faux pool : une méthode détachée du magasin perdrait son `this` et lèverait (`this.pool`), et
+   * une lecture oubliée laisserait l'équipe répondre au nom du mode. Sans modèle configuré, le démarreur rend
+   * `indisponible` : la bascule à l'équipe porte alors la cause du répondeur, jamais celle du mode « Équipe ».
+   */
+  it('🔴 le socle BRANCHE la lecture du répondeur de campagne : l’agent IA que désigne l’étage est démarré', async () => {
+    const requetes: Array<{ sql: string; params: readonly unknown[] }> = [];
+    const pool = {
+      query: async (sql: string, params: readonly unknown[] = []) => {
+        requetes.push({ sql, params });
+        if (/from tenant_settings where tenant_id = \$1/.test(sql)) return { rows: [{ mba_enabled: false, control_handback_seconds: null }] };
+        if (/from phone_numbers where tenant_id = \$1/.test(sql)) return { rows: [{ id: 'pn1' }] };
+        if (/e\.repondeur is not null/.test(sql)) {
+          return { rows: [{ nom: 'Rentrée', repondeur: 'agent', repondeur_agent_id: '22222222-2222-4222-8222-222222222222', premiere_reponse: true }] };
+        }
+        return { rows: [] };
+      },
+    } as unknown as Pool;
+    const socle = construireSocle({ pool, queue: { enqueue: async () => {} }, config: configuration });
+    await expect(socle.fil.remettreSiPersonneNeSuit(TENANT, WA_ID, 'Bonjour', { rouverte: false })).resolves.toBeUndefined();
+    expect(requetes.some((q) => /e\.repondeur is not null/.test(q.sql)), 'le répondeur de la campagne a été lu').toBe(true);
+    const bascule = requetes.find((q) => /update conversations/.test(q.sql) && q.params.includes('app_human'));
+    expect(bascule?.params, 'la cause du répondeur, pas celle du mode « Équipe »').toContain('automatique : le répondeur automatique ne peut pas répondre');
+  });
 });
 
 /** Les fichiers de `src/`, sans leurs commentaires : une explication qui cite le code ne compte pas. */
