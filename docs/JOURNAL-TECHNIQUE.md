@@ -4,6 +4,44 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-31 : « Quel répondeur ? », l'étage WhatsApp d'une campagne choisit son répondeur
+
+Demande de Julien du 30 octobre, sur l'étape Contenu de l'assistant : sous « Le répondeur automatique prend la main »,
+choisir lequel, l'agent de Meta ou un agent IA actif, et griser ce qui ne peut pas répondre. Cadrage en trois questions :
+l'agent choisi garde la conversation jusqu'à ce qu'il la close ; la liste met le répondeur de l'espace en premier et par
+défaut, puis l'agent de Meta, puis les agents IA actifs ; les campagnes seulement, ni widget ni publicité. Plan
+`docs/superpowers/plans/2026-10-30-repondeur-par-etage.md` (implémenteur par lot, une relecture indépendante par
+livraison).
+
+- **Migration 0263** (`campaign_etages.repondeur`, `repondeur_agent_id` vers `agents` en `on delete set null`, trois
+  `CHECK` : les deux valeurs, un répondeur seulement sous `devenir = 'mba'`, un identifiant seulement pour un agent). Pas
+  de `CHECK` « un agent exige son identifiant » : la remise à nul d'un agent supprimé le violerait en 23514. Des colonnes
+  que le code écrit, donc `avant`, poussée seule (`109372d9`) et appliquée le 30 à 20:22 UTC par le déploiement de la
+  session du tunnel (run 41120444496). Le déploiement de `e3c985ab` l'a trouvée inscrite (seule la 0264 appliquée).
+- **Livraison A, le serveur** (`e3c985ab`) : une règle, `problemeDeRepondeur` (`src/campaign/etages.ts`), pour le premier
+  étage, la chaîne et `prepare_campaign` ; l'agent IA lu dans l'espace et actif ; l'agent de Meta hors de l'offre refusé en
+  402. À la réponse, `repondeurDeLaReponse` prend la campagne la plus récente servie au contact, à sa première réponse
+  depuis l'envoi, réactions non comptées. Dans la remise « personne ne suit » (`src/inbox/fil.ts`), après ses gardes, le
+  répondeur désigné remplace le mode de l'espace pour ce seul message : l'agent IA par la branche agent, qui retire le
+  contact de la liste de Meta avant de parler (jamais deux voix) ; l'agent de Meta par la branche `mba` s'il est allumé
+  sous l'offre, sinon la frise `mba_indisponible` et l'équipe. En mode « Équipe », un fil de l'équipe au délai écoulé
+  revient au répondeur désigné, comme le balayage le rendrait. Relecture indépendante : aucun rouge.
+- **Trouvé en relisant la console** : une réponse RCS ou e-mail ne passe jamais par la remise, donc un répondeur désigné
+  sur un tel étage ne répondrait jamais. Refusé côté serveur (`problemeDeRepondeur` lit le canal) et jamais envoyé par la
+  console (`repondeurAEnvoyer`) ; les deux tests vérifiés dans les deux sens.
+- **Livraison B, la console** (`f589b354`) : le sélecteur « Quel répondeur ? » et sa règle de grisé
+  (`web/lib/campagne-repondeur.ts`, chaque entrée indisponible visible avec sa raison), le brouillon, le détail d'une
+  campagne lancée, `features.md`, trois fiches d'aide publiques et leurs versions anglaises. Poussée après le déploiement
+  de A : l'écran n'a jamais écrit un champ que l'API en service ne connaissait pas.
+- **En service** : `e3c985ab` déployé le 30 à 23:28 UTC (run 41132836655, `migration=avant`, qui a aussi appliqué la 0264
+  de Crédit WhatsApp et mis en service le lot A du chiffre d'affaires attribué) : l'API « ready » à la taille déclarée,
+  les trois workers sur l'image, `/health` en 200. `f589b354` publié par Vercel le 31 à 00:37 UTC, CI verte. Avant la
+  poussée, rejoué sur la tête d'origin : suites racine et console, e2e complet (1 713 tests). Les seuls rouges locaux
+  tenaient au `node_modules` du poste, en retard sur le verrou (`@aws-sdk/client-s3` absent), reproduits à l'identique
+  sur une extraction d'origin.
+- **Restent** : l'essai réel 203 (SANDBOX) ; un `aide:charger` avec une image qui contient `f589b354` ; la relecture en
+  base de la 0263, point par point, lancée par Julien en lecture seule, dont la sortie reste à recopier ici.
+
 ## 2026-10-31 (nuit) : le chiffre d'affaires attribué, lot 2 en production (outil MCP, Quantitatif > Shopify, page Shopify)
 
 Plan `docs/superpowers/plans/2026-10-30-revenus-attribues-lot-2.md`, exécuté dans une copie à part, en deux lots.
