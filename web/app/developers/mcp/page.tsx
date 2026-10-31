@@ -161,7 +161,7 @@ function McpInner({ session }: { session: Session | null }) {
             cle: o.nom,
             cellules: [
               // L'ancre de l'outil (`PAGES_DOC`, mcp) : la vitrine y mène ; `scroll-mt` laisse passer l'entête collante.
-              <span key="n" id={o.nom} className="scroll-mt-20 whitespace-nowrap font-mono text-ink-900 target:bg-brand-50">{o.nom}</span>,
+              <span key="n" id={o.nom} className="scroll-mt-20 whitespace-nowrap font-mono text-ink-900">{o.nom}</span>,
               <span key="s" className="flex flex-col items-start gap-1">
                 <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${o.scope === 'mcp:write' ? 'bg-brand-50 text-brand-700' : 'bg-ink-100 text-ink-500'}`}>{o.scope}</span>
                 {o.oauth && <span className="whitespace-nowrap text-xs text-ink-500">{t('connexion OAuth requise', 'OAuth connection required')}</span>}

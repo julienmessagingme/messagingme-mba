@@ -7,7 +7,7 @@
 ## 2026-10-31 : une ancre par outil dans la doc MCP, et la vitrine qui y mène
 
 Suite de la page développeurs (`fa4bd76f`), le premier jaune de sa relecture. La page `/developers/mcp` de la console
-porte une ancre par outil, son nom (`id` sur le nom de l'outil, `scroll-mt-20`, surligné quand il est visé) ; ses
+porte une ancre par outil, son nom (`id` sur le nom de l'outil, `scroll-mt-20` ; aucun surlignage : la page se dessine dans le navigateur après la lecture de l'ancre, `:target` n'y prend jamais) ; ses
 ancres se dérivent du catalogue dans `PAGES_DOC` (`Object.keys(CATALOGUE_MCP)`), donc un outil ajouté a la sienne, et
 l'e2e de la console vérifie chacune. « Ce que vous pouvez construire » gagne le lien `{ outil }` : six lignes qui
 menaient au haut de la page mènent à leur outil (`?lang=en` avant l'ancre en anglais). `tests/plugin-readme.test.ts`
