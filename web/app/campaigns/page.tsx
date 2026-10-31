@@ -784,11 +784,16 @@ function CeQuiAEteLance({ chaine }: { chaine: CampaignDetail['chaine'] }) {
   if (!chaine || chaine.length === 0) return null;
 
   const canal = (c: string) => (c === 'whatsapp' ? 'WhatsApp' : c === 'rcs' ? 'RCS' : t('E-mail', 'Email'));
-  const devenir = (d?: string) => (d === 'inbox'
+  const devenir = (e: { devenir?: string; repondeur?: string; repondeurAgentId?: string }) => (e.devenir === 'inbox'
     ? t('les réponses reviennent à l’équipe', 'replies come back to the team')
-    // `mba` en base : le répondeur automatique de l'espace, l'agent de Meta ou l'agent IA désigné (lot 5).
-    : d === 'mba'
-      ? t('le répondeur automatique répond', 'the automatic responder replies')
+    // `mba` en base : le répondeur que l'étage désigne (migration 0263), sinon celui de l'espace (lot 5). Un agent désigné
+    // puis supprimé laisse `repondeur: 'agent'` sans identifiant : la remise retombe alors sur le répondeur de l'espace.
+    : e.devenir === 'mba'
+      ? e.repondeur === 'mba'
+        ? t('l’agent de Meta répond', 'Meta’s agent replies')
+        : e.repondeur === 'agent' && e.repondeurAgentId
+          ? t('l’agent IA choisi pour cette campagne répond', 'the AI agent chosen for this campaign replies')
+          : t('le répondeur automatique répond', 'the automatic responder replies')
       : null);
 
   return (
@@ -796,7 +801,7 @@ function CeQuiAEteLance({ chaine }: { chaine: CampaignDetail['chaine'] }) {
       <p className="text-xs font-medium text-ink-500">{t('Ce qui a été lancé', 'What was launched')}</p>
       <ul className="mt-2 space-y-1.5">
         {chaine.map((e) => {
-          const suite = devenir(e.devenir);
+          const suite = devenir(e);
           return (
             <li key={e.rang} className="text-sm text-ink-900">
               <span className="font-medium">

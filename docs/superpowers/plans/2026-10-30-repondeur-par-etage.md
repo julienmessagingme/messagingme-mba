@@ -44,9 +44,10 @@ Conséquences tirées sans nouvelle question :
   désigne un répondeur, il remplace le mode de l'espace pour CE message (`agent` avec cet agent, ou la remise à l'agent
   de Meta avec le repli de `envoyerAuMba`). La décision reste dans le seul module qui confie un contact.
 - **MCP** (`prepare_campaign`) : le même couple, validé par la même fonction (`docs` de l'outil : la parité Free).
-- **Console** : sous le choix « répondeur automatique » de chaque étage, un sélecteur « Quel répondeur ? ». Ses données
-  viennent de `GET /tenants/:id/repondeur` (agents actifs, agent de Meta allumé, modèle disponible). Le brouillon, le
-  récapitulatif et la fiche d'aide disent le choix.
+- **Console** : sous le choix « répondeur automatique » de chaque étage WHATSAPP (une réponse RCS ou e-mail ne passe pas
+  par la remise), un sélecteur « Quel répondeur ? ». Ses données viennent de `GET /tenants/:id/repondeur` (agents actifs,
+  agent de Meta allumé, modèle disponible) et de l'offre. Le brouillon, la fiche d'une campagne lancée et la fiche d'aide
+  disent le choix ; le récapitulatif ne le reprend pas (décidé à la relecture de B : il ne montre aucun devenir).
 
 ## Tâches
 
@@ -62,7 +63,7 @@ Conséquences tirées sans nouvelle question :
 
 **Livraison B, la console** (poussée APRÈS le déploiement de A)
 6. Le sélecteur, la règle de grisé (fonction pure dans `web/lib/`, testée), la création et le brouillon.
-7. Le récapitulatif, `features.md`, la fiche d'aide « Lancer une campagne » (publique : `vitrine:aide`, version `en/`,
+7. La fiche d'une campagne lancée, `features.md`, la fiche d'aide « Lancer une campagne » (publique : `vitrine:aide`, version `en/`,
    `aide:charger` après le push) et son empreinte.
 
 ## Méthode de livraison

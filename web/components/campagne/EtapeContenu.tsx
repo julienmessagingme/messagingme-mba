@@ -14,6 +14,7 @@ import { versBrouillonCarrousel } from '@/lib/rcs-carrousel';
 import { RcsCarouselPreview } from '@/components/RcsCarouselPreview';
 import { RcsPhoneFrame } from '@/components/RcsPhoneFrame';
 import { assignationProposable, devenirParDefaut, type CanalEtage, type EtageAssistant } from '@/lib/campagne-chaine';
+import { choixIndisponible, choixParDefaut, lireChoixRepondeur, optionsDuRepondeur, repondeurPossible } from '@/lib/campagne-repondeur';
 import { champEmailEffectif } from '@/lib/campagne-repartition';
 import { scenariosPourEtage } from '@/lib/campagne-scenario';
 import { CreationScenarioEnLigne } from '@/components/campagne/CreationScenarioEnLigne';
@@ -349,7 +350,7 @@ function CadreEtage({
                 Ce qui se passe quand le contact répond à cet étage est réglé dans le scénario.
               </p>
             ) : (
-              <BlocDevenirEtage rang={etage.rang} contenu={contenu} capacites={capacites} onChange={onChange} />
+              <BlocDevenirEtage rang={etage.rang} canal={etage.canal} contenu={contenu} capacites={capacites} onChange={onChange} />
             )}
           </div>
         </div>
@@ -358,31 +359,63 @@ function CadreEtage({
   );
 }
 
+/** Cet écran est en français seul : les règles partagées prennent une traduction, celle-ci rend le français. */
+const fr = (texte: string): string => texte;
+
 /**
- * QUI RÉPOND QUAND LE CONTACT RÉPOND À CET ÉTAGE. Deux choix, exclusifs.
+ * QUI RÉPOND QUAND LE CONTACT RÉPOND À CET ÉTAGE. Deux choix, exclusifs, et pour le premier, LEQUEL.
  *
- * 🔴 « LE RÉPONDEUR AUTOMATIQUE PREND LA MAIN » (lot 5) : la valeur reste `mba` en base, mais elle ne prend rien, elle
- * laisse la réponse à la remise « personne ne suit », qui la confie au répondeur de l'espace, l'agent de Meta OU l'agent
- * IA désigné (`src/inbox/fil.ts`). Le libellé disait « l'agent de Meta » ; il est grisé quand l'espace n'a NI l'un NI
- * l'autre (`capacites.repondeurAutomatique`), sinon la réponse n'irait à personne.
+ * 🔴 « LE RÉPONDEUR AUTOMATIQUE PREND LA MAIN » (lot 5) : la valeur reste `mba` en base. Sans autre précision, elle ne
+ * prend rien et laisse la réponse à la remise « personne ne suit », qui la confie au répondeur de l'espace (l'agent de
+ * Meta, un agent IA, un scénario ou l'application, `src/inbox/fil.ts`).
  *
- * 🔴 IL N'Y A PAS DE TROISIÈME OPTION « un agent IA prend la main », et son retrait est une CORRECTION.
- * Elle existait, faisait choisir un agent précis dans une liste, et ne produisait aucun effet : ni
- * `devenir` ni `agentId` ne quittaient le navigateur. En allant la câbler, le fait qui l'interdit est
- * apparu : `agent_sessions.run_id` est `NOT NULL`, un agent IA ne sait pas exister hors d'un scénario. Le
- * chemin pour qu'un agent reprenne une campagne existe déjà, c'est « modèle + scénario ».
+ * 🔴 « QUEL RÉPONDEUR ? » (Julien, 2026-10-30 : « que la personne puisse choisir un des agents IA dispo ou le MBA, et si
+ * aucun n'est setuppé, griser cette option »). L'étage peut désigner l'agent de Meta ou un agent IA actif, qui répond à la
+ * PREMIÈRE réponse du contact à la place du répondeur de l'espace (migration 0263, `repondeurDeLaReponse`).
+ * ⚠️ CE CHOIX AVAIT ÉTÉ RETIRÉ LE 2026-09-14, ET POUR UNE BONNE RAISON D'ALORS : il ne produisait aucun effet, parce qu'un
+ * agent IA ne savait pas exister hors d'un scénario (`agent_sessions.run_id` est `NOT NULL`). Le scénario système caché
+ * du répondeur (lot 5, `src/repondeur/demarrer.ts`) a levé cette limite : c'est par lui que l'agent choisi démarre.
+ *
+ * ⚠️ GRISÉ AVEC SA RAISON, comme les canaux de l'étape précédente : une option absente ferait croire que la fonctionnalité
+ * n'existe pas. Le choix « prend la main » entier se grise quand AUCUN répondeur ne le peut (`repondeurPossible`).
+ *
+ * 🔴 WHATSAPP SEULEMENT (relecture de la livraison B) : une réponse RCS ou e-mail ne passe jamais par la remise
+ * (`src/rcs/message-entrant.ts`), donc un répondeur désigné sur un tel étage ne répondrait jamais. Hors WhatsApp, ni
+ * sélecteur ni défaut écrit, et « prend la main » se juge comme avant (`repondeurAutomatique`).
  */
 function BlocDevenirEtage({
   rang,
+  canal,
   contenu,
   capacites,
   onChange,
 }: {
   rang: number;
+  canal: CanalEtage;
   contenu: ContenuEtage;
   capacites: CapacitesEspace;
   onChange: (patch: Partial<ContenuEtage>) => void;
 }) {
+  const surWhatsApp = canal === 'whatsapp';
+  const options = optionsDuRepondeur(
+    surWhatsApp && capacites.repondeurs
+      ? capacites.repondeurs
+      : { etat: null, agentMetaDansLOffre: null, espaceAutomatique: capacites.repondeurAutomatique },
+    fr,
+  );
+  const possible = repondeurPossible(options);
+  const indisponibles = options.filter((o) => o.raison !== null);
+  const choix = contenu.repondeur ?? 'espace';
+  /**
+   * Un choix de l'étage absent de la liste (un brouillon dont l'agent a été retiré, ou une liste illisible à la reprise) : il
+   * est NOMMÉ dans une entrée grisée, sinon le sélecteur afficherait une autre entrée que celle qui partirait.
+   */
+  const choixConnu = options.some((o) => o.valeur === choix);
+  const aide = choix === 'espace'
+    ? 'Le répondeur réglé sur l’Accueil, comme pour tout message que personne ne tient.'
+    : choix === 'mba'
+      ? 'Il répond à la première réponse du contact, et garde la conversation jusqu’à ce qu’il la passe à votre équipe.'
+      : 'Il répond à la première réponse du contact. Une fois la conversation close, les messages suivants reviennent au répondeur de l’espace.';
   return (
     <div data-testid={`bloc-devenir-${rang}`}>
       <p className="text-sm font-medium text-ink-900">Que se passe-t-il quand le contact répond ?</p>
@@ -391,9 +424,47 @@ function BlocDevenirEtage({
           groupe={`devenir-${rang}`}
           libelle="Le répondeur automatique prend la main"
           coche={contenu.devenir === 'mba'}
-          desactive={!capacites.repondeurAutomatique}
-          onCheck={() => onChange({ devenir: 'mba' })}
+          desactive={!possible}
+          // 🔴 Le choix par défaut est ÉCRIT dans l'étage au clic (`choixParDefaut`), jamais seulement affiché : en mode
+          // « Équipe », le sélecteur montrerait l'agent de Meta sur un étage qui n'enverrait rien.
+          onCheck={() => {
+            if (!surWhatsApp) { onChange({ devenir: 'mba' }); return; }
+            const defaut = choixParDefaut(contenu.repondeur, options);
+            onChange({ devenir: 'mba', ...(defaut ? { repondeur: defaut } : {}) });
+          }}
         />
+        {/* Gardé visible tant qu'un choix explicite est posé, même si plus rien n'est disponible : il partirait sinon sans
+            que l'écran le montre. */}
+        {surWhatsApp && contenu.devenir === 'mba' && (possible || contenu.repondeur !== undefined) && (
+          <div className="ml-6" data-testid={`repondeur-bloc-${rang}`}>
+            <label className="block w-full text-sm">
+              <span className="block text-xs font-medium text-ink-700">Quel répondeur ?</span>
+              <select
+                value={choix}
+                onChange={(e) => { const v = lireChoixRepondeur(e.target.value); if (v) onChange({ repondeur: v }); }}
+                data-testid={`repondeur-${rang}`}
+                aria-label="Quel répondeur ?"
+                className="mt-1 w-full rounded-controle border border-ink-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400"
+              >
+                {!choixConnu && <option value={choix} disabled>Le répondeur choisi n’est plus proposé</option>}
+                {options.map((o) => (
+                  <option key={o.valeur} value={o.valeur} disabled={o.raison !== null}>{o.libelle}</option>
+                ))}
+              </select>
+            </label>
+            {choixIndisponible(contenu.repondeur, options) && (
+              <p className="mt-2 rounded-controle bg-alerte-50 px-3 py-2 text-xs text-ink-900" data-testid={`repondeur-indisponible-${rang}`}>
+                Ce répondeur n’est plus disponible : choisissez-en un autre.
+              </p>
+            )}
+            {indisponibles.length > 0 && (
+              <ul className="mt-2 space-y-0.5 text-xs text-ink-500" data-testid={`repondeur-raisons-${rang}`}>
+                {indisponibles.map((o) => <li key={o.valeur}>{o.libelle} : {o.raison}</li>)}
+              </ul>
+            )}
+            <p className="mt-2 text-xs text-ink-500" data-testid={`repondeur-aide-${rang}`}>{aide}</p>
+          </div>
+        )}
         <Radio
           groupe={`devenir-${rang}`}
           libelle="La conversation arrive dans l’Inbox"
@@ -401,12 +472,17 @@ function BlocDevenirEtage({
           onCheck={() => onChange({ devenir: 'inbox' })}
         />
       </div>
-      {/* ⚠️ GRISÉ AVEC SA RAISON, comme les canaux de l'étape précédente : une option absente ferait croire
-          que la fonctionnalité n'existe pas. */}
-      {!capacites.repondeurAutomatique && (
-        <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">
-          Cet espace n’a pas de répondeur automatique : ni l’agent de Meta, ni un agent IA répondeur.
-        </p>
+      {/* Les vraies raisons, entrée par entrée : une phrase toute faite affirmerait ce que l'écran ne sait pas (l'agent de
+          Meta peut être allumé mais hors de l'offre, des agents actifs sans modèle, une liste pas encore lue). */}
+      {!possible && (
+        <div className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500" data-testid={`repondeur-aucun-${rang}`}>
+          <p>Aucun répondeur automatique n’est disponible{surWhatsApp ? ' :' : ' sur cet étage : le répondeur de l’Accueil ne répond pas automatiquement.'}</p>
+          {surWhatsApp && (
+            <ul className="mt-1 space-y-0.5">
+              {indisponibles.map((o) => <li key={o.valeur}>{o.libelle} : {o.raison}</li>)}
+            </ul>
+          )}
+        </div>
       )}
       {contenu.devenir === 'inbox' && (
         <p className="mt-3 rounded-controle bg-ink-50 px-3 py-2 text-xs text-ink-500">

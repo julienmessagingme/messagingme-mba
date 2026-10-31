@@ -1,7 +1,7 @@
 ---
 description: Launch a WhatsApp or RCS campaign in five steps: the name, the channel, the content, the audience, then the summary and sending.
 slug: launch-a-campaign
-traduit_de: 8a16fb
+traduit_de: 91423e
 ---
 # Launch a campaign
 
@@ -38,8 +38,13 @@ tells you and does not let you move on.
 
 In the frame of each stage that does not open a scenario, you are asked a question: what happens when a contact
 replies to THAT stage. “Le répondeur automatique prend la main” (the automatic responder takes over) leaves the
-reply to the one you chose on the Home screen, under “Who answers the customer” (Meta’s agent, an AI agent or a
-scenario); this choice is greyed out, with its reason, if your team is the one answering. The other choice sends the
+reply, by default, to the one you chose on the Home screen, under “Who answers the customer” (Meta’s agent, an AI
+agent or a scenario). On a WhatsApp stage, just below, “Quel répondeur ?” (which responder?) lets you pick, for this stage, Meta’s agent
+or one of your active AI agents. It answers the contact’s first reply: an AI agent keeps the conversation until it
+closes it, then the next messages go back to the Home screen’s responder, and Meta’s agent keeps it until it hands it
+over to your team. An unavailable option stays visible, greyed out, with its reason (Meta’s agent turned off, for
+example), and the whole choice is greyed out when no responder is available. Your team keeps a conversation it
+handled recently, or in which the customer is still waiting for its answer. The other choice sends the
 conversation to your Inbox. It is set stage by stage. Then, once all the content is chosen, a last question appears,
 but only if at least one stage sends to the Inbox: who the conversation goes to, nobody in particular, a named
 person, or in turn.

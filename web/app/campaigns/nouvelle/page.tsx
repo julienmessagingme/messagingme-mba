@@ -10,9 +10,10 @@ import {
   listCampaignDrafts,
   type BusinessHours, type CampaignDraft, type TemplateSummary, type WorkflowSummary,
 } from '@/lib/api';
-import { listAgents } from '@/lib/api-agent';
+import { listAgents, lireQuiRepond } from '@/lib/api-agent';
 import { isCampaignEligible } from '@/lib/campaign-eligibility';
-import { repondeurAutomatique } from '@/lib/repondeur';
+import { repondeurAutomatique, type EtatRepondeur } from '@/lib/repondeur';
+import { useOffre } from '@/lib/use-offre';
 import {
   AssistantCampagne, REFERENCES_VIDES,
   type CapacitesEspace, type EtapeAssistant, type ReferencesContenu,
@@ -38,6 +39,19 @@ function AssistantInner({ session }: { session: Session }) {
   const router = useRouter();
   const [capacites, setCapacites] = useState<CapacitesEspace | null>(null);
   const [references, setReferences] = useState<ReferencesContenu>(REFERENCES_VIDES);
+  /**
+   * QUI PEUT PRENDRE LA MAIN SUR UN ÉTAGE (plan du 2026-10-30) : « Qui répond au client » (`GET /repondeur`, les agents IA
+   * actifs, l'agent de Meta allumé et configuré) et l'offre, pour dire la bonne raison quand elle ne comprend pas l'agent de
+   * Meta (le serveur rend alors `mbaConfigurable` faux, sans dire pourquoi). Lus à part et tolérants : illisibles, le sélecteur ne propose que le répondeur de l'espace,
+   * jugé comme avant, et jamais un choix que l'espace n'a pas.
+   */
+  const [etatRepondeur, setEtatRepondeur] = useState<EtatRepondeur | null>(null);
+  const vueOffre = useOffre(session.tenantId);
+  useEffect(() => {
+    let vivant = true;
+    void lireQuiRepond(session.tenantId).then((e) => { if (vivant) setEtatRepondeur(e); }).catch(() => {});
+    return () => { vivant = false; };
+  }, [session.tenantId]);
   /**
    * LE BROUILLON REPRIS, quand l'adresse en nomme un (`?brouillon=<id>`).
    *
@@ -248,10 +262,13 @@ function AssistantInner({ session }: { session: Session }) {
   const troisiemes = ['aucun', 'email'] as const;
   const troisieme = troisiemes.find((t) => t === troisiemeDemande);
 
+  // `undefined` (offre pas encore lue) et `null` (inconnue) ne grisent rien : la barrière est le serveur.
+  const repondeurs = { etat: etatRepondeur, agentMetaDansLOffre: vueOffre ? vueOffre.fonctions.has('agent_meta') : null, espaceAutomatique: capacites.repondeurAutomatique };
+
   return (
     <AssistantCampagne
       tenantId={session.tenantId}
-      capacites={capacites}
+      capacites={{ ...capacites, repondeurs }}
       references={references}
       rechargerTemplates={rechargerTemplates}
       rechargerScenarios={rechargerScenarios}

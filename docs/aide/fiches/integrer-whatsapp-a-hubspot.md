@@ -3,7 +3,7 @@ description: WhatsApp dans HubSpot avec l'app Messaging Me : répondre depuis la
 ecran: integrations
 ancre_console: integration-hubspot
 source_section: Accueil (1re entrée du menu)
-source_empreinte: d1bfb9
+source_empreinte: 00b3d0
 publique: oui
 rubrique: demarrer
 rang: 6

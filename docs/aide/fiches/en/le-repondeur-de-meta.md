@@ -1,6 +1,6 @@
 ---
 slug: meta-business-agent
-traduit_de: be21f6
+traduit_de: e89f24
 description: The Meta Business Agent, WhatsApp’s responder: when it answers, how to set it up, its cap, and how to take back control.
 ---
 # Meta’s responder: what it is for, and how to set it up
@@ -25,7 +25,8 @@ could not take (a customer who did not share their number, for example) goes to 
 **Turned on, it is available; it only answers if you chose it.** Who answers the customer is set on the Home
 screen, in “Who answers the customer”: Meta’s agent, an AI agent, a scenario, or your team. When it is not Meta’s
 agent, Meta’s agent, turned on, stays **on standby**: it only takes the contacts a scenario’s “Send to the MBA”
-block sends to it, and answers them right away. Turning it on when your team answers makes it the responder;
+block sends to it, and answers them right away, or those who reply to a campaign that chose it (“Quel répondeur ?”,
+at the Content step). Turning it on when your team answers makes it the responder;
 turning it off when it is the one answering asks you to confirm, and messages then go to your team. The settings
 and the assistant tell you, before you turn it on, whether it will stay on standby.
 

@@ -1277,9 +1277,19 @@ de scénario envoie un mail à l'adresse portée par la fiche du contact.
   scénario ne les prenne, et il faut bien dire où va leur conversation.
 - ✅ **« Le répondeur automatique prend la main »** (2026-10-05, ex-« L'agent de Meta prend la main ») : à la
   question « Que se passe-t-il quand le contact répond ? », ce choix laisse la réponse à celui que l'espace a choisi
-  sur l'Accueil, dans « Qui répond au client » : l'agent de Meta, un agent IA ou un scénario. Il est grisé, avec sa
-  raison, quand c'est l'équipe qui répond, et l'Inbox est alors choisie par défaut. Le détail d'une campagne lancée
-  dit de même « le répondeur automatique répond ».
+  sur l'Accueil, dans « Qui répond au client » : l'agent de Meta, un agent IA ou un scénario. Quand c'est l'équipe qui
+  répond sur l'Accueil, l'Inbox est choisie par défaut.
+- ✅ **« Quel répondeur ? »** (2026-10-30, demande de Julien) : sous ce choix, un étage **WhatsApp** (une réponse RCS ou
+  e-mail ne passe par aucun répondeur) peut désigner **l'agent de Meta**
+  ou **un agent IA actif** au lieu du répondeur de l'Accueil, qui reste le défaut. Il répond à la **première réponse**
+  du contact après l'envoi : un agent IA garde la conversation jusqu'à ce qu'il la close, puis les messages suivants
+  reviennent au répondeur de l'Accueil ; l'agent de Meta la garde jusqu'à ce qu'il la passe à l'équipe. Chaque entrée
+  indisponible reste visible, grisée, avec sa raison (agent de Meta éteint, pas configuré ou hors de l'offre, Accueil
+  en mode « Équipe »), et le choix entier se grise quand aucun répondeur n'est disponible. L'équipe garde une
+  conversation qu'un opérateur a traitée récemment, ou dans laquelle le client attend encore sa réponse. Le détail d'une
+  campagne lancée dit qui répond (« l'agent de Meta répond », « l'agent IA choisi pour cette campagne répond »). Même
+  choix depuis Claude (`prepare_campaign`, paramètres `responder` et `responder_agent_id`) ; l'agent de Meta y est
+  refusé quand l'offre ne le comprend pas.
 - ✅ **Réessayer les envois qui échouent : sur un canal seul uniquement** (2026-09-13). Avec une chaîne
   de repli, la question ne se pose plus : **le repli EST le rattrapage**, et le premier échec bascule
   déjà vers le canal suivant. Réessayer en plus, ce serait repartir sur le tuyau dont on sait qu'il ne
@@ -2233,7 +2243,7 @@ scénario, comment importer des contacts.
   qui veut un accueil distinct.
   🔴 **Allumé n'est plus répondeur.** L'interrupteur de la carte de l'agent de Meta dit qu'il est **disponible** ; hors
   de la position « MBA », il est **en veille** et ne prend un contact que par le bloc « Envoyer au MBA » d'un
-  scénario. L'allumer quand c'est l'équipe qui répond le fait passer répondeur (comme avant) ; l'éteindre quand c'est
+  scénario, ou par une campagne dont l'étage le désigne (« Quel répondeur ? », 2026-10-30). L'allumer quand c'est l'équipe qui répond le fait passer répondeur (comme avant) ; l'éteindre quand c'est
   lui qui répond se confirme, et les messages vont alors à l'équipe. Le lien de sa carte mène à ses réglages propres
   (passage de main à un humain, reprise par un opérateur). ⚠️ À la mise en service, les espaces qui n'avaient ni
   l'agent de Meta allumé ni un agent IA répondeur sont passés sur « L'équipe » : leurs messages sans suite, qui
@@ -3508,8 +3518,9 @@ boîte par sous-menu.
 
 Un répondeur intelligent que le client construit lui-même et qu'il **pose là où il en a besoin** : dans le
 bloc « Agent IA » d'un scénario, ou, depuis le 2026-10-05, **pour répondre au client**, à tout message que personne
-ne tient (choisi sur l'Accueil, dans « Qui répond au client », voir « L'agent IA qui répond au client » plus bas).
-Hors de ces deux places, un agent ne parle pas. Depuis RC6, l'agent de Meta allumé n'est plus forcément celui qui
+ne tient (choisi sur l'Accueil, dans « Qui répond au client », voir « L'agent IA qui répond au client » plus bas),
+ou, depuis le 2026-10-30, sur l'étage WhatsApp d'une campagne, pour la première réponse de ses contacts (« Quel
+répondeur ? »). Hors de ces trois places, un agent ne parle pas. Depuis RC6, l'agent de Meta allumé n'est plus forcément celui qui
 répond : quand c'est un agent IA, il reste en veille.
 
 ✅ **Livré et déployé** (2026-08-28) : la fiche, la base de connaissance, les outils, la construction en
@@ -3559,7 +3570,8 @@ réponse qui part, un outil qui s'exécute, une sortie qui reprend le scénario,
   de l'équipe ne tient, en tenant compte de ce que le contact vient d'écrire. Réservé aux administrateurs. Claude
   peut le régler aussi (outil `set_default_responder`).
 - 🔴 **L'agent de Meta n'est plus éteint** (RC6, il l'était depuis le 2026-10-05) : allumé, il reste disponible, en
-  veille, et ne prend un contact que par le bloc « Envoyer au MBA » d'un scénario. Si c'était lui qui répondait, les
+  veille, et ne prend un contact que par le bloc « Envoyer au MBA » d'un scénario (ou, depuis le 2026-10-30, par une
+  campagne dont l'étage le désigne). Si c'était lui qui répondait, les
   contacts qu'il tenait sont retirés de sa liste (la carte le fait confirmer), et l'agent IA prend la suite.
 - ✅ **Ses sorties ferment sa conversation, et le message suivant le relance.** Sans scénario derrière, une de vos
   règles d'arrêt, ou « Pas de réponse », termine la conversation de l'agent ; « Transfert à un humain », « Aucune
@@ -4395,7 +4407,7 @@ du 2026-10-27.
 - ✅ **Allumé, il est disponible ; il ne répond au client que si l'espace l'a choisi** (RC6, sur l'Accueil, « Qui
   répond au client », position « MBA »). Quand c'est un agent IA, un scénario ou l'équipe qui répond, il est **en
   veille** : aucune remise, aucune fin de scénario, aucune reprise automatique ne lui confie un contact, et il ne
-  prend que ceux qu'un bloc « Envoyer au MBA » lui envoie. L'allumer ne retire donc plus personne (le 2026-10-05, il
+  prend que ceux qu'un bloc « Envoyer au MBA » lui envoie, ou qu'une campagne lui désigne (2026-10-30). L'allumer ne retire donc plus personne (le 2026-10-05, il
   retirait l'agent IA de ce rôle) : l'interrupteur de ses paramètres et la mise en service proposée par son
   assistant disent qu'il restera en veille, en nommant qui répond. L'allumer quand c'est l'équipe qui répond le fait
   répondeur ; l'éteindre quand c'est lui qui répond se confirme, et les messages vont alors à l'équipe.

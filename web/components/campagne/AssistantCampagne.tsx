@@ -24,6 +24,7 @@ import type { CreatedTemplate } from '@/components/TemplateForm';
 import type { RestaurationSelection } from '@/components/campagne/ListeDestinataires';
 import type { VarRow } from '@/lib/variables-template';
 import type { CarrouselRcs } from '@/lib/rcs-carrousel';
+import type { ChoixRepondeur, SourcesRepondeur } from '@/lib/campagne-repondeur';
 import type { CampaignCategory, PhoneNumber, RcsAgent, RcsMessage, RcsSuggestion, TagCount, TemplateSummary, UserFieldDef, WorkflowSummary } from '@/lib/api';
 import { Bouton } from '@/components/Bouton';
 import { TitrePage } from '@/components/TitrePage';
@@ -187,6 +188,12 @@ export interface ContenuEtage {
    * s'il revient en arrière, mais elle n'est PAS envoyée (`entreeDeCreation`).
    */
   devenir: Devenir;
+  /**
+   * QUEL RÉPONDEUR PREND LA MAIN quand `devenir` vaut `mba` (plan du 2026-10-30, migration 0263) : le répondeur de
+   * l'espace (absent ou `espace`, le comportement d'avant), l'agent de Meta, ou un agent IA (`agent:<id>`). Même règle
+   * que `devenir` : gardé quand la question n'est pas posée, envoyé seulement quand elle l'est (`repondeurAEnvoyer`).
+   */
+  repondeur?: ChoixRepondeur;
   templateName?: string;
   templateLanguage?: string;
   workflowId?: string;
@@ -373,12 +380,17 @@ export interface CapacitesEspace {
   mbaEnabled: boolean;
   /**
    * Un RÉPONDEUR AUTOMATIQUE répond-il aux messages que personne ne tient : l'agent de Meta allumé, ou un agent IA
-   * désigné répondeur de l'espace (lot 5, `repondeurAutomatique`, `lib/repondeur.ts`) ? C'est lui, et pas `mbaEnabled`,
-   * qui décide du choix « le répondeur automatique prend la main » d'un étage : ce choix ne prend rien, il laisse la
-   * réponse à la remise « personne ne suit », qui la confie au répondeur de l'espace, quel qu'il soit. `mbaEnabled`
-   * reste pour le bloc de l'agent de Meta des scénarios créés en ligne.
+   * désigné répondeur de l'espace (lot 5, `repondeurAutomatique`, `lib/repondeur.ts`) ? Il décide du devenir PAR DÉFAUT
+   * d'un étage (`devenirParDefaut`) : ne rien choisir laisse la réponse à la remise « personne ne suit », qui la confie au
+   * répondeur de l'espace, quel qu'il soit. `mbaEnabled` reste pour le bloc de l'agent de Meta des scénarios créés en ligne.
    */
   repondeurAutomatique: boolean;
+  /**
+   * CE QUI PEUT PRENDRE LA MAIN SUR UN ÉTAGE (plan du 2026-10-30) : le répondeur de l'espace, l'agent de Meta, chaque agent
+   * IA actif (`optionsDuRepondeur`). C'est lui qui grise « le répondeur automatique prend la main » quand aucun ne le peut.
+   * Absent (un appelant qui ne le lit pas) : seul le répondeur de l'espace, jugé par `repondeurAutomatique`.
+   */
+  repondeurs?: SourcesRepondeur;
   /**
    * Le connecteur HubSpot est-il branché sur cet espace ? Faux = la source HubSpot n'est pas AFFICHÉE.
    *

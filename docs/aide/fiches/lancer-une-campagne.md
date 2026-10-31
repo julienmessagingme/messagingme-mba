@@ -2,7 +2,7 @@
 description: Lancer une campagne WhatsApp ou RCS en cinq étapes : le nom, le canal, le contenu, l'audience, puis le récapitulatif et l'envoi.
 ecran: campagnes
 source_section: Campagnes
-source_empreinte: dd28b7
+source_empreinte: f1d238
 publique: oui
 rubrique: parler-aux-clients
 rang: 5
@@ -45,10 +45,15 @@ validation chez WhatsApp, et il est choisi tout seul dès qu'il est approuvé. T
 contenu, l'écran vous le dit et ne vous laisse pas avancer.
 
 Dans le cadre de chaque étage qui n'ouvre pas un scénario, une question vous est posée : ce qui se passe quand
-un contact répond à CET étage. « Le répondeur automatique prend la main » laisse la réponse à celui que vous
-avez choisi sur l'Accueil, dans « Qui répond au client » (l'agent de Meta, un agent IA ou un scénario) ; ce
-choix est grisé, avec sa raison, si c'est votre équipe qui répond. L'autre choix envoie la conversation dans
-votre Inbox. Elle se règle étage par étage. Puis, une fois tout le contenu choisi, une dernière question
+un contact répond à CET étage. « Le répondeur automatique prend la main » laisse par défaut la réponse à celui
+que vous avez choisi sur l'Accueil, dans « Qui répond au client » (l'agent de Meta, un agent IA ou un scénario).
+Sur un étage WhatsApp, juste dessous, « Quel répondeur ? » vous laisse désigner pour cet étage l'agent de Meta ou l'un de vos agents IA
+actifs. Il répond à la première réponse du contact : un agent IA garde la conversation jusqu'à ce qu'il la
+close, puis les messages suivants reviennent au répondeur de l'Accueil, et l'agent de Meta la garde jusqu'à ce
+qu'il la passe à votre équipe. Une option indisponible reste visible, grisée, avec sa raison (l'agent de Meta
+éteint, par exemple), et tout le choix est grisé quand aucun répondeur n'est disponible. Votre équipe garde une
+conversation qu'elle a traitée récemment, ou dans laquelle le client attend encore sa réponse. L'autre choix
+envoie la conversation dans votre Inbox. Elle se règle étage par étage. Puis, une fois tout le contenu choisi, une dernière question
 apparaît, mais seulement si au moins un étage renvoie vers l'Inbox : à qui la conversation revient, personne
 en particulier, une personne désignée, ou à tour de rôle.
 

@@ -1,19 +1,20 @@
 ---
 slug: build-an-ai-agent
-traduit_de: 8f66a8
+traduit_de: 56d504
 description: Build an AI agent that answers on WhatsApp: the interview, the knowledge base, the tools, the stop rules, the test and the credit.
 ---
 # Build an AI agent
 
 An AI agent is a responder you build yourself and that you **place where you need it**: in the “AI agent” block of
-a scenario, or **to answer the customer**, on any message that nobody is handling, as Meta’s agent does. Outside
-these two places, it does not speak.
+a scenario, **to answer the customer** as Meta’s agent does, or on the WhatsApp stage of a campaign. Outside these
+three places, it does not speak.
 
 **The AI agent that answers the customer.** It is chosen on the Home screen, in **“Who answers the customer”**
 (the “An AI agent” position, among your active agents), then **Save**; the agents page links there. The chosen
 agent answers any message that neither a scenario, nor a keyword, nor a member of your team is handling, with no
 scenario to build, and taking into account what the contact has just written. Meta’s agent is not turned off for
-all that: turned on, it stays on standby, and only takes the contacts a “Send to the MBA” block sends to it. If it
+all that: turned on, it stays on standby, and only takes the contacts a “Send to the MBA” block sends to it, or that
+a campaign hands it (“Quel répondeur ?”, which responder?, at the Content step). If it
 was the one answering, the Home screen asks you to confirm, because it stops answering the conversations it holds.
 
 With no scenario behind it, a stop rule or “No reply” ends the agent’s conversation; “Handover to a human”, “No
@@ -25,8 +26,8 @@ admins get an email alert, one a day at most. Turning off or deleting the agent 
 role: messages then go to your team, the screen tells you before, and the Home screen flags it. It only answers
 WhatsApp messages.
 
-**An agent is born as a draft** and only appears in the scenario builder, or in “Who answers the customer”, once
-**activated**, when you have reread what it will say. Here, “activated” means “can be chosen”, not “it answers
+**An agent is born as a draft** and only appears in the scenario builder, in “Who answers the customer” or in a
+campaign’s “Quel répondeur ?”, once **activated**, when you have reread what it will say. Here, “activated” means “can be chosen”, not “it answers
 everything”: answering everything is chosen on the Home screen. Activation refuses an incomplete agent, but it
 tells you what to do: each gap is a clickable line that opens the tab where it is fixed, and the record’s header
 lists them as soon as you open it, without waiting for you to click “activate”.

@@ -2,7 +2,7 @@
 description: Construire un agent IA qui répond sur WhatsApp : l’entretien, la base de connaissance, les outils, les règles d’arrêt, l’essai et le crédit.
 ecran: agents
 source_section: Agent IA (menu « AI Agent » > Other AI agent)
-source_empreinte: 6a5ad9
+source_empreinte: 2d6b75
 publique: oui
 rubrique: parler-aux-clients
 rang: 10
@@ -11,14 +11,15 @@ captures: non
 # Construire un agent IA
 
 Un agent IA est un répondeur que vous construisez vous-même et que vous **posez là où vous en avez besoin** :
-dans le bloc « Agent IA » d'un scénario, ou **pour répondre au client**, à tout message que personne ne tient,
-comme le fait l'agent de Meta. Hors de ces deux places, il ne parle pas.
+dans le bloc « Agent IA » d'un scénario, **pour répondre au client** comme le fait l'agent de Meta, ou sur l'étage
+WhatsApp d'une campagne. Hors de ces trois places, il ne parle pas.
 
 **L'agent IA qui répond au client.** Il se choisit sur l'Accueil, dans **« Qui répond au client »** (position
 « Un agent IA », parmi vos agents actifs), puis **Enregistrer** ; la page des agents y renvoie par un lien. L'agent
 choisi répond à tout message que ni un scénario, ni un mot-clé, ni un membre de votre équipe ne tient, sans scénario
 à construire, et en tenant compte de ce que le contact vient d'écrire. L'agent de Meta n'est pas éteint pour
-autant : allumé, il reste en veille, et ne prend que les contacts qu'un bloc « Envoyer au MBA » lui envoie. Si
+autant : allumé, il reste en veille, et ne prend que les contacts qu'un bloc « Envoyer au MBA » lui envoie, ou
+qu'une campagne lui confie (« Quel répondeur ? », à l'étape Contenu). Si
 c'était lui qui répondait, l'Accueil vous demande confirmation, parce qu'il cesse de répondre aux conversations
 qu'il tient.
 
@@ -31,8 +32,8 @@ message passe à votre équipe**, sans réponse automatique, et les administrate
 une par jour au plus. Désactiver ou supprimer l'agent qui répond le retire de ce rôle : les messages vont alors à
 votre équipe, l'écran vous le dit avant, et l'Accueil le signale. Il ne répond qu'aux messages WhatsApp.
 
-**Un agent naît en brouillon** et n'apparaît dans le constructeur de scénario, ou dans « Qui répond au client »,
-qu'une fois **activé**, quand vous avez relu ce qu'il dira. Ici, « activé » veut dire « proposable », pas « il
+**Un agent naît en brouillon** et n'apparaît dans le constructeur de scénario, dans « Qui répond au client » ou
+dans « Quel répondeur ? » d'une campagne, qu'une fois **activé**, quand vous avez relu ce qu'il dira. Ici, « activé » veut dire « proposable », pas « il
 répond à tout » : répondre à tout se choisit sur l'Accueil. L'activation refuse un agent incomplet, mais elle vous dit quoi faire : chaque manque est une ligne
 cliquable qui ouvre l'onglet où cela se corrige, et l'en-tête de la fiche vous les liste dès l'ouverture,
 sans attendre que vous cliquiez sur « activer ».

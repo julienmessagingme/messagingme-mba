@@ -8,6 +8,7 @@ import { maxTexteRcs, versMessageRcs } from './rcs';
 import type { CarrouselRcs } from './rcs-carrousel';
 import { boutonPret } from './rcs-boutons';
 import type { EtageAssistant } from './campagne-chaine';
+import { repondeurAEnvoyer, type ChoixRepondeur } from './campagne-repondeur';
 import { RANG_INITIAL, assignationProposable, debitBorne, reessaiProposable } from './campagne-chaine';
 import { problemeDAssociation, versParamMapping, type VarRow } from './variables-template';
 import { varCountOf } from './fields';
@@ -86,6 +87,8 @@ export interface EtatPourCreation {
     canalOuvertureDuScenario?: 'whatsapp' | 'rcs' | null;
     /** Cf. `ContenuEtage.devenir`. N'est envoyé que pour un étage SANS scénario. */
     devenir?: 'mba' | 'inbox';
+    /** Cf. `ContenuEtage.repondeur`. N'est envoyé qu'avec `devenir: 'mba'` sur un étage sans scénario (`repondeurAEnvoyer`). */
+    repondeur?: ChoixRepondeur;
   }>;
 }
 
@@ -438,6 +441,8 @@ export function entreeDeCreation(
       // ⚠️ Même garde que pour le premier étage : un étage à scénario n'envoie AUCUN devenir, c'est le
       // scénario qui décide. Ce qu'on cache à l'écran doit être exactement ce qu'on n'envoie pas.
       ...(c?.formule === 'seul' && c.devenir ? { devenir: c.devenir } : {}),
+      // Le répondeur que l'étage désigne (migration 0263), par la même règle que le premier étage.
+      ...repondeurAEnvoyer(c, e.canal),
       canal: e.canal,
       ...(e.canal === 'whatsapp' && c?.templateName ? { templateName: c.templateName, templateLanguage: c.templateLanguage ?? 'fr' } : {}),
       ...(e.canal === 'rcs' ? { rcsMessage: messageRcs(c) } : {}),
@@ -538,5 +543,11 @@ export function entreeDeCreation(
      * ici (`reessayer`, `assignation`) : ce qu'on cache doit être exactement ce qu'on n'envoie pas.
      */
     ...(contenuPremier?.formule === 'seul' && contenuPremier.devenir ? { devenir: contenuPremier.devenir } : {}),
+    /**
+     * QUEL RÉPONDEUR prend la main sur le premier étage (plan du 2026-10-30, migration 0263), au niveau de la campagne pour
+     * la même raison que `devenir`. Rien quand l'étage ouvre un scénario, renvoie à l'équipe, ou laisse le répondeur de
+     * l'espace : `repondeurAEnvoyer` en tient la règle, la même pour chaque étage de la chaîne.
+     */
+    ...repondeurAEnvoyer(contenuPremier, premier.canal),
   };
 }

@@ -82,6 +82,10 @@ export interface EtageLance {
   workflowName?: string;
   /** Cf. `ContenuEtage.devenir`. Absent = campagne d'avant le 2026-09-14. */
   devenir?: 'mba' | 'inbox';
+  /** Le répondeur que l'étage désigne (migration 0263). Absent = le répondeur de l'espace. */
+  repondeur?: 'mba' | 'agent';
+  /** L'agent IA, avec `repondeur: 'agent'`. Absent aussi quand l'agent a été supprimé depuis. */
+  repondeurAgentId?: string;
 }
 
 export interface CampaignDetail extends CampaignSummary {
@@ -140,6 +144,9 @@ export interface EtageCreation {
    * campagne : c'est l'invariant de la migration 0134.
    */
   devenir?: 'mba' | 'inbox';
+  /** Le répondeur que l'étage désigne, avec `devenir: 'mba'` (migration 0263). Même règle : celui du rang 1 voyage sur la campagne. */
+  repondeur?: 'mba' | 'agent';
+  repondeurAgentId?: string;
   templateName?: string;
   templateLanguage?: string;
   rcsMessage?: RcsOutbound;
@@ -207,6 +214,9 @@ export interface CreateCampaignInput {
   chaine?: EtageCreation[];
   /** Cf. `EtageCreation.devenir` : celui du PREMIER étage, qui est la campagne elle-même. */
   devenir?: 'mba' | 'inbox';
+  /** Cf. `EtageCreation.repondeur` : celui du PREMIER étage. */
+  repondeur?: 'mba' | 'agent';
+  repondeurAgentId?: string;
   /** « Réessayer les envois qui échouent ». Absent = le défaut du serveur (vrai). */
   reessayer?: boolean;
   /** Le rattrapage (réessai ou repli) peut-il partir hors des heures d'ouverture ? Absent = non. */

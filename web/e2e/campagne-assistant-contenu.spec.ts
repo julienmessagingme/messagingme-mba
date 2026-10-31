@@ -49,6 +49,8 @@ async function monter(
     canal?: string; troisieme?: string; agents?: unknown[]; users?: unknown[]; sansContenu?: boolean; sansCanal?: boolean; mbaEnabled?: boolean;
     /** L'agent IA répondeur de l'espace (lot 5) ; absent = aucun, comme une API d'avant le lot. */
     repondeurAgentId?: string;
+    /** Ce que rend `GET /repondeur` (« Qui répond au client ») ; absent = illisible, comme une API d'avant RC6. */
+    repondeur?: Record<string, unknown>;
   } = {},
 ): Promise<void> {
   await page.addInitScript((s) => window.localStorage.setItem('mba.session', JSON.stringify(s)), SESSION);
@@ -74,6 +76,7 @@ async function monter(
     if (chemin.endsWith('/workflows')) return json({ workflows: WORKFLOWS });
     if (chemin.endsWith('/users')) return json({ users: sur.users ?? USERS });
     if (chemin.endsWith('/agents')) return json({ agents: sur.agents ?? [{ id: 'ag1', label: 'Conseiller', status: 'actif', sorties: [], modele: 'anthropic/claude-haiku-4.5' }] });
+    if (chemin.endsWith('/repondeur')) return json(sur.repondeur ?? {});
     return json({});
   });
   const q = new URLSearchParams({
@@ -264,12 +267,13 @@ test('le RCS garde ses BOUTONS, il ne se reduit pas a un lien', async ({ page })
  * main ». Sa valeur reste `mba` ; elle ne prend rien, elle laisse la reponse a la remise « personne ne suit », qui la
  * confie au repondeur de l'espace : l'agent de Meta, OU l'agent IA designe. D'ou le second cas.
  */
-test('🔴 plus d option « agent IA », et le répondeur automatique est grisé AVEC SA RAISON', async ({ page }) => {
+test('🔴 plus de radio « agent IA », et le répondeur automatique est grisé AVEC SA RAISON', async ({ page }) => {
   await monter(page, { agents: [], mbaEnabled: false });
   await page.getByTestId('etage-1').click();
+  // L'agent IA se choisit désormais SOUS « le répondeur automatique prend la main » (2026-10-30), jamais en troisième radio.
   await expect(page.getByRole('radio', { name: 'Un agent IA prend la main' })).toHaveCount(0);
   await expect(page.getByTestId('bloc-devenir-1').getByRole('radio', { name: 'Le répondeur automatique prend la main' })).toBeDisabled();
-  await expect(page.getByTestId('bloc-devenir-1').getByText(/pas de répondeur automatique/i)).toBeVisible();
+  await expect(page.getByTestId('repondeur-aucun-1')).toContainText('Aucun répondeur automatique n’est disponible');
   // Sans répondeur, le défaut est l'équipe : un défaut sur une option grisée n'irait à personne.
   await expect(page.getByTestId('bloc-devenir-1').getByRole('radio', { name: /Inbox/ })).toBeChecked();
 });
@@ -280,7 +284,57 @@ test('🔴 lot 5 : agent de Meta éteint mais un agent IA répondeur, le répond
   const repondeur = page.getByTestId('bloc-devenir-1').getByRole('radio', { name: 'Le répondeur automatique prend la main' });
   await expect(repondeur).toBeEnabled();
   await expect(repondeur).toBeChecked();
-  await expect(page.getByTestId('bloc-devenir-1').getByText(/pas de répondeur automatique/i)).toHaveCount(0);
+  await expect(page.getByTestId('repondeur-aucun-1')).toHaveCount(0);
+  // Rien de désigné : le répondeur de l'espace, le comportement d'avant.
+  await expect(page.getByTestId('repondeur-1')).toHaveValue('espace');
+});
+
+/** Ce que rend `GET /repondeur` pour un espace en mode « Équipe », l'agent de Meta allumé en veille, un agent IA actif. */
+const AG_LEA = '11111111-2222-4333-8444-555555555555';
+const QUI_REPOND = {
+  mode: 'equipe', modeEffectif: 'equipe', agentId: null, workflowId: null, adresseId: null, delaiS: 3600,
+  mbaAllume: true, mbaConfigurable: true, modeleDisponible: true,
+  agentsActifs: [{ id: AG_LEA, label: 'Léa' }], scenariosPublies: [], adressesActives: [],
+};
+
+/**
+ * 🔴 « QUEL RÉPONDEUR ? » (Julien, 2026-10-30) : sous « le répondeur automatique prend la main », l'agent de Meta ou un
+ * agent IA actif ; les entrées indisponibles restent visibles, grisées, et disent pourquoi.
+ */
+test('🔴 le répondeur se choisit : l’agent de Meta ou un agent IA actif, les indisponibles disent pourquoi', async ({ page }) => {
+  await monter(page, { agents: [], mbaEnabled: false, repondeur: QUI_REPOND });
+  await page.getByTestId('etage-1').click();
+  const radio = page.getByTestId('bloc-devenir-1').getByRole('radio', { name: 'Le répondeur automatique prend la main' });
+  await expect(radio).toBeEnabled();
+  await radio.check();
+  // En mode « Équipe », le répondeur de l'espace ne répond pas : le choix posé au clic est le premier possible.
+  const choix = page.getByTestId('repondeur-1');
+  await expect(choix).toHaveValue('mba');
+  await expect(page.getByTestId('repondeur-raisons-1')).toContainText('personne ne répond automatiquement');
+  await choix.selectOption(`agent:${AG_LEA}`);
+  await expect(choix).toHaveValue(`agent:${AG_LEA}`);
+  await expect(page.getByTestId('repondeur-indisponible-1')).toHaveCount(0);
+});
+
+/** 🔴 UN ÉTAGE RCS N'A PAS DE « QUEL RÉPONDEUR ? » : sa réponse ne passe jamais par la remise, l'agent choisi n'y répondrait pas. */
+test('🔴 un étage RCS n’a pas de « Quel répondeur ? » : sa réponse ne passe jamais par un répondeur désigné', async ({ page }) => {
+  await monter(page, { agents: [], mbaEnabled: false, repondeurAgentId: 'ag1', repondeur: { ...QUI_REPOND, mode: 'agent', modeEffectif: 'agent' } });
+  await page.getByTestId('etage-2').click();
+  const radio = page.getByTestId('bloc-devenir-2').getByRole('radio', { name: 'Le répondeur automatique prend la main' });
+  await expect(radio).toBeEnabled();
+  await radio.check();
+  await expect(page.getByTestId('repondeur-2')).toHaveCount(0);
+  // L'étage WhatsApp, lui, le propose.
+  await page.getByTestId('etage-1').click();
+  await expect(page.getByTestId('repondeur-1')).toBeVisible();
+});
+
+test('🔴 rien de configuré (Accueil en Équipe, agent de Meta éteint, aucun agent) : le choix entier se grise', async ({ page }) => {
+  await monter(page, { agents: [], mbaEnabled: false, repondeur: { ...QUI_REPOND, mbaAllume: false, agentsActifs: [] } });
+  await page.getByTestId('etage-1').click();
+  await expect(page.getByTestId('bloc-devenir-1').getByRole('radio', { name: 'Le répondeur automatique prend la main' })).toBeDisabled();
+  await expect(page.getByTestId('repondeur-aucun-1')).toBeVisible();
+  await expect(page.getByTestId('repondeur-1')).toHaveCount(0);
 });
 
 // 🔴 L'ÉTAPE LA PLUS EXPOSÉE AU DÉBORDEMENT : trois cadres d'étage, un éditeur de modèle, un

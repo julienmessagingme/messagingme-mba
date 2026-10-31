@@ -7,6 +7,7 @@ import { filtresRepris } from './contact-filters';
 import type { RcsSuggestion } from './partage/rcs';
 import { carrouselDepuis, type CarrouselRcs } from './rcs-carrousel';
 import type { VarRow } from './variables-template';
+import { lireChoixRepondeur, type ChoixRepondeur } from './campagne-repondeur';
 
 /**
  * LE BROUILLON D'UNE CAMPAGNE : ce qu'on écrit, et ce qu'on sait relire.
@@ -37,6 +38,8 @@ export interface ContenuBrouillon {
   formule: 'seul' | 'avec_scenario';
   /** Cf. `ContenuEtage.devenir`. Le brouillon le garde par ÉTAGE depuis le 2026-09-14. */
   devenir: 'mba' | 'inbox';
+  /** Cf. `ContenuEtage.repondeur` (2026-10-30). Absent = le répondeur de l'espace, ce qu'est tout brouillon d'avant. */
+  repondeur?: ChoixRepondeur;
   templateName?: string;
   templateLanguage?: string;
   workflowId?: string;
@@ -185,6 +188,8 @@ function contenuDe(v: unknown): ContenuBrouillon {
     // ⚠️ `mba` EN REPLI, comme `contenuVide()` : c'est le comportement réel sans réglage (l'agent de Meta
     // est le répondeur primaire du numéro). Un brouillon d'avant le 2026-09-14 n'a pas ce champ.
     devenir: dans(o.devenir, ['mba', 'inbox'] as const) ?? 'mba',
+    // Validé comme le reste : un identifiant d'agent mal formé ne revient pas, l'étage retombe sur le répondeur de l'espace.
+    ...(lireChoixRepondeur(o.repondeur) ? { repondeur: lireChoixRepondeur(o.repondeur)! } : {}),
     ...(texte(o, 'templateName') ? { templateName: texte(o, 'templateName')! } : {}),
     ...(texte(o, 'templateLanguage') ? { templateLanguage: texte(o, 'templateLanguage')! } : {}),
     ...(texte(o, 'workflowId') ? { workflowId: texte(o, 'workflowId')! } : {}),

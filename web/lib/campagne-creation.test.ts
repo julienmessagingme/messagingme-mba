@@ -88,6 +88,52 @@ describe('entreeDeCreation', () => {
   });
 
   /**
+   * 🔴 LE RÉPONDEUR CHOISI PART LÀ OÙ LE SERVEUR LE LIT (plan du 2026-10-30, migration 0263) : celui du premier étage sur
+   * la CAMPAGNE (le rang 1 EST la campagne, comme `devenir`), celui d'un étage suivant dans la CHAÎNE. Et rien quand
+   * l'écran ne pose pas la question : un étage à scénario, un étage qui renvoie à l'équipe, le répondeur de l'espace.
+   */
+  it('🔴 le répondeur choisi part sur la campagne pour le premier étage, dans la chaîne pour un étage WhatsApp suivant', () => {
+    const AG = '11111111-2222-4333-8444-555555555555';
+    const etat: EtatPourCreation = {
+      ...ETAT,
+      contenus: {
+        1: { formule: 'seul', devenir: 'mba', repondeur: `agent:${AG}`, templateName: 'promo', templateLanguage: 'fr', suggestions: [] },
+        2: { formule: 'seul', devenir: 'mba', repondeur: 'mba', texteRcs: 'coucou', suggestions: [] },
+        3: { formule: 'seul', devenir: 'mba', repondeur: 'espace', emailTemplateId: 'em-1', suggestions: [] },
+      },
+    };
+    const e = entreeDeCreation(etat, CHAINE, CTX);
+    expect(e).toMatchObject({ devenir: 'mba', repondeur: 'agent', repondeurAgentId: AG });
+    expect(e.chaine?.[0], 'le rang 1 de la chaîne ne porte rien, comme son contenu').toEqual({ rang: 1, canal: 'whatsapp' });
+    expect(e.chaine?.[1], 'un étage RCS : sa réponse ne passe jamais par la remise').not.toHaveProperty('repondeur');
+    // Un étage WhatsApp SECOND, derrière un premier étage RCS : le seul où un étage suivant désigne un répondeur.
+    const rcsPuisWhatsApp = entreeDeCreation(
+      { ...etat, contenus: { 1: { formule: 'seul', devenir: 'inbox', texteRcs: 'coucou', suggestions: [] }, 2: { formule: 'seul', devenir: 'mba', repondeur: 'mba', templateName: 'promo', templateLanguage: 'fr', suggestions: [] } } },
+      [{ rang: 1, canal: 'rcs' }, { rang: 2, canal: 'whatsapp' }],
+      CTX,
+    );
+    expect(rcsPuisWhatsApp.chaine?.[1]).toMatchObject({ devenir: 'mba', repondeur: 'mba' });
+    expect(rcsPuisWhatsApp).not.toHaveProperty('repondeur');
+    expect(e.chaine?.[2], 'le répondeur de l’espace : rien de désigné').not.toHaveProperty('repondeur');
+  });
+
+  it('🔴 rien n’est envoyé quand la question n’est pas posée : étage à scénario, ou réponse à l’équipe', () => {
+    const AG = '11111111-2222-4333-8444-555555555555';
+    const etat: EtatPourCreation = {
+      ...ETAT,
+      contenus: {
+        ...ETAT.contenus,
+        1: { formule: 'avec_scenario', devenir: 'mba', repondeur: `agent:${AG}`, workflowId: 'wf-1', suggestions: [] },
+        2: { formule: 'seul', devenir: 'inbox', repondeur: 'mba', texteRcs: 'coucou', suggestions: [] },
+      },
+    };
+    const e = entreeDeCreation(etat, CHAINE, CTX);
+    expect(e).not.toHaveProperty('repondeur');
+    expect(e).not.toHaveProperty('repondeurAgentId');
+    expect(e.chaine?.[1]).not.toHaveProperty('repondeur');
+  });
+
+  /**
    * 🔴 UNE CAMPAGNE RCS N'A PAS DE NUMÉRO META, et le serveur l'exige dans l'autre sens : `phoneNumberId`
    * requis hors RCS, vide sur RCS. Recopier le numéro ici ferait créer une campagne RCS attachée à un
    * numéro WhatsApp, ce que rien à l'écran ne montrerait.

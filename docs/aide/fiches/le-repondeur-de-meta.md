@@ -2,7 +2,7 @@
 description: Le Meta Business Agent, le répondeur de WhatsApp : quand il répond, comment le régler, son plafond, et comment reprendre la main.
 ecran: mba-settings
 source_section: MBA, le répondeur de Meta (menu « AI Agent » > MBA)
-source_empreinte: 14d8a0
+source_empreinte: 02b031
 publique: oui
 rubrique: parler-aux-clients
 rang: 11
@@ -32,7 +32,8 @@ par exemple) passe à votre équipe, dans « À traiter ».
 **Allumé, il est disponible ; il ne répond que si vous l'avez choisi.** Qui répond au client se règle sur
 l'Accueil, dans « Qui répond au client » : l'agent de Meta, un agent IA, un scénario, ou votre équipe. Quand ce
 n'est pas lui, l'agent de Meta allumé reste **en veille** : il ne prend que les contacts qu'un bloc « Envoyer au
-MBA » d'un scénario lui envoie, et il y répond tout de suite. L'allumer quand c'est votre équipe qui répond en fait
+MBA » d'un scénario lui envoie, et il y répond tout de suite, ou ceux qui répondent à une campagne qui l'a choisi
+(« Quel répondeur ? », à l'étape Contenu). L'allumer quand c'est votre équipe qui répond en fait
 le répondeur ; l'éteindre quand c'est lui qui répond vous est demandé en confirmation, et les messages vont alors à
 votre équipe. Les paramètres et l'assistant vous disent, avant de l'allumer, s'il restera en veille.
 

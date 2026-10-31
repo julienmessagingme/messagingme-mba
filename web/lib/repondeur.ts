@@ -5,7 +5,8 @@
  * les caster, et dit ce qu'un geste va changer. Fonctions pures, testées dans `repondeur.test.ts`.
  *
  * 🔴 ALLUMÉ N'EST PLUS RÉPONDEUR. L'agent de Meta allumé est DISPONIBLE ; hors du mode « MBA », il est en veille et ne
- * prend un contact que par le bloc « Envoyer au MBA » d'un scénario.
+ * prend un contact que par le bloc « Envoyer au MBA » d'un scénario, ou par la campagne dont l'étage le désigne
+ * (2026-10-30, `lib/campagne-repondeur.ts`).
  */
 
 import {
@@ -177,8 +178,8 @@ export function confirmationQuitterMba(t: T): { titre: string; message: string; 
   return {
     titre: t('Changer qui répond au client', 'Change who answers the customer'),
     message: t(
-      'L’agent de Meta cessera de répondre aux conversations qu’il tient : ses contacts sont retirés de sa liste. Allumé, il reste disponible pour le bloc « Envoyer au MBA » de vos scénarios.',
-      'Meta’s agent will stop answering the conversations it holds: its contacts are removed from its list. While on, it stays available for the “Send to MBA” block of your scenarios.',
+      'L’agent de Meta cessera de répondre aux conversations qu’il tient : ses contacts sont retirés de sa liste. Allumé, il reste disponible pour le bloc « Envoyer au MBA » de vos scénarios et pour les campagnes qui le choisissent.',
+      'Meta’s agent will stop answering the conversations it holds: its contacts are removed from its list. While on, it stays available for the “Send to MBA” block of your scenarios and for the campaigns that choose it.',
     ),
     confirmer: t('Confirmer', 'Confirm'),
   };
@@ -216,8 +217,8 @@ export function avertissementAllumageMeta(etat: Pick<EtatRepondeur, 'modeEffecti
     return null;
   }
   return t(
-    `${qui} répond aujourd’hui au client (Accueil, « Qui répond au client »). Allumé, l’agent de Meta restera en veille : il ne prendra que les contacts qu’un bloc « Envoyer au MBA » lui confie.`,
-    `${qui} answers the customer today (Home, “Who answers the customer”). Once on, Meta’s agent will stay on standby: it will only take the contacts a “Send to MBA” block hands over.`,
+    `${qui} répond aujourd’hui au client (Accueil, « Qui répond au client »). Allumé, l’agent de Meta restera en veille : il ne prendra que les contacts qu’un bloc « Envoyer au MBA » ou une campagne lui confie.`,
+    `${qui} answers the customer today (Home, “Who answers the customer”). Once on, Meta’s agent will stay on standby: it will only take the contacts a “Send to MBA” block or a campaign hands over.`,
   );
 }
 
