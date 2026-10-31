@@ -4,6 +4,31 @@
 > Il décrit l'état **au moment de chaque livraison**. Le manuel courant est
 > [documentation.md](../documentation.md) ; en cas de contradiction, c'est lui, le code, ou la base qui
 > tranchent, jamais ce fichier.
+## 2026-10-31 (nuit) : le chiffre d'affaires attribué, lot 2 en production (outil MCP, Quantitatif > Shopify, page Shopify)
+
+Plan `docs/superpowers/plans/2026-10-30-revenus-attribues-lot-2.md`, exécuté dans une copie à part, en deux lots.
+- **Lot A, l'API** (`8ff8d3d8`..`2011bfa1`) : une seule lecture, `chiffreVentes` (`src/shopify/chiffre.ts`, sur
+  `PgVentesStore.lireChiffre`), pour la route `/stats/ventes`, l'outil `get_revenue_stats` (toutes les offres, clés
+  françaises comme ses voisins) et les récupérés de l'état de la boutique ; la relecture de la preuve journalise son issue
+  (`shopify_preuve_utm`) ; la skill `shopify` fait rendre le téléphone obligatoire ; plugin 0.3.19 (0.3.17 et 0.3.18 pris
+  par des voisins). Le SQL exact a tourné en lecture seule sur la production avant le push. Relecture : aucun rouge ; quatre
+  jaunes corrigés par un test vu rouge (relances parties et récupérés sur la même date, la maille ignorée, un chiffre nul
+  sans boutique, la phrase du délai de la preuve), et la liste repliée des pages Boutiques Shopify, que la suite entière
+  a fait rougir.
+- **Déploiement** : un seul run (41132836655, `e3c985ab`, migration 0264 du Crédit WhatsApp `avant`, décisions de Julien),
+  qui emportait aussi la vente sans téléphone (`ba159258`) et le serveur du Répondeur. J'avais demandé l'annulation du run
+  en attente sur `ba159258` alors qu'il venait d'être approuvé : la bascule de l'API a été coupée côté workflow mais a
+  abouti côté Scaleway, relu aussitôt (API et workers sur `ba159258`, bastion refermé). Après : `/stats/ventes` répond, et
+  le vrai code de l'image rend le chiffre de l'espace démo en 14 ms (4 commandes de test, 2 148,85 USD dont 1 548,85
+  prouvés, un panier récupéré en test).
+- **Lot B, la console** (`0cc62e59`, poussé après le déploiement) : Performance Lab > Quantitatif > Shopify, entrée
+  présente seulement pour un espace qui a une boutique (`navSansShopify`, lue par la carte Shopify une fois par espace) ;
+  la carte Shopify rend relances parties et récupérés de la même date ; `features.md` (section Shopify, fiche relue), la
+  fiche publique et sa version anglaise, `documentation.md`. Relecture : aucun rouge ; cinq jaunes corrigés (la part
+  prouvée et les paniers récupérés en test lisibles, « et k de test », la concordance dite à l'écran, le menu
+  « Analytics » qui n'existe plus, l'e2e « sans boutique » qui n'attendait pas la lecture, vérifié par deux mutations).
+  CI verte job par job ; plugin 0.3.19 publié. Restes au `todo.md`.
+
 ## 2026-10-31 : une ancre par outil dans la doc MCP, et la vitrine qui y mène
 
 Suite de la page développeurs (`fa4bd76f`), le premier jaune de sa relecture. La page `/developers/mcp` de la console
